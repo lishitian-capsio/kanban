@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { isClineOauthAuthenticated } from "@/runtime/native-agent";
+import { isKanbanOauthAuthenticated } from "@/runtime/native-agent";
 import { fetchFeaturebaseToken } from "@/runtime/runtime-config-query";
-import type { RuntimeClineProviderSettings } from "@/runtime/types";
+import type { RuntimeKanbanProviderSettings } from "@/runtime/types";
 
 const FEATUREBASE_SDK_ID = "featurebase-sdk";
 const FEATUREBASE_SDK_SRC = "https://do.featurebase.app/js/sdk.js";
@@ -132,10 +132,10 @@ function postFeaturebaseWidgetAction(win: Window, action: string): void {
 
 export function useFeaturebaseFeedbackWidget(input: {
 	workspaceId: string | null;
-	clineProviderSettings: RuntimeClineProviderSettings | null;
+	kanbanProviderSettings: RuntimeKanbanProviderSettings | null;
 }): FeaturebaseFeedbackState {
-	const { workspaceId, clineProviderSettings } = input;
-	const isAuthenticated = isClineOauthAuthenticated(clineProviderSettings);
+	const { workspaceId, kanbanProviderSettings } = input;
+	const isAuthenticated = isKanbanOauthAuthenticated(kanbanProviderSettings);
 
 	const [authState, setAuthState] = useState<FeaturebaseAuthState>("idle");
 	const [widgetOpenCount, setWidgetOpenCount] = useState(0);

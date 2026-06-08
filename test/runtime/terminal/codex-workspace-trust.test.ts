@@ -33,7 +33,7 @@ afterEach(() => {
 describe("codex workspace trust helpers", () => {
 	it("detects Codex trust prompt", () => {
 		const codexPrompt = `
-You are in /Users/saoud/.cline/worktrees/6df3a/mcp-swift-sdk
+You are in /Users/saoud/.kanban/worktrees/6df3a/mcp-swift-sdk
 
 Do you trust the contents of this directory? Working with untrusted
 contents comes with higher risk of prompt injection.

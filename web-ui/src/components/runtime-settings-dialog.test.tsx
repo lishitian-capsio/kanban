@@ -86,7 +86,7 @@ vi.mock("@runtime-agent-catalog", () => ({
 		autonomousArgs: [],
 	})),
 	getRuntimeLaunchSupportedAgentCatalog: vi.fn(() => [
-		{ id: "cline", label: "Cline", binary: "cline" },
+		{ id: "cline", label: "Kanban", binary: "cline" },
 		{ id: "claude", label: "Claude Code", binary: "claude" },
 	]),
 }));
@@ -95,15 +95,15 @@ vi.mock("@runtime-shortcuts", () => ({
 	areRuntimeProjectShortcutsEqual: vi.fn(() => true),
 }));
 
-vi.mock("@/components/shared/cline-setup-section", () => ({
-	ClineSetupSection: ({ onSaved }: { onSaved?: () => void }) => {
+vi.mock("@/components/shared/kanban-setup-section", () => ({
+	KanbanSetupSection: ({ onSaved }: { onSaved?: () => void }) => {
 		clineSetupSectionOnSavedRef.onSaved = onSaved ?? null;
 		return null;
 	},
 }));
 
-vi.mock("@/hooks/use-runtime-settings-cline-controller", () => ({
-	useRuntimeSettingsClineController: () => ({
+vi.mock("@/hooks/use-runtime-settings-kanban-controller", () => ({
+	useRuntimeSettingsKanbanController: () => ({
 		currentProviderSettings: {
 			providerId: "anthropic",
 			modelId: "claude-3-7-sonnet",
@@ -122,8 +122,8 @@ vi.mock("@/hooks/use-runtime-settings-cline-controller", () => ({
 	}),
 }));
 
-vi.mock("@/hooks/use-runtime-settings-cline-mcp-controller", () => ({
-	useRuntimeSettingsClineMcpController: () => ({
+vi.mock("@/hooks/use-runtime-settings-kanban-mcp-controller", () => ({
+	useRuntimeSettingsKanbanMcpController: () => ({
 		hasUnsavedChanges: false,
 		saveMcpSettings: vi.fn(async () => ({ ok: true })),
 	}),
@@ -166,8 +166,8 @@ function findButtonByAriaLabel(container: ParentNode, ariaLabel: string): HTMLBu
 	) ?? null) as HTMLButtonElement | null;
 }
 
-const savedClineOauthConfig = {
-	selectedAgentId: "cline",
+const savedKanbanOauthConfig = {
+	selectedAgentId: "pi",
 	selectedShortcutLabel: null,
 	agentAutonomousModeEnabled: true,
 	readyForReviewNotificationsEnabled: false,
@@ -182,10 +182,10 @@ const savedClineOauthConfig = {
 	projectConfigPath: null,
 	agents: [
 		{
-			id: "cline",
-			label: "Cline",
-			binary: "cline",
-			command: "cline",
+			id: "pi",
+			label: "Pi",
+			binary: "pi",
+			command: "pi",
 			installed: true,
 		},
 		{
@@ -196,7 +196,7 @@ const savedClineOauthConfig = {
 			installed: true,
 		},
 	],
-	clineProviderSettings: {
+	kanbanProviderSettings: {
 		providerId: null,
 		modelId: "cline-sonnet",
 		baseUrl: null,
@@ -250,7 +250,7 @@ describe("RuntimeSettingsDialog", () => {
 				<RuntimeSettingsDialog
 					open={true}
 					workspaceId={"workspace-1"}
-					initialConfig={savedClineOauthConfig}
+					initialConfig={savedKanbanOauthConfig}
 					onOpenChange={() => {}}
 				/>,
 			);
@@ -266,7 +266,7 @@ describe("RuntimeSettingsDialog", () => {
 				<RuntimeSettingsDialog
 					open={true}
 					workspaceId={"workspace-1"}
-					initialConfig={savedClineOauthConfig}
+					initialConfig={savedKanbanOauthConfig}
 					onOpenChange={() => {}}
 				/>,
 			);
@@ -289,7 +289,7 @@ describe("RuntimeSettingsDialog", () => {
 				<RuntimeSettingsDialog
 					open={true}
 					workspaceId={"workspace-1"}
-					initialConfig={savedClineOauthConfig}
+					initialConfig={savedKanbanOauthConfig}
 					onOpenChange={handleOpenChange}
 				/>,
 			);
@@ -336,7 +336,7 @@ describe("RuntimeSettingsDialog", () => {
 				<RuntimeSettingsDialog
 					open={true}
 					workspaceId={"workspace-1"}
-					initialConfig={savedClineOauthConfig}
+					initialConfig={savedKanbanOauthConfig}
 					onOpenChange={handleOpenChange}
 				/>,
 			);
@@ -373,7 +373,7 @@ describe("RuntimeSettingsDialog", () => {
 				<RuntimeSettingsDialog
 					open={true}
 					workspaceId={"workspace-1"}
-					initialConfig={savedClineOauthConfig}
+					initialConfig={savedKanbanOauthConfig}
 					onOpenChange={() => {}}
 					onSaved={handleSaved}
 				/>,

@@ -9,7 +9,7 @@ import { TaskAgentModelPicker, useTaskAgentModelPicker } from "@/components/task
 import { TaskPromptComposer } from "@/components/task-prompt-composer";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
-import type { RuntimeAgentId, RuntimeClineReasoningEffort, RuntimeTaskClineSettings } from "@/runtime/types";
+import type { RuntimeAgentId, RuntimeReasoningEffort, RuntimeTaskAgentSettings } from "@/runtime/types";
 import type { TaskAutoReviewMode, TaskImage } from "@/types";
 import { pasteShortcutLabel } from "@/utils/platform";
 import { useDocumentEvent, useMeasure } from "@/utils/react-use";
@@ -69,8 +69,8 @@ export function TaskInlineCreateCard({
 	idPrefix = "inline-task",
 	agentId,
 	onAgentIdChange,
-	clineSettings,
-	onClineSettingsChange,
+	agentSettings,
+	onKanbanSettingsChange,
 	defaultAgentId,
 	defaultProviderId,
 	defaultModelId,
@@ -101,16 +101,16 @@ export function TaskInlineCreateCard({
 	idPrefix?: string;
 	agentId?: RuntimeAgentId | undefined;
 	onAgentIdChange?: (value: RuntimeAgentId | undefined) => void;
-	clineSettings?: RuntimeTaskClineSettings | undefined;
-	onClineSettingsChange?: (value: RuntimeTaskClineSettings | undefined) => void;
+	agentSettings?: RuntimeTaskAgentSettings | undefined;
+	onKanbanSettingsChange?: (value: RuntimeTaskAgentSettings | undefined) => void;
 	/** Default agent ID from runtimeConfig.selectedAgentId, used to show "Default (AgentName)" in picker */
 	defaultAgentId?: RuntimeAgentId | null;
-	/** Default Cline provider ID from runtimeConfig.clineProviderSettings.providerId */
+	/** Default Kanban provider ID from runtimeConfig.kanbanProviderSettings.providerId */
 	defaultProviderId?: string | null;
-	/** Default Cline model ID from runtimeConfig.clineProviderSettings.modelId */
+	/** Default Kanban model ID from runtimeConfig.kanbanProviderSettings.modelId */
 	defaultModelId?: string | null;
-	/** Default Cline reasoning effort from runtimeConfig.clineProviderSettings.reasoningEffort */
-	defaultReasoningEffort?: RuntimeClineReasoningEffort | null;
+	/** Default Kanban reasoning effort from runtimeConfig.kanbanProviderSettings.reasoningEffort */
+	defaultReasoningEffort?: RuntimeReasoningEffort | null;
 }): ReactElement {
 	const promptId = `${idPrefix}-prompt-input`;
 	const planModeId = `${idPrefix}-plan-mode-toggle`;
@@ -139,8 +139,8 @@ export function TaskInlineCreateCard({
 
 	const {
 		agentOptions,
-		clineProviderOptions,
-		clineModelOptions,
+		kanbanProviderOptions,
+		kanbanModelOptions,
 		effectiveDefaultModelId,
 		providerModels,
 		isLoadingProviders,
@@ -150,7 +150,7 @@ export function TaskInlineCreateCard({
 		active: true,
 		workspaceId,
 		agentId,
-		clineSettings,
+		agentSettings,
 		defaultAgentId,
 		defaultProviderId,
 		defaultModelId,
@@ -308,15 +308,15 @@ export function TaskInlineCreateCard({
 						))}
 					</NativeSelect>
 				</div>
-				{onAgentIdChange && onClineSettingsChange ? (
+				{onAgentIdChange && onKanbanSettingsChange ? (
 					<TaskAgentModelPicker
 						agentId={agentId}
 						onAgentIdChange={onAgentIdChange}
-						clineSettings={clineSettings}
-						onClineSettingsChange={onClineSettingsChange}
+						agentSettings={agentSettings}
+						onKanbanSettingsChange={onKanbanSettingsChange}
 						agentOptions={agentOptions}
-						clineProviderOptions={clineProviderOptions}
-						clineModelOptions={clineModelOptions}
+						kanbanProviderOptions={kanbanProviderOptions}
+						kanbanModelOptions={kanbanModelOptions}
 						effectiveDefaultModelId={effectiveDefaultModelId}
 						providerModels={providerModels}
 						isLoadingProviders={isLoadingProviders}

@@ -2,9 +2,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FeaturebaseFeedbackState } from "@/hooks/use-featurebase-feedback-widget";
-import type { RuntimeClineProviderSettings } from "@/runtime/types";
+import type { RuntimeKanbanProviderSettings } from "@/runtime/types";
 
-const defaultClineProviderSettings: RuntimeClineProviderSettings = {
+const defaultKanbanProviderSettings: RuntimeKanbanProviderSettings = {
 	providerId: null,
 	modelId: null,
 	baseUrl: null,
@@ -16,16 +16,16 @@ const defaultClineProviderSettings: RuntimeClineProviderSettings = {
 	oauthExpiresAt: null,
 };
 
-const authenticatedClineSettings: RuntimeClineProviderSettings = {
-	...defaultClineProviderSettings,
+const authenticatedKanbanSettings: RuntimeKanbanProviderSettings = {
+	...defaultKanbanProviderSettings,
 	oauthProvider: "cline",
 	oauthAccessTokenConfigured: true,
 	oauthRefreshTokenConfigured: true,
 	oauthAccountId: "acc-1",
 };
 
-const tokensOnlySettings: RuntimeClineProviderSettings = {
-	...defaultClineProviderSettings,
+const tokensOnlySettings: RuntimeKanbanProviderSettings = {
+	...defaultKanbanProviderSettings,
 	oauthProvider: null,
 	oauthAccessTokenConfigured: true,
 	oauthRefreshTokenConfigured: true,
@@ -40,7 +40,7 @@ async function importFeaturebaseModule() {
 	const nativeAgent = await import("@/runtime/native-agent");
 	vi.doMock("@/runtime/native-agent", () => ({
 		...nativeAgent,
-		isClineOauthAuthenticated: nativeAgent.isClineOauthAuthenticated,
+		isKanbanOauthAuthenticated: nativeAgent.isKanbanOauthAuthenticated,
 	}));
 	const module = await import("@/hooks/use-featurebase-feedback-widget");
 	return {
@@ -98,7 +98,7 @@ describe("useFeaturebaseFeedbackWidget", () => {
 		module: Awaited<ReturnType<typeof importFeaturebaseModule>>["module"],
 		input: {
 			workspaceId: string | null;
-			clineProviderSettings: RuntimeClineProviderSettings;
+			kanbanProviderSettings: RuntimeKanbanProviderSettings;
 		},
 	): Promise<{ getState: () => FeaturebaseFeedbackState }> {
 		let hookResult: FeaturebaseFeedbackState | null = null;
@@ -131,7 +131,7 @@ describe("useFeaturebaseFeedbackWidget", () => {
 
 		const { getState } = await renderHook(module, {
 			workspaceId: "workspace-1",
-			clineProviderSettings: authenticatedClineSettings,
+			kanbanProviderSettings: authenticatedKanbanSettings,
 		});
 
 		expect(getState().authState).toBe("idle");
@@ -146,7 +146,7 @@ describe("useFeaturebaseFeedbackWidget", () => {
 
 		const { getState } = await renderHook(module, {
 			workspaceId: "workspace-1",
-			clineProviderSettings: defaultClineProviderSettings,
+			kanbanProviderSettings: defaultKanbanProviderSettings,
 		});
 
 		expect(getState().authState).toBe("idle");
@@ -161,7 +161,7 @@ describe("useFeaturebaseFeedbackWidget", () => {
 
 		const { getState } = await renderHook(module, {
 			workspaceId: "workspace-1",
-			clineProviderSettings: tokensOnlySettings,
+			kanbanProviderSettings: tokensOnlySettings,
 		});
 
 		await act(async () => {
@@ -182,7 +182,7 @@ describe("useFeaturebaseFeedbackWidget", () => {
 
 		const { getState } = await renderHook(module, {
 			workspaceId: "workspace-1",
-			clineProviderSettings: authenticatedClineSettings,
+			kanbanProviderSettings: authenticatedKanbanSettings,
 		});
 
 		let openPromise: Promise<void> | null = null;
@@ -232,7 +232,7 @@ describe("useFeaturebaseFeedbackWidget", () => {
 
 		const { getState } = await renderHook(module, {
 			workspaceId: "workspace-1",
-			clineProviderSettings: authenticatedClineSettings,
+			kanbanProviderSettings: authenticatedKanbanSettings,
 		});
 
 		let openPromise: Promise<void> | null = null;
@@ -272,7 +272,7 @@ describe("useFeaturebaseFeedbackWidget", () => {
 
 		const { getState } = await renderHook(module, {
 			workspaceId: "workspace-1",
-			clineProviderSettings: authenticatedClineSettings,
+			kanbanProviderSettings: authenticatedKanbanSettings,
 		});
 
 		let openPromise: Promise<void> | null = null;
@@ -318,7 +318,7 @@ describe("useFeaturebaseFeedbackWidget", () => {
 
 		const { getState } = await renderHook(module, {
 			workspaceId: "workspace-1",
-			clineProviderSettings: authenticatedClineSettings,
+			kanbanProviderSettings: authenticatedKanbanSettings,
 		});
 
 		expect(fetchFeaturebaseTokenMock).not.toHaveBeenCalled();
@@ -374,7 +374,7 @@ describe("useFeaturebaseFeedbackWidget", () => {
 
 		const { getState } = await renderHook(module, {
 			workspaceId: "workspace-1",
-			clineProviderSettings: authenticatedClineSettings,
+			kanbanProviderSettings: authenticatedKanbanSettings,
 		});
 
 		const openPromise = getState().openFeedbackWidget();
@@ -417,7 +417,7 @@ describe("useFeaturebaseFeedbackWidget", () => {
 
 		const { getState } = await renderHook(module, {
 			workspaceId: "workspace-1",
-			clineProviderSettings: authenticatedClineSettings,
+			kanbanProviderSettings: authenticatedKanbanSettings,
 		});
 
 		const openPromise = getState().openFeedbackWidget();
@@ -448,7 +448,7 @@ describe("useFeaturebaseFeedbackWidget", () => {
 
 		const { getState } = await renderHook(module, {
 			workspaceId: "workspace-1",
-			clineProviderSettings: authenticatedClineSettings,
+			kanbanProviderSettings: authenticatedKanbanSettings,
 		});
 
 		const openPromise = getState().openFeedbackWidget();
@@ -497,7 +497,7 @@ describe("useFeaturebaseFeedbackWidget", () => {
 
 		const { getState } = await renderHook(module, {
 			workspaceId: null,
-			clineProviderSettings: authenticatedClineSettings,
+			kanbanProviderSettings: authenticatedKanbanSettings,
 		});
 
 		await act(async () => {
@@ -519,7 +519,7 @@ describe("useFeaturebaseFeedbackWidget", () => {
 
 		const { getState } = await renderHook(module, {
 			workspaceId: "workspace-1",
-			clineProviderSettings: authenticatedClineSettings,
+			kanbanProviderSettings: authenticatedKanbanSettings,
 		});
 
 		await act(async () => {

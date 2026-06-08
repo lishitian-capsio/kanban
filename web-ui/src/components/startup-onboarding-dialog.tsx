@@ -10,7 +10,7 @@ import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/
 import type {
 	RuntimeAgentDefinition,
 	RuntimeAgentId,
-	RuntimeClineProviderSettings,
+	RuntimeKanbanProviderSettings,
 	RuntimeConfigResponse,
 } from "@/runtime/types";
 
@@ -19,21 +19,21 @@ export function StartupOnboardingDialog({
 	onClose,
 	selectedAgentId,
 	agents,
-	clineProviderSettings,
+	kanbanProviderSettings,
 	onSelectAgent,
 	workspaceId,
 	runtimeConfig,
-	onClineSetupSaved,
+	onKanbanSetupSaved,
 }: {
 	open: boolean;
 	onClose: () => void;
 	selectedAgentId?: RuntimeAgentId | null;
 	agents?: RuntimeAgentDefinition[];
-	clineProviderSettings?: RuntimeClineProviderSettings | null;
+	kanbanProviderSettings?: RuntimeKanbanProviderSettings | null;
 	onSelectAgent?: (agentId: RuntimeAgentId) => Promise<{ ok: boolean; message?: string }>;
 	workspaceId?: string | null;
 	runtimeConfig?: RuntimeConfigResponse | null;
-	onClineSetupSaved?: () => void;
+	onKanbanSetupSaved?: () => void;
 }): ReactElement {
 	const [onboardingSlideIndex, setOnboardingSlideIndex] = useState(0);
 	const [isCompletingOnboarding, setIsCompletingOnboarding] = useState(false);
@@ -93,10 +93,10 @@ export function StartupOnboardingDialog({
 					runtimeConfig={runtimeConfig ?? null}
 					selectedAgentId={selectedAgentId ?? null}
 					agents={agents ?? []}
-					clineProviderSettings={clineProviderSettings ?? null}
+					kanbanProviderSettings={kanbanProviderSettings ?? null}
 					activeSlideIndex={onboardingSlideIndex}
 					onSelectAgent={onSelectAgent}
-					onClineSetupSaved={onClineSetupSaved}
+					onKanbanSetupSaved={onKanbanSetupSaved}
 					onDoneActionChange={handleOnboardingDoneActionChange}
 				/>
 			</DialogBody>

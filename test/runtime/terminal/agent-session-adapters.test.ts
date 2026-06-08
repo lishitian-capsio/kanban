@@ -455,7 +455,7 @@ describe("prepareAgentLaunch hook strategies", () => {
 		expect(launch.deferredStartupInput?.endsWith("\r")).toBe(true);
 	});
 
-	it("writes Cline hook scripts and injects --hooks-dir", async () => {
+	it("writes Kanban hook scripts and injects --hooks-dir", async () => {
 		setupTempHome();
 		const launch = await prepareAgentLaunch({
 			taskId: "task-1",
@@ -594,8 +594,8 @@ describe("prepareAgentLaunch hook strategies", () => {
 		});
 		expect(kiroLaunch.args).toContain("--resume");
 
-		const clineLaunch = await prepareAgentLaunch({
-			taskId: "task-cline",
+		const kanbanLaunch = await prepareAgentLaunch({
+			taskId: "task-kanban",
 			agentId: "cline",
 			binary: "cline",
 			args: [],
@@ -603,7 +603,7 @@ describe("prepareAgentLaunch hook strategies", () => {
 			prompt: "",
 			resumeFromTrash: true,
 		});
-		expect(clineLaunch.args).toContain("--continue");
+		expect(kanbanLaunch.args).toContain("--continue");
 	});
 
 	it("places Codex hook config before the resume subcommand", async () => {
@@ -683,8 +683,8 @@ describe("prepareAgentLaunch hook strategies", () => {
 		});
 		expect(kiroLaunch.args).toContain("--trust-all-tools");
 
-		const clineLaunch = await prepareAgentLaunch({
-			taskId: "task-cline-auto",
+		const kanbanLaunch = await prepareAgentLaunch({
+			taskId: "task-kanban-auto",
 			agentId: "cline",
 			binary: "cline",
 			args: [],
@@ -692,7 +692,7 @@ describe("prepareAgentLaunch hook strategies", () => {
 			cwd: "/tmp",
 			prompt: "",
 		});
-		expect(clineLaunch.args).toContain("--auto-approve-all");
+		expect(kanbanLaunch.args).toContain("--auto-approve-all");
 	});
 
 	it("preserves explicit autonomous args when autonomous mode is disabled", async () => {
@@ -731,8 +731,8 @@ describe("prepareAgentLaunch hook strategies", () => {
 		});
 		expect(geminiLaunch.args).toContain("--yolo");
 
-		const clineLaunch = await prepareAgentLaunch({
-			taskId: "task-cline-no-auto",
+		const kanbanLaunch = await prepareAgentLaunch({
+			taskId: "task-kanban-no-auto",
 			agentId: "cline",
 			binary: "cline",
 			args: ["--auto-approve-all"],
@@ -740,7 +740,7 @@ describe("prepareAgentLaunch hook strategies", () => {
 			cwd: "/tmp",
 			prompt: "",
 		});
-		expect(clineLaunch.args).toContain("--auto-approve-all");
+		expect(kanbanLaunch.args).toContain("--auto-approve-all");
 
 		const kiroLaunch = await prepareAgentLaunch({
 			taskId: "task-kiro-no-auto",

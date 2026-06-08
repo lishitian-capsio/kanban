@@ -20,8 +20,8 @@ function createRuntimeConfigResponse(selectedAgentId: RuntimeConfigResponse["sel
 		selectedShortcutLabel: null,
 		agentAutonomousModeEnabled: true,
 		effectiveCommand: selectedAgentId,
-		globalConfigPath: "/tmp/.cline/kanban/config.json",
-		projectConfigPath: "/tmp/project/.cline/kanban/config.json",
+		globalConfigPath: "/tmp/.kanban/kanban/config.json",
+		projectConfigPath: "/tmp/project/.kanban/kanban/config.json",
 		readyForReviewNotificationsEnabled: true,
 		detectedCommands: ["codex"],
 		agents: [
@@ -36,7 +36,7 @@ function createRuntimeConfigResponse(selectedAgentId: RuntimeConfigResponse["sel
 			},
 		],
 		shortcuts: [],
-		clineProviderSettings: {
+		kanbanProviderSettings: {
 			providerId: null,
 			modelId: null,
 			baseUrl: null,
@@ -51,6 +51,12 @@ function createRuntimeConfigResponse(selectedAgentId: RuntimeConfigResponse["sel
 		openPrPromptTemplate: "",
 		commitPromptTemplateDefault: "",
 		openPrPromptTemplateDefault: "",
+		proxyEnabled: false,
+		proxyHost: "",
+		proxyPort: "",
+		proxyUsername: "",
+		proxyPassword: "",
+		noProxy: "",
 	};
 }
 
@@ -146,7 +152,7 @@ describe("useStartupOnboarding", () => {
 			root.render(
 				<HookHarness
 					currentProjectId={null}
-					runtimeProjectConfig={createRuntimeConfigResponse("cline")}
+					runtimeProjectConfig={createRuntimeConfigResponse("pi")}
 					isRuntimeProjectConfigLoading={false}
 					isTaskAgentReady={false}
 					onSnapshot={(snapshot) => {
@@ -202,7 +208,7 @@ describe("useStartupOnboarding", () => {
 			root.render(
 				<HookHarness
 					currentProjectId={"project-1"}
-					runtimeProjectConfig={createRuntimeConfigResponse("cline")}
+					runtimeProjectConfig={createRuntimeConfigResponse("pi")}
 					isRuntimeProjectConfigLoading={false}
 					isTaskAgentReady={false}
 					onSnapshot={(snapshot) => {
@@ -228,7 +234,7 @@ describe("useStartupOnboarding", () => {
 			root.render(
 				<HookHarness
 					currentProjectId={null}
-					runtimeProjectConfig={createRuntimeConfigResponse("cline")}
+					runtimeProjectConfig={createRuntimeConfigResponse("pi")}
 					isRuntimeProjectConfigLoading={false}
 					isTaskAgentReady={false}
 					onSnapshot={(snapshot) => {
@@ -262,7 +268,7 @@ describe("useStartupOnboarding", () => {
 			root.render(
 				<HookHarness
 					currentProjectId={"project-1"}
-					runtimeProjectConfig={createRuntimeConfigResponse("cline")}
+					runtimeProjectConfig={createRuntimeConfigResponse("pi")}
 					isRuntimeProjectConfigLoading={false}
 					isTaskAgentReady={false}
 					onSnapshot={(nextSnapshot) => {

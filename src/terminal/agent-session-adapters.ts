@@ -127,7 +127,7 @@ function hasCliOption(args: string[], optionName: string): boolean {
 	return false;
 }
 
-function getClineHookScriptPath(
+function getKanbanHookScriptPath(
 	hooksDir: string,
 	hookName: "Notification" | "TaskComplete" | "UserPromptSubmit" | "PreToolUse" | "PostToolUse",
 ): string {
@@ -137,8 +137,8 @@ function getClineHookScriptPath(
 	return join(hooksDir, hookName);
 }
 
-function buildClineHookScriptContent(event: RuntimeHookEvent): string {
-	const commandParts = buildHooksCommandParts(["notify", "--event", event, "--source", "cline"]);
+function buildKanbanHookScriptContent(event: RuntimeHookEvent): string {
+	const commandParts = buildHooksCommandParts(["notify", "--event", event, "--source", "kanban"]);
 	if (process.platform === "win32") {
 		const command = commandParts.map(powerShellQuote).join(" ");
 		return `$inputText = [Console]::In.ReadToEnd()
@@ -158,8 +158,8 @@ echo '{"cancel":false}'
 `;
 }
 
-function buildClineNotificationHookScriptContent(): string {
-	const commandParts = buildHooksCommandParts(["notify", "--event", "to_review", "--source", "cline"]);
+function buildKanbanNotificationHookScriptContent(): string {
+	const commandParts = buildHooksCommandParts(["notify", "--event", "to_review", "--source", "kanban"]);
 	if (process.platform === "win32") {
 		const command = commandParts.map(powerShellQuote).join(" ");
 		return `$inputText = [Console]::In.ReadToEnd()
@@ -187,10 +187,10 @@ echo '{"cancel":false}'
 `;
 }
 
-function buildClinePreToolUseHookScriptContent(): string {
-	const activityCommand = buildHooksCommandParts(["notify", "--event", "activity", "--source", "cline"]);
-	const reviewCommand = buildHooksCommandParts(["notify", "--event", "to_review", "--source", "cline"]);
-	const inProgressCommand = buildHooksCommandParts(["notify", "--event", "to_in_progress", "--source", "cline"]);
+function buildKanbanPreToolUseHookScriptContent(): string {
+	const activityCommand = buildHooksCommandParts(["notify", "--event", "activity", "--source", "kanban"]);
+	const reviewCommand = buildHooksCommandParts(["notify", "--event", "to_review", "--source", "kanban"]);
+	const inProgressCommand = buildHooksCommandParts(["notify", "--event", "to_in_progress", "--source", "kanban"]);
 	if (process.platform === "win32") {
 		const activity = activityCommand.map(powerShellQuote).join(" ");
 		const review = reviewCommand.map(powerShellQuote).join(" ");
@@ -231,9 +231,9 @@ echo '{"cancel":false}'
 `;
 }
 
-function buildClinePostToolUseHookScriptContent(): string {
-	const activityCommand = buildHooksCommandParts(["notify", "--event", "activity", "--source", "cline"]);
-	const inProgressCommand = buildHooksCommandParts(["notify", "--event", "to_in_progress", "--source", "cline"]);
+function buildKanbanPostToolUseHookScriptContent(): string {
+	const activityCommand = buildHooksCommandParts(["notify", "--event", "activity", "--source", "kanban"]);
+	const inProgressCommand = buildHooksCommandParts(["notify", "--event", "to_in_progress", "--source", "kanban"]);
 	if (process.platform === "win32") {
 		const activity = activityCommand.map(powerShellQuote).join(" ");
 		const inProgress = inProgressCommand.map(powerShellQuote).join(" ");
@@ -1390,18 +1390,18 @@ const clineAdapter: AgentSessionAdapter = {
 		const hooks = resolveHookContext(input);
 		if (hooks) {
 			const hooksDir = getHookAgentDirectory("cline");
-			const notificationHookPath = getClineHookScriptPath(hooksDir, "Notification");
-			const taskCompleteHookPath = getClineHookScriptPath(hooksDir, "TaskComplete");
-			const userPromptSubmitHookPath = getClineHookScriptPath(hooksDir, "UserPromptSubmit");
-			const preToolUseHookPath = getClineHookScriptPath(hooksDir, "PreToolUse");
-			const postToolUseHookPath = getClineHookScriptPath(hooksDir, "PostToolUse");
+			const notificationHookPath = getKanbanHookScriptPath(hooksDir, "Notification");
+			const taskCompleteHookPath = getKanbanHookScriptPath(hooksDir, "TaskComplete");
+			const userPromptSubmitHookPath = getKanbanHookScriptPath(hooksDir, "UserPromptSubmit");
+			const preToolUseHookPath = getKanbanHookScriptPath(hooksDir, "PreToolUse");
+			const postToolUseHookPath = getKanbanHookScriptPath(hooksDir, "PostToolUse");
 			const executable = process.platform !== "win32";
 
-			await ensureTextFile(notificationHookPath, buildClineNotificationHookScriptContent(), executable);
-			await ensureTextFile(taskCompleteHookPath, buildClineHookScriptContent("to_review"), executable);
-			await ensureTextFile(userPromptSubmitHookPath, buildClineHookScriptContent("to_in_progress"), executable);
-			await ensureTextFile(preToolUseHookPath, buildClinePreToolUseHookScriptContent(), executable);
-			await ensureTextFile(postToolUseHookPath, buildClinePostToolUseHookScriptContent(), executable);
+			await ensureTextFile(notificationHookPath, buildKanbanNotificationHookScriptContent(), executable);
+			await ensureTextFile(taskCompleteHookPath, buildKanbanHookScriptContent("to_review"), executable);
+			await ensureTextFile(userPromptSubmitHookPath, buildKanbanHookScriptContent("to_in_progress"), executable);
+			await ensureTextFile(preToolUseHookPath, buildKanbanPreToolUseHookScriptContent(), executable);
+			await ensureTextFile(postToolUseHookPath, buildKanbanPostToolUseHookScriptContent(), executable);
 
 			if (!hasCliOption(args, "--hooks-dir")) {
 				args.push("--hooks-dir", hooksDir);

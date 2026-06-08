@@ -24,7 +24,7 @@ export interface UseStartupOnboardingResult {
 	handleOpenStartupOnboardingDialog: () => void;
 	handleCloseStartupOnboardingDialog: () => void;
 	handleSelectOnboardingAgent: (agentId: RuntimeAgentId) => Promise<AgentSelectionResult>;
-	handleOnboardingClineSetupSaved: () => void;
+	handleOnboardingKanbanSetupSaved: () => void;
 }
 
 export function useStartupOnboarding(options: UseStartupOnboardingOptions): UseStartupOnboardingResult {
@@ -103,7 +103,7 @@ export function useStartupOnboarding(options: UseStartupOnboardingOptions): UseS
 		[currentProjectId, refreshRuntimeProjectConfig, refreshSettingsRuntimeProjectConfig],
 	);
 
-	const handleOnboardingClineSetupSaved = useCallback(() => {
+	const handleOnboardingKanbanSetupSaved = useCallback(() => {
 		refreshRuntimeProjectConfig();
 		refreshSettingsRuntimeProjectConfig();
 	}, [refreshRuntimeProjectConfig, refreshSettingsRuntimeProjectConfig]);
@@ -113,6 +113,6 @@ export function useStartupOnboarding(options: UseStartupOnboardingOptions): UseS
 		handleOpenStartupOnboardingDialog,
 		handleCloseStartupOnboardingDialog,
 		handleSelectOnboardingAgent,
-		handleOnboardingClineSetupSaved,
+		handleOnboardingKanbanSetupSaved,
 	};
 }

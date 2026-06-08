@@ -1,9 +1,9 @@
 import { useEffect, useReducer } from "react";
 
 import type {
-	RuntimeClineMcpServerAuthStatus,
+	RuntimeKanbanMcpServerAuthStatus,
 	RuntimeProjectSummary,
-	RuntimeStateStreamClineSessionContextUpdatedMessage,
+	RuntimeStateStreamKanbanSessionContextUpdatedMessage,
 	RuntimeStateStreamMcpAuthUpdatedMessage,
 	RuntimeStateStreamMessage,
 	RuntimeStateStreamProjectsMessage,
@@ -54,8 +54,8 @@ export interface UseRuntimeStateStreamResult {
 	latestTaskChatMessage: RuntimeStateStreamTaskChatMessage | null;
 	taskChatMessagesByTaskId: Record<string, RuntimeTaskChatMessage[]>;
 	latestTaskReadyForReview: RuntimeStateStreamTaskReadyForReviewMessage | null;
-	latestMcpAuthStatuses: RuntimeClineMcpServerAuthStatus[] | null;
-	clineSessionContextVersion: number;
+	latestMcpAuthStatuses: RuntimeKanbanMcpServerAuthStatus[] | null;
+	kanbanSessionContextVersion: number;
 	streamError: string | null;
 	isRuntimeDisconnected: boolean;
 	hasReceivedSnapshot: boolean;
@@ -69,8 +69,8 @@ interface RuntimeStateStreamStore {
 	latestTaskChatMessage: RuntimeStateStreamTaskChatMessage | null;
 	taskChatMessagesByTaskId: Record<string, RuntimeTaskChatMessage[]>;
 	latestTaskReadyForReview: RuntimeStateStreamTaskReadyForReviewMessage | null;
-	latestMcpAuthStatuses: RuntimeClineMcpServerAuthStatus[] | null;
-	clineSessionContextVersion: number;
+	latestMcpAuthStatuses: RuntimeKanbanMcpServerAuthStatus[] | null;
+	kanbanSessionContextVersion: number;
 	streamError: string | null;
 	isRuntimeDisconnected: boolean;
 	hasReceivedSnapshot: boolean;
@@ -90,7 +90,7 @@ type RuntimeStateStreamAction =
 	| { type: "workspace_metadata_updated"; workspaceMetadata: RuntimeWorkspaceMetadata }
 	| { type: "task_ready_for_review"; payload: RuntimeStateStreamTaskReadyForReviewMessage }
 	| { type: "mcp_auth_updated"; payload: RuntimeStateStreamMcpAuthUpdatedMessage }
-	| { type: "cline_session_context_updated"; payload: RuntimeStateStreamClineSessionContextUpdatedMessage }
+	| { type: "kanban_session_context_updated"; payload: RuntimeStateStreamKanbanSessionContextUpdatedMessage }
 	| { type: "workspace_state_updated"; workspaceState: RuntimeWorkspaceStateResponse }
 	| { type: "task_sessions_updated"; summaries: RuntimeTaskSessionSummary[] }
 	| { type: "stream_error"; message: string }
@@ -106,7 +106,7 @@ function createInitialRuntimeStateStreamStore(requestedWorkspaceId: string | nul
 		taskChatMessagesByTaskId: {},
 		latestTaskReadyForReview: null,
 		latestMcpAuthStatuses: null,
-		clineSessionContextVersion: 0,
+		kanbanSessionContextVersion: 0,
 		streamError: null,
 		isRuntimeDisconnected: false,
 		hasReceivedSnapshot: false,
@@ -161,7 +161,7 @@ function runtimeStateStreamReducer(
 			isRuntimeDisconnected: false,
 			hasReceivedSnapshot: false,
 			latestMcpAuthStatuses: state.latestMcpAuthStatuses,
-			clineSessionContextVersion: state.clineSessionContextVersion,
+			kanbanSessionContextVersion: state.kanbanSessionContextVersion,
 		};
 	}
 	if (action.type === "stream_connected") {
@@ -190,7 +190,7 @@ function runtimeStateStreamReducer(
 			taskChatMessagesByTaskId: {},
 			latestTaskReadyForReview: state.latestTaskReadyForReview,
 			latestMcpAuthStatuses: state.latestMcpAuthStatuses,
-			clineSessionContextVersion: action.payload.clineSessionContextVersion,
+			kanbanSessionContextVersion: action.payload.kanbanSessionContextVersion,
 			streamError: null,
 			isRuntimeDisconnected: false,
 			hasReceivedSnapshot: true,
@@ -249,10 +249,10 @@ function runtimeStateStreamReducer(
 			latestMcpAuthStatuses: action.payload.statuses,
 		};
 	}
-	if (action.type === "cline_session_context_updated") {
+	if (action.type === "kanban_session_context_updated") {
 		return {
 			...state,
-			clineSessionContextVersion: action.payload.version,
+			kanbanSessionContextVersion: action.payload.version,
 		};
 	}
 	if (action.type === "workspace_state_updated") {
@@ -452,9 +452,9 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 						});
 						return;
 					}
-					if (payload.type === "cline_session_context_updated") {
+					if (payload.type === "kanban_session_context_updated") {
 						dispatch({
-							type: "cline_session_context_updated",
+							type: "kanban_session_context_updated",
 							payload,
 						});
 						return;
@@ -510,7 +510,7 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 		taskChatMessagesByTaskId: state.taskChatMessagesByTaskId,
 		latestTaskReadyForReview: state.latestTaskReadyForReview,
 		latestMcpAuthStatuses: state.latestMcpAuthStatuses,
-		clineSessionContextVersion: state.clineSessionContextVersion,
+		kanbanSessionContextVersion: state.kanbanSessionContextVersion,
 		streamError: state.streamError,
 		isRuntimeDisconnected: state.isRuntimeDisconnected,
 		hasReceivedSnapshot: state.hasReceivedSnapshot,

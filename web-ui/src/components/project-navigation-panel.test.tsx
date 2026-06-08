@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProjectNavigationPanel } from "@/components/project-navigation-panel";
 import { useProjectNavigationLayout } from "@/resize/use-project-navigation-layout";
-import type { RuntimeClineProviderSettings, RuntimeProjectSummary } from "@/runtime/types";
+import type { RuntimeKanbanProviderSettings, RuntimeProjectSummary } from "@/runtime/types";
 import { LocalStorageKey } from "@/storage/local-storage-store";
 
 vi.mock("@/resize/layout-customizations", () => ({
@@ -40,7 +40,7 @@ const PROJECTS: RuntimeProjectSummary[] = [
 	},
 ];
 
-const CLINE_OAUTH_SETTINGS: RuntimeClineProviderSettings = {
+const CLINE_OAUTH_SETTINGS: RuntimeKanbanProviderSettings = {
 	providerId: null,
 	modelId: "cline-sonnet",
 	baseUrl: null,
@@ -137,7 +137,7 @@ describe("ProjectNavigationPanel width persistence", () => {
 					onActiveSectionChange={() => {}}
 					canShowAgentSection
 					selectedAgentId={null}
-					clineProviderSettings={null}
+					kanbanProviderSettings={null}
 					featurebaseFeedbackState={undefined}
 					onSelectProject={() => {}}
 					onRemoveProject={async () => true}
@@ -196,10 +196,10 @@ describe("ProjectNavigationPanel width persistence", () => {
 		expect(container.textContent).toContain("Report issue");
 	});
 
-	it("shows send feedback instead of report issue when Cline OAuth is available", () => {
+	it("shows send feedback instead of report issue when Kanban OAuth is available", () => {
 		renderPanel({
-			selectedAgentId: "cline",
-			clineProviderSettings: CLINE_OAUTH_SETTINGS,
+			selectedAgentId: "pi",
+			kanbanProviderSettings: CLINE_OAUTH_SETTINGS,
 			featurebaseFeedbackState: {
 				authState: "ready",
 				widgetOpenCount: 0,

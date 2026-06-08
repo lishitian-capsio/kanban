@@ -1,30 +1,30 @@
-// Browser-side query helpers for runtime settings and Cline actions.
+// Browser-side query helpers for runtime settings and Kanban actions.
 // Keep TRPC request details here so components and controller hooks can focus
 // on state orchestration instead of transport plumbing.
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type {
 	RuntimeAgentId,
-	RuntimeClineAccountBalanceResponse,
-	RuntimeClineAccountOrganizationsResponse,
-	RuntimeClineAccountProfileResponse,
-	RuntimeClineAccountSwitchResponse,
-	RuntimeClineAddProviderResponse,
-	RuntimeClineDeviceAuthCompleteRequest,
-	RuntimeClineDeviceAuthCompleteResponse,
-	RuntimeClineDeviceAuthStartResponse,
-	RuntimeClineKanbanAccessResponse,
-	RuntimeClineMcpAuthStatusResponse,
-	RuntimeClineMcpOAuthResponse,
-	RuntimeClineMcpServer,
-	RuntimeClineMcpSettingsResponse,
-	RuntimeClineOauthLoginResponse,
-	RuntimeClineOauthProvider,
-	RuntimeClineProviderCapability,
-	RuntimeClineProviderCatalogItem,
-	RuntimeClineProviderModel,
-	RuntimeClineProviderSettings,
-	RuntimeClineReasoningEffort,
-	RuntimeClineUpdateProviderResponse,
+	RuntimeKanbanAccountBalanceResponse,
+	RuntimeKanbanAccountOrganizationsResponse,
+	RuntimeKanbanAccountProfileResponse,
+	RuntimeKanbanAccountSwitchResponse,
+	RuntimeKanbanAddProviderResponse,
+	RuntimeKanbanDeviceAuthCompleteRequest,
+	RuntimeKanbanDeviceAuthCompleteResponse,
+	RuntimeKanbanDeviceAuthStartResponse,
+	RuntimeKanbanKanbanAccessResponse,
+	RuntimeKanbanMcpAuthStatusResponse,
+	RuntimeKanbanMcpOAuthResponse,
+	RuntimeKanbanMcpServer,
+	RuntimeKanbanMcpSettingsResponse,
+	RuntimeKanbanOauthLoginResponse,
+	RuntimeKanbanOauthProvider,
+	RuntimeKanbanProviderCapability,
+	RuntimeKanbanProviderCatalogItem,
+	RuntimeKanbanProviderModel,
+	RuntimeKanbanProviderSettings,
+	RuntimeReasoningEffort,
+	RuntimeKanbanUpdateProviderResponse,
 	RuntimeConfigResponse,
 	RuntimeDebugResetAllStateResponse,
 	RuntimeFeaturebaseTokenResponse,
@@ -48,20 +48,26 @@ export async function saveRuntimeConfig(
 		readyForReviewNotificationsEnabled?: boolean;
 		commitPromptTemplate?: string;
 		openPrPromptTemplate?: string;
+		proxyEnabled?: boolean;
+		proxyHost?: string;
+		proxyPort?: string;
+		proxyUsername?: string;
+		proxyPassword?: string;
+		noProxy?: string;
 	},
 ): Promise<RuntimeConfigResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
 	return await trpcClient.runtime.saveConfig.mutate(nextConfig);
 }
 
-export async function saveClineProviderSettings(
+export async function saveKanbanProviderSettings(
 	workspaceId: string | null,
 	input: {
 		providerId: string;
 		modelId?: string | null;
 		apiKey?: string | null;
 		baseUrl?: string | null;
-		reasoningEffort?: RuntimeClineReasoningEffort | null;
+		reasoningEffort?: RuntimeReasoningEffort | null;
 		region?: string | null;
 		aws?: {
 			accessKey?: string | null;
@@ -77,12 +83,12 @@ export async function saveClineProviderSettings(
 			region?: string | null;
 		};
 	},
-): Promise<RuntimeClineProviderSettings> {
+): Promise<RuntimeKanbanProviderSettings> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.saveClineProviderSettings.mutate(input);
+	return await trpcClient.runtime.saveKanbanProviderSettings.mutate(input);
 }
 
-export async function addClineProvider(
+export async function addKanbanProvider(
 	workspaceId: string | null,
 	input: {
 		providerId: string;
@@ -94,14 +100,14 @@ export async function addClineProvider(
 		models: string[];
 		defaultModelId?: string | null;
 		modelsSourceUrl?: string | null;
-		capabilities?: RuntimeClineProviderCapability[];
+		capabilities?: RuntimeKanbanProviderCapability[];
 	},
-): Promise<RuntimeClineAddProviderResponse> {
+): Promise<RuntimeKanbanAddProviderResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.addClineProvider.mutate(input);
+	return await trpcClient.runtime.addKanbanProvider.mutate(input);
 }
 
-export async function updateClineProvider(
+export async function updateKanbanProvider(
 	workspaceId: string | null,
 	input: {
 		providerId: string;
@@ -113,31 +119,31 @@ export async function updateClineProvider(
 		models?: string[];
 		defaultModelId?: string | null;
 		modelsSourceUrl?: string | null;
-		capabilities?: RuntimeClineProviderCapability[];
+		capabilities?: RuntimeKanbanProviderCapability[];
 	},
-): Promise<RuntimeClineUpdateProviderResponse> {
+): Promise<RuntimeKanbanUpdateProviderResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.updateClineProvider.mutate(input);
+	return await trpcClient.runtime.updateKanbanProvider.mutate(input);
 }
 
-export async function fetchClineProviderCatalog(
+export async function fetchKanbanProviderCatalog(
 	workspaceId: string | null,
-): Promise<RuntimeClineProviderCatalogItem[]> {
+): Promise<RuntimeKanbanProviderCatalogItem[]> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	const response = await trpcClient.runtime.getClineProviderCatalog.query();
+	const response = await trpcClient.runtime.getKanbanProviderCatalog.query();
 	return response.providers;
 }
 
-export async function fetchClineAccountProfile(
+export async function fetchKanbanAccountProfile(
 	workspaceId: string | null,
-): Promise<RuntimeClineAccountProfileResponse> {
+): Promise<RuntimeKanbanAccountProfileResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.getClineAccountProfile.query();
+	return await trpcClient.runtime.getKanbanAccountProfile.query();
 }
 
-export async function fetchClineKanbanAccess(workspaceId: string | null): Promise<RuntimeClineKanbanAccessResponse> {
+export async function fetchKanbanKanbanAccess(workspaceId: string | null): Promise<RuntimeKanbanKanbanAccessResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.getClineKanbanAccess.query();
+	return await trpcClient.runtime.getKanbanKanbanAccess.query();
 }
 
 export async function fetchFeaturebaseToken(workspaceId: string | null): Promise<RuntimeFeaturebaseTokenResponse> {
@@ -145,69 +151,69 @@ export async function fetchFeaturebaseToken(workspaceId: string | null): Promise
 	return await trpcClient.runtime.getFeaturebaseToken.query();
 }
 
-export async function fetchClineProviderModels(
+export async function fetchKanbanProviderModels(
 	workspaceId: string | null,
 	providerId: string,
-): Promise<RuntimeClineProviderModel[]> {
+): Promise<RuntimeKanbanProviderModel[]> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	const response = await trpcClient.runtime.getClineProviderModels.query({ providerId });
+	const response = await trpcClient.runtime.getKanbanProviderModels.query({ providerId });
 	return response.models;
 }
 
-export async function runClineProviderOauthLogin(
+export async function runKanbanProviderOauthLogin(
 	workspaceId: string | null,
 	input: {
-		provider: RuntimeClineOauthProvider;
+		provider: RuntimeKanbanOauthProvider;
 		baseUrl?: string | null;
 	},
-): Promise<RuntimeClineOauthLoginResponse> {
+): Promise<RuntimeKanbanOauthLoginResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.runClineProviderOAuthLogin.mutate(input);
+	return await trpcClient.runtime.runKanbanProviderOAuthLogin.mutate(input);
 }
 
-export async function startClineDeviceAuth(workspaceId: string | null): Promise<RuntimeClineDeviceAuthStartResponse> {
+export async function startKanbanDeviceAuth(workspaceId: string | null): Promise<RuntimeKanbanDeviceAuthStartResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.startClineDeviceAuth.mutate();
+	return await trpcClient.runtime.startKanbanDeviceAuth.mutate();
 }
 
-export async function completeClineDeviceAuth(
+export async function completeKanbanDeviceAuth(
 	workspaceId: string | null,
-	input: RuntimeClineDeviceAuthCompleteRequest,
-): Promise<RuntimeClineDeviceAuthCompleteResponse> {
+	input: RuntimeKanbanDeviceAuthCompleteRequest,
+): Promise<RuntimeKanbanDeviceAuthCompleteResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.completeClineDeviceAuth.mutate(input);
+	return await trpcClient.runtime.completeKanbanDeviceAuth.mutate(input);
 }
 
-export async function fetchClineMcpSettings(workspaceId: string | null): Promise<RuntimeClineMcpSettingsResponse> {
+export async function fetchKanbanMcpSettings(workspaceId: string | null): Promise<RuntimeKanbanMcpSettingsResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.getClineMcpSettings.query();
+	return await trpcClient.runtime.getKanbanMcpSettings.query();
 }
 
-export async function fetchClineMcpAuthStatuses(
+export async function fetchKanbanMcpAuthStatuses(
 	workspaceId: string | null,
-): Promise<RuntimeClineMcpAuthStatusResponse> {
+): Promise<RuntimeKanbanMcpAuthStatusResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.getClineMcpAuthStatuses.query();
+	return await trpcClient.runtime.getKanbanMcpAuthStatuses.query();
 }
 
-export async function saveClineMcpSettings(
+export async function saveKanbanMcpSettings(
 	workspaceId: string | null,
 	input: {
-		servers: RuntimeClineMcpServer[];
+		servers: RuntimeKanbanMcpServer[];
 	},
-): Promise<RuntimeClineMcpSettingsResponse> {
+): Promise<RuntimeKanbanMcpSettingsResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.saveClineMcpSettings.mutate(input);
+	return await trpcClient.runtime.saveKanbanMcpSettings.mutate(input);
 }
 
-export async function runClineMcpServerOAuth(
+export async function runKanbanMcpServerOAuth(
 	workspaceId: string | null,
 	input: {
 		serverName: string;
 	},
-): Promise<RuntimeClineMcpOAuthResponse> {
+): Promise<RuntimeKanbanMcpOAuthResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.runClineMcpServerOAuth.mutate(input);
+	return await trpcClient.runtime.runKanbanMcpServerOAuth.mutate(input);
 }
 
 export async function resetRuntimeDebugState(workspaceId: string | null): Promise<RuntimeDebugResetAllStateResponse> {
@@ -220,26 +226,26 @@ export async function openFileOnHost(workspaceId: string | null, filePath: strin
 	await trpcClient.runtime.openFile.mutate({ filePath });
 }
 
-export async function fetchClineAccountBalance(
+export async function fetchKanbanAccountBalance(
 	workspaceId: string | null,
-): Promise<RuntimeClineAccountBalanceResponse> {
+): Promise<RuntimeKanbanAccountBalanceResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.getClineAccountBalance.query();
+	return await trpcClient.runtime.getKanbanAccountBalance.query();
 }
 
-export async function fetchClineAccountOrganizations(
+export async function fetchKanbanAccountOrganizations(
 	workspaceId: string | null,
-): Promise<RuntimeClineAccountOrganizationsResponse> {
+): Promise<RuntimeKanbanAccountOrganizationsResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.getClineAccountOrganizations.query();
+	return await trpcClient.runtime.getKanbanAccountOrganizations.query();
 }
 
-export async function switchClineAccount(
+export async function switchKanbanAccount(
 	workspaceId: string | null,
 	organizationId: string | null,
-): Promise<RuntimeClineAccountSwitchResponse> {
+): Promise<RuntimeKanbanAccountSwitchResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.switchClineAccount.mutate({ organizationId });
+	return await trpcClient.runtime.switchKanbanAccount.mutate({ organizationId });
 }
 
 export async function fetchRuntimeUpdateStatus(workspaceId: string | null): Promise<RuntimeUpdateStatusResponse> {

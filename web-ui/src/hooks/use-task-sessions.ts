@@ -1,12 +1,12 @@
 // Frontend facade for task-scoped runtime actions.
 // It owns how the board and detail view start, stop, resize, and route task
-// sessions across native Cline and PTY-backed agents.
+// sessions across native Kanban and PTY-backed agents.
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback } from "react";
 
 import { notifyError } from "@/components/app-toaster";
 import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
-import { type ClineChatActionResult, useClineChatRuntimeActions } from "@/hooks/use-cline-chat-runtime-actions";
+import { type KanbanChatActionResult, useKanbanChatRuntimeActions } from "@/hooks/use-kanban-chat-runtime-actions";
 import { estimateTaskSessionGeometry } from "@/runtime/task-session-geometry";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type {
@@ -62,9 +62,9 @@ export interface UseTaskSessionsResult {
 		taskId: string,
 		text: string,
 		options?: { mode?: RuntimeTaskSessionMode },
-	) => Promise<ClineChatActionResult>;
-	abortTaskChatTurn: (taskId: string) => Promise<ClineChatActionResult>;
-	cancelTaskChatTurn: (taskId: string) => Promise<ClineChatActionResult>;
+	) => Promise<KanbanChatActionResult>;
+	abortTaskChatTurn: (taskId: string) => Promise<KanbanChatActionResult>;
+	cancelTaskChatTurn: (taskId: string) => Promise<KanbanChatActionResult>;
 	fetchTaskChatMessages: (taskId: string) => Promise<RuntimeTaskChatMessage[] | null>;
 	cleanupTaskWorkspace: (taskId: string) => Promise<RuntimeWorktreeDeleteResponse | null>;
 	fetchTaskWorkspaceInfo: (task: BoardCard) => Promise<RuntimeTaskWorkspaceInfoResponse | null>;
@@ -113,7 +113,7 @@ export function useTaskSessions({ currentProjectId, setSessions }: UseTaskSessio
 		loadTaskChatMessages: fetchTaskChatMessages,
 		abortTaskChatTurn,
 		cancelTaskChatTurn,
-	} = useClineChatRuntimeActions({
+	} = useKanbanChatRuntimeActions({
 		currentProjectId,
 		onSessionSummary: upsertSession,
 	});
@@ -165,7 +165,7 @@ export function useTaskSessions({ currentProjectId, setSessions }: UseTaskSessio
 					cols: geometry.cols,
 					rows: geometry.rows,
 					agentId: task.agentId,
-					clineSettings: task.clineSettings,
+					agentSettings: task.agentSettings,
 				});
 				if (!payload.ok || !payload.summary) {
 					return {

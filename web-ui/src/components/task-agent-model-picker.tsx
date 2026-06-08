@@ -4,47 +4,47 @@ import { ChevronDown } from "lucide-react";
 import type { ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { ClineChatModelSelector } from "@/components/detail-panels/cline-chat-model-selector";
+import { KanbanChatModelSelector } from "@/components/detail-panels/kanban-chat-model-selector";
 import {
-	buildClineAgentModelPickerOptions,
-	buildClineSelectedModelButtonText,
-	getClineReasoningEnabledModelIds,
-} from "@/components/detail-panels/cline-model-picker-options";
+	buildKanbanAgentModelPickerOptions,
+	buildKanbanSelectedModelButtonText,
+	getKanbanReasoningEnabledModelIds,
+} from "@/components/detail-panels/kanban-model-picker-options";
 import { SearchSelectDropdown } from "@/components/search-select-dropdown";
 import { cn } from "@/components/ui/cn";
 import { NativeSelect } from "@/components/ui/native-select";
-import { fetchClineProviderCatalog, fetchClineProviderModels } from "@/runtime/runtime-config-query";
+import { fetchKanbanProviderCatalog, fetchKanbanProviderModels } from "@/runtime/runtime-config-query";
 import type {
 	RuntimeAgentId,
-	RuntimeClineProviderCatalogItem,
-	RuntimeClineProviderModel,
-	RuntimeClineReasoningEffort,
-	RuntimeTaskClineSettings,
+	RuntimeKanbanProviderCatalogItem,
+	RuntimeKanbanProviderModel,
+	RuntimeReasoningEffort,
+	RuntimeTaskAgentSettings,
 } from "@/runtime/types";
 
 // ---------------------------------------------------------------------------
-// Hook: manages fetch state for Cline provider catalog + model lists
+// Hook: manages fetch state for Kanban provider catalog + model lists
 // ---------------------------------------------------------------------------
 
 export interface UseTaskAgentModelPickerInput {
 	active: boolean;
 	workspaceId: string | null;
 	agentId: RuntimeAgentId | undefined;
-	clineSettings?: RuntimeTaskClineSettings;
+	agentSettings?: RuntimeTaskAgentSettings;
 	/** The default agent ID from runtimeConfig.selectedAgentId — used to build the first option label */
 	defaultAgentId?: RuntimeAgentId | null;
-	/** The default Cline provider ID from runtimeConfig.clineProviderSettings.providerId */
+	/** The default Kanban provider ID from runtimeConfig.kanbanProviderSettings.providerId */
 	defaultProviderId?: string | null;
-	/** The default Cline model ID from runtimeConfig.clineProviderSettings.modelId */
+	/** The default Kanban model ID from runtimeConfig.kanbanProviderSettings.modelId */
 	defaultModelId?: string | null;
 }
 
 export interface UseTaskAgentModelPickerResult {
 	agentOptions: Array<{ value: string; label: string }>;
-	clineProviderOptions: Array<{ value: string; label: string }>;
-	clineModelOptions: Array<{ value: string; label: string }>;
+	kanbanProviderOptions: Array<{ value: string; label: string }>;
+	kanbanModelOptions: Array<{ value: string; label: string }>;
 	effectiveDefaultModelId: string | null;
-	providerModels: RuntimeClineProviderModel[];
+	providerModels: RuntimeKanbanProviderModel[];
 	isLoadingProviders: boolean;
 	isLoadingModels: boolean;
 	/** Map of provider ID → its default model ID (from the provider catalog). */
@@ -55,13 +55,13 @@ export function useTaskAgentModelPicker({
 	active,
 	workspaceId,
 	agentId,
-	clineSettings,
+	agentSettings,
 	defaultAgentId,
 	defaultProviderId,
 	defaultModelId,
 }: UseTaskAgentModelPickerInput): UseTaskAgentModelPickerResult {
-	const [providerCatalog, setProviderCatalog] = useState<RuntimeClineProviderCatalogItem[]>([]);
-	const [providerModels, setProviderModels] = useState<RuntimeClineProviderModel[]>([]);
+	const [providerCatalog, setProviderCatalog] = useState<RuntimeKanbanProviderCatalogItem[]>([]);
+	const [providerModels, setProviderModels] = useState<RuntimeKanbanProviderModel[]>([]);
 	const [isLoadingProviders, setIsLoadingProviders] = useState(false);
 	const [isLoadingModels, setIsLoadingModels] = useState(false);
 
@@ -74,7 +74,7 @@ export function useTaskAgentModelPicker({
 		}
 		let cancelled = false;
 		setIsLoadingProviders(true);
-		void fetchClineProviderCatalog(workspaceId)
+		void fetchKanbanProviderCatalog(workspaceId)
 			.then((catalog) => {
 				if (!cancelled) {
 					setProviderCatalog(catalog);
@@ -96,8 +96,8 @@ export function useTaskAgentModelPicker({
 	}, [active, effectiveAgentId, workspaceId]);
 
 	// Derive the effective provider: explicit override takes precedence, then the global default
-	const clineProviderId = clineSettings?.providerId;
-	const effectiveProviderId = (clineProviderId ?? defaultProviderId ?? "").trim() || null;
+	const savedProviderId = agentSettings?.providerId;
+	const effectiveProviderId = (savedProviderId ?? defaultProviderId ?? "").trim() || null;
 
 	useEffect(() => {
 		if (!active || effectiveAgentId !== "cline" || !effectiveProviderId) {
@@ -106,7 +106,7 @@ export function useTaskAgentModelPicker({
 		}
 		let cancelled = false;
 		setIsLoadingModels(true);
-		void fetchClineProviderModels(workspaceId, effectiveProviderId)
+		void fetchKanbanProviderModels(workspaceId, effectiveProviderId)
 			.then((models) => {
 				if (!cancelled) {
 					setProviderModels(models);
@@ -145,7 +145,7 @@ export function useTaskAgentModelPicker({
 		];
 	}, [defaultAgentId]);
 
-	const clineProviderOptions = useMemo(() => {
+	const kanbanProviderOptions = useMemo(() => {
 		let firstLabel = "Default";
 		if (defaultProviderId) {
 			const defaultProvider = providerCatalog.find((p) => p.id === defaultProviderId);
@@ -173,16 +173,16 @@ export function useTaskAgentModelPicker({
 	// When an explicit provider override is selected, the "Default" model label should
 	// reflect that provider's default model — not the global settings model.
 	const effectiveDefaultModelId = useMemo(() => {
-		if (clineProviderId) {
-			const provider = providerCatalog.find((p) => p.id === clineProviderId);
+		if (savedProviderId) {
+			const provider = providerCatalog.find((p) => p.id === savedProviderId);
 			return provider?.defaultModelId ?? null;
 		}
 		const inheritedProviderDefaultModelId =
 			providerCatalog.find((p) => p.id === defaultProviderId)?.defaultModelId ?? null;
 		return defaultModelId ?? inheritedProviderDefaultModelId;
-	}, [clineProviderId, defaultModelId, defaultProviderId, providerCatalog]);
+	}, [savedProviderId, defaultModelId, defaultProviderId, providerCatalog]);
 
-	const clineModelOptions = useMemo(() => {
+	const kanbanModelOptions = useMemo(() => {
 		let defaultLabel = "Default";
 		if (effectiveDefaultModelId) {
 			const defaultModel = providerModels.find((m) => m.id === effectiveDefaultModelId);
@@ -197,8 +197,8 @@ export function useTaskAgentModelPicker({
 
 	return {
 		agentOptions,
-		clineProviderOptions,
-		clineModelOptions,
+		kanbanProviderOptions,
+		kanbanModelOptions,
 		effectiveDefaultModelId,
 		providerModels,
 		isLoadingProviders,
@@ -207,7 +207,7 @@ export function useTaskAgentModelPicker({
 	};
 }
 
-function cloneTaskClineSettings(settings?: RuntimeTaskClineSettings): RuntimeTaskClineSettings | undefined {
+function cloneTaskAgentSettings(settings?: RuntimeTaskAgentSettings): RuntimeTaskAgentSettings | undefined {
 	if (settings === undefined) {
 		return undefined;
 	}
@@ -221,17 +221,17 @@ function cloneTaskClineSettings(settings?: RuntimeTaskClineSettings): RuntimeTas
 }
 
 // ---------------------------------------------------------------------------
-// Component: renders Agent, Cline provider, and Cline model pickers
+// Component: renders Agent, Kanban provider, and Kanban model pickers
 // ---------------------------------------------------------------------------
 
 export function TaskAgentModelPicker({
 	agentId,
 	onAgentIdChange,
-	clineSettings,
-	onClineSettingsChange,
+	agentSettings,
+	onKanbanSettingsChange,
 	agentOptions,
-	clineProviderOptions,
-	clineModelOptions,
+	kanbanProviderOptions,
+	kanbanModelOptions,
 	effectiveDefaultModelId = null,
 	providerModels = [],
 	isLoadingProviders,
@@ -244,58 +244,58 @@ export function TaskAgentModelPicker({
 }: {
 	agentId: RuntimeAgentId | undefined;
 	onAgentIdChange: (value: RuntimeAgentId | undefined) => void;
-	clineSettings?: RuntimeTaskClineSettings | undefined;
-	onClineSettingsChange?: (value: RuntimeTaskClineSettings | undefined) => void;
+	agentSettings?: RuntimeTaskAgentSettings | undefined;
+	onKanbanSettingsChange?: (value: RuntimeTaskAgentSettings | undefined) => void;
 	agentOptions: Array<{ value: string; label: string }>;
-	clineProviderOptions: Array<{ value: string; label: string }>;
-	clineModelOptions: Array<{ value: string; label: string }>;
+	kanbanProviderOptions: Array<{ value: string; label: string }>;
+	kanbanModelOptions: Array<{ value: string; label: string }>;
 	effectiveDefaultModelId?: string | null;
-	providerModels?: RuntimeClineProviderModel[];
+	providerModels?: RuntimeKanbanProviderModel[];
 	isLoadingProviders: boolean;
 	isLoadingModels: boolean;
 	onPopoverOpenChange?: (open: boolean) => void;
-	/** The default agent ID from runtimeConfig — used to decide if Cline pickers should show by default */
+	/** The default agent ID from runtimeConfig — used to decide if Kanban pickers should show by default */
 	defaultAgentId?: RuntimeAgentId | null;
-	/** The default Cline provider ID from runtimeConfig — used to decide if model picker should show by default */
+	/** The default Kanban provider ID from runtimeConfig — used to decide if model picker should show by default */
 	defaultProviderId?: string | null;
-	/** The global default reasoning effort from runtimeConfig.clineProviderSettings.reasoningEffort */
-	defaultReasoningEffort?: RuntimeClineReasoningEffort | null;
+	/** The global default reasoning effort from runtimeConfig.kanbanProviderSettings.reasoningEffort */
+	defaultReasoningEffort?: RuntimeReasoningEffort | null;
 	/** Map of provider ID → its default model ID (from the provider catalog). */
 	providerDefaultModels?: Record<string, string>;
 }): ReactElement {
-	const clineProviderId = clineSettings?.providerId;
-	const clineModelId = clineSettings?.modelId;
-	const clineReasoningEffort = clineSettings?.reasoningEffort;
+	const savedProviderId = agentSettings?.providerId;
+	const savedModelId = agentSettings?.modelId;
+	const savedReasoningEffort = agentSettings?.reasoningEffort;
 
-	const updateTaskClineSettings = useCallback(
-		(updater: (current: RuntimeTaskClineSettings | undefined) => RuntimeTaskClineSettings | undefined) => {
-			onClineSettingsChange?.(updater(cloneTaskClineSettings(clineSettings)));
+	const updateTaskKanbanSettings = useCallback(
+		(updater: (current: RuntimeTaskAgentSettings | undefined) => RuntimeTaskAgentSettings | undefined) => {
+			onKanbanSettingsChange?.(updater(cloneTaskAgentSettings(agentSettings)));
 		},
-		[clineSettings, onClineSettingsChange],
+		[agentSettings, onKanbanSettingsChange],
 	);
 
-	// Show the Cline provider picker when the effective agent is "cline"
+	// Show the Kanban provider picker when the effective agent is "cline"
 	// (either explicitly overridden to cline, or defaulting to cline)
 	const effectiveAgentId = agentId ?? defaultAgentId ?? null;
-	const showClineProviderPicker = effectiveAgentId === "cline";
+	const showKanbanProviderPicker = effectiveAgentId === "cline";
 
-	// Show the Cline model picker when a provider is effectively selected
+	// Show the Kanban model picker when a provider is effectively selected
 	// (either explicitly overridden, or the global default provider is set)
-	const effectiveProviderId = clineProviderId ?? defaultProviderId ?? null;
-	const showClineModelPicker = showClineProviderPicker && Boolean(effectiveProviderId);
-	const hasTaskClineSettingsOverride = clineSettings !== undefined;
-	const selectedTaskReasoningEffort = clineReasoningEffort ?? "";
+	const effectiveProviderId = savedProviderId ?? defaultProviderId ?? null;
+	const showKanbanModelPicker = showKanbanProviderPicker && Boolean(effectiveProviderId);
+	const hasTaskKanbanSettingsOverride = agentSettings !== undefined;
+	const selectedTaskReasoningEffort = savedReasoningEffort ?? "";
 	const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
 	const [isProviderPopoverOpen, setIsProviderPopoverOpen] = useState(false);
 	const [isModelPopoverOpen, setIsModelPopoverOpen] = useState(false);
-	const [reasoningEffort, setReasoningEffort] = useState<RuntimeClineReasoningEffort | "">(
-		hasTaskClineSettingsOverride ? selectedTaskReasoningEffort : (defaultReasoningEffort ?? ""),
+	const [reasoningEffort, setReasoningEffort] = useState<RuntimeReasoningEffort | "">(
+		hasTaskKanbanSettingsOverride ? selectedTaskReasoningEffort : (defaultReasoningEffort ?? ""),
 	);
 	const setReasoningEffortWithOverride = useCallback(
-		(nextReasoningEffort: RuntimeClineReasoningEffort | "") => {
+		(nextReasoningEffort: RuntimeReasoningEffort | "") => {
 			setReasoningEffort(nextReasoningEffort);
-			updateTaskClineSettings((currentSettings) => {
-				const nextSettings = cloneTaskClineSettings(currentSettings) ?? {};
+			updateTaskKanbanSettings((currentSettings) => {
+				const nextSettings = cloneTaskAgentSettings(currentSettings) ?? {};
 				if (nextReasoningEffort) {
 					nextSettings.reasoningEffort = nextReasoningEffort;
 					return nextSettings;
@@ -312,12 +312,12 @@ export function TaskAgentModelPicker({
 				return undefined;
 			});
 		},
-		[defaultReasoningEffort, updateTaskClineSettings],
+		[defaultReasoningEffort, updateTaskKanbanSettings],
 	);
 
 	const modelPickerOptions = useMemo(() => {
-		const defaultOption = clineModelOptions.find((option) => option.value === "");
-		const explicitOptions = clineModelOptions.filter((option) => option.value !== "");
+		const defaultOption = kanbanModelOptions.find((option) => option.value === "");
+		const explicitOptions = kanbanModelOptions.filter((option) => option.value !== "");
 		const providerId = (effectiveProviderId ?? "").trim();
 
 		if (!providerId || explicitOptions.length === 0) {
@@ -328,7 +328,7 @@ export function TaskAgentModelPicker({
 			};
 		}
 
-		const orderedOptions = buildClineAgentModelPickerOptions(providerId, providerModels);
+		const orderedOptions = buildKanbanAgentModelPickerOptions(providerId, providerModels);
 		const explicitOptionByValue = new Map(explicitOptions.map((option) => [option.value, option] as const));
 		const orderedExplicit = orderedOptions.options
 			.map((option) => explicitOptionByValue.get(option.value))
@@ -341,11 +341,11 @@ export function TaskAgentModelPicker({
 			recommendedModelIds: orderedOptions.recommendedModelIds,
 			shouldPinSelectedModelToTop: orderedOptions.shouldPinSelectedModelToTop,
 		};
-	}, [clineModelOptions, effectiveProviderId, providerModels]);
+	}, [kanbanModelOptions, effectiveProviderId, providerModels]);
 
-	const reasoningEnabledModelIds = useMemo(() => getClineReasoningEnabledModelIds(providerModels), [providerModels]);
+	const reasoningEnabledModelIds = useMemo(() => getKanbanReasoningEnabledModelIds(providerModels), [providerModels]);
 	const reasoningEnabledModelIdSet = useMemo(() => new Set(reasoningEnabledModelIds), [reasoningEnabledModelIds]);
-	const effectiveSelectedModelId = (clineModelId ?? effectiveDefaultModelId ?? "").trim();
+	const effectiveSelectedModelId = (savedModelId ?? effectiveDefaultModelId ?? "").trim();
 	const selectedModelCapabilityKnown = useMemo(
 		() => providerModels.some((model) => model.id === effectiveSelectedModelId),
 		[effectiveSelectedModelId, providerModels],
@@ -353,23 +353,23 @@ export function TaskAgentModelPicker({
 	const selectedModelSupportsReasoningEffort = reasoningEnabledModelIdSet.has(effectiveSelectedModelId);
 
 	useEffect(() => {
-		if (!hasTaskClineSettingsOverride) {
+		if (!hasTaskKanbanSettingsOverride) {
 			return;
 		}
 		if (selectedTaskReasoningEffort !== reasoningEffort) {
 			setReasoningEffort(selectedTaskReasoningEffort);
 		}
-	}, [hasTaskClineSettingsOverride, reasoningEffort, selectedTaskReasoningEffort]);
+	}, [hasTaskKanbanSettingsOverride, reasoningEffort, selectedTaskReasoningEffort]);
 
 	useEffect(() => {
-		if (hasTaskClineSettingsOverride) {
+		if (hasTaskKanbanSettingsOverride) {
 			return;
 		}
 		const inheritedReasoningEffort = defaultReasoningEffort ?? "";
 		if (reasoningEffort !== inheritedReasoningEffort) {
 			setReasoningEffort(inheritedReasoningEffort);
 		}
-	}, [defaultReasoningEffort, hasTaskClineSettingsOverride, reasoningEffort]);
+	}, [defaultReasoningEffort, hasTaskKanbanSettingsOverride, reasoningEffort]);
 
 	useEffect(() => {
 		if (!isSettingsExpanded) {
@@ -398,15 +398,15 @@ export function TaskAgentModelPicker({
 
 	const selectedModelButtonText = useMemo(
 		() =>
-			buildClineSelectedModelButtonText({
+			buildKanbanSelectedModelButtonText({
 				modelOptions: modelPickerOptions.options,
-				selectedModelId: clineModelId ?? "",
+				selectedModelId: savedModelId ?? "",
 				reasoningEffort,
 				showReasoningEffort: selectedModelSupportsReasoningEffort,
 				isModelLoading: isLoadingModels,
 			}),
 		[
-			clineModelId,
+			savedModelId,
 			isLoadingModels,
 			modelPickerOptions.options,
 			reasoningEffort,
@@ -424,16 +424,16 @@ export function TaskAgentModelPicker({
 	// effect fires on the initial render before models have been fetched —
 	// at that point isLoadingModels is still false (hasn't been set to true
 	// yet by the fetch effect) and the stale/empty options list would
-	// incorrectly clear a valid saved clineModelId.
+	// incorrectly clear a valid saved modelId.
 	useEffect(() => {
-		if (isLoadingModels || !clineModelId || modelPickerOptions.options.length <= 1) {
+		if (isLoadingModels || !savedModelId || modelPickerOptions.options.length <= 1) {
 			return;
 		}
-		const modelExists = modelPickerOptions.options.some((opt) => opt.value === clineModelId);
+		const modelExists = modelPickerOptions.options.some((opt) => opt.value === savedModelId);
 		if (!modelExists) {
 			const firstRealModel = modelPickerOptions.options.find((opt) => opt.value !== "");
-			updateTaskClineSettings((currentSettings) => {
-				const nextSettings = cloneTaskClineSettings(currentSettings) ?? {};
+			updateTaskKanbanSettings((currentSettings) => {
+				const nextSettings = cloneTaskAgentSettings(currentSettings) ?? {};
 				if (firstRealModel?.value) {
 					nextSettings.modelId = firstRealModel.value;
 					return nextSettings;
@@ -445,7 +445,7 @@ export function TaskAgentModelPicker({
 					: undefined;
 			});
 		}
-	}, [clineModelId, isLoadingModels, modelPickerOptions.options, updateTaskClineSettings]);
+	}, [savedModelId, isLoadingModels, modelPickerOptions.options, updateTaskKanbanSettings]);
 
 	return (
 		<div className="flex flex-col gap-2">
@@ -474,7 +474,7 @@ export function TaskAgentModelPicker({
 									const value = e.currentTarget.value;
 									onAgentIdChange(value ? (value as RuntimeAgentId) : undefined);
 									if (value !== "cline") {
-										onClineSettingsChange?.(undefined);
+										onKanbanSettingsChange?.(undefined);
 										setReasoningEffort("");
 									}
 								}}
@@ -486,23 +486,23 @@ export function TaskAgentModelPicker({
 								))}
 							</NativeSelect>
 						</div>
-						{showClineProviderPicker ? (
+						{showKanbanProviderPicker ? (
 							<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
 								<div className="min-w-0">
 									<span className="text-[11px] text-text-secondary block mb-1">
 										Provider{isLoadingProviders ? " (loading\u2026)" : ""}
 									</span>
 									<SearchSelectDropdown
-										options={clineProviderOptions}
-										selectedValue={clineProviderId ?? ""}
+										options={kanbanProviderOptions}
+										selectedValue={savedProviderId ?? ""}
 										onSelect={(value) => {
 											const newProviderId = value || undefined;
 											const newDefaultModel =
 												newProviderId && providerDefaultModels
 													? providerDefaultModels[newProviderId]
 													: undefined;
-											updateTaskClineSettings((currentSettings) => {
-												const nextSettings = cloneTaskClineSettings(currentSettings) ?? {};
+											updateTaskKanbanSettings((currentSettings) => {
+												const nextSettings = cloneTaskAgentSettings(currentSettings) ?? {};
 												if (newProviderId) {
 													nextSettings.providerId = newProviderId;
 												} else {
@@ -523,7 +523,7 @@ export function TaskAgentModelPicker({
 											});
 											setReasoningEffort(
 												newProviderId ||
-													(clineSettings !== undefined && Object.keys(clineSettings).length === 0)
+													(agentSettings !== undefined && Object.keys(agentSettings).length === 0)
 													? ""
 													: (defaultReasoningEffort ?? ""),
 											);
@@ -538,20 +538,20 @@ export function TaskAgentModelPicker({
 										onPopoverOpenChange={setIsProviderPopoverOpen}
 									/>
 								</div>
-								{showClineModelPicker ? (
+								{showKanbanModelPicker ? (
 									<div className="min-w-0">
 										<span className="text-[11px] text-text-secondary block mb-1">
 											Model{isLoadingModels ? " (loading\u2026)" : ""}
 										</span>
-										<ClineChatModelSelector
+										<KanbanChatModelSelector
 											modelOptions={modelPickerOptions.options}
 											recommendedModelIds={modelPickerOptions.recommendedModelIds}
 											pinSelectedModelToTop={modelPickerOptions.shouldPinSelectedModelToTop}
-											selectedModelId={clineModelId ?? ""}
+											selectedModelId={savedModelId ?? ""}
 											selectedModelButtonText={selectedModelButtonText}
 											onSelectModel={(value) => {
-												updateTaskClineSettings((currentSettings) => {
-													const nextSettings = cloneTaskClineSettings(currentSettings) ?? {};
+												updateTaskKanbanSettings((currentSettings) => {
+													const nextSettings = cloneTaskAgentSettings(currentSettings) ?? {};
 													if (value) {
 														nextSettings.modelId = value;
 													} else {
@@ -569,9 +569,9 @@ export function TaskAgentModelPicker({
 														? nextSettings
 														: undefined;
 												});
-												if (!value && !clineProviderId) {
+												if (!value && !savedProviderId) {
 													setReasoningEffort(
-														clineSettings !== undefined && Object.keys(clineSettings).length === 0
+														agentSettings !== undefined && Object.keys(agentSettings).length === 0
 															? ""
 															: (defaultReasoningEffort ?? ""),
 													);
@@ -583,7 +583,7 @@ export function TaskAgentModelPicker({
 											}}
 											reasoningEnabledModelIds={reasoningEnabledModelIds}
 											defaultOptionSupportsReasoningEffort={
-												!clineModelId && selectedModelSupportsReasoningEffort
+												!savedModelId && selectedModelSupportsReasoningEffort
 											}
 											selectedReasoningEffort={reasoningEffort}
 											onSelectReasoningEffort={(nextReasoningEffort) =>

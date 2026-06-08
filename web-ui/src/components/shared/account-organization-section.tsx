@@ -7,19 +7,19 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
-	fetchClineAccountBalance,
-	fetchClineAccountOrganizations,
-	switchClineAccount,
+	fetchKanbanAccountBalance,
+	fetchKanbanAccountOrganizations,
+	switchKanbanAccount,
 } from "@/runtime/runtime-config-query";
-import type { RuntimeClineAccountBalanceResponse, RuntimeClineAccountOrganization } from "@/runtime/types";
+import type { RuntimeKanbanAccountBalanceResponse, RuntimeKanbanAccountOrganization } from "@/runtime/types";
 import { formatBalance } from "@/utils/format-balance";
 
 const BALANCE_REFRESH_INTERVAL_MS = 60_000;
-const CLINE_APP_BASE_URL = "https://app.cline.bot";
+const KANBAN_APP_BASE_URL = "https://app.cline.bot";
 
 function getCreditsUrl(isOrg: boolean): string {
 	const route = isOrg ? "organization" : "account";
-	return `${CLINE_APP_BASE_URL}/${route}?tab=credits&redirect=true`;
+	return `${KANBAN_APP_BASE_URL}/${route}?tab=credits&redirect=true`;
 }
 
 export function AccountOrganizationSection({
@@ -31,8 +31,8 @@ export function AccountOrganizationSection({
 	open: boolean;
 	onAccountSwitched?: () => void;
 }): React.ReactElement | null {
-	const [organizations, setOrganizations] = useState<RuntimeClineAccountOrganization[]>([]);
-	const [balanceData, setBalanceData] = useState<RuntimeClineAccountBalanceResponse | null>(null);
+	const [organizations, setOrganizations] = useState<RuntimeKanbanAccountOrganization[]>([]);
+	const [balanceData, setBalanceData] = useState<RuntimeKanbanAccountBalanceResponse | null>(null);
 	const [isLoadingOrgs, setIsLoadingOrgs] = useState(false);
 	const [isLoadingBalance, setIsLoadingBalance] = useState(false);
 	const [isSwitching, setIsSwitching] = useState(false);
@@ -47,7 +47,7 @@ export function AccountOrganizationSection({
 		const generation = ++balanceGenRef.current;
 		setIsLoadingBalance(true);
 		try {
-			const response = await fetchClineAccountBalance(workspaceId);
+			const response = await fetchKanbanAccountBalance(workspaceId);
 			if (generation !== balanceGenRef.current) return;
 			setBalanceData(response);
 			setBalanceError(response.error ?? null);
@@ -69,7 +69,7 @@ export function AccountOrganizationSection({
 		const generation = ++orgsGenRef.current;
 		setIsLoadingOrgs(true);
 		try {
-			const response = await fetchClineAccountOrganizations(workspaceId);
+			const response = await fetchKanbanAccountOrganizations(workspaceId);
 			if (generation !== orgsGenRef.current) return;
 			setOrganizations(response.organizations);
 			setOrgsError(response.error ?? null);
@@ -117,7 +117,7 @@ export function AccountOrganizationSection({
 			setIsSwitching(true);
 			try {
 				const organizationId = orgId === "personal" ? null : orgId;
-				const response = await switchClineAccount(workspaceId, organizationId);
+				const response = await switchKanbanAccount(workspaceId, organizationId);
 				if (!response.ok) {
 					setSwitchError(response.error ?? "Failed to switch account.");
 				} else {

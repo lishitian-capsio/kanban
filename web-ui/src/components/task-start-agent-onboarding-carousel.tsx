@@ -3,14 +3,14 @@ import { getRuntimeAgentCatalogEntry } from "@runtime-agent-catalog";
 import { Check } from "lucide-react";
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ClineSetupSection } from "@/components/shared/cline-setup-section";
+import { KanbanSetupSection } from "@/components/shared/kanban-setup-section";
 import { cn } from "@/components/ui/cn";
-import { useRuntimeSettingsClineController } from "@/hooks/use-runtime-settings-cline-controller";
-import { isClineProviderAuthenticated } from "@/runtime/native-agent";
+import { useRuntimeSettingsKanbanController } from "@/hooks/use-runtime-settings-kanban-controller";
+import { isKanbanProviderAuthenticated } from "@/runtime/native-agent";
 import type {
 	RuntimeAgentDefinition,
 	RuntimeAgentId,
-	RuntimeClineProviderSettings,
+	RuntimeKanbanProviderSettings,
 	RuntimeConfigResponse,
 } from "@/runtime/types";
 
@@ -62,7 +62,7 @@ export const TASK_START_ONBOARDING_SLIDES: OnboardingSlide[] = [
 		description:
 			"Create dependency chains of linked tasks that start one another automatically. Agents can auto commit their work as they finish, so you can orchestrate tasks in order and watch the board burn them down automatically.",
 		assetVideoUrl: "https://github.com/user-attachments/assets/9a979242-bd22-4ac1-94c5-3ed5351a99d1",
-		assetAlt: "Linking task cards in Cline Kanban",
+		assetAlt: "Linking task cards in Kanban Kanban",
 		assetWidthPx: 1156,
 		assetHeightPx: 720,
 	},
@@ -72,7 +72,7 @@ export const TASK_START_ONBOARDING_SLIDES: OnboardingSlide[] = [
 		description:
 			"Your workflow will feel like writing tickets, reviewing code, and shipping. Watch the agent work next to real-time diffs, then click lines to leave comments like you're reviewing a PR.",
 		assetVideoUrl: "https://github.com/user-attachments/assets/17992035-c1ca-449a-a48b-bb094007f0a1",
-		assetAlt: "Leaving comments on code diffs in Cline Kanban",
+		assetAlt: "Leaving comments on code diffs in Kanban Kanban",
 		assetWidthPx: 1616,
 		assetHeightPx: 1080,
 	},
@@ -290,7 +290,7 @@ function OnboardingMedia({
 }
 
 function resolveInstallInstructions(agentId: RuntimeAgentId): string {
-	if (agentId === "cline") {
+	if (agentId === "pi") {
 		return "Built-in agent with support for any LLM provider. No CLI install needed.";
 	}
 	if (agentId === "claude") {
@@ -330,10 +330,10 @@ export function TaskStartAgentOnboardingCarousel({
 	runtimeConfig,
 	selectedAgentId,
 	agents,
-	clineProviderSettings,
+	kanbanProviderSettings,
 	activeSlideIndex,
 	onSelectAgent,
-	onClineSetupSaved,
+	onKanbanSetupSaved,
 	onDoneActionChange,
 }: {
 	open: boolean;
@@ -341,15 +341,15 @@ export function TaskStartAgentOnboardingCarousel({
 	runtimeConfig: RuntimeConfigResponse | null;
 	selectedAgentId: RuntimeAgentId | null;
 	agents: RuntimeAgentDefinition[];
-	clineProviderSettings: RuntimeClineProviderSettings | null;
+	kanbanProviderSettings: RuntimeKanbanProviderSettings | null;
 	activeSlideIndex: number;
 	onSelectAgent?: (agentId: RuntimeAgentId) => Promise<AgentSelectionResult>;
-	onClineSetupSaved?: () => void;
+	onKanbanSetupSaved?: () => void;
 	onDoneActionChange?: (action: (() => Promise<OnboardingDoneResult>) | null) => void;
 }): ReactElement {
 	const [activeAgentId, setActiveAgentId] = useState<RuntimeAgentId | null>(selectedAgentId);
 	const [selectionError, setSelectionError] = useState<string | null>(null);
-	const [clineSetupError, setClineSetupError] = useState<string | null>(null);
+	const [kanbanSetupError, setKanbanSetupError] = useState<string | null>(null);
 	const selectionSavePromiseRef = useRef<Promise<AgentSelectionResult> | null>(null);
 
 	useEffect(() => {
@@ -358,8 +358,8 @@ export function TaskStartAgentOnboardingCarousel({
 
 	const currentSlide =
 		TASK_START_ONBOARDING_SLIDES[activeSlideIndex] ?? TASK_START_ONBOARDING_SLIDES[0] ?? FALLBACK_ONBOARDING_SLIDE;
-	const clineAuthenticated = isClineProviderAuthenticated(clineProviderSettings);
-	const clineSettings = useRuntimeSettingsClineController({
+	const kanbanAuthenticated = isKanbanProviderAuthenticated(kanbanProviderSettings);
+	const agentSettings = useRuntimeSettingsKanbanController({
 		open,
 		workspaceId,
 		selectedAgentId: activeAgentId ?? selectedAgentId ?? "cline",
@@ -431,19 +431,19 @@ export function TaskStartAgentOnboardingCarousel({
 		if (activeAgentId !== "cline") {
 			return { ok: true };
 		}
-		if (!clineSettings.hasUnsavedChanges) {
+		if (!agentSettings.hasUnsavedChanges) {
 			return { ok: true };
 		}
-		setClineSetupError(null);
-		const saveResult = await clineSettings.saveProviderSettings();
+		setKanbanSetupError(null);
+		const saveResult = await agentSettings.saveProviderSettings();
 		if (!saveResult.ok) {
-			const message = saveResult.message ?? "Could not save Cline provider settings.";
-			setClineSetupError(message);
+			const message = saveResult.message ?? "Could not save Kanban provider settings.";
+			setKanbanSetupError(message);
 			return { ok: false, message };
 		}
-		onClineSetupSaved?.();
+		onKanbanSetupSaved?.();
 		return { ok: true };
-	}, [activeAgentId, clineSettings, onClineSetupSaved]);
+	}, [activeAgentId, agentSettings, onKanbanSetupSaved]);
 
 	useEffect(() => {
 		onDoneActionChange?.(handleDoneAction);
@@ -521,8 +521,8 @@ export function TaskStartAgentOnboardingCarousel({
 									</RadixCheckbox.Root>
 									<span className="text-[13px] text-text-primary">{agent.label}</span>
 								</span>
-								{agent.id === "cline" ? (
-									clineAuthenticated ? (
+								{agent.id === "pi" ? (
+									kanbanAuthenticated ? (
 										<AgentStatusBadge
 											label="Authenticated"
 											statusClassName="bg-status-green/10 text-status-green"
@@ -536,7 +536,7 @@ export function TaskStartAgentOnboardingCarousel({
 							</div>
 							<p className="mt-2 mb-0 text-[12px] text-text-secondary">
 								{resolveInstallInstructions(agent.id)}
-								{agent.id !== "cline" && agent.installUrl ? (
+								{agent.id !== "pi" && agent.installUrl ? (
 									<>
 										{" "}
 										<a
@@ -550,18 +550,18 @@ export function TaskStartAgentOnboardingCarousel({
 									</>
 								) : null}
 							</p>
-							{agent.id === "cline" ? (
+							{agent.id === "pi" ? (
 								<div className="mt-2">
-									<ClineSetupSection
-										controller={clineSettings}
+									<KanbanSetupSection
+										controller={agentSettings}
 										controlsDisabled={false}
 										showMcpSettings={false}
-										onError={setClineSetupError}
-										onSaved={onClineSetupSaved}
+										onError={setKanbanSetupError}
+										onSaved={onKanbanSetupSaved}
 									/>
-									{clineSetupError ? (
+									{kanbanSetupError ? (
 										<div className="mt-2 rounded-md border border-status-red/30 bg-status-red/5 p-2 text-[12px] text-text-primary">
-											{clineSetupError}
+											{kanbanSetupError}
 										</div>
 									) : null}
 								</div>

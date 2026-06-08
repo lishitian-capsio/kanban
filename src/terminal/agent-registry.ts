@@ -3,7 +3,7 @@ import { getRuntimeLaunchSupportedAgentCatalog, RUNTIME_AGENT_CATALOG } from "..
 import type {
 	RuntimeAgentDefinition,
 	RuntimeAgentId,
-	RuntimeClineProviderSettings,
+	RuntimeKanbanProviderSettings,
 	RuntimeConfigResponse,
 } from "../core/api-contract";
 import { isBinaryAvailableOnPath } from "./command-discovery";
@@ -66,7 +66,7 @@ function getCuratedDefinitions(runtimeConfig: RuntimeConfigState, detected: stri
 	return getRuntimeLaunchSupportedAgentCatalog().map((entry) => {
 		const defaultArgs = getDefaultArgs(entry.id);
 		const command = joinCommand(entry.binary, defaultArgs);
-		const isInstalled = entry.id === "cline" ? true : detectedSet.has(entry.binary);
+		const isInstalled = entry.id === "pi" ? true : detectedSet.has(entry.binary);
 		return {
 			id: entry.id,
 			label: entry.label,
@@ -100,7 +100,7 @@ export function resolveAgentCommand(runtimeConfig: RuntimeConfigState): Resolved
 
 export function buildRuntimeConfigResponse(
 	runtimeConfig: RuntimeConfigState,
-	clineProviderSettings: RuntimeClineProviderSettings,
+	kanbanProviderSettings: RuntimeKanbanProviderSettings,
 ): RuntimeConfigResponse {
 	const detectedCommands = detectInstalledCommands();
 	const agents = getCuratedDefinitions(runtimeConfig, detectedCommands);
@@ -119,10 +119,16 @@ export function buildRuntimeConfigResponse(
 		detectedCommands,
 		agents,
 		shortcuts: runtimeConfig.shortcuts,
-		clineProviderSettings,
+		kanbanProviderSettings,
 		commitPromptTemplate: runtimeConfig.commitPromptTemplate,
 		openPrPromptTemplate: runtimeConfig.openPrPromptTemplate,
 		commitPromptTemplateDefault: runtimeConfig.commitPromptTemplateDefault,
 		openPrPromptTemplateDefault: runtimeConfig.openPrPromptTemplateDefault,
+		proxyEnabled: runtimeConfig.proxyEnabled,
+		proxyHost: runtimeConfig.proxyHost,
+		proxyPort: runtimeConfig.proxyPort,
+		proxyUsername: runtimeConfig.proxyUsername,
+		proxyPassword: runtimeConfig.proxyPassword,
+		noProxy: runtimeConfig.noProxy,
 	};
 }

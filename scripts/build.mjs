@@ -5,7 +5,7 @@ import * as esbuild from "esbuild";
  * and a spawn-helper binary that must live on disk, so it can't be bundled.
  * Everything else esbuild can inline.
  */
-const external = ["node-pty"];
+const external = ["node-pty", "bun:sqlite", "bun"];
 
 /** Bake OTEL telemetry env vars into the bundle at build time. */
 const define = {
@@ -19,26 +19,33 @@ const define = {
 	"process.env.OTEL_EXPORTER_OTLP_HEADERS": JSON.stringify(process.env.OTEL_EXPORTER_OTLP_HEADERS ?? ""),
 };
 
-/**
- * Bundled CJS dependencies call require() on Node built-ins (process, fs, etc.).
- * ESM output needs a real require() function for those calls to work.
- */
-const cjsShimBanner = [
-	'import { createRequire as __kanban_createRequire } from "node:module";',
-	"const require = __kanban_createRequire(import.meta.url);",
-].join("\n");
-
 /** Shared esbuild options for both entry points. */
 const shared = {
 	bundle: true,
 	format: "esm",
 	platform: "node",
-	target: "node20",
+	target: "node22",
 	external,
 	define,
 	sourcemap: true,
 	packages: "bundle",
-	banner: { js: cjsShimBanner },
+	loader: { ".md": "text", ".html": "text" },
+	plugins: [
+		{
+			name: "strip-import-attributes",
+			setup(build) {
+				// esbuild 0.27.x doesn't support `with { type: "text" }` import attributes.
+				// Strip them from .md and .html imports so the text loader can handle them.
+				build.onLoad({ filter: /\.(ts|js|mjs|mts)$/ }, async (args) => {
+					const fs = await import("node:fs");
+					let contents = fs.readFileSync(args.path, "utf8");
+					// Remove `with { type: "text" }` from import statements
+					contents = contents.replace(/\s+with\s*\{\s*type:\s*["']text["']\s*\}/g, "");
+					return { contents, loader: args.path.endsWith(".ts") || args.path.endsWith(".mts") ? "ts" : "js" };
+				});
+			},
+		},
+	],
 };
 
 await Promise.all([
@@ -47,7 +54,7 @@ await Promise.all([
 		...shared,
 		entryPoints: ["src/cli.ts"],
 		outfile: "dist/cli.js",
-		banner: { js: `#!/usr/bin/env node\n${cjsShimBanner}` },
+		banner: { js: "#!/usr/bin/env bun" },
 	}),
 	// Library export
 	esbuild.build({

@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import type { ClineTaskSessionService } from "../cline-sdk/cline-task-session-service";
+import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
 import type {
 	RuntimeGitCheckoutResponse,
 	RuntimeGitDiscardResponse,
@@ -37,10 +37,10 @@ import type { RuntimeTrpcContext } from "./app-router";
 
 export interface CreateWorkspaceApiDependencies {
 	ensureTerminalManagerForWorkspace: (workspaceId: string, repoPath: string) => Promise<TerminalSessionManager>;
-	getScopedClineTaskSessionService: (scope: {
+	getScopedPiTaskSessionService?: (scope: {
 		workspaceId: string;
 		workspacePath: string;
-	}) => Promise<ClineTaskSessionService>;
+	}) => Promise<PiTaskSessionService>;
 	broadcastRuntimeWorkspaceStateUpdated: (workspaceId: string, workspacePath: string) => Promise<void> | void;
 	broadcastRuntimeProjectsUpdated: (preferredCurrentProjectId: string | null) => Promise<void> | void;
 	buildWorkspaceStateSnapshot: (workspaceId: string, workspacePath: string) => Promise<RuntimeWorkspaceStateResponse>;
@@ -94,24 +94,24 @@ function isActiveTaskSessionState(summary: RuntimeTaskSessionSummary | null): bo
 
 function selectLastTurnSummary(
 	terminalSummary: RuntimeTaskSessionSummary | null,
-	clineSummary: RuntimeTaskSessionSummary | null,
+	serviceSummary: RuntimeTaskSessionSummary | null,
 ): RuntimeTaskSessionSummary | null {
 	if (!terminalSummary) {
-		return clineSummary;
+		return serviceSummary;
 	}
-	if (!clineSummary) {
+	if (!serviceSummary) {
 		return terminalSummary;
 	}
 	const terminalIsActive = isActiveTaskSessionState(terminalSummary);
-	const clineIsActive = isActiveTaskSessionState(clineSummary);
-	if (terminalIsActive !== clineIsActive) {
-		return clineIsActive ? clineSummary : terminalSummary;
+	const serviceIsActive = isActiveTaskSessionState(serviceSummary);
+	if (terminalIsActive !== serviceIsActive) {
+		return serviceIsActive ? serviceSummary : terminalSummary;
 	}
-	if (terminalSummary.updatedAt !== clineSummary.updatedAt) {
-		return terminalSummary.updatedAt > clineSummary.updatedAt ? terminalSummary : clineSummary;
+	if (terminalSummary.updatedAt !== serviceSummary.updatedAt) {
+		return terminalSummary.updatedAt > serviceSummary.updatedAt ? terminalSummary : serviceSummary;
 	}
-	if (clineSummary.agentId === "cline" && terminalSummary.agentId !== "cline") {
-		return clineSummary;
+	if (serviceSummary.agentId === "pi" && terminalSummary.agentId !== "pi") {
+		return serviceSummary;
 	}
 	return terminalSummary;
 }
@@ -294,10 +294,14 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 					workspaceScope.workspaceId,
 					workspaceScope.workspacePath,
 				);
-				const clineTaskSessionService = await deps.getScopedClineTaskSessionService(workspaceScope);
+				let sessionSummary: import("../core/api-contract").RuntimeTaskSessionSummary | null = null;
+				if (deps.getScopedPiTaskSessionService) {
+					const piService = await deps.getScopedPiTaskSessionService(workspaceScope);
+					sessionSummary = piService.getSummary(normalizedInput.taskId);
+				}
 				const summary = selectLastTurnSummary(
 					terminalManager.getSummary(normalizedInput.taskId),
-					clineTaskSessionService.getSummary(normalizedInput.taskId),
+					sessionSummary,
 				);
 				const fromCheckpoint = summary?.previousTurnCheckpoint;
 				const toCheckpoint = summary?.latestTurnCheckpoint;

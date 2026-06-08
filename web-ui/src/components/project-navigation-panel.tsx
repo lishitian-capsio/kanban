@@ -4,7 +4,7 @@ import { ChevronDown, ChevronUp, Ellipsis, ExternalLink, Info, Lightbulb, Plus, 
 import { type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { canShowFeaturebaseFeedbackButton } from "@/components/featurebase-feedback-button";
 import { Button } from "@/components/ui/button";
-import { ClineIcon } from "@/components/ui/cline-icon";
+import { KanbanIcon } from "@/components/ui/kanban-icon";
 import { cn } from "@/components/ui/cn";
 import {
 	AlertDialog,
@@ -20,7 +20,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import type { FeaturebaseFeedbackState } from "@/hooks/use-featurebase-feedback-widget";
 import { useIsMobile } from "@/hooks/use-is-mobile";
-import type { RuntimeAgentId, RuntimeClineProviderSettings, RuntimeProjectSummary } from "@/runtime/types";
+import type { RuntimeAgentId, RuntimeKanbanProviderSettings, RuntimeProjectSummary } from "@/runtime/types";
 import {
 	LocalStorageKey,
 	readLocalStorageItem,
@@ -35,7 +35,7 @@ const COLLAPSED_WIDTH = 48;
 const SIDEBAR_COLLAPSE_THRESHOLD = 120;
 const SIDEBAR_MIN_EXPANDED_WIDTH = 200;
 const SIDEBAR_MAX_EXPANDED_WIDTH = 600;
-const GITHUB_ISSUES_URL = "https://github.com/cline/kanban/issues";
+const GITHUB_ISSUES_URL = "https://github.com/kanban/kanban/issues";
 
 interface TaskCountBadge {
 	id: string;
@@ -55,7 +55,7 @@ export function ProjectNavigationPanel({
 	canShowAgentSection,
 	agentSectionContent,
 	selectedAgentId,
-	clineProviderSettings,
+	kanbanProviderSettings,
 	featurebaseFeedbackState,
 	onSelectProject,
 	onRemoveProject,
@@ -74,7 +74,7 @@ export function ProjectNavigationPanel({
 	canShowAgentSection: boolean;
 	agentSectionContent?: ReactNode;
 	selectedAgentId?: RuntimeAgentId | null;
-	clineProviderSettings?: RuntimeClineProviderSettings | null;
+	kanbanProviderSettings?: RuntimeKanbanProviderSettings | null;
 	featurebaseFeedbackState?: FeaturebaseFeedbackState;
 	onSelectProject: (projectId: string) => void;
 	onRemoveProject: (projectId: string) => Promise<boolean>;
@@ -87,7 +87,7 @@ export function ProjectNavigationPanel({
 	const sortedProjects = [...projects].sort((a, b) => a.path.localeCompare(b.path));
 	const shouldShowFeaturebaseFeedback = canShowFeaturebaseFeedbackButton({
 		selectedAgentId,
-		clineProviderSettings,
+		kanbanProviderSettings,
 		featurebaseFeedbackState,
 	});
 
@@ -299,8 +299,8 @@ export function ProjectNavigationPanel({
 			<div style={{ padding: "12px 12px 8px" }}>
 				<div className="flex items-center justify-between">
 					<div className="font-semibold text-base flex items-baseline gap-1.5">
-						<ClineIcon size={18} className="text-text-primary shrink-0 self-center" />
-						Cline <span className="text-text-secondary font-normal text-xs">v{__APP_VERSION__}</span>
+						<KanbanIcon size={18} className="text-text-primary shrink-0 self-center" />
+						Kanban <span className="text-text-secondary font-normal text-xs">v{__APP_VERSION__}</span>
 					</div>
 					{isMobile ? (
 						<Button
@@ -402,8 +402,8 @@ export function ProjectNavigationPanel({
 				</>
 			) : (
 				<div className="flex flex-1 min-h-0 flex-col">
-					{selectedAgentId && selectedAgentId !== "cline" ? <TerminalAgentHints /> : null}
-					<div className="flex flex-1 min-h-0 overflow-hidden bg-surface-1 px-2 pb-2 pt-1">
+					{selectedAgentId && selectedAgentId !== "pi" ? <TerminalAgentHints /> : null}
+					<div className="flex flex-1 min-h-0 overflow-hidden bg-surface-1 px-2 pb-2 pt-1 [&>*]:w-full [&>*]:self-stretch">
 						{agentSectionContent ?? (
 							<div className="flex w-full items-center justify-center rounded-md border border-border bg-surface-2 px-3 text-center text-sm text-text-secondary">
 								Select a project to use the agent.

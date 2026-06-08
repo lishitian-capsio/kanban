@@ -525,7 +525,11 @@ export function createTerminalWebSocketBridge({
 			}
 
 			if (message.type === "resize") {
-				terminalManager.resize(taskId, message.cols, message.rows, message.pixelWidth, message.pixelHeight);
+				try {
+					terminalManager.resize(taskId, message.cols, message.rows, message.pixelWidth, message.pixelHeight);
+				} catch (error) {
+					// PTY may have already exited; ignore resize failures to avoid crashing the server.
+				}
 				return;
 			}
 

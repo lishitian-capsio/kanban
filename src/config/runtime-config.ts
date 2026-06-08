@@ -17,6 +17,12 @@ interface RuntimeGlobalConfigFileShape {
 	readyForReviewNotificationsEnabled?: boolean;
 	commitPromptTemplate?: string;
 	openPrPromptTemplate?: string;
+	proxyEnabled?: boolean;
+	proxyHost?: string;
+	proxyPort?: string;
+	proxyUsername?: string;
+	proxyPassword?: string;
+	noProxy?: string;
 }
 
 interface RuntimeProjectConfigFileShape {
@@ -35,6 +41,12 @@ export interface RuntimeConfigState {
 	openPrPromptTemplate: string;
 	commitPromptTemplateDefault: string;
 	openPrPromptTemplateDefault: string;
+	proxyEnabled: boolean;
+	proxyHost: string;
+	proxyPort: string;
+	proxyUsername: string;
+	proxyPassword: string;
+	noProxy: string;
 }
 
 export interface RuntimeConfigUpdateInput {
@@ -45,18 +57,23 @@ export interface RuntimeConfigUpdateInput {
 	shortcuts?: RuntimeProjectShortcut[];
 	commitPromptTemplate?: string;
 	openPrPromptTemplate?: string;
+	proxyEnabled?: boolean;
+	proxyHost?: string;
+	proxyPort?: string;
+	proxyUsername?: string;
+	proxyPassword?: string;
+	noProxy?: string;
 }
 
-const RUNTIME_HOME_PARENT_DIR = ".cline";
-const RUNTIME_HOME_DIR = "kanban";
+const RUNTIME_HOME_DIR = ".kanban";
 const CONFIG_FILENAME = "config.json";
-const PROJECT_CONFIG_PARENT_DIR = ".cline";
-const PROJECT_CONFIG_DIR = "kanban";
+const PROJECT_CONFIG_DIR = ".kanban";
 const PROJECT_CONFIG_FILENAME = "config.json";
-const DEFAULT_AGENT_ID: RuntimeAgentId = "cline";
+const DEFAULT_AGENT_ID: RuntimeAgentId = "pi";
 const AUTO_SELECT_AGENT_PRIORITY: readonly RuntimeAgentId[] = ["claude", "codex", "droid", "kiro"];
 const DEFAULT_AGENT_AUTONOMOUS_MODE_ENABLED = true;
 const DEFAULT_READY_FOR_REVIEW_NOTIFICATIONS_ENABLED = true;
+const DEFAULT_PROXY_ENABLED = false;
 const DEFAULT_COMMIT_PROMPT_TEMPLATE = `You are in a worktree on a detached HEAD. When you are finished with the task, commit the working changes onto {{base_ref}}.
 
 - Do not run destructive commands: git reset --hard, git clean -fdx, git worktree remove, rm/mv on repository paths.
@@ -113,7 +130,7 @@ export function pickBestInstalledAgentIdFromDetected(detectedCommands: readonly 
 }
 
 function getRuntimeHomePath(): string {
-	return join(homedir(), RUNTIME_HOME_PARENT_DIR, RUNTIME_HOME_DIR);
+	return join(homedir(), RUNTIME_HOME_DIR);
 }
 
 function normalizeAgentId(agentId: RuntimeAgentId | string | null | undefined): RuntimeAgentId {
@@ -124,7 +141,7 @@ function normalizeAgentId(agentId: RuntimeAgentId | string | null | undefined): 
 			agentId === "opencode" ||
 			agentId === "droid" ||
 			agentId === "kiro" ||
-			agentId === "cline") &&
+			agentId === "pi") &&
 		isRuntimeAgentLaunchSupported(agentId)
 	) {
 		return agentId;
@@ -178,6 +195,13 @@ function normalizePromptTemplate(value: unknown, fallback: string): string {
 	return normalized.length > 0 ? value : fallback;
 }
 
+function normalizeString(value: unknown): string {
+	if (typeof value !== "string") {
+		return "";
+	}
+	return value.trim();
+}
+
 function normalizeBoolean(value: unknown, fallback: boolean): boolean {
 	if (typeof value === "boolean") {
 		return value;
@@ -205,7 +229,7 @@ export function getRuntimeGlobalConfigPath(): string {
 }
 
 export function getRuntimeProjectConfigPath(cwd: string): string {
-	return join(resolve(cwd), PROJECT_CONFIG_PARENT_DIR, PROJECT_CONFIG_DIR, PROJECT_CONFIG_FILENAME);
+	return join(resolve(cwd), PROJECT_CONFIG_DIR, PROJECT_CONFIG_FILENAME);
 }
 
 interface RuntimeConfigPaths {
@@ -291,6 +315,12 @@ function toRuntimeConfigState({
 		),
 		commitPromptTemplateDefault: DEFAULT_COMMIT_PROMPT_TEMPLATE,
 		openPrPromptTemplateDefault: DEFAULT_OPEN_PR_PROMPT_TEMPLATE,
+		proxyEnabled: normalizeBoolean(globalConfig?.proxyEnabled, DEFAULT_PROXY_ENABLED),
+		proxyHost: normalizeString(globalConfig?.proxyHost),
+		proxyPort: normalizeString(globalConfig?.proxyPort),
+		proxyUsername: normalizeString(globalConfig?.proxyUsername),
+		proxyPassword: normalizeString(globalConfig?.proxyPassword),
+		noProxy: normalizeString(globalConfig?.noProxy),
 	};
 }
 
@@ -312,6 +342,12 @@ async function writeRuntimeGlobalConfigFile(
 		readyForReviewNotificationsEnabled?: boolean;
 		commitPromptTemplate?: string;
 		openPrPromptTemplate?: string;
+		proxyEnabled?: boolean;
+		proxyHost?: string;
+		proxyPort?: string;
+		proxyUsername?: string;
+		proxyPassword?: string;
+		noProxy?: string;
 	},
 ): Promise<void> {
 	const existing = await readRuntimeConfigFile<RuntimeGlobalConfigFileShape>(configPath);
@@ -340,6 +376,16 @@ async function writeRuntimeGlobalConfigFile(
 		config.openPrPromptTemplate === undefined
 			? DEFAULT_OPEN_PR_PROMPT_TEMPLATE
 			: normalizePromptTemplate(config.openPrPromptTemplate, DEFAULT_OPEN_PR_PROMPT_TEMPLATE);
+
+	const proxyEnabled =
+		config.proxyEnabled === undefined
+			? DEFAULT_PROXY_ENABLED
+			: normalizeBoolean(config.proxyEnabled, DEFAULT_PROXY_ENABLED);
+	const proxyHost = config.proxyHost === undefined ? undefined : normalizeString(config.proxyHost);
+	const proxyPort = config.proxyPort === undefined ? undefined : normalizeString(config.proxyPort);
+	const proxyUsername = config.proxyUsername === undefined ? undefined : normalizeString(config.proxyUsername);
+	const proxyPassword = config.proxyPassword === undefined ? undefined : normalizeString(config.proxyPassword);
+	const noProxy = config.noProxy === undefined ? undefined : normalizeString(config.noProxy);
 
 	const payload: RuntimeGlobalConfigFileShape = {};
 	if (selectedAgentId !== undefined) {
@@ -373,6 +419,34 @@ async function writeRuntimeGlobalConfigFile(
 	}
 	if (hasOwnKey(existing, "openPrPromptTemplate") || openPrPromptTemplate !== DEFAULT_OPEN_PR_PROMPT_TEMPLATE) {
 		payload.openPrPromptTemplate = openPrPromptTemplate;
+	}
+	if (hasOwnKey(existing, "proxyEnabled") || proxyEnabled !== DEFAULT_PROXY_ENABLED) {
+		payload.proxyEnabled = proxyEnabled;
+	}
+	if (proxyHost !== undefined) {
+		if (proxyHost || hasOwnKey(existing, "proxyHost")) payload.proxyHost = proxyHost;
+	} else if (existing?.proxyHost) {
+		payload.proxyHost = existing.proxyHost;
+	}
+	if (proxyPort !== undefined) {
+		if (proxyPort || hasOwnKey(existing, "proxyPort")) payload.proxyPort = proxyPort;
+	} else if (existing?.proxyPort) {
+		payload.proxyPort = existing.proxyPort;
+	}
+	if (proxyUsername !== undefined) {
+		if (proxyUsername || hasOwnKey(existing, "proxyUsername")) payload.proxyUsername = proxyUsername;
+	} else if (existing?.proxyUsername) {
+		payload.proxyUsername = existing.proxyUsername;
+	}
+	if (proxyPassword !== undefined) {
+		if (proxyPassword || hasOwnKey(existing, "proxyPassword")) payload.proxyPassword = proxyPassword;
+	} else if (existing?.proxyPassword) {
+		payload.proxyPassword = existing.proxyPassword;
+	}
+	if (noProxy !== undefined) {
+		if (noProxy || hasOwnKey(existing, "noProxy")) payload.noProxy = noProxy;
+	} else if (existing?.noProxy) {
+		payload.noProxy = existing.noProxy;
 	}
 
 	await lockedFileSystem.writeJsonFileAtomic(configPath, payload, {
@@ -456,6 +530,12 @@ function createRuntimeConfigStateFromValues(input: {
 	shortcuts: RuntimeProjectShortcut[];
 	commitPromptTemplate: string;
 	openPrPromptTemplate: string;
+	proxyEnabled?: boolean;
+	proxyHost?: string;
+	proxyPort?: string;
+	proxyUsername?: string;
+	proxyPassword?: string;
+	noProxy?: string;
 }): RuntimeConfigState {
 	return {
 		globalConfigPath: input.globalConfigPath,
@@ -475,6 +555,12 @@ function createRuntimeConfigStateFromValues(input: {
 		openPrPromptTemplate: normalizePromptTemplate(input.openPrPromptTemplate, DEFAULT_OPEN_PR_PROMPT_TEMPLATE),
 		commitPromptTemplateDefault: DEFAULT_COMMIT_PROMPT_TEMPLATE,
 		openPrPromptTemplateDefault: DEFAULT_OPEN_PR_PROMPT_TEMPLATE,
+		proxyEnabled: normalizeBoolean(input.proxyEnabled, DEFAULT_PROXY_ENABLED),
+		proxyHost: normalizeString(input.proxyHost),
+		proxyPort: normalizeString(input.proxyPort),
+		proxyUsername: normalizeString(input.proxyUsername),
+		proxyPassword: normalizeString(input.proxyPassword),
+		noProxy: normalizeString(input.noProxy),
 	};
 }
 
@@ -489,6 +575,12 @@ export function toGlobalRuntimeConfigState(current: RuntimeConfigState): Runtime
 		shortcuts: [],
 		commitPromptTemplate: current.commitPromptTemplate,
 		openPrPromptTemplate: current.openPrPromptTemplate,
+		proxyEnabled: current.proxyEnabled,
+		proxyHost: current.proxyHost,
+		proxyPort: current.proxyPort,
+		proxyUsername: current.proxyUsername,
+		proxyPassword: current.proxyPassword,
+		noProxy: current.noProxy,
 	});
 }
 
@@ -524,6 +616,12 @@ export async function saveRuntimeConfig(
 		shortcuts: RuntimeProjectShortcut[];
 		commitPromptTemplate: string;
 		openPrPromptTemplate: string;
+		proxyEnabled?: boolean;
+		proxyHost?: string;
+		proxyPort?: string;
+		proxyUsername?: string;
+		proxyPassword?: string;
+		noProxy?: string;
 	},
 ): Promise<RuntimeConfigState> {
 	const { globalConfigPath, projectConfigPath } = resolveRuntimeConfigPaths(cwd);
@@ -535,6 +633,12 @@ export async function saveRuntimeConfig(
 			readyForReviewNotificationsEnabled: config.readyForReviewNotificationsEnabled,
 			commitPromptTemplate: config.commitPromptTemplate,
 			openPrPromptTemplate: config.openPrPromptTemplate,
+			proxyEnabled: config.proxyEnabled,
+			proxyHost: config.proxyHost,
+			proxyPort: config.proxyPort,
+			proxyUsername: config.proxyUsername,
+			proxyPassword: config.proxyPassword,
+			noProxy: config.noProxy,
 		});
 		await writeRuntimeProjectConfigFile(projectConfigPath, { shortcuts: config.shortcuts });
 		return createRuntimeConfigStateFromValues({
@@ -547,6 +651,12 @@ export async function saveRuntimeConfig(
 			shortcuts: config.shortcuts,
 			commitPromptTemplate: config.commitPromptTemplate,
 			openPrPromptTemplate: config.openPrPromptTemplate,
+			proxyEnabled: config.proxyEnabled,
+			proxyHost: config.proxyHost,
+			proxyPort: config.proxyPort,
+			proxyUsername: config.proxyUsername,
+			proxyPassword: config.proxyPassword,
+			noProxy: config.noProxy,
 		});
 	});
 }
@@ -568,6 +678,12 @@ export async function updateRuntimeConfig(cwd: string, updates: RuntimeConfigUpd
 			shortcuts: projectConfigPath ? (updates.shortcuts ?? current.shortcuts) : current.shortcuts,
 			commitPromptTemplate: updates.commitPromptTemplate ?? current.commitPromptTemplate,
 			openPrPromptTemplate: updates.openPrPromptTemplate ?? current.openPrPromptTemplate,
+			proxyEnabled: updates.proxyEnabled ?? current.proxyEnabled,
+			proxyHost: updates.proxyHost ?? current.proxyHost,
+			proxyPort: updates.proxyPort ?? current.proxyPort,
+			proxyUsername: updates.proxyUsername ?? current.proxyUsername,
+			proxyPassword: updates.proxyPassword ?? current.proxyPassword,
+			noProxy: updates.noProxy ?? current.noProxy,
 		};
 
 		const hasChanges =
@@ -577,6 +693,12 @@ export async function updateRuntimeConfig(cwd: string, updates: RuntimeConfigUpd
 			nextConfig.readyForReviewNotificationsEnabled !== current.readyForReviewNotificationsEnabled ||
 			nextConfig.commitPromptTemplate !== current.commitPromptTemplate ||
 			nextConfig.openPrPromptTemplate !== current.openPrPromptTemplate ||
+			nextConfig.proxyEnabled !== current.proxyEnabled ||
+			nextConfig.proxyHost !== current.proxyHost ||
+			nextConfig.proxyPort !== current.proxyPort ||
+			nextConfig.proxyUsername !== current.proxyUsername ||
+			nextConfig.proxyPassword !== current.proxyPassword ||
+			nextConfig.noProxy !== current.noProxy ||
 			!areRuntimeProjectShortcutsEqual(nextConfig.shortcuts, current.shortcuts);
 
 		if (!hasChanges) {
@@ -590,6 +712,12 @@ export async function updateRuntimeConfig(cwd: string, updates: RuntimeConfigUpd
 			readyForReviewNotificationsEnabled: nextConfig.readyForReviewNotificationsEnabled,
 			commitPromptTemplate: nextConfig.commitPromptTemplate,
 			openPrPromptTemplate: nextConfig.openPrPromptTemplate,
+			proxyEnabled: nextConfig.proxyEnabled,
+			proxyHost: nextConfig.proxyHost,
+			proxyPort: nextConfig.proxyPort,
+			proxyUsername: nextConfig.proxyUsername,
+			proxyPassword: nextConfig.proxyPassword,
+			noProxy: nextConfig.noProxy,
 		});
 		await writeRuntimeProjectConfigFile(projectConfigPath, {
 			shortcuts: nextConfig.shortcuts,
@@ -604,6 +732,12 @@ export async function updateRuntimeConfig(cwd: string, updates: RuntimeConfigUpd
 			shortcuts: nextConfig.shortcuts,
 			commitPromptTemplate: nextConfig.commitPromptTemplate,
 			openPrPromptTemplate: nextConfig.openPrPromptTemplate,
+			proxyEnabled: nextConfig.proxyEnabled,
+			proxyHost: nextConfig.proxyHost,
+			proxyPort: nextConfig.proxyPort,
+			proxyUsername: nextConfig.proxyUsername,
+			proxyPassword: nextConfig.proxyPassword,
+			noProxy: nextConfig.noProxy,
 		});
 	});
 }
@@ -633,6 +767,12 @@ export async function updateGlobalRuntimeConfig(
 				shortcuts: current.shortcuts,
 				commitPromptTemplate: updates.commitPromptTemplate ?? current.commitPromptTemplate,
 				openPrPromptTemplate: updates.openPrPromptTemplate ?? current.openPrPromptTemplate,
+				proxyEnabled: updates.proxyEnabled ?? current.proxyEnabled,
+				proxyHost: updates.proxyHost ?? current.proxyHost,
+				proxyPort: updates.proxyPort ?? current.proxyPort,
+				proxyUsername: updates.proxyUsername ?? current.proxyUsername,
+				proxyPassword: updates.proxyPassword ?? current.proxyPassword,
+				noProxy: updates.noProxy ?? current.noProxy,
 			};
 
 			const hasChanges =
@@ -641,7 +781,13 @@ export async function updateGlobalRuntimeConfig(
 				nextConfig.agentAutonomousModeEnabled !== current.agentAutonomousModeEnabled ||
 				nextConfig.readyForReviewNotificationsEnabled !== current.readyForReviewNotificationsEnabled ||
 				nextConfig.commitPromptTemplate !== current.commitPromptTemplate ||
-				nextConfig.openPrPromptTemplate !== current.openPrPromptTemplate;
+				nextConfig.openPrPromptTemplate !== current.openPrPromptTemplate ||
+				nextConfig.proxyEnabled !== current.proxyEnabled ||
+				nextConfig.proxyHost !== current.proxyHost ||
+				nextConfig.proxyPort !== current.proxyPort ||
+				nextConfig.proxyUsername !== current.proxyUsername ||
+				nextConfig.proxyPassword !== current.proxyPassword ||
+				nextConfig.noProxy !== current.noProxy;
 
 			if (!hasChanges) {
 				return current;
@@ -654,6 +800,12 @@ export async function updateGlobalRuntimeConfig(
 				readyForReviewNotificationsEnabled: nextConfig.readyForReviewNotificationsEnabled,
 				commitPromptTemplate: nextConfig.commitPromptTemplate,
 				openPrPromptTemplate: nextConfig.openPrPromptTemplate,
+				proxyEnabled: nextConfig.proxyEnabled,
+				proxyHost: nextConfig.proxyHost,
+				proxyPort: nextConfig.proxyPort,
+				proxyUsername: nextConfig.proxyUsername,
+				proxyPassword: nextConfig.proxyPassword,
+				noProxy: nextConfig.noProxy,
 			});
 
 			return createRuntimeConfigStateFromValues({
@@ -666,6 +818,12 @@ export async function updateGlobalRuntimeConfig(
 				shortcuts: nextConfig.shortcuts,
 				commitPromptTemplate: nextConfig.commitPromptTemplate,
 				openPrPromptTemplate: nextConfig.openPrPromptTemplate,
+				proxyEnabled: nextConfig.proxyEnabled,
+				proxyHost: nextConfig.proxyHost,
+				proxyPort: nextConfig.proxyPort,
+				proxyUsername: nextConfig.proxyUsername,
+				proxyPassword: nextConfig.proxyPassword,
+				noProxy: nextConfig.noProxy,
 			});
 		},
 	);

@@ -1,4 +1,4 @@
-// The Cline API returns balance in micro-units (1 credit = 1,000,000 micro-units).
+// The Kanban API returns balance in micro-units (1 credit = 1,000,000 micro-units).
 const MICRO_UNITS_PER_CREDIT = 1_000_000;
 const USD_FORMATTER = new Intl.NumberFormat("en-US", {
 	style: "currency",

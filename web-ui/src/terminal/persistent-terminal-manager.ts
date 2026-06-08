@@ -450,7 +450,7 @@ class PersistentTerminal {
 			}
 			if (payload.type === "exit") {
 				const label = payload.code == null ? "session exited" : `session exited with code ${payload.code}`;
-				void this.enqueueTerminalWrite(`\r\n[kanban] ${label}\r\n`);
+				void this.enqueueTerminalWrite(`\r\n[kanban] ${label}. Close and reopen terminal to retry.\r\n`);
 				return;
 			}
 			if (payload.type === "error") {

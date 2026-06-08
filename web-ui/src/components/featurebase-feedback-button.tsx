@@ -1,22 +1,22 @@
 import { Button } from "@/components/ui/button";
 import type { FeaturebaseFeedbackState } from "@/hooks/use-featurebase-feedback-widget";
-import { isClineOauthAuthenticated, isNativeClineAgentSelected } from "@/runtime/native-agent";
-import type { RuntimeAgentId, RuntimeClineProviderSettings } from "@/runtime/types";
+import { isKanbanOauthAuthenticated, isNativeAgentSelected } from "@/runtime/native-agent";
+import type { RuntimeAgentId, RuntimeKanbanProviderSettings } from "@/runtime/types";
 
 interface FeaturebaseFeedbackVisibilityInput {
 	selectedAgentId?: RuntimeAgentId | null;
-	clineProviderSettings?: RuntimeClineProviderSettings | null;
+	kanbanProviderSettings?: RuntimeKanbanProviderSettings | null;
 	featurebaseFeedbackState?: FeaturebaseFeedbackState;
 }
 
 export function canShowFeaturebaseFeedbackButton({
 	selectedAgentId,
-	clineProviderSettings,
+	kanbanProviderSettings,
 	featurebaseFeedbackState,
 }: FeaturebaseFeedbackVisibilityInput): boolean {
-	const isClineAgent = isNativeClineAgentSelected(selectedAgentId);
-	const isAuthenticated = isClineOauthAuthenticated(clineProviderSettings);
-	return isClineAgent && isAuthenticated && featurebaseFeedbackState !== undefined;
+	const isKanbanAgent = isNativeAgentSelected(selectedAgentId);
+	const isAuthenticated = isKanbanOauthAuthenticated(kanbanProviderSettings);
+	return isKanbanAgent && isAuthenticated && featurebaseFeedbackState !== undefined;
 }
 
 interface FeaturebaseFeedbackButtonProps extends FeaturebaseFeedbackVisibilityInput {
@@ -28,7 +28,7 @@ interface FeaturebaseFeedbackButtonProps extends FeaturebaseFeedbackVisibilityIn
 
 export function FeaturebaseFeedbackButton({
 	selectedAgentId,
-	clineProviderSettings,
+	kanbanProviderSettings,
 	featurebaseFeedbackState,
 	size = "sm",
 	variant = "default",
@@ -38,7 +38,7 @@ export function FeaturebaseFeedbackButton({
 	if (
 		!canShowFeaturebaseFeedbackButton({
 			selectedAgentId,
-			clineProviderSettings,
+			kanbanProviderSettings,
 			featurebaseFeedbackState,
 		})
 	) {

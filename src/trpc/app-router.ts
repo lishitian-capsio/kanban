@@ -6,32 +6,32 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import type {
-	RuntimeClineAccountBalanceResponse,
-	RuntimeClineAccountOrganizationsResponse,
-	RuntimeClineAccountProfileResponse,
-	RuntimeClineAccountSwitchRequest,
-	RuntimeClineAccountSwitchResponse,
-	RuntimeClineAddProviderRequest,
-	RuntimeClineAddProviderResponse,
-	RuntimeClineDeviceAuthCompleteRequest,
-	RuntimeClineDeviceAuthCompleteResponse,
-	RuntimeClineDeviceAuthStartResponse,
-	RuntimeClineKanbanAccessResponse,
-	RuntimeClineMcpAuthStatusResponse,
-	RuntimeClineMcpOAuthRequest,
-	RuntimeClineMcpOAuthResponse,
-	RuntimeClineMcpSettingsResponse,
-	RuntimeClineMcpSettingsSaveRequest,
-	RuntimeClineMcpSettingsSaveResponse,
-	RuntimeClineOauthLoginRequest,
-	RuntimeClineOauthLoginResponse,
-	RuntimeClineProviderCatalogResponse,
-	RuntimeClineProviderModelsRequest,
-	RuntimeClineProviderModelsResponse,
-	RuntimeClineProviderSettingsSaveRequest,
-	RuntimeClineProviderSettingsSaveResponse,
-	RuntimeClineUpdateProviderRequest,
-	RuntimeClineUpdateProviderResponse,
+	RuntimeKanbanAccountBalanceResponse,
+	RuntimeKanbanAccountOrganizationsResponse,
+	RuntimeKanbanAccountProfileResponse,
+	RuntimeKanbanAccountSwitchRequest,
+	RuntimeKanbanAccountSwitchResponse,
+	RuntimeKanbanAddProviderRequest,
+	RuntimeKanbanAddProviderResponse,
+	RuntimeKanbanDeviceAuthCompleteRequest,
+	RuntimeKanbanDeviceAuthCompleteResponse,
+	RuntimeKanbanDeviceAuthStartResponse,
+	RuntimeKanbanKanbanAccessResponse,
+	RuntimeKanbanMcpAuthStatusResponse,
+	RuntimeKanbanMcpOAuthRequest,
+	RuntimeKanbanMcpOAuthResponse,
+	RuntimeKanbanMcpSettingsResponse,
+	RuntimeKanbanMcpSettingsSaveRequest,
+	RuntimeKanbanMcpSettingsSaveResponse,
+	RuntimeKanbanOauthLoginRequest,
+	RuntimeKanbanOauthLoginResponse,
+	RuntimeKanbanProviderCatalogResponse,
+	RuntimeKanbanProviderModelsRequest,
+	RuntimeKanbanProviderModelsResponse,
+	RuntimeKanbanProviderSettingsSaveRequest,
+	RuntimeKanbanProviderSettingsSaveResponse,
+	RuntimeKanbanUpdateProviderRequest,
+	RuntimeKanbanUpdateProviderResponse,
 	RuntimeCommandRunRequest,
 	RuntimeCommandRunResponse,
 	RuntimeConfigResponse,
@@ -97,32 +97,32 @@ import type {
 	RuntimeWorktreeEnsureResponse,
 } from "../core/api-contract";
 import {
-	runtimeClineAccountBalanceResponseSchema,
-	runtimeClineAccountOrganizationsResponseSchema,
-	runtimeClineAccountProfileResponseSchema,
-	runtimeClineAccountSwitchRequestSchema,
-	runtimeClineAccountSwitchResponseSchema,
-	runtimeClineAddProviderRequestSchema,
-	runtimeClineAddProviderResponseSchema,
-	runtimeClineDeviceAuthCompleteRequestSchema,
-	runtimeClineDeviceAuthCompleteResponseSchema,
-	runtimeClineDeviceAuthStartResponseSchema,
-	runtimeClineKanbanAccessResponseSchema,
-	runtimeClineMcpAuthStatusResponseSchema,
-	runtimeClineMcpOAuthRequestSchema,
-	runtimeClineMcpOAuthResponseSchema,
-	runtimeClineMcpSettingsResponseSchema,
-	runtimeClineMcpSettingsSaveRequestSchema,
-	runtimeClineMcpSettingsSaveResponseSchema,
-	runtimeClineOauthLoginRequestSchema,
-	runtimeClineOauthLoginResponseSchema,
-	runtimeClineProviderCatalogResponseSchema,
-	runtimeClineProviderModelsRequestSchema,
-	runtimeClineProviderModelsResponseSchema,
-	runtimeClineProviderSettingsSaveRequestSchema,
-	runtimeClineProviderSettingsSaveResponseSchema,
-	runtimeClineUpdateProviderRequestSchema,
-	runtimeClineUpdateProviderResponseSchema,
+	runtimeKanbanAccountBalanceResponseSchema,
+	runtimeKanbanAccountOrganizationsResponseSchema,
+	runtimeKanbanAccountProfileResponseSchema,
+	runtimeKanbanAccountSwitchRequestSchema,
+	runtimeKanbanAccountSwitchResponseSchema,
+	runtimeKanbanAddProviderRequestSchema,
+	runtimeKanbanAddProviderResponseSchema,
+	runtimeKanbanDeviceAuthCompleteRequestSchema,
+	runtimeKanbanDeviceAuthCompleteResponseSchema,
+	runtimeKanbanDeviceAuthStartResponseSchema,
+	runtimeKanbanKanbanAccessResponseSchema,
+	runtimeKanbanMcpAuthStatusResponseSchema,
+	runtimeKanbanMcpOAuthRequestSchema,
+	runtimeKanbanMcpOAuthResponseSchema,
+	runtimeKanbanMcpSettingsResponseSchema,
+	runtimeKanbanMcpSettingsSaveRequestSchema,
+	runtimeKanbanMcpSettingsSaveResponseSchema,
+	runtimeKanbanOauthLoginRequestSchema,
+	runtimeKanbanOauthLoginResponseSchema,
+	runtimeKanbanProviderCatalogResponseSchema,
+	runtimeKanbanProviderModelsRequestSchema,
+	runtimeKanbanProviderModelsResponseSchema,
+	runtimeKanbanProviderSettingsSaveRequestSchema,
+	runtimeKanbanProviderSettingsSaveResponseSchema,
+	runtimeKanbanUpdateProviderRequestSchema,
+	runtimeKanbanUpdateProviderResponseSchema,
 	runtimeCommandRunRequestSchema,
 	runtimeCommandRunResponseSchema,
 	runtimeConfigResponseSchema,
@@ -202,18 +202,18 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope | null,
 			input: RuntimeConfigSaveRequest,
 		) => Promise<RuntimeConfigResponse>;
-		saveClineProviderSettings: (
+		saveKanbanProviderSettings: (
 			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeClineProviderSettingsSaveRequest,
-		) => Promise<RuntimeClineProviderSettingsSaveResponse>;
-		addClineProvider: (
+			input: RuntimeKanbanProviderSettingsSaveRequest,
+		) => Promise<RuntimeKanbanProviderSettingsSaveResponse>;
+		addKanbanProvider: (
 			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeClineAddProviderRequest,
-		) => Promise<RuntimeClineAddProviderResponse>;
-		updateClineProvider: (
+			input: RuntimeKanbanAddProviderRequest,
+		) => Promise<RuntimeKanbanAddProviderResponse>;
+		updateKanbanProvider: (
 			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeClineUpdateProviderRequest,
-		) => Promise<RuntimeClineUpdateProviderResponse>;
+			input: RuntimeKanbanUpdateProviderRequest,
+		) => Promise<RuntimeKanbanUpdateProviderResponse>;
 		startTaskSession: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeTaskSessionStartRequest,
@@ -230,7 +230,7 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeTaskChatMessagesRequest,
 		) => Promise<RuntimeTaskChatMessagesResponse>;
-		getClineSlashCommands: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeSlashCommandsResponse>;
+		getKanbanSlashCommands: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeSlashCommandsResponse>;
 		sendTaskChatMessage: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeTaskChatSendRequest,
@@ -247,43 +247,43 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeTaskChatCancelRequest,
 		) => Promise<RuntimeTaskChatCancelResponse>;
-		getClineProviderCatalog: (
+		getKanbanProviderCatalog: (
 			scope: RuntimeTrpcWorkspaceScope | null,
-		) => Promise<RuntimeClineProviderCatalogResponse>;
-		getClineAccountProfile: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeClineAccountProfileResponse>;
-		getClineKanbanAccess: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeClineKanbanAccessResponse>;
+		) => Promise<RuntimeKanbanProviderCatalogResponse>;
+		getKanbanAccountProfile: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeKanbanAccountProfileResponse>;
+		getKanbanKanbanAccess: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeKanbanKanbanAccessResponse>;
 		getFeaturebaseToken: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeFeaturebaseTokenResponse>;
-		getClineAccountBalance: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeClineAccountBalanceResponse>;
-		getClineAccountOrganizations: (
+		getKanbanAccountBalance: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeKanbanAccountBalanceResponse>;
+		getKanbanAccountOrganizations: (
 			scope: RuntimeTrpcWorkspaceScope | null,
-		) => Promise<RuntimeClineAccountOrganizationsResponse>;
-		switchClineAccount: (
+		) => Promise<RuntimeKanbanAccountOrganizationsResponse>;
+		switchKanbanAccount: (
 			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeClineAccountSwitchRequest,
-		) => Promise<RuntimeClineAccountSwitchResponse>;
-		getClineProviderModels: (
+			input: RuntimeKanbanAccountSwitchRequest,
+		) => Promise<RuntimeKanbanAccountSwitchResponse>;
+		getKanbanProviderModels: (
 			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeClineProviderModelsRequest,
-		) => Promise<RuntimeClineProviderModelsResponse>;
-		runClineProviderOAuthLogin: (
+			input: RuntimeKanbanProviderModelsRequest,
+		) => Promise<RuntimeKanbanProviderModelsResponse>;
+		runKanbanProviderOAuthLogin: (
 			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeClineOauthLoginRequest,
-		) => Promise<RuntimeClineOauthLoginResponse>;
-		startClineDeviceAuth: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeClineDeviceAuthStartResponse>;
-		completeClineDeviceAuth: (
+			input: RuntimeKanbanOauthLoginRequest,
+		) => Promise<RuntimeKanbanOauthLoginResponse>;
+		startKanbanDeviceAuth: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeKanbanDeviceAuthStartResponse>;
+		completeKanbanDeviceAuth: (
 			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeClineDeviceAuthCompleteRequest,
-		) => Promise<RuntimeClineDeviceAuthCompleteResponse>;
-		getClineMcpAuthStatuses: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeClineMcpAuthStatusResponse>;
-		runClineMcpServerOAuth: (
+			input: RuntimeKanbanDeviceAuthCompleteRequest,
+		) => Promise<RuntimeKanbanDeviceAuthCompleteResponse>;
+		getKanbanMcpAuthStatuses: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeKanbanMcpAuthStatusResponse>;
+		runKanbanMcpServerOAuth: (
 			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeClineMcpOAuthRequest,
-		) => Promise<RuntimeClineMcpOAuthResponse>;
-		getClineMcpSettings: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeClineMcpSettingsResponse>;
-		saveClineMcpSettings: (
+			input: RuntimeKanbanMcpOAuthRequest,
+		) => Promise<RuntimeKanbanMcpOAuthResponse>;
+		getKanbanMcpSettings: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeKanbanMcpSettingsResponse>;
+		saveKanbanMcpSettings: (
 			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeClineMcpSettingsSaveRequest,
-		) => Promise<RuntimeClineMcpSettingsSaveResponse>;
+			input: RuntimeKanbanMcpSettingsSaveRequest,
+		) => Promise<RuntimeKanbanMcpSettingsSaveResponse>;
 		startShellSession: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeShellSessionStartRequest,
@@ -437,23 +437,23 @@ export const runtimeAppRouter = t.router({
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.saveConfig(ctx.workspaceScope, input);
 			}),
-		saveClineProviderSettings: t.procedure
-			.input(runtimeClineProviderSettingsSaveRequestSchema)
-			.output(runtimeClineProviderSettingsSaveResponseSchema)
+		saveKanbanProviderSettings: t.procedure
+			.input(runtimeKanbanProviderSettingsSaveRequestSchema)
+			.output(runtimeKanbanProviderSettingsSaveResponseSchema)
 			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.saveClineProviderSettings(ctx.workspaceScope, input);
+				return await ctx.runtimeApi.saveKanbanProviderSettings(ctx.workspaceScope, input);
 			}),
-		addClineProvider: t.procedure
-			.input(runtimeClineAddProviderRequestSchema)
-			.output(runtimeClineAddProviderResponseSchema)
+		addKanbanProvider: t.procedure
+			.input(runtimeKanbanAddProviderRequestSchema)
+			.output(runtimeKanbanAddProviderResponseSchema)
 			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.addClineProvider(ctx.workspaceScope, input);
+				return await ctx.runtimeApi.addKanbanProvider(ctx.workspaceScope, input);
 			}),
-		updateClineProvider: t.procedure
-			.input(runtimeClineUpdateProviderRequestSchema)
-			.output(runtimeClineUpdateProviderResponseSchema)
+		updateKanbanProvider: t.procedure
+			.input(runtimeKanbanUpdateProviderRequestSchema)
+			.output(runtimeKanbanUpdateProviderResponseSchema)
 			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.updateClineProvider(ctx.workspaceScope, input);
+				return await ctx.runtimeApi.updateKanbanProvider(ctx.workspaceScope, input);
 			}),
 		startTaskSession: workspaceProcedure
 			.input(runtimeTaskSessionStartRequestSchema)
@@ -479,8 +479,8 @@ export const runtimeAppRouter = t.router({
 			.query(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.getTaskChatMessages(ctx.workspaceScope, input);
 			}),
-		getClineSlashCommands: t.procedure.output(runtimeSlashCommandsResponseSchema).query(async ({ ctx }) => {
-			return await ctx.runtimeApi.getClineSlashCommands(ctx.workspaceScope);
+		getKanbanSlashCommands: t.procedure.output(runtimeSlashCommandsResponseSchema).query(async ({ ctx }) => {
+			return await ctx.runtimeApi.getKanbanSlashCommands(ctx.workspaceScope);
 		}),
 		reloadTaskChatSession: workspaceProcedure
 			.input(runtimeTaskChatReloadRequestSchema)
@@ -506,70 +506,70 @@ export const runtimeAppRouter = t.router({
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.cancelTaskChatTurn(ctx.workspaceScope, input);
 			}),
-		getClineProviderCatalog: t.procedure.output(runtimeClineProviderCatalogResponseSchema).query(async ({ ctx }) => {
-			return await ctx.runtimeApi.getClineProviderCatalog(ctx.workspaceScope);
+		getKanbanProviderCatalog: t.procedure.output(runtimeKanbanProviderCatalogResponseSchema).query(async ({ ctx }) => {
+			return await ctx.runtimeApi.getKanbanProviderCatalog(ctx.workspaceScope);
 		}),
-		getClineAccountProfile: t.procedure.output(runtimeClineAccountProfileResponseSchema).query(async ({ ctx }) => {
-			return await ctx.runtimeApi.getClineAccountProfile(ctx.workspaceScope);
+		getKanbanAccountProfile: t.procedure.output(runtimeKanbanAccountProfileResponseSchema).query(async ({ ctx }) => {
+			return await ctx.runtimeApi.getKanbanAccountProfile(ctx.workspaceScope);
 		}),
-		getClineKanbanAccess: t.procedure.output(runtimeClineKanbanAccessResponseSchema).query(async ({ ctx }) => {
-			return await ctx.runtimeApi.getClineKanbanAccess(ctx.workspaceScope);
+		getKanbanKanbanAccess: t.procedure.output(runtimeKanbanKanbanAccessResponseSchema).query(async ({ ctx }) => {
+			return await ctx.runtimeApi.getKanbanKanbanAccess(ctx.workspaceScope);
 		}),
 		getFeaturebaseToken: t.procedure.output(runtimeFeaturebaseTokenResponseSchema).query(async ({ ctx }) => {
 			return await ctx.runtimeApi.getFeaturebaseToken(ctx.workspaceScope);
 		}),
-		getClineAccountBalance: t.procedure.output(runtimeClineAccountBalanceResponseSchema).query(async ({ ctx }) => {
-			return await ctx.runtimeApi.getClineAccountBalance(ctx.workspaceScope);
+		getKanbanAccountBalance: t.procedure.output(runtimeKanbanAccountBalanceResponseSchema).query(async ({ ctx }) => {
+			return await ctx.runtimeApi.getKanbanAccountBalance(ctx.workspaceScope);
 		}),
-		getClineAccountOrganizations: t.procedure
-			.output(runtimeClineAccountOrganizationsResponseSchema)
+		getKanbanAccountOrganizations: t.procedure
+			.output(runtimeKanbanAccountOrganizationsResponseSchema)
 			.query(async ({ ctx }) => {
-				return await ctx.runtimeApi.getClineAccountOrganizations(ctx.workspaceScope);
+				return await ctx.runtimeApi.getKanbanAccountOrganizations(ctx.workspaceScope);
 			}),
-		switchClineAccount: t.procedure
-			.input(runtimeClineAccountSwitchRequestSchema)
-			.output(runtimeClineAccountSwitchResponseSchema)
+		switchKanbanAccount: t.procedure
+			.input(runtimeKanbanAccountSwitchRequestSchema)
+			.output(runtimeKanbanAccountSwitchResponseSchema)
 			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.switchClineAccount(ctx.workspaceScope, input);
+				return await ctx.runtimeApi.switchKanbanAccount(ctx.workspaceScope, input);
 			}),
-		getClineProviderModels: t.procedure
-			.input(runtimeClineProviderModelsRequestSchema)
-			.output(runtimeClineProviderModelsResponseSchema)
+		getKanbanProviderModels: t.procedure
+			.input(runtimeKanbanProviderModelsRequestSchema)
+			.output(runtimeKanbanProviderModelsResponseSchema)
 			.query(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.getClineProviderModels(ctx.workspaceScope, input);
+				return await ctx.runtimeApi.getKanbanProviderModels(ctx.workspaceScope, input);
 			}),
-		getClineMcpAuthStatuses: t.procedure.output(runtimeClineMcpAuthStatusResponseSchema).query(async ({ ctx }) => {
-			return await ctx.runtimeApi.getClineMcpAuthStatuses(ctx.workspaceScope);
+		getKanbanMcpAuthStatuses: t.procedure.output(runtimeKanbanMcpAuthStatusResponseSchema).query(async ({ ctx }) => {
+			return await ctx.runtimeApi.getKanbanMcpAuthStatuses(ctx.workspaceScope);
 		}),
-		runClineMcpServerOAuth: t.procedure
-			.input(runtimeClineMcpOAuthRequestSchema)
-			.output(runtimeClineMcpOAuthResponseSchema)
+		runKanbanMcpServerOAuth: t.procedure
+			.input(runtimeKanbanMcpOAuthRequestSchema)
+			.output(runtimeKanbanMcpOAuthResponseSchema)
 			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.runClineMcpServerOAuth(ctx.workspaceScope, input);
+				return await ctx.runtimeApi.runKanbanMcpServerOAuth(ctx.workspaceScope, input);
 			}),
-		getClineMcpSettings: t.procedure.output(runtimeClineMcpSettingsResponseSchema).query(async ({ ctx }) => {
-			return await ctx.runtimeApi.getClineMcpSettings(ctx.workspaceScope);
+		getKanbanMcpSettings: t.procedure.output(runtimeKanbanMcpSettingsResponseSchema).query(async ({ ctx }) => {
+			return await ctx.runtimeApi.getKanbanMcpSettings(ctx.workspaceScope);
 		}),
-		saveClineMcpSettings: t.procedure
-			.input(runtimeClineMcpSettingsSaveRequestSchema)
-			.output(runtimeClineMcpSettingsSaveResponseSchema)
+		saveKanbanMcpSettings: t.procedure
+			.input(runtimeKanbanMcpSettingsSaveRequestSchema)
+			.output(runtimeKanbanMcpSettingsSaveResponseSchema)
 			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.saveClineMcpSettings(ctx.workspaceScope, input);
+				return await ctx.runtimeApi.saveKanbanMcpSettings(ctx.workspaceScope, input);
 			}),
-		runClineProviderOAuthLogin: t.procedure
-			.input(runtimeClineOauthLoginRequestSchema)
-			.output(runtimeClineOauthLoginResponseSchema)
+		runKanbanProviderOAuthLogin: t.procedure
+			.input(runtimeKanbanOauthLoginRequestSchema)
+			.output(runtimeKanbanOauthLoginResponseSchema)
 			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.runClineProviderOAuthLogin(ctx.workspaceScope, input);
+				return await ctx.runtimeApi.runKanbanProviderOAuthLogin(ctx.workspaceScope, input);
 			}),
-		startClineDeviceAuth: t.procedure.output(runtimeClineDeviceAuthStartResponseSchema).mutation(async ({ ctx }) => {
-			return await ctx.runtimeApi.startClineDeviceAuth(ctx.workspaceScope);
+		startKanbanDeviceAuth: t.procedure.output(runtimeKanbanDeviceAuthStartResponseSchema).mutation(async ({ ctx }) => {
+			return await ctx.runtimeApi.startKanbanDeviceAuth(ctx.workspaceScope);
 		}),
-		completeClineDeviceAuth: t.procedure
-			.input(runtimeClineDeviceAuthCompleteRequestSchema)
-			.output(runtimeClineDeviceAuthCompleteResponseSchema)
+		completeKanbanDeviceAuth: t.procedure
+			.input(runtimeKanbanDeviceAuthCompleteRequestSchema)
+			.output(runtimeKanbanDeviceAuthCompleteResponseSchema)
 			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.completeClineDeviceAuth(ctx.workspaceScope, input);
+				return await ctx.runtimeApi.completeKanbanDeviceAuth(ctx.workspaceScope, input);
 			}),
 		startShellSession: workspaceProcedure
 			.input(runtimeShellSessionStartRequestSchema)

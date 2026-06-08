@@ -98,7 +98,7 @@ function createRuntimeConfig(selectedAgentId: RuntimeConfigResponse["selectedAge
 			},
 		],
 		shortcuts: [],
-		clineProviderSettings: {
+		kanbanProviderSettings: {
 			providerId: "anthropic",
 			modelId: "claude-sonnet-4",
 			baseUrl: null,
@@ -113,6 +113,12 @@ function createRuntimeConfig(selectedAgentId: RuntimeConfigResponse["selectedAge
 		openPrPromptTemplate: "pr",
 		commitPromptTemplateDefault: "commit",
 		openPrPromptTemplateDefault: "pr",
+		proxyEnabled: false,
+		proxyHost: "",
+		proxyPort: "",
+		proxyUsername: "",
+		proxyPassword: "",
+		noProxy: "",
 	};
 }
 

@@ -1,3 +1,4 @@
+import { applyProxyToProcessEnv } from "../config/proxy-env";
 import { type RuntimeConfigState, toGlobalRuntimeConfigState } from "../config/runtime-config";
 import type {
 	RuntimeBoardColumnId,
@@ -198,6 +199,14 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 	let activeRuntimeConfig = activeWorkspacePath
 		? await deps.loadRuntimeConfig(activeWorkspacePath)
 		: globalRuntimeConfig;
+	applyProxyToProcessEnv(
+		activeRuntimeConfig.proxyEnabled,
+		activeRuntimeConfig.proxyHost,
+		activeRuntimeConfig.proxyPort,
+		activeRuntimeConfig.proxyUsername,
+		activeRuntimeConfig.proxyPassword,
+		activeRuntimeConfig.noProxy,
+	);
 	const workspacePathsById = new Map<string, string>(
 		activeWorkspaceId && activeWorkspacePath ? [[activeWorkspaceId, activeWorkspacePath]] : [],
 	);

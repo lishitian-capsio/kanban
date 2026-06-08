@@ -8,7 +8,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useMemo, useRef } from "react";
 
 import { notifyError } from "@/components/app-toaster";
-import { getRuntimeClineProviderSettings, isNativeClineAgentSelected } from "@/runtime/native-agent";
+import { getRuntimeKanbanProviderSettings, isNativeAgentSelected } from "@/runtime/native-agent";
 import { estimateTaskSessionGeometry } from "@/runtime/task-session-geometry";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeConfigResponse, RuntimeGitRepositoryInfo, RuntimeTaskSessionSummary } from "@/runtime/types";
@@ -25,7 +25,7 @@ interface UseHomeAgentSessionInput {
 	currentProjectId: string | null;
 	runtimeProjectConfig: RuntimeConfigResponse | null;
 	workspaceGit: RuntimeGitRepositoryInfo | null;
-	clineSessionContextVersion: number;
+	kanbanSessionContextVersion: number;
 	sessionSummaries: Record<string, RuntimeTaskSessionSummary>;
 	setSessionSummaries: Dispatch<SetStateAction<Record<string, RuntimeTaskSessionSummary>>>;
 	upsertSessionSummary: (summary: RuntimeTaskSessionSummary) => void;
@@ -47,14 +47,14 @@ interface HomeAgentWorkspaceDescriptor {
 	taskId: string;
 }
 
-function buildClineDescriptor(config: RuntimeConfigResponse): string {
-	const clineProviderSettings = getRuntimeClineProviderSettings(config);
+function buildKanbanDescriptor(config: RuntimeConfigResponse): string {
+	const kanbanProviderSettings = getRuntimeKanbanProviderSettings(config);
 	return JSON.stringify({
 		agentId: config.selectedAgentId,
-		providerId: clineProviderSettings.providerId ?? clineProviderSettings.oauthProvider ?? "",
-		modelId: clineProviderSettings.modelId ?? "",
-		baseUrl: clineProviderSettings.baseUrl ?? "",
-		reasoningEffort: clineProviderSettings.reasoningEffort ?? null,
+		providerId: kanbanProviderSettings.providerId ?? kanbanProviderSettings.oauthProvider ?? "",
+		modelId: kanbanProviderSettings.modelId ?? "",
+		baseUrl: kanbanProviderSettings.baseUrl ?? "",
+		reasoningEffort: kanbanProviderSettings.reasoningEffort ?? null,
 	});
 }
 
@@ -111,7 +111,7 @@ export function useHomeAgentSession({
 	currentProjectId,
 	runtimeProjectConfig,
 	workspaceGit,
-	clineSessionContextVersion,
+	kanbanSessionContextVersion,
 	sessionSummaries,
 	setSessionSummaries,
 	upsertSessionSummary,
@@ -120,11 +120,12 @@ export function useHomeAgentSession({
 	const homeDescriptorByWorkspaceRef = useRef(new Map<string, HomeAgentWorkspaceDescriptor>());
 	const desiredTaskIdByWorkspaceRef = useRef(new Map<string, string>());
 	const startedSessionKeysRef = useRef(new Set<string>());
+	const failedSessionKeysRef = useRef(new Set<string>());
 	const pendingStartRequestIdsRef = useRef(new Map<string, number>());
-	const previousClineSessionContextVersionByWorkspaceRef = useRef(new Map<string, number>());
+	const previousKanbanSessionContextVersionByWorkspaceRef = useRef(new Map<string, number>());
 	const nextStartRequestIdRef = useRef(0);
 	const disposedRef = useRef(false);
-	const clineProviderSettings = getRuntimeClineProviderSettings(runtimeProjectConfig);
+	const kanbanProviderSettings = getRuntimeKanbanProviderSettings(runtimeProjectConfig);
 
 	useEffect(() => {
 		latestBaseRefRef.current = resolveHomeAgentBaseRef(workspaceGit);
@@ -137,9 +138,9 @@ export function useHomeAgentSession({
 
 		let panelMode: HomeAgentPanelMode;
 		let descriptorKey: string;
-		if (isNativeClineAgentSelected(runtimeProjectConfig.selectedAgentId)) {
+		if (isNativeAgentSelected(runtimeProjectConfig.selectedAgentId)) {
 			panelMode = "chat";
-			descriptorKey = buildClineDescriptor(runtimeProjectConfig);
+			descriptorKey = buildKanbanDescriptor(runtimeProjectConfig);
 		} else {
 			if (!runtimeProjectConfig.effectiveCommand) {
 				return null;
@@ -174,11 +175,11 @@ export function useHomeAgentSession({
 		};
 	}, [
 		currentProjectId,
-		clineProviderSettings.baseUrl,
-		clineProviderSettings.modelId,
-		clineProviderSettings.reasoningEffort,
-		clineProviderSettings.oauthProvider,
-		clineProviderSettings.providerId,
+		kanbanProviderSettings.baseUrl,
+		kanbanProviderSettings.modelId,
+		kanbanProviderSettings.reasoningEffort,
+		kanbanProviderSettings.oauthProvider,
+		kanbanProviderSettings.providerId,
 		runtimeProjectConfig?.effectiveCommand,
 		runtimeProjectConfig?.selectedAgentId,
 	]);
@@ -200,12 +201,12 @@ export function useHomeAgentSession({
 
 			homeDescriptorByWorkspaceRef.current.delete(currentProjectId);
 			desiredTaskIdByWorkspaceRef.current.delete(currentProjectId);
-			startedSessionKeysRef.current.delete(
-				buildHomeAgentSessionKey({
-					workspaceId: currentProjectId,
-					taskId: previousTaskId,
-				}),
-			);
+			const previousSessionKey = buildHomeAgentSessionKey({
+				workspaceId: currentProjectId,
+				taskId: previousTaskId,
+			});
+			startedSessionKeysRef.current.delete(previousSessionKey);
+			failedSessionKeysRef.current.delete(previousSessionKey);
 			pruneWorkspaceHomeAgentSessions(setSessionSummaries, currentProjectId, null);
 			void stopHomeAgentSession({
 				workspaceId: currentProjectId,
@@ -225,30 +226,30 @@ export function useHomeAgentSession({
 			return;
 		}
 
-		startedSessionKeysRef.current.delete(
-			buildHomeAgentSessionKey({
-				workspaceId: currentProjectId,
-				taskId: previousTaskId,
-			}),
-		);
+		const previousSessionKey = buildHomeAgentSessionKey({
+			workspaceId: currentProjectId,
+			taskId: previousTaskId,
+		});
+		startedSessionKeysRef.current.delete(previousSessionKey);
+		failedSessionKeysRef.current.delete(previousSessionKey);
 		void stopHomeAgentSession({
 			workspaceId: currentProjectId,
 			taskId: previousTaskId,
 		});
 	}, [currentProjectId, descriptorTaskId, hasLoadedRuntimeProjectConfig, setSessionSummaries]);
 
-	// When MCP settings or auth change, the runtime bumps the Cline session context version.
+	// When MCP settings or auth change, the runtime bumps the Kanban session context version.
 	// Reload the existing home chat in place so it keeps the same sidebar task id and messages,
-	// but restarts the underlying Cline session with a fresh MCP tool bundle.
+	// but restarts the underlying Kanban session with a fresh MCP tool bundle.
 	useEffect(() => {
 		if (!currentProjectId || !descriptor || descriptor.panelMode !== "chat") {
 			return;
 		}
 
-		const previousVersion = previousClineSessionContextVersionByWorkspaceRef.current.get(currentProjectId);
-		previousClineSessionContextVersionByWorkspaceRef.current.set(currentProjectId, clineSessionContextVersion);
+		const previousVersion = previousKanbanSessionContextVersionByWorkspaceRef.current.get(currentProjectId);
+		previousKanbanSessionContextVersionByWorkspaceRef.current.set(currentProjectId, kanbanSessionContextVersion);
 
-		if (previousVersion === undefined || previousVersion === clineSessionContextVersion) {
+		if (previousVersion === undefined || previousVersion === kanbanSessionContextVersion) {
 			return;
 		}
 
@@ -281,7 +282,7 @@ export function useHomeAgentSession({
 		return () => {
 			cancelled = true;
 		};
-	}, [clineSessionContextVersion, currentProjectId, descriptor, sessionSummaries, upsertSessionSummary]);
+	}, [kanbanSessionContextVersion, currentProjectId, descriptor, sessionSummaries, upsertSessionSummary]);
 
 	useEffect(() => {
 		if (!currentProjectId || !descriptor || descriptor.panelMode !== "terminal") {
@@ -299,6 +300,10 @@ export function useHomeAgentSession({
 		}
 
 		if (startedSessionKeysRef.current.has(sessionKey)) {
+			return;
+		}
+
+		if (failedSessionKeysRef.current.has(sessionKey)) {
 			return;
 		}
 
@@ -347,13 +352,33 @@ export function useHomeAgentSession({
 					return;
 				}
 				pendingStartRequestIdsRef.current.delete(sessionKey);
+				failedSessionKeysRef.current.add(sessionKey);
+
+				const message = error instanceof Error ? error.message : String(error);
+				// Upsert a failed summary so the UI transitions out of the loading
+				// state and can surface the error inline instead of only a toast.
+				upsertSessionSummary({
+					taskId: session.taskId,
+					state: "failed",
+					agentId: null,
+					workspacePath: null,
+					pid: null,
+					startedAt: null,
+					updatedAt: Date.now(),
+					lastOutputAt: null,
+					reviewReason: "error",
+					exitCode: null,
+					lastHookAt: null,
+					latestHookActivity: null,
+					warningMessage: message,
+				});
+
 				if (
 					disposedRef.current ||
 					desiredTaskIdByWorkspaceRef.current.get(session.workspaceId) !== session.taskId
 				) {
 					return;
 				}
-				const message = error instanceof Error ? error.message : String(error);
 				notifyError(message);
 			}
 		})();
@@ -365,8 +390,9 @@ export function useHomeAgentSession({
 			desiredTaskIdByWorkspaceRef.current.clear();
 			homeDescriptorByWorkspaceRef.current.clear();
 			startedSessionKeysRef.current.clear();
+			failedSessionKeysRef.current.clear();
 			pendingStartRequestIdsRef.current.clear();
-			previousClineSessionContextVersionByWorkspaceRef.current.clear();
+			previousKanbanSessionContextVersionByWorkspaceRef.current.clear();
 		};
 	}, []);
 

@@ -64,12 +64,12 @@ import {
 	selectLatestTaskChatMessageForTask,
 	selectTaskChatMessagesForTask,
 } from "@/runtime/native-agent";
-import type { RuntimeClineReasoningEffort, RuntimeTaskSessionSummary } from "@/runtime/types";
+import type { RuntimeReasoningEffort, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useRuntimeProjectConfig } from "@/runtime/use-runtime-project-config";
 import { useTerminalConnectionReady } from "@/runtime/use-terminal-connection-ready";
 import { useWorkspacePersistence } from "@/runtime/use-workspace-persistence";
 import { saveWorkspaceState } from "@/runtime/workspace-state-query";
-import { applyTaskDetailClineSettingsChange, findCardSelection } from "@/state/board-state";
+import { applyTaskDetailAgentSettingsChange, findCardSelection } from "@/state/board-state";
 import {
 	getTaskWorkspaceInfo,
 	getTaskWorkspaceSnapshot,
@@ -107,7 +107,7 @@ export default function App(): ReactElement {
 		taskChatMessagesByTaskId,
 		latestTaskReadyForReview,
 		latestMcpAuthStatuses,
-		clineSessionContextVersion,
+		kanbanSessionContextVersion,
 		streamError,
 		isRuntimeDisconnected,
 		hasReceivedSnapshot,
@@ -145,14 +145,14 @@ export default function App(): ReactElement {
 		useRuntimeProjectConfig(settingsWorkspaceId);
 	const featurebaseFeedbackState = useFeaturebaseFeedbackWidget({
 		workspaceId: settingsWorkspaceId,
-		clineProviderSettings: settingsRuntimeProjectConfig?.clineProviderSettings ?? null,
+		kanbanProviderSettings: settingsRuntimeProjectConfig?.kanbanProviderSettings ?? null,
 	});
 	const {
 		isStartupOnboardingDialogOpen,
 		handleOpenStartupOnboardingDialog,
 		handleCloseStartupOnboardingDialog,
 		handleSelectOnboardingAgent,
-		handleOnboardingClineSetupSaved,
+		handleOnboardingKanbanSetupSaved,
 	} = useStartupOnboarding({
 		currentProjectId,
 		runtimeProjectConfig,
@@ -302,8 +302,8 @@ export default function App(): ReactElement {
 		setNewTaskBranchRef,
 		newTaskAgentId,
 		setNewTaskAgentId,
-		newTaskClineSettings,
-		setNewTaskClineSettings,
+		newTaskAgentSettings,
+		setNewTaskKanbanSettings,
 		editingTaskId,
 		editTaskPrompt,
 		setEditTaskPrompt,
@@ -320,8 +320,8 @@ export default function App(): ReactElement {
 		setEditTaskBranchRef,
 		editTaskAgentId,
 		setEditTaskAgentId,
-		editTaskClineSettings,
-		setEditTaskClineSettings,
+		editTaskAgentSettings,
+		setEditTaskKanbanSettings,
 		handleOpenCreateTask,
 		handleCancelCreateTask,
 		handleOpenEditTask,
@@ -433,7 +433,7 @@ export default function App(): ReactElement {
 		currentProjectId,
 		hasNoProjects,
 		runtimeProjectConfig,
-		clineSessionContextVersion,
+		kanbanSessionContextVersion,
 		taskSessions: sessions,
 		workspaceGit,
 		latestTaskChatMessage,
@@ -714,11 +714,11 @@ export default function App(): ReactElement {
 		selectedCard?.card.id,
 		latestTaskChatMessage,
 	);
-	const defaultTaskClineProviderId =
-		runtimeProjectConfig?.clineProviderSettings?.providerId ??
-		runtimeProjectConfig?.clineProviderSettings?.oauthProvider ??
+	const defaultTaskKanbanProviderId =
+		runtimeProjectConfig?.kanbanProviderSettings?.providerId ??
+		runtimeProjectConfig?.kanbanProviderSettings?.oauthProvider ??
 		null;
-	const handleClineTaskSettingsChangedForTask = useCallback(
+	const handleKanbanTaskSettingsChangedForTask = useCallback(
 		({
 			providerId,
 			modelId,
@@ -726,14 +726,14 @@ export default function App(): ReactElement {
 		}: {
 			providerId: string;
 			modelId: string;
-			reasoningEffort: RuntimeClineReasoningEffort | "";
+			reasoningEffort: RuntimeReasoningEffort | "";
 		}) => {
 			if (!selectedCard) {
 				return;
 			}
 			const taskId = selectedCard.card.id;
 			setBoard((currentBoard) => {
-				const result = applyTaskDetailClineSettingsChange(
+				const result = applyTaskDetailAgentSettingsChange(
 					currentBoard,
 					taskId,
 					{
@@ -742,14 +742,14 @@ export default function App(): ReactElement {
 						reasoningEffort,
 					},
 					{
-						providerId: defaultTaskClineProviderId,
-						modelId: runtimeProjectConfig?.clineProviderSettings?.modelId ?? null,
+						providerId: defaultTaskKanbanProviderId,
+						modelId: runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null,
 					},
 				);
 				return result.updated ? result.board : currentBoard;
 			});
 		},
-		[defaultTaskClineProviderId, runtimeProjectConfig, selectedCard, setBoard],
+		[defaultTaskKanbanProviderId, runtimeProjectConfig, selectedCard, setBoard],
 	);
 
 	const handleCreateDialogOpenChange = useCallback(
@@ -783,12 +783,12 @@ export default function App(): ReactElement {
 			onBranchRefChange={setEditTaskBranchRef}
 			agentId={editTaskAgentId}
 			onAgentIdChange={setEditTaskAgentId}
-			clineSettings={editTaskClineSettings}
-			onClineSettingsChange={setEditTaskClineSettings}
+			agentSettings={editTaskAgentSettings}
+			onKanbanSettingsChange={setEditTaskKanbanSettings}
 			defaultAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
-			defaultProviderId={defaultTaskClineProviderId}
-			defaultModelId={runtimeProjectConfig?.clineProviderSettings?.modelId ?? null}
-			defaultReasoningEffort={runtimeProjectConfig?.clineProviderSettings?.reasoningEffort ?? null}
+			defaultProviderId={defaultTaskKanbanProviderId}
+			defaultModelId={runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null}
+			defaultReasoningEffort={runtimeProjectConfig?.kanbanProviderSettings?.reasoningEffort ?? null}
 			mode="edit"
 			idPrefix={`inline-edit-task-${editingTaskId}`}
 		/>
@@ -815,7 +815,7 @@ export default function App(): ReactElement {
 						canShowAgentSection={!hasNoProjects && Boolean(currentProjectId)}
 						agentSectionContent={homeSidebarAgentPanel}
 						selectedAgentId={settingsRuntimeProjectConfig?.selectedAgentId ?? null}
-						clineProviderSettings={settingsRuntimeProjectConfig?.clineProviderSettings ?? null}
+						kanbanProviderSettings={settingsRuntimeProjectConfig?.kanbanProviderSettings ?? null}
 						featurebaseFeedbackState={featurebaseFeedbackState}
 						onSelectProject={(projectId) => {
 							void handleSelectProject(projectId);
@@ -959,7 +959,7 @@ export default function App(): ReactElement {
 													selectedCard ? undefined : handleProgrammaticCardMoveReady
 												}
 												onDragEnd={handleDragEnd}
-												defaultClineModelId={runtimeProjectConfig?.clineProviderSettings?.modelId ?? null}
+												defaultKanbanModelId={runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null}
 											/>
 										)}
 									</div>
@@ -1047,11 +1047,11 @@ export default function App(): ReactElement {
 									onSendReviewComments={(taskId: string, text: string) => {
 										void handleSendReviewComments(taskId, text);
 									}}
-									onSendClineChatMessage={sendTaskChatMessage}
-									onCancelClineChatTurn={cancelTaskChatTurn}
-									onLoadClineChatMessages={fetchTaskChatMessages}
-									latestClineChatMessage={latestSelectedTaskChatMessage}
-									streamedClineChatMessages={selectedTaskChatMessages}
+									onSendKanbanChatMessage={sendTaskChatMessage}
+									onCancelKanbanChatTurn={cancelTaskChatTurn}
+									onLoadKanbanChatMessages={fetchTaskChatMessages}
+									latestKanbanChatMessage={latestSelectedTaskChatMessage}
+									streamedKanbanChatMessages={selectedTaskChatMessages}
 									onMoveToTrash={handleMoveToTrash}
 									isMoveToTrashLoading={moveToTrashLoadingById[selectedCard.card.id] ?? false}
 									gitHistoryPanel={
@@ -1074,8 +1074,8 @@ export default function App(): ReactElement {
 									isBottomTerminalExpanded={isDetailTerminalExpanded}
 									onBottomTerminalToggleExpand={handleToggleExpandDetailTerminal}
 									isDocumentVisible={isDocumentVisible}
-									onClineSettingsSaved={refreshRuntimeProjectConfig}
-									onTaskClineSettingsChanged={handleClineTaskSettingsChangedForTask}
+									onKanbanSettingsSaved={refreshRuntimeProjectConfig}
+									onTaskKanbanSettingsChanged={handleKanbanTaskSettingsChangedForTask}
 								/>
 							</div>
 						) : null}
@@ -1131,12 +1131,12 @@ export default function App(): ReactElement {
 					onBranchRefChange={setNewTaskBranchRef}
 					agentId={newTaskAgentId}
 					onAgentIdChange={setNewTaskAgentId}
-					clineSettings={newTaskClineSettings}
-					onClineSettingsChange={setNewTaskClineSettings}
+					agentSettings={newTaskAgentSettings}
+					onKanbanSettingsChange={setNewTaskKanbanSettings}
 					defaultAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
-					defaultProviderId={defaultTaskClineProviderId}
-					defaultModelId={runtimeProjectConfig?.clineProviderSettings?.modelId ?? null}
-					defaultReasoningEffort={runtimeProjectConfig?.clineProviderSettings?.reasoningEffort ?? null}
+					defaultProviderId={defaultTaskKanbanProviderId}
+					defaultModelId={runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null}
+					defaultReasoningEffort={runtimeProjectConfig?.kanbanProviderSettings?.reasoningEffort ?? null}
 				/>
 				<ClearTrashDialog
 					open={isClearTrashDialogOpen}
@@ -1149,11 +1149,11 @@ export default function App(): ReactElement {
 					onClose={handleCloseStartupOnboardingDialog}
 					selectedAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
 					agents={runtimeProjectConfig?.agents ?? []}
-					clineProviderSettings={runtimeProjectConfig?.clineProviderSettings ?? null}
+					kanbanProviderSettings={runtimeProjectConfig?.kanbanProviderSettings ?? null}
 					workspaceId={currentProjectId}
 					runtimeConfig={runtimeProjectConfig ?? null}
 					onSelectAgent={handleSelectOnboardingAgent}
-					onClineSetupSaved={handleOnboardingClineSetupSaved}
+					onKanbanSetupSaved={handleOnboardingKanbanSetupSaved}
 				/>
 
 				<AddProjectDialog

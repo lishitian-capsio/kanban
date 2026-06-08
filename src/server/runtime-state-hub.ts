@@ -1,12 +1,12 @@
 // Streams live runtime state to browser clients over websocket.
-// It listens to terminal and native Cline updates, normalizes them into the
+// It listens to terminal and native kanban updates, normalizes them into the
 // shared API contract, and fans out workspace-scoped snapshots and deltas.
 import type { IncomingMessage } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
-import type { ClineTaskMessage, ClineTaskSessionService } from "../cline-sdk/cline-task-session-service";
+import type { KanbanTaskMessage, PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
 import type {
-	RuntimeClineMcpServerAuthStatus,
-	RuntimeStateStreamClineSessionContextUpdatedMessage,
+	RuntimeKanbanMcpServerAuthStatus,
+	RuntimeStateStreamKanbanSessionContextUpdatedMessage,
 	RuntimeStateStreamErrorMessage,
 	RuntimeStateStreamMcpAuthUpdatedMessage,
 	RuntimeStateStreamMessage,
@@ -40,8 +40,8 @@ export interface CreateRuntimeStateHubDependencies {
 
 export interface RuntimeStateHub {
 	trackTerminalManager: (workspaceId: string, manager: TerminalSessionManager) => void;
-	trackClineTaskSessionService: (workspaceId: string, workspacePath: string, service: ClineTaskSessionService) => void;
-	broadcastTaskChatMessage: (workspaceId: string, taskId: string, message: ClineTaskMessage) => void;
+	trackPiTaskSessionService: (workspaceId: string, workspacePath: string, service: PiTaskSessionService) => void;
+	broadcastTaskChatMessage: (workspaceId: string, taskId: string, message: KanbanTaskMessage) => void;
 	broadcastTaskChatCleared: (workspaceId: string, taskId: string) => void;
 	handleUpgrade: (
 		request: IncomingMessage,
@@ -54,23 +54,23 @@ export interface RuntimeStateHub {
 	disposeWorkspace: (workspaceId: string, options?: DisposeRuntimeStateWorkspaceOptions) => void;
 	broadcastRuntimeWorkspaceStateUpdated: (workspaceId: string, workspacePath: string) => Promise<void>;
 	broadcastRuntimeProjectsUpdated: (preferredCurrentProjectId: string | null) => Promise<void>;
-	broadcastClineMcpAuthStatusesUpdated: (statuses: RuntimeClineMcpServerAuthStatus[]) => void;
-	bumpClineSessionContextVersion: () => void;
+	broadcastKanbanMcpAuthStatusesUpdated: (statuses: RuntimeKanbanMcpServerAuthStatus[]) => void;
+	bumpKanbanSessionContextVersion: () => void;
 	broadcastTaskReadyForReview: (workspaceId: string, taskId: string) => void;
 	close: () => Promise<void>;
 }
 
 export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): RuntimeStateHub {
 	const terminalSummaryUnsubscribeByWorkspaceId = new Map<string, () => void>();
-	const clineSummaryUnsubscribeByWorkspaceId = new Map<string, () => void>();
-	const clineMessageUnsubscribeByWorkspaceId = new Map<string, () => void>();
-	const clinePreviousSummaryByWorkspaceId = new Map<string, Map<string, RuntimeTaskSessionSummary>>();
+	const piSummaryUnsubscribeByWorkspaceId = new Map<string, () => void>();
+	const piMessageUnsubscribeByWorkspaceId = new Map<string, () => void>();
+	const piPreviousSummaryByWorkspaceId = new Map<string, Map<string, RuntimeTaskSessionSummary>>();
 	const pendingTaskSessionSummariesByWorkspaceId = new Map<string, Map<string, RuntimeTaskSessionSummary>>();
 	const taskSessionBroadcastTimersByWorkspaceId = new Map<string, NodeJS.Timeout>();
 	const runtimeStateClientsByWorkspaceId = new Map<string, Set<WebSocket>>();
 	const runtimeStateClients = new Set<WebSocket>();
 	const runtimeStateWorkspaceIdByClient = new Map<WebSocket, string>();
-	let clineSessionContextVersion = 0;
+	let kanbanSessionContextVersion = 0;
 	const runtimeStateWebSocketServer = new WebSocketServer({ noServer: true });
 	const workspaceMetadataMonitor = createWorkspaceMetadataMonitor({
 		onMetadataUpdated: (workspaceId, workspaceMetadata) => {
@@ -118,7 +118,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 		}
 	};
 
-	const broadcastClineMcpAuthStatusesUpdated = (statuses: RuntimeClineMcpServerAuthStatus[]) => {
+	const broadcastKanbanMcpAuthStatusesUpdated = (statuses: RuntimeKanbanMcpServerAuthStatus[]) => {
 		if (runtimeStateClients.size === 0) {
 			return;
 		}
@@ -131,14 +131,14 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 		}
 	};
 
-	const bumpClineSessionContextVersion = () => {
-		clineSessionContextVersion += 1;
+	const bumpKanbanSessionContextVersion = () => {
+		kanbanSessionContextVersion += 1;
 		if (runtimeStateClients.size === 0) {
 			return;
 		}
-		const payload: RuntimeStateStreamClineSessionContextUpdatedMessage = {
-			type: "cline_session_context_updated",
-			version: clineSessionContextVersion,
+		const payload: RuntimeStateStreamKanbanSessionContextUpdatedMessage = {
+			type: "kanban_session_context_updated",
+			version: kanbanSessionContextVersion,
 		};
 		for (const client of runtimeStateClients) {
 			sendRuntimeStateMessage(client, payload);
@@ -182,7 +182,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 		taskSessionBroadcastTimersByWorkspaceId.set(workspaceId, timer);
 	};
 
-	const broadcastTaskChatMessage = (workspaceId: string, taskId: string, message: ClineTaskMessage) => {
+	const broadcastTaskChatMessage = (workspaceId: string, taskId: string, message: KanbanTaskMessage) => {
 		const runtimeClients = runtimeStateClientsByWorkspaceId.get(workspaceId);
 		if (!runtimeClients || runtimeClients.size === 0) {
 			return;
@@ -248,25 +248,26 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			}
 		}
 		terminalSummaryUnsubscribeByWorkspaceId.delete(workspaceId);
-		const unsubscribeClineSummary = clineSummaryUnsubscribeByWorkspaceId.get(workspaceId);
-		if (unsubscribeClineSummary) {
+		// Pi service cleanup
+		const unsubscribePiSummary = piSummaryUnsubscribeByWorkspaceId.get(workspaceId);
+		if (unsubscribePiSummary) {
 			try {
-				unsubscribeClineSummary();
+				unsubscribePiSummary();
 			} catch {
 				// Ignore listener cleanup errors during project removal.
 			}
 		}
-		clineSummaryUnsubscribeByWorkspaceId.delete(workspaceId);
-		clinePreviousSummaryByWorkspaceId.delete(workspaceId);
-		const unsubscribeClineMessage = clineMessageUnsubscribeByWorkspaceId.get(workspaceId);
-		if (unsubscribeClineMessage) {
+		piSummaryUnsubscribeByWorkspaceId.delete(workspaceId);
+		piPreviousSummaryByWorkspaceId.delete(workspaceId);
+		const unsubscribePiMessage = piMessageUnsubscribeByWorkspaceId.get(workspaceId);
+		if (unsubscribePiMessage) {
 			try {
-				unsubscribeClineMessage();
+				unsubscribePiMessage();
 			} catch {
 				// Ignore listener cleanup errors during project removal.
 			}
 		}
-		clineMessageUnsubscribeByWorkspaceId.delete(workspaceId);
+		piMessageUnsubscribeByWorkspaceId.delete(workspaceId);
 		disposeTaskSessionSummaryBroadcast(workspaceId);
 		workspaceMetadataMonitor.disposeWorkspace(workspaceId);
 
@@ -437,7 +438,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 					projects: projectsPayload.projects,
 					workspaceState,
 					workspaceMetadata,
-					clineSessionContextVersion,
+					kanbanSessionContextVersion,
 				} satisfies RuntimeStateStreamSnapshotMessage);
 				if (client.readyState !== WebSocket.OPEN) {
 					if (monitorWorkspaceId) {
@@ -452,14 +453,14 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 					workspaceClients.add(client);
 					runtimeStateClientsByWorkspaceId.set(monitorWorkspaceId, workspaceClients);
 					runtimeStateWorkspaceIdByClient.set(client, monitorWorkspaceId);
-					const clineSummaries = Array.from(
-						clinePreviousSummaryByWorkspaceId.get(monitorWorkspaceId)?.values() ?? [],
+					const piSummaries = Array.from(
+						piPreviousSummaryByWorkspaceId.get(monitorWorkspaceId)?.values() ?? [],
 					);
-					if (clineSummaries.length > 0) {
+					if (piSummaries.length > 0) {
 						sendRuntimeStateMessage(client, {
 							type: "task_sessions_updated",
 							workspaceId: monitorWorkspaceId,
-							summaries: clineSummaries,
+							summaries: piSummaries,
 						} satisfies RuntimeStateStreamTaskSessionsMessage);
 					}
 				}
@@ -502,12 +503,12 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			});
 			terminalSummaryUnsubscribeByWorkspaceId.set(workspaceId, unsubscribe);
 		},
-		trackClineTaskSessionService: (workspaceId: string, workspacePath: string, service: ClineTaskSessionService) => {
-			if (clineSummaryUnsubscribeByWorkspaceId.has(workspaceId)) {
+		trackPiTaskSessionService: (workspaceId: string, workspacePath: string, service: PiTaskSessionService) => {
+			if (piSummaryUnsubscribeByWorkspaceId.has(workspaceId)) {
 				return;
 			}
 			const previousSummariesByTaskId = new Map<string, RuntimeTaskSessionSummary>();
-			clinePreviousSummaryByWorkspaceId.set(workspaceId, previousSummariesByTaskId);
+			piPreviousSummaryByWorkspaceId.set(workspaceId, previousSummariesByTaskId);
 			for (const summary of service.listSummaries()) {
 				previousSummariesByTaskId.set(summary.taskId, summary);
 				queueTaskSessionSummaryBroadcast(workspaceId, summary);
@@ -533,11 +534,11 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 					broadcastTaskReadyForReview(workspaceId, summary.taskId);
 				}
 			});
-			clineSummaryUnsubscribeByWorkspaceId.set(workspaceId, unsubscribe);
+			piSummaryUnsubscribeByWorkspaceId.set(workspaceId, unsubscribe);
 			const unsubscribeMessage = service.onMessage((taskId, message) => {
 				broadcastTaskChatMessage(workspaceId, taskId, message);
 			});
-			clineMessageUnsubscribeByWorkspaceId.set(workspaceId, unsubscribeMessage);
+			piMessageUnsubscribeByWorkspaceId.set(workspaceId, unsubscribeMessage);
 		},
 		broadcastTaskChatMessage,
 		broadcastTaskChatCleared,
@@ -549,8 +550,8 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 		disposeWorkspace,
 		broadcastRuntimeWorkspaceStateUpdated,
 		broadcastRuntimeProjectsUpdated,
-		broadcastClineMcpAuthStatusesUpdated,
-		bumpClineSessionContextVersion,
+		broadcastKanbanMcpAuthStatusesUpdated,
+		bumpKanbanSessionContextVersion,
 		broadcastTaskReadyForReview,
 		close: async () => {
 			for (const timer of taskSessionBroadcastTimersByWorkspaceId.values()) {
@@ -566,23 +567,24 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 				}
 			}
 			terminalSummaryUnsubscribeByWorkspaceId.clear();
-			for (const unsubscribe of clineSummaryUnsubscribeByWorkspaceId.values()) {
+			// Pi service cleanup
+			for (const unsubscribe of piSummaryUnsubscribeByWorkspaceId.values()) {
 				try {
 					unsubscribe();
 				} catch {
 					// Ignore listener cleanup errors during shutdown.
 				}
 			}
-			clineSummaryUnsubscribeByWorkspaceId.clear();
-			clinePreviousSummaryByWorkspaceId.clear();
-			for (const unsubscribe of clineMessageUnsubscribeByWorkspaceId.values()) {
+			piSummaryUnsubscribeByWorkspaceId.clear();
+			piPreviousSummaryByWorkspaceId.clear();
+			for (const unsubscribe of piMessageUnsubscribeByWorkspaceId.values()) {
 				try {
 					unsubscribe();
 				} catch {
 					// Ignore listener cleanup errors during shutdown.
 				}
 			}
-			clineMessageUnsubscribeByWorkspaceId.clear();
+			piMessageUnsubscribeByWorkspaceId.clear();
 			workspaceMetadataMonitor.close();
 			for (const client of runtimeStateClients) {
 				try {

@@ -99,7 +99,7 @@ function createSummary(
 	return {
 		taskId: "task-1",
 		state,
-		agentId: "cline",
+		agentId: "pi",
 		workspacePath: "/tmp/worktree",
 		pid: null,
 		startedAt: 1,
@@ -262,7 +262,7 @@ describe("BoardCard", () => {
 			);
 		});
 
-		expect(container.textContent).toContain("~/.cline/worktrees/trash-task-1/kanban");
+		expect(container.textContent).toContain("~/.kanban/worktrees/trash-task-1/kanban");
 	});
 
 	it("shows formatted agent override details with model name and reasoning effort", async () => {
@@ -281,8 +281,8 @@ describe("BoardCard", () => {
 			root.render(
 				<BoardCard
 					card={createCard({
-						agentId: "cline",
-						clineSettings: {
+						agentId: "pi",
+						agentSettings: {
 							modelId: "openai/gpt-5.5",
 							reasoningEffort: "low",
 						},
@@ -293,7 +293,7 @@ describe("BoardCard", () => {
 			);
 		});
 
-		expect(container.textContent).toContain("Cline");
+		expect(container.textContent).toContain("Kanban");
 		expect(container.textContent).toContain("GPT-5.5 (Low)");
 		expect(container.textContent).not.toContain("openai/gpt-5.5");
 	});
@@ -303,13 +303,13 @@ describe("BoardCard", () => {
 			root.render(
 				<BoardCard
 					card={createCard({
-						clineSettings: {
+						agentSettings: {
 							reasoningEffort: "low",
 						},
 					})}
 					index={0}
 					columnId="backlog"
-					defaultClineModelId="openai/gpt-5.5"
+					defaultKanbanModelId="openai/gpt-5.5"
 				/>,
 			);
 		});
@@ -322,7 +322,7 @@ describe("BoardCard", () => {
 			root.render(
 				<BoardCard
 					card={createCard({
-						clineSettings: {
+						agentSettings: {
 							reasoningEffort: "low",
 						},
 					})}
@@ -340,12 +340,12 @@ describe("BoardCard", () => {
 			root.render(
 				<BoardCard
 					card={createCard({
-						agentId: "cline",
-						clineSettings: {},
+						agentId: "pi",
+						agentSettings: {},
 					})}
 					index={0}
 					columnId="backlog"
-					defaultClineModelId="openai/gpt-5.5"
+					defaultKanbanModelId="openai/gpt-5.5"
 				/>,
 			);
 		});
@@ -359,13 +359,13 @@ describe("BoardCard", () => {
 			root.render(
 				<BoardCard
 					card={createCard({
-						clineSettings: {
+						agentSettings: {
 							providerId: "groq",
 						},
 					})}
 					index={0}
 					columnId="backlog"
-					defaultClineModelId="openai/gpt-5.5"
+					defaultKanbanModelId="openai/gpt-5.5"
 				/>,
 			);
 		});
@@ -379,8 +379,8 @@ describe("BoardCard", () => {
 			root.render(
 				<BoardCard
 					card={createCard({
-						agentId: "cline",
-						clineSettings: {
+						agentId: "pi",
+						agentSettings: {
 							modelId: "openai/gpt-5.5",
 						},
 					})}
@@ -404,7 +404,7 @@ describe("BoardCard", () => {
 					sessionSummary={{
 						taskId: "task-1",
 						state: "running",
-						agentId: "cline",
+						agentId: "pi",
 						workspacePath: "/tmp/worktree",
 						pid: null,
 						startedAt: Date.now(),
@@ -420,7 +420,7 @@ describe("BoardCard", () => {
 							finalMessage: null,
 							hookEventName: "tool_call",
 							notificationType: null,
-							source: "cline-sdk",
+							source: "pi",
 						},
 						latestTurnCheckpoint: null,
 						previousTurnCheckpoint: null,
@@ -550,7 +550,7 @@ describe("BoardCard", () => {
 					sessionSummary={{
 						taskId: "task-1",
 						state: "running",
-						agentId: "cline",
+						agentId: "pi",
 						workspacePath: "/tmp/worktree",
 						pid: null,
 						startedAt: Date.now(),
@@ -566,7 +566,7 @@ describe("BoardCard", () => {
 							finalMessage: "Looking at the file now",
 							hookEventName: "assistant_delta",
 							notificationType: null,
-							source: "cline-sdk",
+							source: "pi",
 						},
 						latestTurnCheckpoint: null,
 						previousTurnCheckpoint: null,
@@ -614,7 +614,7 @@ describe("BoardCard", () => {
 								finalMessage: preview,
 								hookEventName: "assistant_delta",
 								notificationType: null,
-								source: "cline-sdk",
+								source: "pi",
 							},
 						})}
 					/>
@@ -651,7 +651,7 @@ describe("BoardCard", () => {
 							finalMessage: preview,
 							hookEventName: "assistant_delta",
 							notificationType: null,
-							source: "cline-sdk",
+							source: "pi",
 						},
 					})}
 				/>,
@@ -684,7 +684,7 @@ describe("BoardCard", () => {
 							finalMessage: "Reviewing the final diff",
 							hookEventName: "assistant_delta",
 							notificationType: null,
-							source: "cline-sdk",
+							source: "pi",
 						},
 					})}
 				/>,

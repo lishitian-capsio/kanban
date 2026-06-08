@@ -54,18 +54,23 @@ jobs:
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Setup Node.js
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Setup Node.js (for npm publish / node-gyp)
         uses: actions/setup-node@v4
         with:
-          node-version: "24.x"
+          node-version: "22.x"
           registry-url: "https://registry.npmjs.org"
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Install web-ui dependencies
-        run: npm ci --prefix web-ui
+        run: bun install --cwd web-ui --frozen-lockfile
 
       - name: Verify tag matches package version
         id: version
@@ -82,7 +87,7 @@ jobs:
           echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build and validate package
-        run: npm run prepublishOnly
+        run: bun run prepublishOnly
         env:
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}

@@ -105,7 +105,7 @@ async function waitForServerStart(process: ChildProcess, timeoutMs = 10_000): Pr
 			} else {
 				stderr += text;
 			}
-			if (!stdout.includes("Cline Kanban running at ") || settled) {
+			if (!stdout.includes("Kanban Kanban running at ") || settled) {
 				return;
 			}
 			settled = true;
@@ -559,12 +559,12 @@ describe("source task commands", () => {
 	});
 
 	it("treats create-time reasoning inherit as no explicit override", { timeout: 60_000 }, async () => {
-		const { path: homeDir, cleanup: cleanupHome } = createTempDir("kanban-home-task-cline-reasoning-");
-		const { path: projectPath, cleanup: cleanupProject } = createTempDir("kanban-project-task-cline-reasoning-");
+		const { path: homeDir, cleanup: cleanupHome } = createTempDir("kanban-home-task-kanban-reasoning-");
+		const { path: projectPath, cleanup: cleanupProject } = createTempDir("kanban-project-task-kanban-reasoning-");
 
 		try {
 			initGitRepository(projectPath);
-			writeFileSync(join(projectPath, "README.md"), "# Task Cline Reasoning Test\n", "utf8");
+			writeFileSync(join(projectPath, "README.md"), "# Task Kanban Reasoning Test\n", "utf8");
 			commitAll(projectPath, "init");
 
 			const port = String(await getAvailablePort());

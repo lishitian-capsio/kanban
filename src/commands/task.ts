@@ -6,11 +6,11 @@ import type {
 	RuntimeBoardCard,
 	RuntimeBoardColumnId,
 	RuntimeBoardDependency,
-	RuntimeClineReasoningEffort,
-	RuntimeTaskClineSettings,
+	RuntimeReasoningEffort,
+	RuntimeTaskAgentSettings,
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
-import { runtimeAgentIdSchema, runtimeClineReasoningEffortSchema } from "../core/api-contract";
+import { runtimeAgentIdSchema, runtimeReasoningEffortSchema } from "../core/api-contract";
 import { buildKanbanRuntimeUrl, getKanbanRuntimeOrigin, getRuntimeFetch } from "../core/runtime-endpoint";
 import {
 	addTaskDependency,
@@ -108,9 +108,9 @@ function parseOptionalStringOrDefault(value: string | undefined): string | null 
 	return value;
 }
 
-type ParsedTaskClineReasoningEffort = RuntimeClineReasoningEffort | "default" | null | undefined;
+type ParsedTaskReasoningEffort = RuntimeReasoningEffort | "default" | null | undefined;
 
-function parseTaskClineReasoningEffort(value: string | undefined): ParsedTaskClineReasoningEffort {
+function parseTaskReasoningEffort(value: string | undefined): ParsedTaskReasoningEffort {
 	if (value === undefined) {
 		return undefined;
 	}
@@ -120,14 +120,14 @@ function parseTaskClineReasoningEffort(value: string | undefined): ParsedTaskCli
 	if (value === "default") {
 		return "default";
 	}
-	const result = runtimeClineReasoningEffortSchema.safeParse(value);
+	const result = runtimeReasoningEffortSchema.safeParse(value);
 	if (result.success) {
 		return result.data;
 	}
-	throw new Error("Invalid Cline reasoning effort. Expected one of: default, low, medium, high, xhigh, inherit.");
+	throw new Error("Invalid Kanban reasoning effort. Expected one of: default, low, medium, high, xhigh, inherit.");
 }
 
-function cloneTaskClineSettings(settings?: RuntimeTaskClineSettings): RuntimeTaskClineSettings | undefined {
+function cloneTaskAgentSettings(settings?: RuntimeTaskAgentSettings): RuntimeTaskAgentSettings | undefined {
 	if (settings === undefined) {
 		return undefined;
 	}
@@ -140,20 +140,20 @@ function cloneTaskClineSettings(settings?: RuntimeTaskClineSettings): RuntimeTas
 	};
 }
 
-function formatTaskClineSettings(settings?: RuntimeTaskClineSettings): JsonRecord {
+function formatTaskAgentSettings(settings?: RuntimeTaskAgentSettings): JsonRecord {
 	if (settings === undefined) {
 		return {};
 	}
 	return {
-		clineSettings: cloneTaskClineSettings(settings) ?? {},
+		agentSettings: cloneTaskAgentSettings(settings) ?? {},
 	};
 }
 
-function buildTaskClineSettingsForCreate(input: {
+function buildTaskAgentSettingsForCreate(input: {
 	providerId?: string;
 	modelId?: string;
-	reasoningEffort?: ParsedTaskClineReasoningEffort;
-}): RuntimeTaskClineSettings | undefined {
+	reasoningEffort?: ParsedTaskReasoningEffort;
+}): RuntimeTaskAgentSettings | undefined {
 	const providerId = input.providerId?.trim();
 	const modelId = input.modelId?.trim();
 	const reasoningEffort = input.reasoningEffort === null ? undefined : input.reasoningEffort;
@@ -167,18 +167,18 @@ function buildTaskClineSettingsForCreate(input: {
 	};
 }
 
-function buildTaskClineSettingsForUpdate(
-	currentSettings: RuntimeTaskClineSettings | undefined,
+function buildTaskAgentSettingsForUpdate(
+	currentSettings: RuntimeTaskAgentSettings | undefined,
 	input: {
 		providerId?: string | null;
 		modelId?: string | null;
-		reasoningEffort?: ParsedTaskClineReasoningEffort;
+		reasoningEffort?: ParsedTaskReasoningEffort;
 	},
-): RuntimeTaskClineSettings | null | undefined {
+): RuntimeTaskAgentSettings | null | undefined {
 	if (input.providerId === undefined && input.modelId === undefined && input.reasoningEffort === undefined) {
 		return undefined;
 	}
-	const nextSettings = cloneTaskClineSettings(currentSettings) ?? {};
+	const nextSettings = cloneTaskAgentSettings(currentSettings) ?? {};
 	let preserveEmptyOverride = currentSettings !== undefined && Object.keys(currentSettings).length === 0;
 
 	if (input.providerId !== undefined) {
@@ -352,7 +352,7 @@ function formatTaskRecord(
 		autoReviewEnabled: task.autoReviewEnabled === true,
 		autoReviewMode: task.autoReviewMode ?? "commit",
 		...(task.agentId ? { agentId: task.agentId } : {}),
-		...formatTaskClineSettings(task.clineSettings),
+		...formatTaskAgentSettings(task.agentSettings),
 		createdAt: task.createdAt,
 		updatedAt: task.updatedAt,
 		session: session
@@ -482,7 +482,7 @@ async function createTask(input: {
 	autoReviewEnabled?: boolean;
 	autoReviewMode?: "commit" | "pr";
 	agentId?: RuntimeAgentId;
-	clineSettings?: RuntimeTaskClineSettings;
+	agentSettings?: RuntimeTaskAgentSettings;
 }): Promise<JsonRecord> {
 	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd);
 	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
@@ -502,7 +502,7 @@ async function createTask(input: {
 				autoReviewEnabled: input.autoReviewEnabled,
 				autoReviewMode: input.autoReviewMode,
 				agentId: input.agentId,
-				clineSettings: input.clineSettings,
+				agentSettings: input.agentSettings,
 				baseRef: resolvedBaseRef,
 			},
 			() => globalThis.crypto.randomUUID(),
@@ -526,7 +526,7 @@ async function createTask(input: {
 			autoReviewEnabled: created.autoReviewEnabled === true,
 			autoReviewMode: created.autoReviewMode ?? "commit",
 			...(created.agentId ? { agentId: created.agentId } : {}),
-			...formatTaskClineSettings(created.clineSettings),
+			...formatTaskAgentSettings(created.agentSettings),
 		},
 	};
 }
@@ -542,9 +542,9 @@ async function updateTaskCommand(input: {
 	autoReviewEnabled?: boolean;
 	autoReviewMode?: "commit" | "pr";
 	agentId?: RuntimeAgentId | null;
-	clineProviderId?: string | null;
-	clineModelId?: string | null;
-	clineReasoningEffort?: ParsedTaskClineReasoningEffort;
+	providerId?: string | null;
+	modelId?: string | null;
+	reasoningEffort?: ParsedTaskReasoningEffort;
 }): Promise<JsonRecord> {
 	if (
 		input.title === undefined &&
@@ -554,9 +554,9 @@ async function updateTaskCommand(input: {
 		input.autoReviewEnabled === undefined &&
 		input.autoReviewMode === undefined &&
 		input.agentId === undefined &&
-		input.clineProviderId === undefined &&
-		input.clineModelId === undefined &&
-		input.clineReasoningEffort === undefined
+		input.providerId === undefined &&
+		input.modelId === undefined &&
+		input.reasoningEffort === undefined
 	) {
 		throw new Error("task update requires at least one field to change.");
 	}
@@ -569,10 +569,10 @@ async function updateTaskCommand(input: {
 		if (!taskRecord) {
 			throw new Error(`Task "${input.taskId}" was not found in workspace ${workspaceRepoPath}.`);
 		}
-		const nextTaskClineSettings = buildTaskClineSettingsForUpdate(taskRecord.task.clineSettings, {
-			providerId: input.clineProviderId,
-			modelId: input.clineModelId,
-			reasoningEffort: input.clineReasoningEffort,
+		const nextTaskKanbanSettings = buildTaskAgentSettingsForUpdate(taskRecord.task.agentSettings, {
+			providerId: input.providerId,
+			modelId: input.modelId,
+			reasoningEffort: input.reasoningEffort,
 		});
 
 		const updatedTask = updateTask(runtimeState.board, input.taskId, {
@@ -583,7 +583,7 @@ async function updateTaskCommand(input: {
 			autoReviewEnabled: input.autoReviewEnabled ?? taskRecord.task.autoReviewEnabled === true,
 			autoReviewMode: input.autoReviewMode ?? taskRecord.task.autoReviewMode ?? "commit",
 			agentId: input.agentId,
-			clineSettings: nextTaskClineSettings,
+			agentSettings: nextTaskKanbanSettings,
 		});
 		if (!updatedTask.updated || !updatedTask.task) {
 			throw new Error(`Task "${input.taskId}" could not be updated.`);
@@ -711,7 +711,7 @@ async function startTask(input: { cwd: string; taskId: string; projectPath?: str
 			startInPlanMode: task.startInPlanMode,
 			baseRef: task.baseRef,
 			agentId: task.agentId,
-			clineSettings: task.clineSettings,
+			agentSettings: task.agentSettings,
 		});
 		if (!started.ok || !started.summary) {
 			throw new Error(started.error ?? "Could not start task session.");
@@ -1127,16 +1127,16 @@ export function registerTaskCommand(program: Command): void {
 		.option("--auto-review-mode <mode>", "Auto-review mode: commit | pr.", parseAutoReviewMode)
 		.option("--agent-id <id>", "Agent override: cline | claude | codex | droid | gemini | opencode | default.")
 		.option(
-			"--cline-provider <id>",
-			'Cline provider override (e.g. anthropic, openai, cline). Use "default" for workspace default.',
+			"--provider <id>",
+			'Provider override (e.g. anthropic, openai, openrouter). Use "default" for workspace default.',
 		)
 		.option(
-			"--cline-model <id>",
-			'Cline model override (e.g. claude-sonnet-4-20250514). Use "default" for workspace default.',
+			"--model <id>",
+			'Model override (e.g. claude-sonnet-4-20250514). Use "default" for workspace default.',
 		)
 		.option(
-			"--cline-reasoning-effort <level>",
-			"Cline reasoning effort override: default | low | medium | high | xhigh.",
+			"--reasoning-effort <level>",
+			"Reasoning effort override: default | low | medium | high | xhigh.",
 		)
 		.action(
 			async (options: {
@@ -1148,9 +1148,9 @@ export function registerTaskCommand(program: Command): void {
 				autoReviewEnabled?: unknown;
 				autoReviewMode?: "commit" | "pr";
 				agentId?: string;
-				clineProvider?: string;
-				clineModel?: string;
-				clineReasoningEffort?: string;
+				provider?: string;
+				model?: string;
+				reasoningEffort?: string;
 			}) => {
 				await runTaskCommand(
 					async () =>
@@ -1164,10 +1164,10 @@ export function registerTaskCommand(program: Command): void {
 							autoReviewEnabled: parseOptionalBooleanOption(options.autoReviewEnabled, "--auto-review-enabled"),
 							autoReviewMode: options.autoReviewMode,
 							agentId: parseAgentId(options.agentId) ?? undefined,
-							clineSettings: buildTaskClineSettingsForCreate({
-								providerId: parseOptionalStringOrDefault(options.clineProvider) ?? undefined,
-								modelId: parseOptionalStringOrDefault(options.clineModel) ?? undefined,
-								reasoningEffort: parseTaskClineReasoningEffort(options.clineReasoningEffort),
+							agentSettings: buildTaskAgentSettingsForCreate({
+								providerId: parseOptionalStringOrDefault(options.provider) ?? undefined,
+								modelId: parseOptionalStringOrDefault(options.model) ?? undefined,
+								reasoningEffort: parseTaskReasoningEffort(options.reasoningEffort),
 							}),
 						}),
 				);
@@ -1190,13 +1190,13 @@ export function registerTaskCommand(program: Command): void {
 			'Agent override: cline | claude | codex | droid | gemini | opencode. Use "default" to clear.',
 		)
 		.option(
-			"--cline-provider <id>",
-			'Cline provider override (e.g. anthropic, openai, cline). Use "default" to clear.',
+			"--provider <id>",
+			'Provider override (e.g. anthropic, openai, openrouter). Use "default" to clear.',
 		)
-		.option("--cline-model <id>", 'Cline model override (e.g. claude-sonnet-4-20250514). Use "default" to clear.')
+		.option("--model <id>", 'Model override (e.g. claude-sonnet-4-20250514). Use "default" to clear.')
 		.option(
-			"--cline-reasoning-effort <level>",
-			'Cline reasoning effort override: default | low | medium | high | xhigh. Use "inherit" to clear.',
+			"--reasoning-effort <level>",
+			'Reasoning effort override: default | low | medium | high | xhigh. Use "inherit" to clear.',
 		)
 		.action(
 			async (options: {
@@ -1209,9 +1209,9 @@ export function registerTaskCommand(program: Command): void {
 				autoReviewEnabled?: unknown;
 				autoReviewMode?: "commit" | "pr";
 				agentId?: string;
-				clineProvider?: string;
-				clineModel?: string;
-				clineReasoningEffort?: string;
+				provider?: string;
+				model?: string;
+				reasoningEffort?: string;
 			}) => {
 				await runTaskCommand(
 					async () =>
@@ -1226,9 +1226,9 @@ export function registerTaskCommand(program: Command): void {
 							autoReviewEnabled: parseOptionalBooleanOption(options.autoReviewEnabled, "--auto-review-enabled"),
 							autoReviewMode: options.autoReviewMode,
 							agentId: parseAgentId(options.agentId),
-							clineProviderId: parseOptionalStringOrDefault(options.clineProvider),
-							clineModelId: parseOptionalStringOrDefault(options.clineModel),
-							clineReasoningEffort: parseTaskClineReasoningEffort(options.clineReasoningEffort),
+							providerId: parseOptionalStringOrDefault(options.provider),
+							modelId: parseOptionalStringOrDefault(options.model),
+							reasoningEffort: parseTaskReasoningEffort(options.reasoningEffort),
 						}),
 				);
 			},

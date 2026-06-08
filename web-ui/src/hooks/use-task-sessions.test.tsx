@@ -188,7 +188,7 @@ describe("useTaskSessions", () => {
 			cols: 120,
 			rows: 40,
 			agentId: undefined,
-			clineSettings: undefined,
+			agentSettings: undefined,
 		});
 	});
 
@@ -235,7 +235,7 @@ describe("useTaskSessions", () => {
 		);
 	});
 
-	it("forwards task-level Cline reasoning effort overrides when starting a task", async () => {
+	it("forwards task-level Kanban reasoning effort overrides when starting a task", async () => {
 		let latestSnapshot: HookSnapshot | null = null;
 
 		await act(async () => {
@@ -255,8 +255,8 @@ describe("useTaskSessions", () => {
 		await act(async () => {
 			await latestSnapshot?.startTaskSession({
 				...createTask(),
-				agentId: "cline",
-				clineSettings: {
+				agentId: "pi",
+				agentSettings: {
 					providerId: "openrouter",
 					modelId: "anthropic/claude-opus-4.6",
 					reasoningEffort: "low",
@@ -266,7 +266,7 @@ describe("useTaskSessions", () => {
 
 		expect(startTaskSessionMutateMock).toHaveBeenCalledWith(
 			expect.objectContaining({
-				clineSettings: {
+				agentSettings: {
 					providerId: "openrouter",
 					modelId: "anthropic/claude-opus-4.6",
 					reasoningEffort: "low",
@@ -295,7 +295,7 @@ describe("useTaskSessions", () => {
 		await act(async () => {
 			await latestSnapshot?.startTaskSession({
 				...createTask(),
-				clineSettings: {
+				agentSettings: {
 					reasoningEffort: "high",
 				},
 			});
@@ -303,7 +303,7 @@ describe("useTaskSessions", () => {
 
 		expect(startTaskSessionMutateMock).toHaveBeenCalledWith(
 			expect.objectContaining({
-				clineSettings: {
+				agentSettings: {
 					reasoningEffort: "high",
 				},
 			}),

@@ -1,21 +1,21 @@
 import { isRuntimeAgentLaunchSupported } from "@runtime-agent-catalog";
 import type {
 	RuntimeAgentId,
-	RuntimeClineProviderSettings,
+	RuntimeKanbanProviderSettings,
 	RuntimeConfigResponse,
 	RuntimeStateStreamTaskChatMessage,
 	RuntimeTaskChatMessage,
 } from "@/runtime/types";
 
-export function isNativeClineAgentSelected(agentId: RuntimeAgentId | null | undefined): boolean {
-	return agentId === "cline";
+export function isNativeAgentSelected(agentId: RuntimeAgentId | null | undefined): boolean {
+	return agentId === "pi";
 }
 
-export function getRuntimeClineProviderSettings(
-	config: Pick<RuntimeConfigResponse, "clineProviderSettings"> | null | undefined,
-): RuntimeClineProviderSettings {
+export function getRuntimeKanbanProviderSettings(
+	config: Pick<RuntimeConfigResponse, "kanbanProviderSettings"> | null | undefined,
+): RuntimeKanbanProviderSettings {
 	return (
-		config?.clineProviderSettings ?? {
+		config?.kanbanProviderSettings ?? {
 			providerId: null,
 			modelId: null,
 			baseUrl: null,
@@ -30,7 +30,7 @@ export function getRuntimeClineProviderSettings(
 	);
 }
 
-export function isClineProviderAuthenticated(settings: RuntimeClineProviderSettings | null | undefined): boolean {
+export function isKanbanProviderAuthenticated(settings: RuntimeKanbanProviderSettings | null | undefined): boolean {
 	if (!settings) {
 		return false;
 	}
@@ -43,15 +43,15 @@ export function isClineProviderAuthenticated(settings: RuntimeClineProviderSetti
 }
 
 /**
- * Returns true only when the selected provider is the Cline managed OAuth
+ * Returns true only when the selected provider is the Kanban managed OAuth
  * provider **and** an access token is configured.  This is stricter than
- * {@link isClineProviderAuthenticated} which accepts any configured provider
+ * {@link isKanbanProviderAuthenticated} which accepts any configured provider
  * (Claude API key, Codex, etc.).
  *
- * Use this for features that require a Cline-issued token (e.g. Featurebase
+ * Use this for features that require a Kanban-issued token (e.g. Featurebase
  * JWT authentication).
  */
-export function isClineOauthAuthenticated(settings: RuntimeClineProviderSettings | null | undefined): boolean {
+export function isKanbanOauthAuthenticated(settings: RuntimeKanbanProviderSettings | null | undefined): boolean {
 	if (!settings) {
 		return false;
 	}
@@ -63,24 +63,24 @@ export function isClineOauthAuthenticated(settings: RuntimeClineProviderSettings
 }
 
 export function isTaskAgentSetupSatisfied(
-	config: Pick<RuntimeConfigResponse, "selectedAgentId" | "agents" | "clineProviderSettings"> | null | undefined,
+	config: Pick<RuntimeConfigResponse, "selectedAgentId" | "agents" | "kanbanProviderSettings"> | null | undefined,
 ): boolean | null {
 	if (!config) {
 		return null;
 	}
-	if (isNativeClineAgentSelected(config.selectedAgentId)) {
-		if (isClineProviderAuthenticated(getRuntimeClineProviderSettings(config))) {
+	if (isNativeAgentSelected(config.selectedAgentId)) {
+		if (isKanbanProviderAuthenticated(getRuntimeKanbanProviderSettings(config))) {
 			return true;
 		}
 		return config.agents.some(
-			(agent) => agent.id !== "cline" && isRuntimeAgentLaunchSupported(agent.id) && agent.installed,
+			(agent) => agent.id !== "pi" && isRuntimeAgentLaunchSupported(agent.id) && agent.installed,
 		);
 	}
 	return config.agents.some((agent) => isRuntimeAgentLaunchSupported(agent.id) && agent.installed);
 }
 
 export function getTaskAgentNavbarHint(
-	config: Pick<RuntimeConfigResponse, "selectedAgentId" | "agents" | "clineProviderSettings"> | null | undefined,
+	config: Pick<RuntimeConfigResponse, "selectedAgentId" | "agents" | "kanbanProviderSettings"> | null | undefined,
 	options?: {
 		shouldUseNavigationPath?: boolean;
 	},

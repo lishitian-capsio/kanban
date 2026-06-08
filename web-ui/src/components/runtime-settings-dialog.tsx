@@ -1,6 +1,6 @@
 // Settings dialog composition for Kanban.
-// Generic app settings live here, while Cline-specific provider state and
-// side effects should stay in use-runtime-settings-cline-controller.ts.
+// Generic app settings live here, while Kanban-specific provider state and
+// side effects should stay in use-runtime-settings-kanban-controller.ts.
 import * as RadixCheckbox from "@radix-ui/react-checkbox";
 import * as RadixPopover from "@radix-ui/react-popover";
 import * as RadixSelect from "@radix-ui/react-select";
@@ -17,6 +17,7 @@ import {
 	ExternalLink,
 	FolderOpen,
 	GitCommit,
+	Globe,
 	Palette,
 	Plus,
 	Settings,
@@ -25,7 +26,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccountOrganizationSection } from "@/components/shared/account-organization-section";
-import { ClineSetupSection } from "@/components/shared/cline-setup-section";
+import { KanbanSetupSection } from "@/components/shared/kanban-setup-section";
 import {
 	getRuntimeShortcutIconComponent,
 	getRuntimeShortcutPickerOption,
@@ -38,14 +39,14 @@ import { cn } from "@/components/ui/cn";
 import { Dialog, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { TASK_GIT_BASE_REF_PROMPT_VARIABLE, type TaskGitAction } from "@/git-actions/build-task-git-action-prompt";
-import { useRuntimeSettingsClineController } from "@/hooks/use-runtime-settings-cline-controller";
-import { useRuntimeSettingsClineMcpController } from "@/hooks/use-runtime-settings-cline-mcp-controller";
+import { useRuntimeSettingsKanbanController } from "@/hooks/use-runtime-settings-kanban-controller";
+import { useRuntimeSettingsKanbanMcpController } from "@/hooks/use-runtime-settings-kanban-mcp-controller";
 import { previewThemeId, readStoredThemeId, saveThemeId, THEME_GROUPS, THEMES, type ThemeId } from "@/hooks/use-theme";
 import { useLayoutCustomizations } from "@/resize/layout-customizations";
 import { openFileOnHost } from "@/runtime/runtime-config-query";
 import type {
 	RuntimeAgentId,
-	RuntimeClineMcpServerAuthStatus,
+	RuntimeKanbanMcpServerAuthStatus,
 	RuntimeConfigResponse,
 	RuntimeProjectShortcut,
 } from "@/runtime/types";
@@ -74,7 +75,7 @@ function quoteCommandPartForDisplay(part: string): string {
 }
 
 function buildDisplayedAgentCommand(agentId: RuntimeAgentId, binary: string, autonomousModeEnabled: boolean): string {
-	if (agentId === "cline") {
+	if (agentId === "pi") {
 		return "";
 	}
 	const args = autonomousModeEnabled ? (getRuntimeAgentCatalogEntry(agentId)?.autonomousArgs ?? []) : [];
@@ -92,18 +93,19 @@ const GIT_PROMPT_VARIANT_OPTIONS: Array<{ value: TaskGitAction; label: string }>
 
 export type RuntimeSettingsSection = "shortcuts";
 
-const SETTINGS_AGENT_ORDER: readonly RuntimeAgentId[] = ["cline", "claude", "codex", "droid", "kiro"];
+const SETTINGS_AGENT_ORDER: readonly RuntimeAgentId[] = ["pi", "claude", "codex", "droid", "kiro"];
 
-type SettingsNavId = "general" | "cline" | "git-prompts" | "notifications" | "appearance" | "project";
+type SettingsNavId = "general" | "cline" | "proxy" | "git-prompts" | "notifications" | "appearance" | "project";
 
 const SETTINGS_NAV_ITEMS: ReadonlyArray<{
 	id: SettingsNavId;
 	label: string;
 	icon: React.ReactNode;
-	clineOnly?: boolean;
+	kanbanOnly?: boolean;
 }> = [
 	{ id: "general", label: "General", icon: <SlidersHorizontal size={16} /> },
-	{ id: "cline", label: "Cline", icon: <Bot size={16} />, clineOnly: true },
+	{ id: "cline", label: "Pi", icon: <Bot size={16} />, kanbanOnly: true },
+	{ id: "proxy", label: "Network Proxy", icon: <Globe size={16} /> },
 	{ id: "git-prompts", label: "Git Prompts", icon: <GitCommit size={16} /> },
 	{ id: "notifications", label: "Notifications", icon: <Bell size={16} /> },
 	{ id: "appearance", label: "Appearance", icon: <Palette size={16} /> },
@@ -154,9 +156,9 @@ function AgentRow({
 	disabled: boolean;
 }): React.ReactElement {
 	const installUrl = getRuntimeAgentCatalogEntry(agent.id)?.installUrl;
-	const isNativeCline = agent.id === "cline";
+	const isNativeKanban = agent.id === "pi";
 	const isInstalled = agent.installed === true;
-	const isInstallStatusPending = !isNativeCline && agent.installed === null;
+	const isInstallStatusPending = !isNativeKanban && agent.installed === null;
 
 	return (
 		<div
@@ -187,7 +189,7 @@ function AgentRow({
 				<div className="min-w-0">
 					<div className="flex items-center gap-2">
 						<span className="text-[13px] text-text-primary">{agent.label}</span>
-						{!isNativeCline && isInstalled ? (
+						{!isNativeKanban && isInstalled ? (
 							<span className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-status-green/10 text-status-green">
 								Installed
 							</span>
@@ -202,7 +204,7 @@ function AgentRow({
 					) : null}
 				</div>
 			</div>
-			{!isNativeCline && agent.installed === false && installUrl ? (
+			{!isNativeKanban && agent.installed === false && installUrl ? (
 				<a
 					href={installUrl}
 					target="_blank"
@@ -212,7 +214,7 @@ function AgentRow({
 				>
 					Install
 				</a>
-			) : !isNativeCline && agent.installed === false ? (
+			) : !isNativeKanban && agent.installed === false ? (
 				<Button size="sm" disabled>
 					Install
 				</Button>
@@ -358,7 +360,7 @@ export function RuntimeSettingsDialog({
 	open: boolean;
 	workspaceId: string | null;
 	initialConfig?: RuntimeConfigResponse | null;
-	liveMcpAuthStatuses?: RuntimeClineMcpServerAuthStatus[] | null;
+	liveMcpAuthStatuses?: RuntimeKanbanMcpServerAuthStatus[] | null;
 	onOpenChange: (open: boolean) => void;
 	onSaved?: () => void;
 	onAccountSwitched?: () => void;
@@ -375,6 +377,12 @@ export function RuntimeSettingsDialog({
 	const [shortcuts, setShortcuts] = useState<RuntimeProjectShortcut[]>([]);
 	const [commitPromptTemplate, setCommitPromptTemplate] = useState("");
 	const [openPrPromptTemplate, setOpenPrPromptTemplate] = useState("");
+	const [proxyEnabled, setProxyEnabled] = useState(false);
+	const [proxyHost, setProxyHost] = useState("");
+	const [proxyPort, setProxyPort] = useState("");
+	const [proxyUsername, setProxyUsername] = useState("");
+	const [proxyPassword, setProxyPassword] = useState("");
+	const [noProxy, setNoProxy] = useState("");
 	const [selectedPromptVariant, setSelectedPromptVariant] = useState<TaskGitAction>("commit");
 	const [copiedVariableToken, setCopiedVariableToken] = useState<string | null>(null);
 	const [saveError, setSaveError] = useState<string | null>(null);
@@ -412,13 +420,13 @@ export function RuntimeSettingsDialog({
 				id: agent.id,
 				label: agent.label,
 				binary: agent.binary,
-				installed: agent.id === "cline" ? true : agent.installed,
+				installed: agent.id === "pi" ? true : agent.installed,
 			})) ??
 			getRuntimeLaunchSupportedAgentCatalog().map((agent) => ({
 				id: agent.id,
 				label: agent.label,
 				binary: agent.binary,
-				installed: agent.id === "cline" ? true : null,
+				installed: agent.id === "pi" ? true : null,
 			}));
 		const orderIndexByAgentId = new Map(SETTINGS_AGENT_ORDER.map((agentId, index) => [agentId, index] as const));
 		const orderedAgents = [...agents].sort((left, right) => {
@@ -433,7 +441,7 @@ export function RuntimeSettingsDialog({
 	}, [agentAutonomousModeEnabled, config?.agents]);
 	const displayedAgents = useMemo(() => supportedAgents, [supportedAgents]);
 	const navItems = useMemo(
-		() => SETTINGS_NAV_ITEMS.filter((item) => !item.clineOnly || selectedAgentId === "cline"),
+		() => SETTINGS_NAV_ITEMS.filter((item) => !item.kanbanOnly || selectedAgentId === "pi"),
 		[selectedAgentId],
 	);
 	const configuredAgentId = config?.selectedAgentId ?? null;
@@ -445,13 +453,19 @@ export function RuntimeSettingsDialog({
 	const initialShortcuts = config?.shortcuts ?? [];
 	const initialCommitPromptTemplate = config?.commitPromptTemplate ?? "";
 	const initialOpenPrPromptTemplate = config?.openPrPromptTemplate ?? "";
-	const clineSettings = useRuntimeSettingsClineController({
+	const initialProxyEnabled = config?.proxyEnabled ?? false;
+	const initialProxyHost = config?.proxyHost ?? "";
+	const initialProxyPort = config?.proxyPort ?? "";
+	const initialProxyUsername = config?.proxyUsername ?? "";
+	const initialProxyPassword = config?.proxyPassword ?? "";
+	const initialNoProxy = config?.noProxy ?? "";
+	const agentSettings = useRuntimeSettingsKanbanController({
 		open,
 		workspaceId,
 		selectedAgentId,
 		config,
 	});
-	const clineMcpSettings = useRuntimeSettingsClineMcpController({
+	const kanbanMcpSettings = useRuntimeSettingsKanbanMcpController({
 		open,
 		workspaceId,
 		selectedAgentId,
@@ -470,10 +484,10 @@ export function RuntimeSettingsDialog({
 		if (readyForReviewNotificationsEnabled !== initialReadyForReviewNotificationsEnabled) {
 			return true;
 		}
-		if (clineSettings.hasUnsavedChanges) {
+		if (agentSettings.hasUnsavedChanges) {
 			return true;
 		}
-		if (clineMcpSettings.hasUnsavedChanges) {
+		if (kanbanMcpSettings.hasUnsavedChanges) {
 			return true;
 		}
 		if (draftThemeId !== initialThemeId) {
@@ -488,25 +502,43 @@ export function RuntimeSettingsDialog({
 		) {
 			return true;
 		}
+		if (proxyEnabled !== initialProxyEnabled) return true;
+		if (proxyHost !== initialProxyHost) return true;
+		if (proxyPort !== initialProxyPort) return true;
+		if (proxyUsername !== initialProxyUsername) return true;
+		if (proxyPassword !== initialProxyPassword) return true;
+		if (noProxy !== initialNoProxy) return true;
 		return (
 			normalizeTemplateForComparison(openPrPromptTemplate) !==
 			normalizeTemplateForComparison(initialOpenPrPromptTemplate)
 		);
 	}, [
 		agentAutonomousModeEnabled,
-		clineMcpSettings.hasUnsavedChanges,
-		clineSettings.hasUnsavedChanges,
+		kanbanMcpSettings.hasUnsavedChanges,
+		agentSettings.hasUnsavedChanges,
 		commitPromptTemplate,
 		config,
 		draftThemeId,
 		initialAgentAutonomousModeEnabled,
 		initialCommitPromptTemplate,
 		initialOpenPrPromptTemplate,
+		initialNoProxy,
+		initialProxyEnabled,
+		initialProxyHost,
+		initialProxyPassword,
+		initialProxyPort,
+		initialProxyUsername,
 		initialReadyForReviewNotificationsEnabled,
 		initialSelectedAgentId,
 		initialShortcuts,
 		initialThemeId,
+		noProxy,
 		openPrPromptTemplate,
+		proxyEnabled,
+		proxyHost,
+		proxyPassword,
+		proxyPort,
+		proxyUsername,
 		readyForReviewNotificationsEnabled,
 		selectedAgentId,
 		shortcuts,
@@ -522,11 +554,23 @@ export function RuntimeSettingsDialog({
 		setShortcuts(config?.shortcuts ?? []);
 		setCommitPromptTemplate(config?.commitPromptTemplate ?? "");
 		setOpenPrPromptTemplate(config?.openPrPromptTemplate ?? "");
+		setProxyEnabled(config?.proxyEnabled ?? false);
+		setProxyHost(config?.proxyHost ?? "");
+		setProxyPort(config?.proxyPort ?? "");
+		setProxyUsername(config?.proxyUsername ?? "");
+		setProxyPassword(config?.proxyPassword ?? "");
+		setNoProxy(config?.noProxy ?? "");
 		setSaveError(null);
 	}, [
 		config?.agentAutonomousModeEnabled,
 		config?.commitPromptTemplate,
 		config?.openPrPromptTemplate,
+		config?.proxyEnabled,
+		config?.proxyHost,
+		config?.proxyPort,
+		config?.proxyUsername,
+		config?.proxyPassword,
+		config?.noProxy,
 		config?.readyForReviewNotificationsEnabled,
 		config?.selectedAgentId,
 		config?.shortcuts,
@@ -589,7 +633,7 @@ export function RuntimeSettingsDialog({
 	});
 
 	useEffect(() => {
-		if (activeSection === "cline" && selectedAgentId !== "cline") {
+		if (activeSection === "cline" && selectedAgentId !== "pi") {
 			setActiveSection("general");
 		}
 	}, [activeSection, selectedAgentId]);
@@ -681,19 +725,19 @@ export function RuntimeSettingsDialog({
 			const nextPermission = await requestBrowserNotificationPermission();
 			setNotificationPermission(nextPermission);
 		}
-		if (selectedAgentId === "cline" && clineSettings.providerId.trim().length === 0) {
-			setSaveError("Choose a Cline provider before saving.");
+		if (selectedAgentId === "pi" && agentSettings.providerId.trim().length === 0) {
+			setSaveError("Choose a provider before saving.");
 			return;
 		}
-		if (selectedAgentId === "cline") {
-			const clineProviderSaveResult = await clineSettings.saveProviderSettings();
-			if (!clineProviderSaveResult.ok) {
-				setSaveError(clineProviderSaveResult.message ?? "Could not save Cline provider settings.");
+		if (selectedAgentId === "pi") {
+			const kanbanProviderSaveResult = await agentSettings.saveProviderSettings();
+			if (!kanbanProviderSaveResult.ok) {
+				setSaveError(kanbanProviderSaveResult.message ?? "Could not save provider settings.");
 				return;
 			}
-			const clineMcpSaveResult = await clineMcpSettings.saveMcpSettings();
-			if (!clineMcpSaveResult.ok) {
-				setSaveError(clineMcpSaveResult.message ?? "Could not save Cline MCP settings.");
+			const kanbanMcpSaveResult = await kanbanMcpSettings.saveMcpSettings();
+			if (!kanbanMcpSaveResult.ok) {
+				setSaveError(kanbanMcpSaveResult.message ?? "Could not save MCP settings.");
 				return;
 			}
 		}
@@ -704,6 +748,12 @@ export function RuntimeSettingsDialog({
 			shortcuts,
 			commitPromptTemplate,
 			openPrPromptTemplate,
+			proxyEnabled,
+			proxyHost,
+			proxyPort,
+			proxyUsername,
+			proxyPassword,
+			noProxy,
 		});
 		if (!saved) {
 			setSaveError("Could not save runtime settings. Check runtime logs and try again.");
@@ -735,7 +785,7 @@ export function RuntimeSettingsDialog({
 		[workspaceId],
 	);
 
-	const handleClineSetupSaved = useCallback(() => {
+	const handleKanbanSetupSaved = useCallback(() => {
 		refresh();
 		onSaved?.();
 	}, [onSaved, refresh]);
@@ -814,24 +864,24 @@ export function RuntimeSettingsDialog({
 						</p>
 					</div>
 
-					{/* ---- Cline ---- */}
-					{selectedAgentId === "cline" ? (
+					{/* ---- Kanban ---- */}
+					{selectedAgentId === "pi" ? (
 						<>
 							<div data-settings-section="cline" />
 							<div className="sticky top-0 -mx-5 px-5 pt-4 pb-2 bg-surface-1 z-10">
 								<h2 className="flex items-center gap-2 text-base font-semibold text-text-primary m-0">
 									<Bot size={16} className="text-text-secondary" />
-									Cline
+									Pi
 								</h2>
 							</div>
 							<div className="rounded-lg border border-border bg-surface-0 px-4 py-3 mb-4">
-								<ClineSetupSection
-									controller={clineSettings}
-									mcpController={clineMcpSettings}
+								<KanbanSetupSection
+									controller={agentSettings}
+									mcpController={kanbanMcpSettings}
 									controlsDisabled={controlsDisabled}
 									workspaceId={workspaceId}
 									accountSection={
-										clineSettings.providerId.trim() === "cline" ? (
+										agentSettings.providerId.trim() === "cline" ? (
 											<AccountOrganizationSection
 												workspaceId={workspaceId}
 												open={open}
@@ -840,11 +890,91 @@ export function RuntimeSettingsDialog({
 										) : null
 									}
 									onError={setSaveError}
-									onSaved={handleClineSetupSaved}
+									onSaved={handleKanbanSetupSaved}
 								/>
 							</div>
 						</>
 					) : null}
+
+					{/* ---- Network Proxy ---- */}
+					<div data-settings-section="proxy" />
+					<div className="sticky top-0 -mx-5 px-5 pt-4 pb-2 bg-surface-1 z-10">
+						<h2 className="flex items-center gap-2 text-base font-semibold text-text-primary m-0">
+							<Globe size={16} className="text-text-secondary" />
+							Network Proxy
+						</h2>
+					</div>
+					<div className="rounded-lg border border-border bg-surface-0 px-4 py-3 mb-4">
+						<div className="flex items-center gap-2 mb-3">
+							<RadixSwitch.Root
+								checked={proxyEnabled}
+								disabled={controlsDisabled}
+								onCheckedChange={setProxyEnabled}
+								className="relative h-5 w-9 rounded-full bg-surface-4 data-[state=checked]:bg-accent cursor-pointer disabled:opacity-40"
+							>
+								<RadixSwitch.Thumb className="block h-4 w-4 rounded-full bg-white shadow-sm transition-transform translate-x-0.5 data-[state=checked]:translate-x-[18px]" />
+							</RadixSwitch.Root>
+							<span className="text-[13px] text-text-primary">Enable proxy</span>
+						</div>
+						<div className={`space-y-3 ${proxyEnabled ? "" : "opacity-40"}`}>
+							<div>
+								<label className="block text-[12px] text-text-secondary mb-1">Host</label>
+								<input
+									value={proxyHost}
+									onChange={(event) => setProxyHost(event.target.value)}
+									placeholder="proxy.example.com"
+									disabled={controlsDisabled}
+									className="h-8 w-full rounded-md border border-border bg-surface-2 px-2.5 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none disabled:opacity-40"
+								/>
+							</div>
+							<div>
+								<label className="block text-[12px] text-text-secondary mb-1">Port (optional)</label>
+								<input
+									value={proxyPort}
+									onChange={(event) => setProxyPort(event.target.value)}
+									placeholder="8080"
+									disabled={controlsDisabled}
+									className="h-8 w-36 rounded-md border border-border bg-surface-2 px-2.5 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none disabled:opacity-40"
+								/>
+							</div>
+							<div className="grid grid-cols-2 gap-3">
+								<div>
+									<label className="block text-[12px] text-text-secondary mb-1">Username (optional)</label>
+									<input
+										value={proxyUsername}
+										onChange={(event) => setProxyUsername(event.target.value)}
+										placeholder=""
+										disabled={controlsDisabled}
+										className="h-8 w-full rounded-md border border-border bg-surface-2 px-2.5 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none disabled:opacity-40"
+									/>
+								</div>
+								<div>
+									<label className="block text-[12px] text-text-secondary mb-1">Password (optional)</label>
+									<input
+										value={proxyPassword}
+										onChange={(event) => setProxyPassword(event.target.value)}
+										type="password"
+										placeholder=""
+										disabled={controlsDisabled}
+										className="h-8 w-full rounded-md border border-border bg-surface-2 px-2.5 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none disabled:opacity-40"
+									/>
+								</div>
+							</div>
+							<div>
+								<label className="block text-[12px] text-text-secondary mb-1">No Proxy (optional, comma-separated)</label>
+								<input
+									value={noProxy}
+									onChange={(event) => setNoProxy(event.target.value)}
+									placeholder="localhost,127.0.0.1"
+									disabled={controlsDisabled}
+									className="h-8 w-full rounded-md border border-border bg-surface-2 px-2.5 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none disabled:opacity-40"
+								/>
+							</div>
+							<p className="text-text-tertiary text-[12px] m-0">
+								Changes apply to newly started agent sessions.
+							</p>
+						</div>
+					</div>
 
 					{/* ---- Git Prompts ---- */}
 					<div data-settings-section="git-prompts" />
@@ -1063,7 +1193,7 @@ export function RuntimeSettingsDialog({
 					>
 						{config?.projectConfigPath
 							? formatPathForDisplay(config.projectConfigPath)
-							: "<project>/.cline/kanban/config.json"}
+							: "<project>/.kanban/kanban/config.json"}
 						{config?.projectConfigPath ? <ExternalLink size={12} className="inline ml-1.5 align-middle" /> : null}
 					</p>
 					<div className="rounded-lg border border-border bg-surface-0 px-4 py-3 mb-4">

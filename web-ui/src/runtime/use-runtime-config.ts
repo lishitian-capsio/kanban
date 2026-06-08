@@ -17,6 +17,12 @@ export interface UseRuntimeConfigResult {
 		readyForReviewNotificationsEnabled?: boolean;
 		commitPromptTemplate?: string;
 		openPrPromptTemplate?: string;
+		proxyEnabled?: boolean;
+		proxyHost?: string;
+		proxyPort?: string;
+		proxyUsername?: string;
+		proxyPassword?: string;
+		noProxy?: string;
 	}) => Promise<RuntimeConfigResponse | null>;
 }
 
@@ -84,6 +90,12 @@ export function useRuntimeConfig(
 			readyForReviewNotificationsEnabled?: boolean;
 			commitPromptTemplate?: string;
 			openPrPromptTemplate?: string;
+			proxyEnabled?: boolean;
+			proxyHost?: string;
+			proxyPort?: string;
+			proxyUsername?: string;
+			proxyPassword?: string;
+			noProxy?: string;
 		}): Promise<RuntimeConfigResponse | null> => {
 			setIsSaving(true);
 			try {

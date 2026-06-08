@@ -10,16 +10,16 @@ import type { BoardCard, BoardColumn, CardSelection } from "@/types";
 const mockUseRuntimeWorkspaceChanges = vi.fn();
 const {
 	mockAgentTerminalPanel,
-	mockClineAgentChatPanel,
+	mockKanbanAgentChatPanel,
 	mockDiffViewerPanel,
-	mockClineAppendToDraft,
-	mockClineSendText,
+	mockKanbanAppendToDraft,
+	mockKanbanSendText,
 } = vi.hoisted(() => ({
 	mockAgentTerminalPanel: vi.fn((_props: { panelBackgroundColor?: string; terminalBackgroundColor?: string }) => null),
-	mockClineAgentChatPanel: vi.fn((..._args: unknown[]) => null),
+	mockKanbanAgentChatPanel: vi.fn((..._args: unknown[]) => null),
 	mockDiffViewerPanel: vi.fn((..._args: unknown[]) => null),
-	mockClineAppendToDraft: vi.fn(),
-	mockClineSendText: vi.fn(async () => {}),
+	mockKanbanAppendToDraft: vi.fn(),
+	mockKanbanSendText: vi.fn(async () => {}),
 }));
 
 vi.mock("react-hotkeys-hook", () => ({
@@ -34,14 +34,14 @@ vi.mock("@/components/detail-panels/agent-terminal-panel", () => ({
 	AgentTerminalPanel: mockAgentTerminalPanel,
 }));
 
-vi.mock("@/components/detail-panels/cline-agent-chat-panel", () => ({
-	ClineAgentChatPanel: forwardRef((props: unknown, ref) => {
-		mockClineAgentChatPanel(props);
+vi.mock("@/components/detail-panels/kanban-agent-chat-panel", () => ({
+	KanbanAgentChatPanel: forwardRef((props: unknown, ref) => {
+		mockKanbanAgentChatPanel(props);
 		useImperativeHandle(ref, () => ({
-			appendToDraft: mockClineAppendToDraft,
-			sendText: mockClineSendText,
+			appendToDraft: mockKanbanAppendToDraft,
+			sendText: mockKanbanSendText,
 		}));
-		return <div data-testid="cline-agent-chat-panel" />;
+		return <div data-testid="kanban-agent-chat-panel" />;
 	}),
 }));
 
@@ -180,10 +180,10 @@ describe("CardDetailView", () => {
 		document.body.appendChild(container);
 		root = createRoot(container);
 		mockAgentTerminalPanel.mockClear();
-		mockClineAgentChatPanel.mockClear();
+		mockKanbanAgentChatPanel.mockClear();
 		mockDiffViewerPanel.mockClear();
-		mockClineAppendToDraft.mockClear();
-		mockClineSendText.mockClear();
+		mockKanbanAppendToDraft.mockClear();
+		mockKanbanSendText.mockClear();
 		mockUseRuntimeWorkspaceChanges.mockReturnValue({
 			changes: {
 				files: [
@@ -207,10 +207,10 @@ describe("CardDetailView", () => {
 		});
 		mockUseRuntimeWorkspaceChanges.mockReset();
 		mockAgentTerminalPanel.mockClear();
-		mockClineAgentChatPanel.mockClear();
+		mockKanbanAgentChatPanel.mockClear();
 		mockDiffViewerPanel.mockClear();
-		mockClineAppendToDraft.mockClear();
-		mockClineSendText.mockClear();
+		mockKanbanAppendToDraft.mockClear();
+		mockKanbanSendText.mockClear();
 		vi.restoreAllMocks();
 		container.remove();
 		if (previousActEnvironment === undefined) {
@@ -398,7 +398,7 @@ describe("CardDetailView", () => {
 				<CardDetailView
 					selection={createSelection()}
 					currentProjectId="workspace-1"
-					selectedAgentId="cline"
+					selectedAgentId="pi"
 					sessionSummary={null}
 					taskSessions={{}}
 					onSessionSummary={() => {}}
@@ -413,7 +413,7 @@ describe("CardDetailView", () => {
 			);
 		});
 
-		expect(container.querySelector('[data-testid="cline-agent-chat-panel"]')).toBeInstanceOf(HTMLDivElement);
+		expect(container.querySelector('[data-testid="kanban-agent-chat-panel"]')).toBeInstanceOf(HTMLDivElement);
 		expect(container.querySelector('[data-testid="agent-terminal-panel"]')).toBeNull();
 	});
 
@@ -426,7 +426,7 @@ describe("CardDetailView", () => {
 				<CardDetailView
 					selection={selection}
 					currentProjectId="workspace-1"
-					selectedAgentId="cline"
+					selectedAgentId="pi"
 					sessionSummary={null}
 					taskSessions={{}}
 					onSessionSummary={() => {}}
@@ -441,7 +441,7 @@ describe("CardDetailView", () => {
 			);
 		});
 
-		expect(container.querySelector('[data-testid="cline-agent-chat-panel"]')).toBeNull();
+		expect(container.querySelector('[data-testid="kanban-agent-chat-panel"]')).toBeNull();
 	});
 
 	it("shows cline chat panel when task session agentId is cline even if global agent is claude", async () => {
@@ -454,7 +454,7 @@ describe("CardDetailView", () => {
 					sessionSummary={{
 						taskId: "task-1",
 						state: "running",
-						agentId: "cline",
+						agentId: "pi",
 						workspacePath: null,
 						pid: null,
 						startedAt: null,
@@ -479,7 +479,7 @@ describe("CardDetailView", () => {
 			);
 		});
 
-		expect(container.querySelector('[data-testid="cline-agent-chat-panel"]')).toBeInstanceOf(HTMLDivElement);
+		expect(container.querySelector('[data-testid="kanban-agent-chat-panel"]')).toBeInstanceOf(HTMLDivElement);
 	});
 
 	it("shows terminal panel when task session agentId is claude even if global agent is cline", async () => {
@@ -488,7 +488,7 @@ describe("CardDetailView", () => {
 				<CardDetailView
 					selection={createSelection()}
 					currentProjectId="workspace-1"
-					selectedAgentId="cline"
+					selectedAgentId="pi"
 					sessionSummary={{
 						taskId: "task-1",
 						state: "running",
@@ -517,7 +517,7 @@ describe("CardDetailView", () => {
 			);
 		});
 
-		expect(container.querySelector('[data-testid="cline-agent-chat-panel"]')).toBeNull();
+		expect(container.querySelector('[data-testid="kanban-agent-chat-panel"]')).toBeNull();
 		expect(mockAgentTerminalPanel).toHaveBeenCalled();
 	});
 
@@ -557,7 +557,7 @@ describe("CardDetailView", () => {
 				<CardDetailView
 					selection={createSelection()}
 					currentProjectId="workspace-1"
-					selectedAgentId="cline"
+					selectedAgentId="pi"
 					sessionSummary={null}
 					taskSessions={{}}
 					onSessionSummary={() => {}}
@@ -581,7 +581,7 @@ describe("CardDetailView", () => {
 		});
 
 		expect(onAddReviewComments).not.toHaveBeenCalled();
-		expect(mockClineAppendToDraft).toHaveBeenCalledWith("src/example.ts:4 | value\n> Add tests");
+		expect(mockKanbanAppendToDraft).toHaveBeenCalledWith("src/example.ts:4 | value\n> Add tests");
 	});
 
 	it("routes Send diff comments through the mounted cline panel", async () => {
@@ -592,7 +592,7 @@ describe("CardDetailView", () => {
 				<CardDetailView
 					selection={createSelection()}
 					currentProjectId="workspace-1"
-					selectedAgentId="cline"
+					selectedAgentId="pi"
 					sessionSummary={null}
 					taskSessions={{}}
 					onSessionSummary={() => {}}
@@ -617,7 +617,7 @@ describe("CardDetailView", () => {
 		});
 
 		expect(onSendReviewComments).not.toHaveBeenCalled();
-		expect(mockClineSendText).toHaveBeenCalledWith("src/example.ts:8 | done\n> Ship this");
+		expect(mockKanbanSendText).toHaveBeenCalledWith("src/example.ts:8 | done\n> Ship this");
 	});
 
 	it("loads the saved agent-to-diff panel ratio from local storage", async () => {

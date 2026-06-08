@@ -31,7 +31,7 @@ function createRuntimeConfigResponse(
 		agentAutonomousModeEnabled: true,
 		effectiveCommand: selectedAgentId,
 		globalConfigPath: "/tmp/global-config.json",
-		projectConfigPath: "/tmp/project/.cline/kanban/config.json",
+		projectConfigPath: "/tmp/project/.kanban/kanban/config.json",
 		readyForReviewNotificationsEnabled: true,
 		detectedCommands: [selectedAgentId],
 		agents: [
@@ -55,7 +55,7 @@ function createRuntimeConfigResponse(
 			},
 		],
 		shortcuts,
-		clineProviderSettings: {
+		kanbanProviderSettings: {
 			providerId: null,
 			modelId: null,
 			baseUrl: null,
@@ -70,6 +70,12 @@ function createRuntimeConfigResponse(
 		openPrPromptTemplate: "",
 		commitPromptTemplateDefault: "",
 		openPrPromptTemplateDefault: "",
+		proxyEnabled: false,
+		proxyHost: "",
+		proxyPort: "",
+		proxyUsername: "",
+		proxyPassword: "",
+		noProxy: "",
 	};
 }
 

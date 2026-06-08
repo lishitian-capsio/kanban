@@ -71,7 +71,7 @@ export const runtimeSlashCommandsResponseSchema = z.object({
 });
 export type RuntimeSlashCommandsResponse = z.infer<typeof runtimeSlashCommandsResponseSchema>;
 
-export const runtimeAgentIdSchema = z.enum(["claude", "codex", "gemini", "opencode", "droid", "kiro", "cline"]);
+export const runtimeAgentIdSchema = z.enum(["claude", "codex", "gemini", "opencode", "droid", "kiro", "cline", "pi"]);
 export type RuntimeAgentId = z.infer<typeof runtimeAgentIdSchema>;
 
 const runtimeBoardColumnIdEnum = z.enum(["backlog", "in_progress", "review", "trash"]);
@@ -88,14 +88,14 @@ export const runtimeTaskAutoReviewModeSchema = z.preprocess(
 );
 export type RuntimeTaskAutoReviewMode = z.infer<typeof runtimeTaskAutoReviewModeEnum>;
 
-export const runtimeClineReasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
-export type RuntimeClineReasoningEffort = z.infer<typeof runtimeClineReasoningEffortSchema>;
-export const runtimeTaskClineSettingsSchema = z.object({
+export const runtimeReasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
+export type RuntimeReasoningEffort = z.infer<typeof runtimeReasoningEffortSchema>;
+export const runtimeTaskAgentSettingsSchema = z.object({
 	providerId: z.string().optional(),
 	modelId: z.string().optional(),
-	reasoningEffort: runtimeClineReasoningEffortSchema.optional(),
+	reasoningEffort: runtimeReasoningEffortSchema.optional(),
 });
-export type RuntimeTaskClineSettings = z.infer<typeof runtimeTaskClineSettingsSchema>;
+export type RuntimeTaskAgentSettings = z.infer<typeof runtimeTaskAgentSettingsSchema>;
 export const runtimeTaskImageSchema = z.object({
 	id: z.string(),
 	data: z.string(),
@@ -104,30 +104,6 @@ export const runtimeTaskImageSchema = z.object({
 });
 export type RuntimeTaskImage = z.infer<typeof runtimeTaskImageSchema>;
 
-const runtimeLegacyTaskClineReasoningEffortSchema = z.enum(["default", "low", "medium", "high", "xhigh"]);
-
-function normalizeRuntimeTaskClineSettings(input: {
-	clineSettings?: RuntimeTaskClineSettings;
-	clineProviderId?: string;
-	clineModelId?: string;
-	clineReasoningEffort?: z.infer<typeof runtimeLegacyTaskClineReasoningEffortSchema>;
-}): RuntimeTaskClineSettings | undefined {
-	if (input.clineSettings !== undefined) {
-		return input.clineSettings;
-	}
-	const providerId = input.clineProviderId?.trim();
-	const modelId = input.clineModelId?.trim();
-	if (!providerId && !modelId && input.clineReasoningEffort === undefined) {
-		return undefined;
-	}
-	return {
-		...(providerId ? { providerId } : {}),
-		...(modelId ? { modelId } : {}),
-		...(input.clineReasoningEffort && input.clineReasoningEffort !== "default"
-			? { reasoningEffort: input.clineReasoningEffort }
-			: {}),
-	};
-}
 
 export const runtimeBoardCardSchema = z
 	.object({
@@ -139,34 +115,17 @@ export const runtimeBoardCardSchema = z
 		autoReviewMode: runtimeTaskAutoReviewModeSchema.optional(),
 		images: z.array(runtimeTaskImageSchema).optional(),
 		agentId: runtimeAgentIdSchema.optional(),
-		clineSettings: runtimeTaskClineSettingsSchema.optional(),
-		clineProviderId: z.string().optional(),
-		clineModelId: z.string().optional(),
-		clineReasoningEffort: runtimeLegacyTaskClineReasoningEffortSchema.optional(),
+		agentSettings: runtimeTaskAgentSettingsSchema.optional(),
 		baseRef: z.string(),
 		createdAt: z.number(),
 		updatedAt: z.number(),
 	})
-	.transform(
-		({
-			clineProviderId: _legacyProviderId,
-			clineModelId: _legacyModelId,
-			clineReasoningEffort: _legacyReasoningEffort,
-			...card
-		}) => {
-			const clineSettings = normalizeRuntimeTaskClineSettings({
-				clineSettings: card.clineSettings,
-				clineProviderId: _legacyProviderId,
-				clineModelId: _legacyModelId,
-				clineReasoningEffort: _legacyReasoningEffort,
-			});
-			return {
-				...card,
-				...(clineSettings !== undefined ? { clineSettings } : {}),
-				title: resolveTaskTitle(card.title, card.prompt),
-			};
-		},
-	);
+	.transform((card) => {
+		return {
+			...card,
+			title: resolveTaskTitle(card.title, card.prompt),
+		};
+	});
 export type RuntimeBoardCard = z.infer<typeof runtimeBoardCardSchema>;
 
 export const runtimeBoardColumnSchema = z.object({
@@ -365,14 +324,14 @@ export const runtimeWorkspaceMetadataSchema = z.object({
 });
 export type RuntimeWorkspaceMetadata = z.infer<typeof runtimeWorkspaceMetadataSchema>;
 
-export const runtimeClineMcpServerAuthStatusSchema = z.object({
+export const runtimeKanbanMcpServerAuthStatusSchema = z.object({
 	serverName: z.string(),
 	oauthSupported: z.boolean(),
 	oauthConfigured: z.boolean(),
 	lastError: z.string().nullable(),
 	lastAuthenticatedAt: z.number().nullable(),
 });
-export type RuntimeClineMcpServerAuthStatus = z.infer<typeof runtimeClineMcpServerAuthStatusSchema>;
+export type RuntimeKanbanMcpServerAuthStatus = z.infer<typeof runtimeKanbanMcpServerAuthStatusSchema>;
 
 export const runtimeStateStreamSnapshotMessageSchema = z.object({
 	type: z.literal("snapshot"),
@@ -380,7 +339,7 @@ export const runtimeStateStreamSnapshotMessageSchema = z.object({
 	projects: z.array(runtimeProjectSummarySchema),
 	workspaceState: runtimeWorkspaceStateResponseSchema.nullable(),
 	workspaceMetadata: runtimeWorkspaceMetadataSchema.nullable(),
-	clineSessionContextVersion: z.number().int().nonnegative(),
+	kanbanSessionContextVersion: z.number().int().nonnegative(),
 });
 export type RuntimeStateStreamSnapshotMessage = z.infer<typeof runtimeStateStreamSnapshotMessageSchema>;
 
@@ -441,16 +400,16 @@ export type RuntimeStateStreamTaskChatClearedMessage = z.infer<typeof runtimeSta
 
 export const runtimeStateStreamMcpAuthUpdatedMessageSchema = z.object({
 	type: z.literal("mcp_auth_updated"),
-	statuses: z.array(runtimeClineMcpServerAuthStatusSchema),
+	statuses: z.array(runtimeKanbanMcpServerAuthStatusSchema),
 });
 export type RuntimeStateStreamMcpAuthUpdatedMessage = z.infer<typeof runtimeStateStreamMcpAuthUpdatedMessageSchema>;
 
-export const runtimeStateStreamClineSessionContextUpdatedMessageSchema = z.object({
-	type: z.literal("cline_session_context_updated"),
+export const runtimeStateStreamKanbanSessionContextUpdatedMessageSchema = z.object({
+	type: z.literal("kanban_session_context_updated"),
 	version: z.number().int().nonnegative(),
 });
-export type RuntimeStateStreamClineSessionContextUpdatedMessage = z.infer<
-	typeof runtimeStateStreamClineSessionContextUpdatedMessageSchema
+export type RuntimeStateStreamKanbanSessionContextUpdatedMessage = z.infer<
+	typeof runtimeStateStreamKanbanSessionContextUpdatedMessageSchema
 >;
 
 export const runtimeStateStreamErrorMessageSchema = z.object({
@@ -469,7 +428,7 @@ export const runtimeStateStreamMessageSchema = z.discriminatedUnion("type", [
 	runtimeStateStreamTaskChatMessageSchema,
 	runtimeStateStreamTaskChatClearedMessageSchema,
 	runtimeStateStreamMcpAuthUpdatedMessageSchema,
-	runtimeStateStreamClineSessionContextUpdatedMessageSchema,
+	runtimeStateStreamKanbanSessionContextUpdatedMessageSchema,
 	runtimeStateStreamErrorMessageSchema,
 ]);
 export type RuntimeStateStreamMessage = z.infer<typeof runtimeStateStreamMessageSchema>;
@@ -598,81 +557,81 @@ export const runtimeProjectShortcutSchema = z.object({
 });
 export type RuntimeProjectShortcut = z.infer<typeof runtimeProjectShortcutSchema>;
 
-export const runtimeClineOauthProviderSchema = z.enum(["cline", "oca", "openai-codex"]);
-export type RuntimeClineOauthProvider = z.infer<typeof runtimeClineOauthProviderSchema>;
+export const runtimeKanbanOauthProviderSchema = z.enum(["cline", "oca", "openai-codex"]);
+export type RuntimeKanbanOauthProvider = z.infer<typeof runtimeKanbanOauthProviderSchema>;
 
-export const runtimeClineProviderSettingsSchema = z.object({
+export const runtimeKanbanProviderSettingsSchema = z.object({
 	providerId: z.string().nullable(),
 	modelId: z.string().nullable(),
 	baseUrl: z.string().nullable(),
-	reasoningEffort: runtimeClineReasoningEffortSchema.nullable().optional(),
+	reasoningEffort: runtimeReasoningEffortSchema.nullable().optional(),
 	apiKeyConfigured: z.boolean(),
-	oauthProvider: runtimeClineOauthProviderSchema.nullable(),
+	oauthProvider: runtimeKanbanOauthProviderSchema.nullable(),
 	oauthAccessTokenConfigured: z.boolean(),
 	oauthRefreshTokenConfigured: z.boolean(),
 	oauthAccountId: z.string().nullable(),
 	oauthExpiresAt: z.number().int().positive().nullable(),
 });
-export type RuntimeClineProviderSettings = z.infer<typeof runtimeClineProviderSettingsSchema>;
+export type RuntimeKanbanProviderSettings = z.infer<typeof runtimeKanbanProviderSettingsSchema>;
 
-export const runtimeClineAccountProfileSchema = z.object({
+export const runtimeKanbanAccountProfileSchema = z.object({
 	accountId: z.string().nullable(),
 	email: z.string().nullable(),
 	displayName: z.string().nullable(),
 });
-export type RuntimeClineAccountProfile = z.infer<typeof runtimeClineAccountProfileSchema>;
+export type RuntimeKanbanAccountProfile = z.infer<typeof runtimeKanbanAccountProfileSchema>;
 
-export const runtimeClineAccountProfileResponseSchema = z.object({
-	profile: runtimeClineAccountProfileSchema.nullable(),
+export const runtimeKanbanAccountProfileResponseSchema = z.object({
+	profile: runtimeKanbanAccountProfileSchema.nullable(),
 	error: z.string().optional(),
 });
-export type RuntimeClineAccountProfileResponse = z.infer<typeof runtimeClineAccountProfileResponseSchema>;
+export type RuntimeKanbanAccountProfileResponse = z.infer<typeof runtimeKanbanAccountProfileResponseSchema>;
 
-export const runtimeClineKanbanAccessResponseSchema = z.object({
+export const runtimeKanbanKanbanAccessResponseSchema = z.object({
 	enabled: z.boolean(),
 	error: z.string().optional(),
 });
-export type RuntimeClineKanbanAccessResponse = z.infer<typeof runtimeClineKanbanAccessResponseSchema>;
+export type RuntimeKanbanKanbanAccessResponse = z.infer<typeof runtimeKanbanKanbanAccessResponseSchema>;
 
-export const runtimeClineAccountOrganizationSchema = z.object({
+export const runtimeKanbanAccountOrganizationSchema = z.object({
 	organizationId: z.string(),
 	name: z.string(),
 	active: z.boolean(),
 	roles: z.array(z.string()),
 });
-export type RuntimeClineAccountOrganization = z.infer<typeof runtimeClineAccountOrganizationSchema>;
+export type RuntimeKanbanAccountOrganization = z.infer<typeof runtimeKanbanAccountOrganizationSchema>;
 
-export const runtimeClineAccountOrganizationsResponseSchema = z.object({
-	organizations: z.array(runtimeClineAccountOrganizationSchema),
+export const runtimeKanbanAccountOrganizationsResponseSchema = z.object({
+	organizations: z.array(runtimeKanbanAccountOrganizationSchema),
 	error: z.string().optional(),
 });
-export type RuntimeClineAccountOrganizationsResponse = z.infer<typeof runtimeClineAccountOrganizationsResponseSchema>;
+export type RuntimeKanbanAccountOrganizationsResponse = z.infer<typeof runtimeKanbanAccountOrganizationsResponseSchema>;
 
-export const runtimeClineAccountBalanceResponseSchema = z.object({
+export const runtimeKanbanAccountBalanceResponseSchema = z.object({
 	balance: z.number().nullable(),
 	activeAccountLabel: z.string().nullable(),
 	activeOrganizationId: z.string().nullable(),
 	error: z.string().optional(),
 });
-export type RuntimeClineAccountBalanceResponse = z.infer<typeof runtimeClineAccountBalanceResponseSchema>;
+export type RuntimeKanbanAccountBalanceResponse = z.infer<typeof runtimeKanbanAccountBalanceResponseSchema>;
 
-export const runtimeClineAccountSwitchRequestSchema = z.object({
+export const runtimeKanbanAccountSwitchRequestSchema = z.object({
 	organizationId: z.string().nullable(),
 });
-export type RuntimeClineAccountSwitchRequest = z.infer<typeof runtimeClineAccountSwitchRequestSchema>;
+export type RuntimeKanbanAccountSwitchRequest = z.infer<typeof runtimeKanbanAccountSwitchRequestSchema>;
 
-export const runtimeClineAccountSwitchResponseSchema = z.object({
+export const runtimeKanbanAccountSwitchResponseSchema = z.object({
 	ok: z.boolean(),
 	error: z.string().optional(),
 });
-export type RuntimeClineAccountSwitchResponse = z.infer<typeof runtimeClineAccountSwitchResponseSchema>;
+export type RuntimeKanbanAccountSwitchResponse = z.infer<typeof runtimeKanbanAccountSwitchResponseSchema>;
 
 export const runtimeFeaturebaseTokenResponseSchema = z.object({
 	featurebaseJwt: z.string(),
 });
 export type RuntimeFeaturebaseTokenResponse = z.infer<typeof runtimeFeaturebaseTokenResponseSchema>;
 
-export const runtimeClineProviderCatalogItemSchema = z.object({
+export const runtimeKanbanProviderCatalogItemSchema = z.object({
 	id: z.string(),
 	name: z.string(),
 	oauthSupported: z.boolean(),
@@ -682,43 +641,43 @@ export const runtimeClineProviderCatalogItemSchema = z.object({
 	supportsBaseUrl: z.boolean(),
 	env: z.array(z.string()).optional(),
 });
-export type RuntimeClineProviderCatalogItem = z.infer<typeof runtimeClineProviderCatalogItemSchema>;
+export type RuntimeKanbanProviderCatalogItem = z.infer<typeof runtimeKanbanProviderCatalogItemSchema>;
 
-export const runtimeClineProviderCatalogResponseSchema = z.object({
-	providers: z.array(runtimeClineProviderCatalogItemSchema),
+export const runtimeKanbanProviderCatalogResponseSchema = z.object({
+	providers: z.array(runtimeKanbanProviderCatalogItemSchema),
 });
-export type RuntimeClineProviderCatalogResponse = z.infer<typeof runtimeClineProviderCatalogResponseSchema>;
+export type RuntimeKanbanProviderCatalogResponse = z.infer<typeof runtimeKanbanProviderCatalogResponseSchema>;
 
-export const runtimeClineProviderModelsRequestSchema = z.object({
+export const runtimeKanbanProviderModelsRequestSchema = z.object({
 	providerId: z.string(),
 });
-export type RuntimeClineProviderModelsRequest = z.infer<typeof runtimeClineProviderModelsRequestSchema>;
+export type RuntimeKanbanProviderModelsRequest = z.infer<typeof runtimeKanbanProviderModelsRequestSchema>;
 
-export const runtimeClineProviderModelSchema = z.object({
+export const runtimeKanbanProviderModelSchema = z.object({
 	id: z.string(),
 	name: z.string(),
 	supportsVision: z.boolean().optional(),
 	supportsAttachments: z.boolean().optional(),
 	supportsReasoningEffort: z.boolean().optional(),
 });
-export type RuntimeClineProviderModel = z.infer<typeof runtimeClineProviderModelSchema>;
+export type RuntimeKanbanProviderModel = z.infer<typeof runtimeKanbanProviderModelSchema>;
 
-export const runtimeClineProviderModelsResponseSchema = z.object({
+export const runtimeKanbanProviderModelsResponseSchema = z.object({
 	providerId: z.string(),
-	models: z.array(runtimeClineProviderModelSchema),
+	models: z.array(runtimeKanbanProviderModelSchema),
 });
-export type RuntimeClineProviderModelsResponse = z.infer<typeof runtimeClineProviderModelsResponseSchema>;
+export type RuntimeKanbanProviderModelsResponse = z.infer<typeof runtimeKanbanProviderModelsResponseSchema>;
 
-export const runtimeClineProviderCapabilitySchema = z.enum([
+export const runtimeKanbanProviderCapabilitySchema = z.enum([
 	"streaming",
 	"tools",
 	"reasoning",
 	"vision",
 	"prompt-cache",
 ]);
-export type RuntimeClineProviderCapability = z.infer<typeof runtimeClineProviderCapabilitySchema>;
+export type RuntimeKanbanProviderCapability = z.infer<typeof runtimeKanbanProviderCapabilitySchema>;
 
-export const runtimeClineAddProviderRequestSchema = z.object({
+export const runtimeKanbanAddProviderRequestSchema = z.object({
 	providerId: z.string(),
 	name: z.string(),
 	baseUrl: z.string(),
@@ -728,14 +687,14 @@ export const runtimeClineAddProviderRequestSchema = z.object({
 	models: z.array(z.string()),
 	defaultModelId: z.string().nullable().optional(),
 	modelsSourceUrl: z.string().nullable().optional(),
-	capabilities: z.array(runtimeClineProviderCapabilitySchema).optional(),
+	capabilities: z.array(runtimeKanbanProviderCapabilitySchema).optional(),
 });
-export type RuntimeClineAddProviderRequest = z.infer<typeof runtimeClineAddProviderRequestSchema>;
+export type RuntimeKanbanAddProviderRequest = z.infer<typeof runtimeKanbanAddProviderRequestSchema>;
 
-export const runtimeClineAddProviderResponseSchema = runtimeClineProviderSettingsSchema;
-export type RuntimeClineAddProviderResponse = z.infer<typeof runtimeClineAddProviderResponseSchema>;
+export const runtimeKanbanAddProviderResponseSchema = runtimeKanbanProviderSettingsSchema;
+export type RuntimeKanbanAddProviderResponse = z.infer<typeof runtimeKanbanAddProviderResponseSchema>;
 
-export const runtimeClineUpdateProviderRequestSchema = z.object({
+export const runtimeKanbanUpdateProviderRequestSchema = z.object({
 	providerId: z.string(),
 	name: z.string().optional(),
 	baseUrl: z.string().optional(),
@@ -745,53 +704,53 @@ export const runtimeClineUpdateProviderRequestSchema = z.object({
 	models: z.array(z.string()).optional(),
 	defaultModelId: z.string().nullable().optional(),
 	modelsSourceUrl: z.string().nullable().optional(),
-	capabilities: z.array(runtimeClineProviderCapabilitySchema).optional(),
+	capabilities: z.array(runtimeKanbanProviderCapabilitySchema).optional(),
 });
-export type RuntimeClineUpdateProviderRequest = z.infer<typeof runtimeClineUpdateProviderRequestSchema>;
+export type RuntimeKanbanUpdateProviderRequest = z.infer<typeof runtimeKanbanUpdateProviderRequestSchema>;
 
-export const runtimeClineUpdateProviderResponseSchema = runtimeClineProviderSettingsSchema;
-export type RuntimeClineUpdateProviderResponse = z.infer<typeof runtimeClineUpdateProviderResponseSchema>;
+export const runtimeKanbanUpdateProviderResponseSchema = runtimeKanbanProviderSettingsSchema;
+export type RuntimeKanbanUpdateProviderResponse = z.infer<typeof runtimeKanbanUpdateProviderResponseSchema>;
 
-export const runtimeClineOauthLoginRequestSchema = z.object({
-	provider: runtimeClineOauthProviderSchema,
+export const runtimeKanbanOauthLoginRequestSchema = z.object({
+	provider: runtimeKanbanOauthProviderSchema,
 	baseUrl: z.string().nullable().optional(),
 });
-export type RuntimeClineOauthLoginRequest = z.infer<typeof runtimeClineOauthLoginRequestSchema>;
+export type RuntimeKanbanOauthLoginRequest = z.infer<typeof runtimeKanbanOauthLoginRequestSchema>;
 
-export const runtimeClineOauthLoginResponseSchema = z.object({
+export const runtimeKanbanOauthLoginResponseSchema = z.object({
 	ok: z.boolean(),
-	provider: runtimeClineOauthProviderSchema,
-	settings: runtimeClineProviderSettingsSchema.optional(),
+	provider: runtimeKanbanOauthProviderSchema,
+	settings: runtimeKanbanProviderSettingsSchema.optional(),
 	error: z.string().optional(),
 });
-export type RuntimeClineOauthLoginResponse = z.infer<typeof runtimeClineOauthLoginResponseSchema>;
+export type RuntimeKanbanOauthLoginResponse = z.infer<typeof runtimeKanbanOauthLoginResponseSchema>;
 
-export const runtimeClineDeviceAuthStartResponseSchema = z.object({
+export const runtimeKanbanDeviceAuthStartResponseSchema = z.object({
 	deviceCode: z.string(),
 	userCode: z.string(),
 	verificationUrl: z.string(),
 	expiresInSeconds: z.number(),
 	pollIntervalSeconds: z.number(),
 });
-export type RuntimeClineDeviceAuthStartResponse = z.infer<typeof runtimeClineDeviceAuthStartResponseSchema>;
+export type RuntimeKanbanDeviceAuthStartResponse = z.infer<typeof runtimeKanbanDeviceAuthStartResponseSchema>;
 
-export const runtimeClineDeviceAuthCompleteRequestSchema = z.object({
+export const runtimeKanbanDeviceAuthCompleteRequestSchema = z.object({
 	deviceCode: z.string(),
 	expiresInSeconds: z.number(),
 	pollIntervalSeconds: z.number(),
 	baseUrl: z.string().nullable().optional(),
 });
-export type RuntimeClineDeviceAuthCompleteRequest = z.infer<typeof runtimeClineDeviceAuthCompleteRequestSchema>;
+export type RuntimeKanbanDeviceAuthCompleteRequest = z.infer<typeof runtimeKanbanDeviceAuthCompleteRequestSchema>;
 
-export const runtimeClineDeviceAuthCompleteResponseSchema = runtimeClineOauthLoginResponseSchema;
-export type RuntimeClineDeviceAuthCompleteResponse = z.infer<typeof runtimeClineDeviceAuthCompleteResponseSchema>;
+export const runtimeKanbanDeviceAuthCompleteResponseSchema = runtimeKanbanOauthLoginResponseSchema;
+export type RuntimeKanbanDeviceAuthCompleteResponse = z.infer<typeof runtimeKanbanDeviceAuthCompleteResponseSchema>;
 
-export const runtimeClineProviderSettingsSaveRequestSchema = z.object({
+export const runtimeKanbanProviderSettingsSaveRequestSchema = z.object({
 	providerId: z.string(),
 	modelId: z.string().nullable().optional(),
 	apiKey: z.string().nullable().optional(),
 	baseUrl: z.string().nullable().optional(),
-	reasoningEffort: runtimeClineReasoningEffortSchema.nullable().optional(),
+	reasoningEffort: runtimeReasoningEffortSchema.nullable().optional(),
 	region: z.string().nullable().optional(),
 	aws: z
 		.object({
@@ -811,67 +770,67 @@ export const runtimeClineProviderSettingsSaveRequestSchema = z.object({
 		})
 		.optional(),
 });
-export type RuntimeClineProviderSettingsSaveRequest = z.infer<typeof runtimeClineProviderSettingsSaveRequestSchema>;
+export type RuntimeKanbanProviderSettingsSaveRequest = z.infer<typeof runtimeKanbanProviderSettingsSaveRequestSchema>;
 
-export const runtimeClineProviderSettingsSaveResponseSchema = runtimeClineProviderSettingsSchema;
-export type RuntimeClineProviderSettingsSaveResponse = z.infer<typeof runtimeClineProviderSettingsSaveResponseSchema>;
+export const runtimeKanbanProviderSettingsSaveResponseSchema = runtimeKanbanProviderSettingsSchema;
+export type RuntimeKanbanProviderSettingsSaveResponse = z.infer<typeof runtimeKanbanProviderSettingsSaveResponseSchema>;
 
-const runtimeClineMcpServerBaseSchema = z.object({
+const runtimeKanbanMcpServerBaseSchema = z.object({
 	name: z.string(),
 	disabled: z.boolean(),
 });
 
-export const runtimeClineMcpServerSchema = z.discriminatedUnion("type", [
-	runtimeClineMcpServerBaseSchema.extend({
+export const runtimeKanbanMcpServerSchema = z.discriminatedUnion("type", [
+	runtimeKanbanMcpServerBaseSchema.extend({
 		type: z.literal("stdio"),
 		command: z.string(),
 		args: z.array(z.string()).optional(),
 		cwd: z.string().optional(),
 		env: z.record(z.string(), z.string()).optional(),
 	}),
-	runtimeClineMcpServerBaseSchema.extend({
+	runtimeKanbanMcpServerBaseSchema.extend({
 		type: z.literal("sse"),
 		url: z.string().url(),
 		headers: z.record(z.string(), z.string()).optional(),
 	}),
-	runtimeClineMcpServerBaseSchema.extend({
+	runtimeKanbanMcpServerBaseSchema.extend({
 		type: z.literal("streamableHttp"),
 		url: z.string().url(),
 		headers: z.record(z.string(), z.string()).optional(),
 	}),
 ]);
-export type RuntimeClineMcpServer = z.infer<typeof runtimeClineMcpServerSchema>;
+export type RuntimeKanbanMcpServer = z.infer<typeof runtimeKanbanMcpServerSchema>;
 
-export const runtimeClineMcpSettingsResponseSchema = z.object({
+export const runtimeKanbanMcpSettingsResponseSchema = z.object({
 	path: z.string(),
-	servers: z.array(runtimeClineMcpServerSchema),
+	servers: z.array(runtimeKanbanMcpServerSchema),
 });
-export type RuntimeClineMcpSettingsResponse = z.infer<typeof runtimeClineMcpSettingsResponseSchema>;
+export type RuntimeKanbanMcpSettingsResponse = z.infer<typeof runtimeKanbanMcpSettingsResponseSchema>;
 
-export const runtimeClineMcpSettingsSaveRequestSchema = z.object({
-	servers: z.array(runtimeClineMcpServerSchema),
+export const runtimeKanbanMcpSettingsSaveRequestSchema = z.object({
+	servers: z.array(runtimeKanbanMcpServerSchema),
 });
-export type RuntimeClineMcpSettingsSaveRequest = z.infer<typeof runtimeClineMcpSettingsSaveRequestSchema>;
+export type RuntimeKanbanMcpSettingsSaveRequest = z.infer<typeof runtimeKanbanMcpSettingsSaveRequestSchema>;
 
-export const runtimeClineMcpSettingsSaveResponseSchema = runtimeClineMcpSettingsResponseSchema;
-export type RuntimeClineMcpSettingsSaveResponse = z.infer<typeof runtimeClineMcpSettingsSaveResponseSchema>;
+export const runtimeKanbanMcpSettingsSaveResponseSchema = runtimeKanbanMcpSettingsResponseSchema;
+export type RuntimeKanbanMcpSettingsSaveResponse = z.infer<typeof runtimeKanbanMcpSettingsSaveResponseSchema>;
 
-export const runtimeClineMcpAuthStatusResponseSchema = z.object({
-	statuses: z.array(runtimeClineMcpServerAuthStatusSchema),
+export const runtimeKanbanMcpAuthStatusResponseSchema = z.object({
+	statuses: z.array(runtimeKanbanMcpServerAuthStatusSchema),
 });
-export type RuntimeClineMcpAuthStatusResponse = z.infer<typeof runtimeClineMcpAuthStatusResponseSchema>;
+export type RuntimeKanbanMcpAuthStatusResponse = z.infer<typeof runtimeKanbanMcpAuthStatusResponseSchema>;
 
-export const runtimeClineMcpOAuthRequestSchema = z.object({
+export const runtimeKanbanMcpOAuthRequestSchema = z.object({
 	serverName: z.string(),
 });
-export type RuntimeClineMcpOAuthRequest = z.infer<typeof runtimeClineMcpOAuthRequestSchema>;
+export type RuntimeKanbanMcpOAuthRequest = z.infer<typeof runtimeKanbanMcpOAuthRequestSchema>;
 
-export const runtimeClineMcpOAuthResponseSchema = z.object({
+export const runtimeKanbanMcpOAuthResponseSchema = z.object({
 	serverName: z.string(),
 	authorized: z.literal(true),
 	message: z.string(),
 });
-export type RuntimeClineMcpOAuthResponse = z.infer<typeof runtimeClineMcpOAuthResponseSchema>;
+export type RuntimeKanbanMcpOAuthResponse = z.infer<typeof runtimeKanbanMcpOAuthResponseSchema>;
 
 export const runtimeCommandRunRequestSchema = z.object({
 	command: z.string(),
@@ -950,11 +909,17 @@ export const runtimeConfigResponseSchema = z.object({
 	detectedCommands: z.array(z.string()),
 	agents: z.array(runtimeAgentDefinitionSchema),
 	shortcuts: z.array(runtimeProjectShortcutSchema),
-	clineProviderSettings: runtimeClineProviderSettingsSchema,
+	kanbanProviderSettings: runtimeKanbanProviderSettingsSchema,
 	commitPromptTemplate: z.string(),
 	openPrPromptTemplate: z.string(),
 	commitPromptTemplateDefault: z.string(),
 	openPrPromptTemplateDefault: z.string(),
+	proxyEnabled: z.boolean(),
+	proxyHost: z.string(),
+	proxyPort: z.string(),
+	proxyUsername: z.string(),
+	proxyPassword: z.string(),
+	noProxy: z.string(),
 });
 export type RuntimeConfigResponse = z.infer<typeof runtimeConfigResponseSchema>;
 
@@ -966,6 +931,12 @@ export const runtimeConfigSaveRequestSchema = z.object({
 	readyForReviewNotificationsEnabled: z.boolean().optional(),
 	commitPromptTemplate: z.string().optional(),
 	openPrPromptTemplate: z.string().optional(),
+	proxyEnabled: z.boolean().optional(),
+	proxyHost: z.string().optional(),
+	proxyPort: z.string().optional(),
+	proxyUsername: z.string().optional(),
+	proxyPassword: z.string().optional(),
+	noProxy: z.string().optional(),
 });
 export type RuntimeConfigSaveRequest = z.infer<typeof runtimeConfigSaveRequestSchema>;
 
@@ -982,7 +953,7 @@ export const runtimeTaskSessionStartRequestSchema = z.object({
 	cols: z.number().int().positive().optional(),
 	rows: z.number().int().positive().optional(),
 	agentId: runtimeAgentIdSchema.optional(),
-	clineSettings: runtimeTaskClineSettingsSchema.optional(),
+	agentSettings: runtimeTaskAgentSettingsSchema.optional(),
 });
 export type RuntimeTaskSessionStartRequest = z.infer<typeof runtimeTaskSessionStartRequestSchema>;
 

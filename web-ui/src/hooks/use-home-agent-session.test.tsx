@@ -89,17 +89,17 @@ function createRuntimeConfig(overrides: Partial<RuntimeConfigResponse> = {}): Ru
 				configured: false,
 			},
 			{
-				id: "cline",
-				label: "Cline",
-				binary: "cline",
-				command: "cline",
+				id: "pi",
+				label: "Pi",
+				binary: "pi",
+				command: "pi",
 				defaultArgs: [],
 				installed: true,
 				configured: false,
 			},
 		],
 		shortcuts: [],
-		clineProviderSettings: {
+		kanbanProviderSettings: {
 			providerId: "anthropic",
 			modelId: "claude-sonnet-4-6",
 			baseUrl: null,
@@ -114,12 +114,18 @@ function createRuntimeConfig(overrides: Partial<RuntimeConfigResponse> = {}): Ru
 		openPrPromptTemplate: "pr",
 		commitPromptTemplateDefault: "commit",
 		openPrPromptTemplateDefault: "pr",
+		proxyEnabled: false,
+		proxyHost: "",
+		proxyPort: "",
+		proxyUsername: "",
+		proxyPassword: "",
+		noProxy: "",
 		...overrides,
 	};
 }
 
 function createLegacyRuntimeConfig(overrides: Partial<RuntimeConfigResponse> = {}): RuntimeConfigResponse {
-	const { clineProviderSettings: _clineProviderSettings, ...legacyConfig } = createRuntimeConfig(overrides);
+	const { kanbanProviderSettings: _kanbanProviderSettings, ...legacyConfig } = createRuntimeConfig(overrides);
 	return legacyConfig as RuntimeConfigResponse;
 }
 
@@ -163,14 +169,14 @@ function requireTaskId(taskId: string | null): string {
 
 function HookHarness({
 	config,
-	clineSessionContextVersion = 0,
+	kanbanSessionContextVersion = 0,
 	currentProjectId,
 	onSnapshot,
 	workspaceGit = DEFAULT_WORKSPACE_GIT,
 	seedSessionSummary = false,
 }: {
 	config: RuntimeConfigResponse | null;
-	clineSessionContextVersion?: number;
+	kanbanSessionContextVersion?: number;
 	currentProjectId: string | null;
 	onSnapshot: (snapshot: HookSnapshot) => void;
 	workspaceGit?: RuntimeGitRepositoryInfo | null;
@@ -187,7 +193,7 @@ function HookHarness({
 		currentProjectId,
 		runtimeProjectConfig: config,
 		workspaceGit,
-		clineSessionContextVersion,
+		kanbanSessionContextVersion,
 		sessionSummaries,
 		setSessionSummaries,
 		upsertSessionSummary,
@@ -382,7 +388,7 @@ describe("useHomeAgentSession", () => {
 			root.render(
 				<HookHarness
 					config={createRuntimeConfig({
-						selectedAgentId: "cline",
+						selectedAgentId: "pi",
 						effectiveCommand: "cline",
 					})}
 					currentProjectId="workspace-1"
@@ -397,16 +403,16 @@ describe("useHomeAgentSession", () => {
 		const anthropicSnapshot = requireSnapshot(latestSnapshot);
 		const anthropicTaskId = anthropicSnapshot.taskId;
 		expect(anthropicSnapshot.panelMode).toBe("chat");
-		expect(anthropicTaskId).toMatch(/^__home_agent__:workspace-1:cline$/);
+		expect(anthropicTaskId).toMatch(/^__home_agent__:workspace-1:pi$/);
 		expect(startTaskSessionMutateMock).not.toHaveBeenCalled();
 
 		await act(async () => {
 			root.render(
 				<HookHarness
 					config={createRuntimeConfig({
-						selectedAgentId: "cline",
+						selectedAgentId: "pi",
 						effectiveCommand: "cline",
-						clineProviderSettings: {
+						kanbanProviderSettings: {
 							providerId: "oca",
 							modelId: "gpt-5",
 							baseUrl: null,
@@ -429,23 +435,23 @@ describe("useHomeAgentSession", () => {
 
 		const updatedSnapshot = requireSnapshot(latestSnapshot);
 		expect(updatedSnapshot.panelMode).toBe("chat");
-		expect(updatedSnapshot.taskId).toMatch(/^__home_agent__:workspace-1:cline$/);
+		expect(updatedSnapshot.taskId).toMatch(/^__home_agent__:workspace-1:pi$/);
 		expect(updatedSnapshot.taskId).toBe(anthropicTaskId);
 		expect(stopTaskSessionMutateMock).not.toHaveBeenCalled();
 		expect(startTaskSessionMutateMock).not.toHaveBeenCalled();
 	});
 
-	it("reloads the home cline chat session when the Cline session context version changes", async () => {
+	it("reloads the home cline chat session when the Kanban session context version changes", async () => {
 		let latestSnapshot: HookSnapshot | null = null;
 
 		await act(async () => {
 			root.render(
 				<HookHarness
 					config={createRuntimeConfig({
-						selectedAgentId: "cline",
+						selectedAgentId: "pi",
 						effectiveCommand: "cline",
 					})}
-					clineSessionContextVersion={0}
+					kanbanSessionContextVersion={0}
 					currentProjectId="workspace-1"
 					seedSessionSummary
 					onSnapshot={(snapshot) => {
@@ -457,17 +463,17 @@ describe("useHomeAgentSession", () => {
 		});
 
 		const firstTaskId = requireTaskId(requireSnapshot(latestSnapshot).taskId);
-		expect(firstTaskId).toMatch(/^__home_agent__:workspace-1:cline$/);
+		expect(firstTaskId).toMatch(/^__home_agent__:workspace-1:pi$/);
 		expect(startTaskSessionMutateMock).not.toHaveBeenCalled();
 
 		await act(async () => {
 			root.render(
 				<HookHarness
 					config={createRuntimeConfig({
-						selectedAgentId: "cline",
+						selectedAgentId: "pi",
 						effectiveCommand: "cline",
 					})}
-					clineSessionContextVersion={1}
+					kanbanSessionContextVersion={1}
 					currentProjectId="workspace-1"
 					seedSessionSummary
 					onSnapshot={(snapshot) => {
@@ -479,7 +485,7 @@ describe("useHomeAgentSession", () => {
 		});
 
 		const secondTaskId = requireTaskId(requireSnapshot(latestSnapshot).taskId);
-		expect(secondTaskId).toMatch(/^__home_agent__:workspace-1:cline$/);
+		expect(secondTaskId).toMatch(/^__home_agent__:workspace-1:pi$/);
 		expect(secondTaskId).toBe(firstTaskId);
 		expect(reloadTaskChatSessionMutateMock).toHaveBeenCalledWith({
 			workspaceId: "workspace-1",
@@ -496,7 +502,7 @@ describe("useHomeAgentSession", () => {
 			root.render(
 				<HookHarness
 					config={createLegacyRuntimeConfig({
-						selectedAgentId: "cline",
+						selectedAgentId: "pi",
 						effectiveCommand: "cline",
 					})}
 					currentProjectId="workspace-1"
@@ -510,7 +516,7 @@ describe("useHomeAgentSession", () => {
 
 		const snapshot = requireSnapshot(latestSnapshot);
 		expect(snapshot.panelMode).toBe("chat");
-		expect(snapshot.taskId).toMatch(/^__home_agent__:workspace-1:cline$/);
+		expect(snapshot.taskId).toMatch(/^__home_agent__:workspace-1:pi$/);
 		expect(startTaskSessionMutateMock).not.toHaveBeenCalled();
 	});
 
@@ -521,7 +527,7 @@ describe("useHomeAgentSession", () => {
 			root.render(
 				<HookHarness
 					config={createRuntimeConfig({
-						selectedAgentId: "cline",
+						selectedAgentId: "pi",
 						effectiveCommand: "cline",
 					})}
 					currentProjectId="workspace-1"
@@ -545,7 +551,7 @@ describe("useHomeAgentSession", () => {
 			root.render(
 				<HookHarness
 					config={createRuntimeConfig({
-						selectedAgentId: "cline",
+						selectedAgentId: "pi",
 						effectiveCommand: "cline",
 					})}
 					currentProjectId="workspace-1"
@@ -558,7 +564,7 @@ describe("useHomeAgentSession", () => {
 		});
 
 		const secondTaskId = requireTaskId(requireSnapshot(latestSnapshot).taskId);
-		expect(secondTaskId).toMatch(/^__home_agent__:workspace-1:cline$/);
+		expect(secondTaskId).toMatch(/^__home_agent__:workspace-1:pi$/);
 		expect(secondTaskId).toBe(firstTaskId);
 		expect(stopTaskSessionMutateMock).not.toHaveBeenCalled();
 	});

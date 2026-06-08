@@ -1,14 +1,14 @@
-import { isClineProviderAuthenticated } from "@/runtime/native-agent";
-import type { RuntimeAgentId, RuntimeClineProviderSettings } from "@/runtime/types";
+import { isKanbanProviderAuthenticated } from "@/runtime/native-agent";
+import type { RuntimeAgentId, RuntimeKanbanProviderSettings } from "@/runtime/types";
 
 export function isSelectedAgentAuthenticated(
 	selectedAgentId: RuntimeAgentId | null | undefined,
-	clineProviderSettings: RuntimeClineProviderSettings | null | undefined,
+	kanbanProviderSettings: RuntimeKanbanProviderSettings | null | undefined,
 ): boolean {
-	if (selectedAgentId !== "cline") {
+	if (selectedAgentId !== "pi") {
 		return true;
 	}
-	return isClineProviderAuthenticated(clineProviderSettings);
+	return isKanbanProviderAuthenticated(kanbanProviderSettings);
 }
 
 export function shouldShowStartupOnboardingDialog(input: { hasShownOnboardingDialog: boolean }): boolean {

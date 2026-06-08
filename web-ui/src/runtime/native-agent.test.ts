@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
 	getTaskAgentNavbarHint,
-	isClineProviderAuthenticated,
-	isNativeClineAgentSelected,
+	isKanbanProviderAuthenticated,
+	isNativeAgentSelected,
 	isTaskAgentSetupSatisfied,
 	selectLatestTaskChatMessageForTask,
 	selectTaskChatMessagesForTask,
@@ -18,17 +18,17 @@ function createRuntimeConfigResponse(
 		selectedAgentId,
 		selectedShortcutLabel: null,
 		agentAutonomousModeEnabled: true,
-		effectiveCommand: selectedAgentId === "cline" ? null : selectedAgentId,
+		effectiveCommand: selectedAgentId === "pi" ? null : selectedAgentId,
 		globalConfigPath: "/tmp/global-config.json",
-		projectConfigPath: "/tmp/project/.cline/kanban/config.json",
+		projectConfigPath: "/tmp/project/.kanban/kanban/config.json",
 		readyForReviewNotificationsEnabled: true,
 		detectedCommands: ["claude", "codex"],
 		agents: [
 			{
-				id: "cline",
-				label: "Cline",
-				binary: "cline",
-				command: "cline",
+				id: "pi",
+				label: "Pi",
+				binary: "pi",
+				command: "pi",
 				defaultArgs: [],
 				installed: false,
 				configured: true,
@@ -44,7 +44,7 @@ function createRuntimeConfigResponse(
 			},
 		],
 		shortcuts: [],
-		clineProviderSettings: {
+		kanbanProviderSettings: {
 			providerId: "cline",
 			modelId: "sonnet",
 			baseUrl: null,
@@ -59,6 +59,12 @@ function createRuntimeConfigResponse(
 		openPrPromptTemplate: "",
 		commitPromptTemplateDefault: "",
 		openPrPromptTemplateDefault: "",
+		proxyEnabled: false,
+		proxyHost: "",
+		proxyPort: "",
+		proxyUsername: "",
+		proxyPassword: "",
+		noProxy: "",
 	};
 	return {
 		...nextConfig,
@@ -82,30 +88,30 @@ function createLatestTaskChatMessage(taskId: string): RuntimeStateStreamTaskChat
 }
 
 describe("native-agent helpers", () => {
-	it("treats cline as the native chat agent", () => {
-		expect(isNativeClineAgentSelected("cline")).toBe(true);
-		expect(isNativeClineAgentSelected("codex")).toBe(false);
+	it("treats pi as the native chat agent", () => {
+		expect(isNativeAgentSelected("pi")).toBe(true);
+		expect(isNativeAgentSelected("codex")).toBe(false);
 	});
 
-	it("treats selected cline as task-ready when cline authentication is configured", () => {
-		expect(isTaskAgentSetupSatisfied(createRuntimeConfigResponse("cline"))).toBe(true);
+	it("treats selected pi as task-ready when pi authentication is configured", () => {
+		expect(isTaskAgentSetupSatisfied(createRuntimeConfigResponse("pi"))).toBe(true);
 		expect(isTaskAgentSetupSatisfied(null)).toBeNull();
 	});
 
-	it("requires setup when cline is selected and cline authentication is missing", () => {
-		const config = createRuntimeConfigResponse("cline", {
+	it("requires setup when pi is selected and pi authentication is missing", () => {
+		const config = createRuntimeConfigResponse("pi", {
 			agents: [
 				{
-					id: "cline",
-					label: "Cline",
-					binary: "cline",
-					command: "cline",
+					id: "pi",
+					label: "Pi",
+					binary: "pi",
+					command: "pi",
 					defaultArgs: [],
 					installed: true,
 					configured: true,
 				},
 			],
-			clineProviderSettings: {
+			kanbanProviderSettings: {
 				providerId: null,
 				modelId: null,
 				baseUrl: null,
@@ -120,14 +126,14 @@ describe("native-agent helpers", () => {
 		expect(isTaskAgentSetupSatisfied(config)).toBe(false);
 	});
 
-	it("falls back to other installed launch-supported agents when cline auth is missing", () => {
-		const config = createRuntimeConfigResponse("cline", {
+	it("falls back to other installed launch-supported agents when pi auth is missing", () => {
+		const config = createRuntimeConfigResponse("pi", {
 			agents: [
 				{
-					id: "cline",
-					label: "Cline",
-					binary: "cline",
-					command: "cline",
+					id: "pi",
+					label: "Pi",
+					binary: "pi",
+					command: "pi",
 					defaultArgs: [],
 					installed: true,
 					configured: true,
@@ -142,7 +148,7 @@ describe("native-agent helpers", () => {
 					configured: false,
 				},
 			],
-			clineProviderSettings: {
+			kanbanProviderSettings: {
 				providerId: null,
 				modelId: null,
 				baseUrl: null,
@@ -157,24 +163,24 @@ describe("native-agent helpers", () => {
 		expect(isTaskAgentSetupSatisfied(config)).toBe(true);
 	});
 
-	it("does not show the navbar setup hint when cline is configured through the native SDK path", () => {
-		expect(getTaskAgentNavbarHint(createRuntimeConfigResponse("cline"))).toBeUndefined();
+	it("does not show the navbar setup hint when pi is configured through the native SDK path", () => {
+		expect(getTaskAgentNavbarHint(createRuntimeConfigResponse("pi"))).toBeUndefined();
 	});
 
 	it("shows the navbar setup hint when no task agent path is ready", () => {
-		const config = createRuntimeConfigResponse("cline", {
+		const config = createRuntimeConfigResponse("pi", {
 			agents: [
 				{
-					id: "cline",
-					label: "Cline",
-					binary: "cline",
-					command: "cline",
+					id: "pi",
+					label: "Pi",
+					binary: "pi",
+					command: "pi",
 					defaultArgs: [],
 					installed: true,
 					configured: true,
 				},
 			],
-			clineProviderSettings: {
+			kanbanProviderSettings: {
 				providerId: null,
 				modelId: null,
 				baseUrl: null,
@@ -194,9 +200,9 @@ describe("native-agent helpers", () => {
 		).toBeUndefined();
 	});
 
-	it("checks for a provider selection when determining cline authentication", () => {
+	it("checks for a provider selection when determining pi authentication", () => {
 		expect(
-			isClineProviderAuthenticated({
+			isKanbanProviderAuthenticated({
 				providerId: null,
 				modelId: null,
 				baseUrl: null,
@@ -209,7 +215,7 @@ describe("native-agent helpers", () => {
 			}),
 		).toBe(false);
 		expect(
-			isClineProviderAuthenticated({
+			isKanbanProviderAuthenticated({
 				providerId: "anthropic",
 				modelId: null,
 				baseUrl: null,

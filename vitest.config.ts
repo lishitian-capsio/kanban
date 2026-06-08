@@ -1,6 +1,9 @@
 import { defineConfig } from "vitest/config";
 
 process.env.NODE_ENV = "production";
+// Force node-pty backend in tests so PtySession mocks work correctly
+// even when running vitest under Bun.
+process.env.KANBAN_FORCE_NODE_PTY = "1";
 
 export default defineConfig({
 	test: {

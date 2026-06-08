@@ -1,15 +1,15 @@
 // Composes the sidebar agent surface for the current workspace.
-// It decides whether the synthetic home session should render native Cline
+// It decides whether the synthetic home session should render native Kanban
 // chat or a terminal panel and wires that surface to shared runtime actions.
 import type { ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
-import { ClineAgentChatPanel } from "@/components/detail-panels/cline-agent-chat-panel";
+import { KanbanAgentChatPanel } from "@/components/detail-panels/kanban-agent-chat-panel";
 import { Spinner } from "@/components/ui/spinner";
 import { createIdleTaskSession } from "@/hooks/app-utils";
 import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
-import { useClineChatRuntimeActions } from "@/hooks/use-cline-chat-runtime-actions";
+import { useKanbanChatRuntimeActions } from "@/hooks/use-kanban-chat-runtime-actions";
 import { useHomeAgentSession } from "@/hooks/use-home-agent-session";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { selectLatestTaskChatMessageForTask } from "@/runtime/native-agent";
@@ -27,7 +27,7 @@ interface UseHomeSidebarAgentPanelInput {
 	currentProjectId: string | null;
 	hasNoProjects: boolean;
 	runtimeProjectConfig: RuntimeConfigResponse | null;
-	clineSessionContextVersion: number;
+	kanbanSessionContextVersion: number;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	workspaceGit: RuntimeGitRepositoryInfo | null;
 	latestTaskChatMessage: RuntimeStateStreamTaskChatMessage | null;
@@ -48,7 +48,7 @@ export function useHomeSidebarAgentPanel({
 	currentProjectId,
 	hasNoProjects,
 	runtimeProjectConfig,
-	clineSessionContextVersion,
+	kanbanSessionContextVersion,
 	taskSessions,
 	workspaceGit,
 	latestTaskChatMessage,
@@ -84,7 +84,7 @@ export function useHomeSidebarAgentPanel({
 		currentProjectId,
 		runtimeProjectConfig,
 		workspaceGit,
-		clineSessionContextVersion,
+		kanbanSessionContextVersion,
 		sessionSummaries: effectiveSessionSummaries,
 		setSessionSummaries,
 		upsertSessionSummary,
@@ -94,7 +94,7 @@ export function useHomeSidebarAgentPanel({
 	useEffect(() => {
 		currentTaskIdRef.current = taskId;
 	}, [taskId]);
-	const { sendTaskChatMessage, loadTaskChatMessages, cancelTaskChatTurn } = useClineChatRuntimeActions({
+	const { sendTaskChatMessage, loadTaskChatMessages, cancelTaskChatTurn } = useKanbanChatRuntimeActions({
 		currentProjectId,
 		onSessionSummary: upsertSessionSummary,
 	});
@@ -113,7 +113,7 @@ export function useHomeSidebarAgentPanel({
 	const homeTaskChatMessages = taskId ? (taskChatMessagesByTaskId[taskId] ?? null) : null;
 	const latestHomeTaskChatMessage = selectLatestTaskChatMessageForTask(taskId, latestTaskChatMessage);
 
-	const handleSendHomeClineChatMessage = useCallback(
+	const handleSendHomeKanbanChatMessage = useCallback(
 		async (messageTaskId: string, text: string, options?: { mode?: "act" | "plan" }) => {
 			const result = await sendTaskChatMessage(messageTaskId, text, options);
 			if (!result.ok) {
@@ -129,12 +129,12 @@ export function useHomeSidebarAgentPanel({
 		[currentProjectId, sendTaskChatMessage],
 	);
 
-	const handleLoadHomeClineChatMessages = useCallback(
+	const handleLoadHomeKanbanChatMessages = useCallback(
 		async (messageTaskId: string) => await loadTaskChatMessages(messageTaskId),
 		[loadTaskChatMessages],
 	);
 
-	const handleCancelHomeClineChatTurn = useCallback(
+	const handleCancelHomeKanbanChatTurn = useCallback(
 		async (messageTaskId: string) => await cancelTaskChatTurn(messageTaskId),
 		[cancelTaskChatTurn],
 	);
@@ -153,7 +153,7 @@ export function useHomeSidebarAgentPanel({
 
 	if (panelMode === "chat" && taskId) {
 		return (
-			<ClineAgentChatPanel
+			<KanbanAgentChatPanel
 				key={taskId}
 				taskId={taskId}
 				summary={homeAgentPanelSummary ?? createIdleTaskSession(taskId)}
@@ -161,12 +161,12 @@ export function useHomeSidebarAgentPanel({
 				showComposerModeToggle={false}
 				workspaceId={currentProjectId}
 				runtimeConfig={runtimeProjectConfig}
-				onSendMessage={handleSendHomeClineChatMessage}
-				onCancelTurn={handleCancelHomeClineChatTurn}
-				onLoadMessages={handleLoadHomeClineChatMessages}
+				onSendMessage={handleSendHomeKanbanChatMessage}
+				onCancelTurn={handleCancelHomeKanbanChatTurn}
+				onLoadMessages={handleLoadHomeKanbanChatMessages}
 				incomingMessage={latestHomeTaskChatMessage}
 				incomingMessages={homeTaskChatMessages}
-				composerPlaceholder="Ask Cline to add, edit, start, or link tasks"
+				composerPlaceholder="Ask Kanban to add, edit, start, or link tasks"
 			/>
 		);
 	}
@@ -188,7 +188,7 @@ export function useHomeSidebarAgentPanel({
 		);
 	}
 
-	if (runtimeProjectConfig.selectedAgentId !== "cline") {
+	if (runtimeProjectConfig.selectedAgentId !== "pi") {
 		return (
 			<div className="flex w-full items-center justify-center rounded-md border border-border bg-surface-2 px-3 text-center text-sm text-text-secondary">
 				No runnable {selectedAgentLabel} command is configured. Open Settings, install the CLI, and select it.
@@ -198,7 +198,7 @@ export function useHomeSidebarAgentPanel({
 
 	return (
 		<div className="flex w-full items-center justify-center rounded-md border border-border bg-surface-2 px-3 text-center text-sm text-text-secondary">
-			Select a Cline provider in Settings to start a home chat session.
+			Select a Kanban provider in Settings to start a home chat session.
 		</div>
 	);
 }

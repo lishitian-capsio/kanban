@@ -1,34 +1,36 @@
 // Coordinates the runtime-side TRPC handlers used by the browser.
 // This is the main backend entrypoint for sessions, settings, git, and
-// workspace actions, but detailed Cline, terminal, and config behavior
+// workspace actions, but detailed kanban, terminal, and config behavior
 // should stay in focused services instead of accumulating here.
 
 import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { TRPCError } from "@trpc/server";
-import { createClineMcpRuntimeService } from "../cline-sdk/cline-mcp-runtime-service";
-import { createClineMcpSettingsService } from "../cline-sdk/cline-mcp-settings-service";
-import { createClineProviderService } from "../cline-sdk/cline-provider-service";
-import { isClineClearSlashCommand } from "../cline-sdk/cline-slash-commands";
-import type { ClineTaskSessionService } from "../cline-sdk/cline-task-session-service";
+import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
+import { resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
+import { createMcpRuntimeService, type McpRuntimeService } from "../agent-sdk/kanban/mcp-runtime-service";
+import { createKanbanMcpSettingsService } from "../agent-sdk/kanban/mcp-settings-service";
+import { createProviderService } from "../agent-sdk/kanban/provider-service";
+import { isKanbanClearSlashCommand } from "../agent-sdk/shared/slash-commands";
 import type { RuntimeConfigState } from "../config/runtime-config";
 import { updateGlobalRuntimeConfig, updateRuntimeConfig } from "../config/runtime-config";
+import { applyProxyToProcessEnv } from "../config/proxy-env";
 import type {
 	RuntimeCommandRunResponse,
 	RuntimeRunUpdateResponse,
 	RuntimeUpdateStatusResponse,
 } from "../core/api-contract";
 import {
-	parseClineAccountSwitchRequest,
-	parseClineAddProviderRequest,
-	parseClineDeviceAuthCompleteRequest,
-	parseClineMcpOAuthRequest,
-	parseClineMcpSettingsSaveRequest,
-	parseClineOauthLoginRequest,
-	parseClineProviderModelsRequest,
-	parseClineProviderSettingsSaveRequest,
-	parseClineUpdateProviderRequest,
+	parseKanbanAccountSwitchRequest,
+	parseKanbanAddProviderRequest,
+	parseKanbanDeviceAuthCompleteRequest,
+	parseKanbanMcpOAuthRequest,
+	parseKanbanMcpSettingsSaveRequest,
+	parseKanbanOauthLoginRequest,
+	parseKanbanProviderModelsRequest,
+	parseKanbanProviderSettingsSaveRequest,
+	parseKanbanUpdateProviderRequest,
 	parseCommandRunRequest,
 	parseRuntimeConfigSaveRequest,
 	parseShellSessionStartRequest,
@@ -56,14 +58,14 @@ export interface CreateRuntimeApiDependencies {
 	loadScopedRuntimeConfig: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeConfigState>;
 	setActiveRuntimeConfig: (config: RuntimeConfigState) => void;
 	getScopedTerminalManager: (scope: RuntimeTrpcWorkspaceScope) => Promise<TerminalSessionManager>;
-	getScopedClineTaskSessionService: (scope: RuntimeTrpcWorkspaceScope) => Promise<ClineTaskSessionService>;
+	getScopedPiTaskSessionService: (scope: RuntimeTrpcWorkspaceScope) => Promise<PiTaskSessionService>;
 	resolveInteractiveShellCommand: () => { binary: string; args: string[] };
 	runCommand: (command: string, cwd: string) => Promise<RuntimeCommandRunResponse>;
-	broadcastClineMcpAuthStatusesUpdated?: (
-		statuses: Awaited<ReturnType<ReturnType<typeof createClineMcpRuntimeService>["getAuthStatuses"]>>,
+	broadcastKanbanMcpAuthStatusesUpdated?: (
+		statuses: Awaited<ReturnType<McpRuntimeService["getAuthStatuses"]>>,
 	) => void;
 	broadcastTaskChatCleared?: (workspaceId: string, taskId: string) => void;
-	bumpClineSessionContextVersion?: () => void;
+	bumpKanbanSessionContextVersion?: () => void;
 	prepareForStateReset?: () => Promise<void>;
 	getUpdateStatus: () => RuntimeUpdateStatusResponse;
 	runUpdateNow: () => Promise<RuntimeRunUpdateResponse>;
@@ -92,21 +94,27 @@ async function resolveExistingTaskCwdOrEnsure(options: {
 }
 
 export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrpcContext["runtimeApi"] {
-	const clineProviderService = createClineProviderService();
-	const clineMcpSettingsService = createClineMcpSettingsService();
-	const clineMcpRuntimeService = createClineMcpRuntimeService({
+	const providerService = createProviderService();
+	const kanbanMcpSettingsService = createKanbanMcpSettingsService();
+	const mcpRuntimeService = createMcpRuntimeService({
 		onAuthStatusesChanged: (statuses) => {
-			deps.broadcastClineMcpAuthStatusesUpdated?.(statuses);
+			deps.broadcastKanbanMcpAuthStatusesUpdated?.(statuses);
 		},
 	});
 	const debugResetTargetPaths = [
-		join(homedir(), ".cline", "data"),
-		join(homedir(), ".cline", "kanban"),
-		join(homedir(), ".cline", "worktrees"),
+		join(homedir(), ".kanban"),
 	] as const;
 
 	const buildConfigResponse = (runtimeConfig: RuntimeConfigState) =>
-		buildRuntimeConfigResponse(runtimeConfig, clineProviderService.getProviderSettingsSummary());
+		buildRuntimeConfigResponse(runtimeConfig, providerService.getProviderSettingsSummary());
+
+	const callTaskSessionService = async <T>(
+		workspaceScope: RuntimeTrpcWorkspaceScope,
+		fn: (service: PiTaskSessionService) => Promise<T>,
+	): Promise<T | null> => {
+		const piService = await deps.getScopedPiTaskSessionService(workspaceScope);
+		return fn(piService);
+	};
 
 	return {
 		loadConfig: async (workspaceScope) => {
@@ -145,24 +153,32 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			if (!workspaceScope) {
 				deps.setActiveRuntimeConfig(nextRuntimeConfig);
 			}
+			applyProxyToProcessEnv(
+				nextRuntimeConfig.proxyEnabled,
+				nextRuntimeConfig.proxyHost,
+				nextRuntimeConfig.proxyPort,
+				nextRuntimeConfig.proxyUsername,
+				nextRuntimeConfig.proxyPassword,
+				nextRuntimeConfig.noProxy,
+			);
 			return buildConfigResponse(nextRuntimeConfig);
 		},
-		saveClineProviderSettings: async (_workspaceScope, input) => {
-			const body = parseClineProviderSettingsSaveRequest(input);
-			const response = clineProviderService.saveProviderSettings(body);
-			deps.bumpClineSessionContextVersion?.();
+		saveKanbanProviderSettings: async (_workspaceScope, input) => {
+			const body = parseKanbanProviderSettingsSaveRequest(input);
+			const response = providerService.saveProviderSettings(body);
+			deps.bumpKanbanSessionContextVersion?.();
 			return response;
 		},
-		addClineProvider: async (_workspaceScope, input) => {
-			const body = parseClineAddProviderRequest(input);
-			const response = await clineProviderService.addCustomProvider(body);
-			deps.bumpClineSessionContextVersion?.();
+		addKanbanProvider: async (_workspaceScope, input) => {
+			const body = parseKanbanAddProviderRequest(input);
+			const response = await providerService.addCustomProvider(body);
+			deps.bumpKanbanSessionContextVersion?.();
 			return response;
 		},
-		updateClineProvider: async (_workspaceScope, input) => {
-			const body = parseClineUpdateProviderRequest(input);
-			const response = await clineProviderService.updateCustomProvider(body);
-			deps.bumpClineSessionContextVersion?.();
+		updateKanbanProvider: async (_workspaceScope, input) => {
+			const body = parseKanbanUpdateProviderRequest(input);
+			const response = await providerService.updateCustomProvider(body);
+			deps.bumpKanbanSessionContextVersion?.();
 			return response;
 		},
 		startTaskSession: async (workspaceScope, input) => {
@@ -171,7 +187,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				if (body.resumeFromTrash) {
 					deps.broadcastTaskChatCleared?.(workspaceScope.workspaceId, body.taskId);
 				}
-				const requestedClineTaskMode = body.mode ?? "act";
+				const requestedKanbanTaskMode = body.mode ?? "act";
 				const scopedRuntimeConfig = await deps.loadScopedRuntimeConfig(workspaceScope);
 				const taskCwd = isHomeAgentSessionId(body.taskId)
 					? workspaceScope.workspacePath
@@ -190,7 +206,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				//   2. body.agentId — the card's current per-task agent override.
 				//   3. scopedRuntimeConfig.selectedAgentId — the workspace-level default.
 				//
-				// clineSettings (which LLM model and reasoning profile the Cline agent uses):
+				// agentSettings (which LLM model and reasoning profile the kanban agent uses):
 				//   Always taken from the card's current override object. There is no
 				//   session-level persistence for these;
 				//   if the user changes the model on the card, the next session launch
@@ -200,49 +216,30 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					? (terminalManager.getSummary(body.taskId)?.agentId ?? null)
 					: null;
 				const effectiveAgentId = previousTerminalAgentId ?? body.agentId ?? scopedRuntimeConfig.selectedAgentId;
-				let useClinePath = effectiveAgentId === "cline";
-				const shouldProbePersistedClineSession =
-					body.resumeFromTrash && !useClinePath && previousTerminalAgentId === null;
-				if (shouldProbePersistedClineSession) {
-					// If the terminal summary already has a concrete non-Cline agentId,
-					// skip Cline persisted-session probing. That probe can cold-start the
-					// Cline session host and adds multi-second latency to Codex restores.
-					const clineSessionService = await deps.getScopedClineTaskSessionService(workspaceScope);
-					const persistedSession = await clineSessionService
-						.rebindPersistedTaskSession(body.taskId)
-						.catch(() => null);
-					if (persistedSession) {
-						useClinePath = true;
-					}
-				}
+				const usePiPath = effectiveAgentId === "pi";
 
-				if (useClinePath) {
-					const hasTaskLevelClineSettingsOverride = body.clineSettings !== undefined;
-					const clineLaunchConfig = await clineProviderService.resolveLaunchConfig({
-						providerIdOverride: body.clineSettings?.providerId ?? undefined,
-						modelIdOverride: body.clineSettings?.modelId ?? undefined,
-						...(hasTaskLevelClineSettingsOverride
-							? {
-									reasoningEffortOverride: body.clineSettings?.reasoningEffort ?? null,
-								}
-							: {}),
+				if (usePiPath) {
+					const piLaunchConfig = resolvePiLaunchConfig({
+						providerIdOverride: body.agentSettings?.providerId ?? undefined,
+						modelIdOverride: body.agentSettings?.modelId ?? undefined,
+						reasoningEffortOverride: body.agentSettings?.reasoningEffort ?? undefined,
 					});
-					const clineTaskSessionService = await deps.getScopedClineTaskSessionService(workspaceScope);
-					const resolvedClineTitle = resolveTaskTitle(body.taskTitle?.trim(), body.prompt);
-					const summary = await clineTaskSessionService.startTaskSession({
+					const piTaskSessionService = await deps.getScopedPiTaskSessionService(workspaceScope);
+					const resolvedPiTitle = resolveTaskTitle(body.taskTitle?.trim(), body.prompt);
+					const summary = await piTaskSessionService.startTaskSession({
 						taskId: body.taskId,
 						cwd: taskCwd,
 						prompt: body.prompt,
-						taskTitle: resolvedClineTitle.length > 0 ? resolvedClineTitle : undefined,
+						taskTitle: resolvedPiTitle.length > 0 ? resolvedPiTitle : undefined,
 						images: body.images,
 						resumeFromTrash: body.resumeFromTrash,
-						providerId: clineLaunchConfig.providerId,
-						modelId: clineLaunchConfig.modelId,
-						mode: requestedClineTaskMode,
+						providerId: piLaunchConfig.providerId,
+						modelId: piLaunchConfig.modelId,
+						mode: requestedKanbanTaskMode,
 						startInPlanMode: body.startInPlanMode,
-						apiKey: clineLaunchConfig.apiKey,
-						baseUrl: clineLaunchConfig.baseUrl,
-						reasoningEffort: clineLaunchConfig.reasoningEffort,
+						apiKey: piLaunchConfig.apiKey,
+						baseUrl: piLaunchConfig.baseUrl,
+						reasoningEffort: piLaunchConfig.reasoningEffort,
 					});
 
 					let nextSummary = summary;
@@ -254,7 +251,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 								taskId: body.taskId,
 								turn: nextTurn,
 							});
-							nextSummary = clineTaskSessionService.applyTurnCheckpoint(body.taskId, checkpoint) ?? summary;
+							nextSummary = piTaskSessionService.applyTurnCheckpoint(body.taskId, checkpoint) ?? summary;
 						} catch {
 							// Best effort checkpointing only.
 						}
@@ -292,6 +289,12 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					cols: body.cols,
 					rows: body.rows,
 					workspaceId: workspaceScope.workspaceId,
+					proxyEnabled: scopedRuntimeConfig.proxyEnabled,
+					proxyHost: scopedRuntimeConfig.proxyHost,
+					proxyPort: scopedRuntimeConfig.proxyPort,
+					proxyUsername: scopedRuntimeConfig.proxyUsername,
+					proxyPassword: scopedRuntimeConfig.proxyPassword,
+					noProxy: scopedRuntimeConfig.noProxy,
 				});
 
 				let nextSummary = summary;
@@ -324,12 +327,14 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		stopTaskSession: async (workspaceScope, input) => {
 			try {
 				const body = parseTaskSessionStopRequest(input);
-				const clineTaskSessionService = await deps.getScopedClineTaskSessionService(workspaceScope);
-				const clineSummary = await clineTaskSessionService.stopTaskSession(body.taskId);
-				if (clineSummary) {
+				const serviceSummary = await callTaskSessionService(
+					workspaceScope,
+					async (svc) => svc.stopTaskSession(body.taskId),
+				);
+				if (serviceSummary) {
 					return {
 						ok: true,
-						summary: clineSummary,
+						summary: serviceSummary,
 					};
 				}
 				const terminalManager = await deps.getScopedTerminalManager(workspaceScope);
@@ -351,12 +356,14 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			try {
 				const body = parseTaskSessionInputRequest(input);
 				const payloadText = body.appendNewline ? `${body.text}\n` : body.text;
-				const clineTaskSessionService = await deps.getScopedClineTaskSessionService(workspaceScope);
-				const clineSummary = await clineTaskSessionService.sendTaskSessionInput(body.taskId, payloadText);
-				if (clineSummary) {
+				const serviceSummary = await callTaskSessionService(
+					workspaceScope,
+					async (svc) => svc.sendTaskSessionInput(body.taskId, payloadText),
+				);
+				if (serviceSummary) {
 					return {
 						ok: true,
-						summary: clineSummary,
+						summary: serviceSummary,
 					};
 				}
 				const terminalManager = await deps.getScopedTerminalManager(workspaceScope);
@@ -384,9 +391,9 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		getTaskChatMessages: async (workspaceScope, input) => {
 			try {
 				const body = parseTaskChatMessagesRequest(input);
-				const clineTaskSessionService = await deps.getScopedClineTaskSessionService(workspaceScope);
-				const summary = clineTaskSessionService.getSummary(body.taskId);
-				const messages = await clineTaskSessionService.loadTaskSessionMessages(body.taskId);
+				const piService = await deps.getScopedPiTaskSessionService(workspaceScope);
+				const summary = piService.getSummary(body.taskId);
+				const messages = await piService.loadTaskSessionMessages(body.taskId);
 				if (!summary && messages.length === 0) {
 					return {
 						ok: false,
@@ -407,36 +414,37 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				};
 			}
 		},
-		getClineSlashCommands: async (workspaceScope) => {
+		getKanbanSlashCommands: async (workspaceScope) => {
 			if (!workspaceScope) {
 				return {
 					commands: [],
 				};
 			}
-			const clineTaskSessionService = await deps.getScopedClineTaskSessionService(workspaceScope);
+			const piService = await deps.getScopedPiTaskSessionService(workspaceScope);
 			return {
-				commands: await clineTaskSessionService.listSlashCommands(workspaceScope.workspacePath),
+				commands: await piService.listSlashCommands(workspaceScope.workspacePath),
 			};
 		},
 		reloadTaskChatSession: async (workspaceScope, input) => {
 			try {
 				const body = parseTaskChatReloadRequest(input);
-				const clineTaskSessionService = await deps.getScopedClineTaskSessionService(workspaceScope);
-				let summary = await clineTaskSessionService.reloadTaskSession(body.taskId);
+				const piService = await deps.getScopedPiTaskSessionService(workspaceScope);
+				let summary = await piService.reloadTaskSession(body.taskId);
 				if (!summary && isHomeAgentSessionId(body.taskId)) {
-					const clineLaunchConfig = await clineProviderService.resolveLaunchConfig();
-					summary = await clineTaskSessionService.startTaskSession({
+					const piLaunchConfig = resolvePiLaunchConfig({});
+					summary = await piService.startTaskSession({
 						taskId: body.taskId,
 						cwd: workspaceScope.workspacePath,
 						prompt: "",
 						resumeFromPersistence: true,
-						providerId: clineLaunchConfig.providerId,
-						modelId: clineLaunchConfig.modelId,
-						apiKey: clineLaunchConfig.apiKey,
-						baseUrl: clineLaunchConfig.baseUrl,
-						reasoningEffort: clineLaunchConfig.reasoningEffort,
+						providerId: piLaunchConfig.providerId,
+						modelId: piLaunchConfig.modelId,
+						apiKey: piLaunchConfig.apiKey,
+						baseUrl: piLaunchConfig.baseUrl,
+						reasoningEffort: piLaunchConfig.reasoningEffort,
 					});
 				}
+
 				if (!summary) {
 					return {
 						ok: false,
@@ -460,8 +468,10 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		abortTaskChatTurn: async (workspaceScope, input) => {
 			try {
 				const body = parseTaskChatAbortRequest(input);
-				const clineTaskSessionService = await deps.getScopedClineTaskSessionService(workspaceScope);
-				const summary = await clineTaskSessionService.abortTaskSession(body.taskId);
+				const summary = await callTaskSessionService(
+					workspaceScope,
+					async (svc) => svc.abortTaskSession(body.taskId),
+				);
 				if (!summary) {
 					return {
 						ok: false,
@@ -485,8 +495,10 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		cancelTaskChatTurn: async (workspaceScope, input) => {
 			try {
 				const body = parseTaskChatCancelRequest(input);
-				const clineTaskSessionService = await deps.getScopedClineTaskSessionService(workspaceScope);
-				const summary = await clineTaskSessionService.cancelTaskTurn(body.taskId);
+				const summary = await callTaskSessionService(
+					workspaceScope,
+					async (svc) => svc.cancelTaskTurn(body.taskId),
+				);
 				if (!summary) {
 					return {
 						ok: false,
@@ -507,115 +519,102 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				};
 			}
 		},
-		getClineProviderCatalog: async (_workspaceScope) => {
-			return await clineProviderService.getProviderCatalog();
+		getKanbanProviderCatalog: async (_workspaceScope) => {
+			return await providerService.getProviderCatalog();
 		},
-		getClineAccountProfile: async (_workspaceScope) => {
-			return await clineProviderService.getClineAccountProfile();
+		getKanbanAccountProfile: async (_workspaceScope) => {
+			return await providerService.getKanbanAccountProfile();
 		},
-		getClineKanbanAccess: async (_workspaceScope) => {
-			return await clineProviderService.getClineKanbanAccess();
+		getKanbanKanbanAccess: async (_workspaceScope) => {
+			return await providerService.getKanbanKanbanAccess();
 		},
 		getFeaturebaseToken: async (_workspaceScope) => {
-			return await clineProviderService.getFeaturebaseToken();
+			return await providerService.getFeaturebaseToken();
 		},
-		getClineAccountBalance: async (_workspaceScope) => {
-			return await clineProviderService.getClineAccountBalance();
+		getKanbanAccountBalance: async (_workspaceScope) => {
+			return await providerService.getKanbanAccountBalance();
 		},
-		getClineAccountOrganizations: async (_workspaceScope) => {
-			return await clineProviderService.getClineAccountOrganizations();
+		getKanbanAccountOrganizations: async (_workspaceScope) => {
+			return await providerService.getKanbanAccountOrganizations();
 		},
-		switchClineAccount: async (_workspaceScope, input) => {
-			const body = parseClineAccountSwitchRequest(input);
-			return await clineProviderService.switchClineAccount(body.organizationId);
+		switchKanbanAccount: async (_workspaceScope, input) => {
+			const body = parseKanbanAccountSwitchRequest(input);
+			return await providerService.switchKanbanAccount(body.organizationId);
 		},
-		getClineProviderModels: async (_workspaceScope, input) => {
-			const body = parseClineProviderModelsRequest(input);
-			return await clineProviderService.getProviderModels(body.providerId);
+		getKanbanProviderModels: async (_workspaceScope, input) => {
+			const body = parseKanbanProviderModelsRequest(input);
+			return await providerService.getProviderModels(body.providerId);
 		},
-		getClineMcpAuthStatuses: async (_workspaceScope) => {
-			const statuses = await clineMcpRuntimeService.getAuthStatuses();
+		getKanbanMcpAuthStatuses: async (_workspaceScope) => {
+			const statuses = await mcpRuntimeService.getAuthStatuses();
 			return {
 				statuses,
 			};
 		},
-		runClineMcpServerOAuth: async (_workspaceScope, input) => {
-			const body = parseClineMcpOAuthRequest(input);
-			const response = await clineMcpRuntimeService.authorizeServer({
+		runKanbanMcpServerOAuth: async (_workspaceScope, input) => {
+			const body = parseKanbanMcpOAuthRequest(input);
+			const response = await mcpRuntimeService.authorizeServer({
 				serverName: body.serverName,
 				onAuthorizationUrl: (url: string) => {
 					openInBrowser(url);
 				},
 			});
-			deps.bumpClineSessionContextVersion?.();
+			deps.bumpKanbanSessionContextVersion?.();
 			return response;
 		},
-		getClineMcpSettings: async (_workspaceScope) => {
-			return clineMcpSettingsService.loadSettings();
+		getKanbanMcpSettings: async (_workspaceScope) => {
+			return kanbanMcpSettingsService.loadSettings();
 		},
-		saveClineMcpSettings: async (_workspaceScope, input) => {
-			const body = parseClineMcpSettingsSaveRequest(input);
-			const response = await clineMcpSettingsService.saveSettings(body);
-			deps.bumpClineSessionContextVersion?.();
+		saveKanbanMcpSettings: async (_workspaceScope, input) => {
+			const body = parseKanbanMcpSettingsSaveRequest(input);
+			const response = await kanbanMcpSettingsService.saveSettings(body);
+			deps.bumpKanbanSessionContextVersion?.();
 			return response;
 		},
-		runClineProviderOAuthLogin: async (_workspaceScope, input) => {
-			const body = parseClineOauthLoginRequest(input);
-			const response = await clineProviderService.runOauthLogin({
+		runKanbanProviderOAuthLogin: async (_workspaceScope, input) => {
+			const body = parseKanbanOauthLoginRequest(input);
+			const response = await providerService.runOauthLogin({
 				providerId: body.provider,
 				baseUrl: body.baseUrl,
 			});
 			if (response.ok) {
-				deps.bumpClineSessionContextVersion?.();
+				deps.bumpKanbanSessionContextVersion?.();
 			}
 			return response;
 		},
-		startClineDeviceAuth: async () => {
-			return await clineProviderService.startDeviceAuth();
+		startKanbanDeviceAuth: async () => {
+			return await providerService.startDeviceAuth();
 		},
-		completeClineDeviceAuth: async (_workspaceScope, input) => {
-			const body = parseClineDeviceAuthCompleteRequest(input);
-			const response = await clineProviderService.completeDeviceAuth({
+		completeKanbanDeviceAuth: async (_workspaceScope, input) => {
+			const body = parseKanbanDeviceAuthCompleteRequest(input);
+			const response = await providerService.completeDeviceAuth({
 				deviceCode: body.deviceCode,
 				expiresInSeconds: body.expiresInSeconds,
 				pollIntervalSeconds: body.pollIntervalSeconds,
 				baseUrl: body.baseUrl,
 			});
 			if (response.ok) {
-				deps.bumpClineSessionContextVersion?.();
+				deps.bumpKanbanSessionContextVersion?.();
 			}
 			return response;
 		},
 		sendTaskChatMessage: async (workspaceScope, input) => {
 			try {
 				const body = parseTaskChatSendRequest(input);
-				const clineTaskSessionService = await deps.getScopedClineTaskSessionService(workspaceScope);
-				if (isClineClearSlashCommand(body.text)) {
-					const summary = await clineTaskSessionService.clearTaskSession(body.taskId);
-					deps.broadcastTaskChatCleared?.(workspaceScope.workspaceId, body.taskId);
-					return {
-						ok: true,
-						summary,
-						message: null,
-					};
-				}
 				const requestedMode = body.mode;
-				let summary = await clineTaskSessionService.sendTaskSessionInput(
-					body.taskId,
-					body.text,
-					requestedMode,
-					body.images,
-				);
+
+				const piService = await deps.getScopedPiTaskSessionService(workspaceScope);
+				if (isKanbanClearSlashCommand(body.text)) {
+					const summary = await piService.clearTaskSession(body.taskId);
+					deps.broadcastTaskChatCleared?.(workspaceScope.workspaceId, body.taskId);
+					return { ok: true, summary, message: null };
+				}
+				let summary = await piService.sendTaskSessionInput(body.taskId, body.text, requestedMode, body.images);
 				if (!summary) {
 					if (!isHomeAgentSessionId(body.taskId)) {
-						const reboundSummary = await clineTaskSessionService.rebindPersistedTaskSession(body.taskId);
-						if (reboundSummary) {
-							summary = await clineTaskSessionService.sendTaskSessionInput(
-								body.taskId,
-								body.text,
-								requestedMode,
-								body.images,
-							);
+						const rebound = await piService.rebindPersistedTaskSession(body.taskId);
+						if (rebound) {
+							summary = await piService.sendTaskSessionInput(body.taskId, body.text, requestedMode, body.images);
 						}
 						if (!summary) {
 							return {
@@ -625,23 +624,23 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 							};
 						}
 					} else {
-						const clineLaunchConfig = await clineProviderService.resolveLaunchConfig();
-						summary = await clineTaskSessionService.startTaskSession({
+						const piLaunchConfig = resolvePiLaunchConfig({});
+						summary = await piService.startTaskSession({
 							taskId: body.taskId,
 							cwd: workspaceScope.workspacePath,
 							prompt: body.text,
 							images: body.images,
 							resumeFromPersistence: true,
-							providerId: clineLaunchConfig.providerId,
-							modelId: clineLaunchConfig.modelId,
+							providerId: piLaunchConfig.providerId,
+							modelId: piLaunchConfig.modelId,
 							mode: requestedMode,
-							apiKey: clineLaunchConfig.apiKey,
-							baseUrl: clineLaunchConfig.baseUrl,
-							reasoningEffort: clineLaunchConfig.reasoningEffort,
+							apiKey: piLaunchConfig.apiKey,
+							baseUrl: piLaunchConfig.baseUrl,
+							reasoningEffort: piLaunchConfig.reasoningEffort,
 						});
 					}
 				}
-				const latestMessage = clineTaskSessionService.listMessages(body.taskId).at(-1) ?? null;
+				const latestMessage = piService.listMessages(body.taskId).at(-1) ?? null;
 				return {
 					ok: true,
 					summary,
@@ -661,6 +660,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				const body = parseShellSessionStartRequest(input);
 				const terminalManager = await deps.getScopedTerminalManager(workspaceScope);
 				const shell = deps.resolveInteractiveShellCommand();
+				const shellScopedConfig = await deps.loadScopedRuntimeConfig(workspaceScope);
 				const shellCwd = body.workspaceTaskId
 					? await resolveTaskCwd({
 							cwd: workspaceScope.workspacePath,
@@ -676,6 +676,12 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					rows: body.rows,
 					binary: shell.binary,
 					args: shell.args,
+					proxyEnabled: shellScopedConfig.proxyEnabled,
+					proxyHost: shellScopedConfig.proxyHost,
+					proxyPort: shellScopedConfig.proxyPort,
+					proxyUsername: shellScopedConfig.proxyUsername,
+					proxyPassword: shellScopedConfig.proxyPassword,
+					noProxy: shellScopedConfig.noProxy,
 				});
 				return {
 					ok: true,

@@ -5,7 +5,7 @@ import type {
 	RuntimeBoardData,
 	RuntimeBoardDependency,
 	RuntimeTaskAutoReviewMode,
-	RuntimeTaskClineSettings,
+	RuntimeTaskAgentSettings,
 	RuntimeTaskImage,
 } from "./api-contract";
 import { createUniqueTaskId } from "./task-id";
@@ -20,7 +20,7 @@ export interface RuntimeCreateTaskInput {
 	autoReviewMode?: RuntimeTaskAutoReviewMode;
 	images?: RuntimeTaskImage[];
 	agentId?: RuntimeAgentId;
-	clineSettings?: RuntimeTaskClineSettings;
+	agentSettings?: RuntimeTaskAgentSettings;
 	baseRef: string;
 }
 
@@ -32,7 +32,7 @@ export interface RuntimeUpdateTaskInput {
 	autoReviewMode?: RuntimeTaskAutoReviewMode;
 	images?: RuntimeTaskImage[];
 	agentId?: RuntimeAgentId | null;
-	clineSettings?: RuntimeTaskClineSettings | null;
+	agentSettings?: RuntimeTaskAgentSettings | null;
 	baseRef: string;
 }
 
@@ -48,7 +48,7 @@ function cloneTaskImages(images?: RuntimeTaskImage[]): RuntimeTaskImage[] | unde
 	return images && images.length > 0 ? images.map((image) => ({ ...image })) : undefined;
 }
 
-function cloneTaskClineSettings(settings?: RuntimeTaskClineSettings | null): RuntimeTaskClineSettings | undefined {
+function cloneTaskAgentSettings(settings?: RuntimeTaskAgentSettings | null): RuntimeTaskAgentSettings | undefined {
 	if (settings === undefined || settings === null) {
 		return undefined;
 	}
@@ -308,7 +308,7 @@ export function addTaskToColumn(
 		autoReviewMode: normalizeTaskAutoReviewMode(input.autoReviewMode),
 		images: cloneTaskImages(input.images),
 		...(input.agentId ? { agentId: input.agentId } : {}),
-		...(input.clineSettings !== undefined ? { clineSettings: cloneTaskClineSettings(input.clineSettings) } : {}),
+		...(input.agentSettings !== undefined ? { agentSettings: cloneTaskAgentSettings(input.agentSettings) } : {}),
 		baseRef,
 		createdAt: now,
 		updatedAt: now,
@@ -624,12 +624,12 @@ export function updateTask(
 				autoReviewMode: normalizeTaskAutoReviewMode(input.autoReviewMode),
 				images: input.images === undefined ? card.images : cloneTaskImages(input.images),
 				agentId: input.agentId === undefined ? card.agentId : (input.agentId ?? undefined),
-				clineSettings:
-					input.clineSettings === undefined
-						? cloneTaskClineSettings(card.clineSettings)
-						: input.clineSettings === null
+				agentSettings:
+					input.agentSettings === undefined
+						? cloneTaskAgentSettings(card.agentSettings)
+						: input.agentSettings === null
 							? undefined
-							: cloneTaskClineSettings(input.clineSettings),
+							: cloneTaskAgentSettings(input.agentSettings),
 				baseRef,
 				updatedAt: now,
 			};

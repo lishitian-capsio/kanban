@@ -4,23 +4,23 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
-import { ClineAgentChatPanel, type ClineAgentChatPanelHandle } from "@/components/detail-panels/cline-agent-chat-panel";
+import { KanbanAgentChatPanel, type KanbanAgentChatPanelHandle } from "@/components/detail-panels/kanban-agent-chat-panel";
 import { ColumnContextPanel } from "@/components/detail-panels/column-context-panel";
 import { type DiffLineComment, DiffViewerPanel } from "@/components/detail-panels/diff-viewer-panel";
 import { FileTreePanel } from "@/components/detail-panels/file-tree-panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
-import type { ClineChatActionResult } from "@/hooks/use-cline-chat-runtime-actions";
-import type { ClineChatMessage } from "@/hooks/use-cline-chat-session";
+import type { KanbanChatActionResult } from "@/hooks/use-kanban-chat-runtime-actions";
+import type { KanbanChatMessage } from "@/hooks/use-kanban-chat-session";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { ResizableBottomPane } from "@/resize/resizable-bottom-pane";
 import { ResizeHandle } from "@/resize/resize-handle";
 import { useCardDetailLayout } from "@/resize/use-card-detail-layout";
 import { useResizeDrag } from "@/resize/use-resize-drag";
-import { isNativeClineAgentSelected } from "@/runtime/native-agent";
+import { isNativeAgentSelected } from "@/runtime/native-agent";
 import type {
 	RuntimeAgentId,
-	RuntimeClineReasoningEffort,
+	RuntimeReasoningEffort,
 	RuntimeConfigResponse,
 	RuntimeTaskSessionMode,
 	RuntimeTaskSessionSummary,
@@ -341,11 +341,11 @@ export function CardDetailView({
 	moveToTrashLoadingById,
 	onAddReviewComments,
 	onSendReviewComments,
-	onSendClineChatMessage,
-	onCancelClineChatTurn,
-	onLoadClineChatMessages,
-	latestClineChatMessage,
-	streamedClineChatMessages,
+	onSendKanbanChatMessage,
+	onCancelKanbanChatTurn,
+	onLoadKanbanChatMessages,
+	latestKanbanChatMessage,
+	streamedKanbanChatMessages,
 	onMoveToTrash,
 	isMoveToTrashLoading,
 	gitHistoryPanel,
@@ -364,8 +364,8 @@ export function CardDetailView({
 	isBottomTerminalExpanded,
 	onBottomTerminalToggleExpand,
 	isDocumentVisible = true,
-	onClineSettingsSaved,
-	onTaskClineSettingsChanged,
+	onKanbanSettingsSaved,
+	onTaskKanbanSettingsChanged,
 }: {
 	selection: CardSelection;
 	currentProjectId: string | null;
@@ -399,15 +399,15 @@ export function CardDetailView({
 	moveToTrashLoadingById?: Record<string, boolean>;
 	onAddReviewComments?: (taskId: string, text: string) => void;
 	onSendReviewComments?: (taskId: string, text: string) => void;
-	onSendClineChatMessage?: (
+	onSendKanbanChatMessage?: (
 		taskId: string,
 		text: string,
 		options?: { mode?: RuntimeTaskSessionMode },
-	) => Promise<ClineChatActionResult>;
-	onCancelClineChatTurn?: (taskId: string) => Promise<{ ok: boolean; message?: string }>;
-	onLoadClineChatMessages?: (taskId: string) => Promise<ClineChatMessage[] | null>;
-	latestClineChatMessage?: ClineChatMessage | null;
-	streamedClineChatMessages?: ClineChatMessage[] | null;
+	) => Promise<KanbanChatActionResult>;
+	onCancelKanbanChatTurn?: (taskId: string) => Promise<{ ok: boolean; message?: string }>;
+	onLoadKanbanChatMessages?: (taskId: string) => Promise<KanbanChatMessage[] | null>;
+	latestKanbanChatMessage?: KanbanChatMessage | null;
+	streamedKanbanChatMessages?: KanbanChatMessage[] | null;
 	onMoveToTrash: () => void;
 	isMoveToTrashLoading?: boolean;
 	gitHistoryPanel?: ReactNode;
@@ -426,11 +426,11 @@ export function CardDetailView({
 	isBottomTerminalExpanded?: boolean;
 	onBottomTerminalToggleExpand?: () => void;
 	isDocumentVisible?: boolean;
-	onClineSettingsSaved?: () => void;
-	onTaskClineSettingsChanged?: (settings: {
+	onKanbanSettingsSaved?: () => void;
+	onTaskKanbanSettingsChanged?: (settings: {
 		providerId: string;
 		modelId: string;
-		reasoningEffort: RuntimeClineReasoningEffort | "";
+		reasoningEffort: RuntimeReasoningEffort | "";
 	}) => void;
 }): React.ReactElement {
 	const isMobile = useIsMobile();
@@ -454,11 +454,11 @@ export function CardDetailView({
 	const { startDrag: startAgentPanelResize } = useResizeDrag();
 	const { startDrag: startDetailDiffResize } = useResizeDrag();
 	const detailLayoutRef = useRef<HTMLDivElement | null>(null);
-	const hasExplicitTaskClineSettings =
-		selection.card.agentId === "cline" || selection.card.clineSettings !== undefined;
+	const hasExplicitTaskKanbanSettings =
+		selection.card.agentId === "pi" || selection.card.agentSettings !== undefined;
 	const mainRowRef = useRef<HTMLDivElement | null>(null);
 	const detailDiffRowRef = useRef<HTMLDivElement | null>(null);
-	const clineAgentChatPanelRef = useRef<ClineAgentChatPanelHandle | null>(null);
+	const kanbanAgentChatPanelRef = useRef<KanbanAgentChatPanelHandle | null>(null);
 
 	const handleSeparatorMouseDown = useResizeHandler(
 		detailLayoutRef,
@@ -513,7 +513,7 @@ export function CardDetailView({
 	const showMoveToTrashActions = selection.column.id === "review" || selection.column.id === "in_progress";
 	const isTaskTerminalEnabled = selection.column.id === "in_progress" || selection.column.id === "review";
 	const effectiveTaskAgentId = sessionSummary?.agentId ?? selection.card.agentId ?? selectedAgentId;
-	const showClineAgentChatPanel = isNativeClineAgentSelected(effectiveTaskAgentId);
+	const showKanbanAgentChatPanel = isNativeAgentSelected(effectiveTaskAgentId);
 	const availablePaths = useMemo(() => {
 		if (!runtimeFiles || runtimeFiles.length === 0) {
 			return [];
@@ -606,34 +606,34 @@ export function CardDetailView({
 
 	const handleAddDiffComments = useCallback(
 		(formatted: string) => {
-			if (showClineAgentChatPanel) {
-				clineAgentChatPanelRef.current?.appendToDraft(formatted);
+			if (showKanbanAgentChatPanel) {
+				kanbanAgentChatPanelRef.current?.appendToDraft(formatted);
 				setIsDiffExpanded(false);
 				return;
 			}
 			onAddReviewComments?.(selection.card.id, formatted);
 		},
-		[onAddReviewComments, selection.card.id, showClineAgentChatPanel],
+		[onAddReviewComments, selection.card.id, showKanbanAgentChatPanel],
 	);
 
 	const handleSendDiffComments = useCallback(
 		(formatted: string) => {
-			if (showClineAgentChatPanel) {
-				void clineAgentChatPanelRef.current?.sendText(formatted);
+			if (showKanbanAgentChatPanel) {
+				void kanbanAgentChatPanelRef.current?.sendText(formatted);
 				setIsDiffExpanded(false);
 				return;
 			}
 			onSendReviewComments?.(selection.card.id, formatted);
 			setIsDiffExpanded(false);
 		},
-		[onSendReviewComments, selection.card.id, showClineAgentChatPanel],
+		[onSendReviewComments, selection.card.id, showKanbanAgentChatPanel],
 	);
 
 	const showBottomTerminal = bottomTerminalOpen && !!bottomTerminalTaskId;
 
-	const agentChatPanel = showClineAgentChatPanel ? (
-		<ClineAgentChatPanel
-			ref={clineAgentChatPanelRef}
+	const agentChatPanel = showKanbanAgentChatPanel ? (
+		<KanbanAgentChatPanel
+			ref={kanbanAgentChatPanelRef}
 			taskId={selection.card.id}
 			summary={sessionSummary}
 			taskColumnId={selection.column.id}
@@ -641,15 +641,15 @@ export function CardDetailView({
 			showComposerModeToggle={false}
 			workspaceId={currentProjectId}
 			runtimeConfig={runtimeConfig}
-			taskClineSettings={selection.card.clineSettings}
-			taskHasExplicitClineSettings={hasExplicitTaskClineSettings}
-			onClineSettingsSaved={onClineSettingsSaved}
-			onTaskClineSettingsChanged={onTaskClineSettingsChanged}
-			onSendMessage={onSendClineChatMessage}
-			onCancelTurn={onCancelClineChatTurn}
-			onLoadMessages={onLoadClineChatMessages}
-			incomingMessages={streamedClineChatMessages}
-			incomingMessage={latestClineChatMessage}
+			taskKanbanSettings={selection.card.agentSettings}
+			taskHasExplicitKanbanSettings={hasExplicitTaskKanbanSettings}
+			onKanbanSettingsSaved={onKanbanSettingsSaved}
+			onTaskKanbanSettingsChanged={onTaskKanbanSettingsChanged}
+			onSendMessage={onSendKanbanChatMessage}
+			onCancelTurn={onCancelKanbanChatTurn}
+			onLoadMessages={onLoadKanbanChatMessages}
+			incomingMessages={streamedKanbanChatMessages}
+			incomingMessage={latestKanbanChatMessage}
 			onCommit={onAgentCommitTask ? () => onAgentCommitTask(selection.card.id) : undefined}
 			onOpenPr={onAgentOpenPrTask ? () => onAgentOpenPrTask(selection.card.id) : undefined}
 			isCommitLoading={agentCommitTaskLoadingById?.[selection.card.id] ?? false}
@@ -740,10 +740,10 @@ export function CardDetailView({
 										onSelectedPathChange={setSelectedPath}
 										viewMode="unified"
 										onAddToTerminal={
-											onAddReviewComments || showClineAgentChatPanel ? handleAddDiffComments : undefined
+											onAddReviewComments || showKanbanAgentChatPanel ? handleAddDiffComments : undefined
 										}
 										onSendToTerminal={
-											onSendReviewComments || showClineAgentChatPanel ? handleSendDiffComments : undefined
+											onSendReviewComments || showKanbanAgentChatPanel ? handleSendDiffComments : undefined
 										}
 										comments={diffComments}
 										onCommentsChange={setDiffComments}
@@ -821,7 +821,7 @@ export function CardDetailView({
 							openPrTaskLoadingById={openPrTaskLoadingById}
 							moveToTrashLoadingById={moveToTrashLoadingById}
 							panelWidth="100%"
-							defaultClineModelId={runtimeConfig?.clineProviderSettings?.modelId ?? null}
+							defaultKanbanModelId={runtimeConfig?.kanbanProviderSettings?.modelId ?? null}
 						/>
 					</div>
 					<ResizeHandle
@@ -884,12 +884,12 @@ export function CardDetailView({
 													onSelectedPathChange={setSelectedPath}
 													viewMode={isDiffExpanded ? "split" : "unified"}
 													onAddToTerminal={
-														onAddReviewComments || showClineAgentChatPanel
+														onAddReviewComments || showKanbanAgentChatPanel
 															? handleAddDiffComments
 															: undefined
 													}
 													onSendToTerminal={
-														onSendReviewComments || showClineAgentChatPanel
+														onSendReviewComments || showKanbanAgentChatPanel
 															? handleSendDiffComments
 															: undefined
 													}

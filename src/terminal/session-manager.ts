@@ -1,4 +1,4 @@
-// PTY-backed runtime for non-Cline task sessions and the workspace shell terminal.
+// PTY-backed runtime for non-kanban task sessions and the workspace shell terminal.
 // It owns process lifecycle, terminal protocol filtering, and summary updates
 // for command-driven agents such as Claude Code, Codex, Gemini, and shell sessions.
 import type {
@@ -9,6 +9,7 @@ import type {
 	RuntimeTaskSessionSummary,
 	RuntimeTaskTurnCheckpoint,
 } from "../core/api-contract";
+import { buildProxyEnvVars } from "../config/proxy-env";
 import {
 	type AgentAdapterLaunchInput,
 	type AgentOutputTransitionDetector,
@@ -37,6 +38,23 @@ import { TerminalStateMirror } from "./terminal-state-mirror";
 const MAX_WORKSPACE_TRUST_BUFFER_CHARS = 16_384;
 const AUTO_RESTART_WINDOW_MS = 5_000;
 const MAX_AUTO_RESTARTS_PER_WINDOW = 3;
+// Shell sessions that exit within this threshold are considered immediate failures
+// and trigger a retry with a fallback shell.
+const SHELL_IMMEDIATE_EXIT_THRESHOLD_MS = 2_000;
+// Fallback shell strategies, tried in order when the primary shell exits immediately.
+// Each entry specifies binary, args, and whether to use a minimal environment.
+interface ShellFallbackStrategy {
+	binary: string;
+	args: string[];
+	minimalEnv: boolean;
+	label: string;
+}
+const SHELL_FALLBACK_STRATEGIES: ShellFallbackStrategy[] = [
+	{ binary: "bash", args: ["-i"], minimalEnv: false, label: "bash -i" },
+	{ binary: "sh", args: ["-i"], minimalEnv: false, label: "sh -i" },
+	{ binary: "bash", args: ["--norc", "--noprofile", "-i"], minimalEnv: false, label: "bash --norc -i" },
+	{ binary: "bash", args: ["--norc", "--noprofile", "-i"], minimalEnv: true, label: "bash --norc -i (minimal env)" },
+];
 // TUI apps (Codex, OpenCode) can query OSC 10/11 before the browser terminal is attached
 // and ready to answer. We intercept those startup probes during early PTY output, synthesize
 // foreground/background color replies, then disable the filter once a live terminal listener
@@ -90,6 +108,12 @@ export interface StartTaskSessionRequest {
 	rows?: number;
 	env?: Record<string, string | undefined>;
 	workspaceId?: string;
+	proxyEnabled?: boolean;
+	proxyHost?: string;
+	proxyPort?: string;
+	proxyUsername?: string;
+	proxyPassword?: string;
+	noProxy?: string;
 }
 
 export interface StartShellSessionRequest {
@@ -100,6 +124,12 @@ export interface StartShellSessionRequest {
 	binary: string;
 	args?: string[];
 	env?: Record<string, string | undefined>;
+	proxyEnabled?: boolean;
+	proxyHost?: string;
+	proxyPort?: string;
+	proxyUsername?: string;
+	proxyPassword?: string;
+	noProxy?: string;
 }
 
 function now(): number {
@@ -190,6 +220,25 @@ function buildTerminalEnvironment(
 		TERM: "xterm-256color",
 		TERM_PROGRAM: "kanban",
 	};
+}
+
+// Builds a minimal environment for shell fallback when full env fails.
+// Includes only essential variables to rule out env corruption.
+function buildMinimalShellEnvironment(): Record<string, string | undefined> {
+	const minimal: Record<string, string | undefined> = {
+		TERM: "xterm-256color",
+		COLORTERM: "truecolor",
+		TERM_PROGRAM: "kanban",
+	};
+	// Copy essential env vars individually to avoid Bun Proxy issues
+	const essentialKeys = ["HOME", "USER", "PATH", "SHELL", "LANG", "LC_ALL"];
+	for (const key of essentialKeys) {
+		const value = process.env[key];
+		if (typeof value === "string" && value.length > 0) {
+			minimal[key] = value;
+		}
+	}
+	return minimal;
 }
 
 function hasCodexInteractivePrompt(text: string): boolean {
@@ -336,7 +385,18 @@ export class TerminalSessionManager implements TerminalSessionService {
 			workspaceId: request.workspaceId,
 		});
 
-		const env = buildTerminalEnvironment(request.env, launch.env);
+		const env = buildTerminalEnvironment(
+			request.env,
+			launch.env,
+			buildProxyEnvVars(
+				request.proxyEnabled ?? false,
+				request.proxyHost ?? "",
+				request.proxyPort ?? "",
+				request.proxyUsername ?? "",
+				request.proxyPassword ?? "",
+				request.noProxy ?? "",
+			),
+		);
 
 		// Adapters can wrap the configured agent binary when they need extra runtime wiring
 		// (for example, Codex uses a wrapper script to watch session logs for hook transitions).
@@ -551,6 +611,13 @@ export class TerminalSessionManager implements TerminalSessionService {
 	}
 
 	async startShellSession(request: StartShellSessionRequest): Promise<RuntimeTaskSessionSummary> {
+		return this.spawnShellProcess(request, 0);
+	}
+
+	private async spawnShellProcess(
+		request: StartShellSessionRequest,
+		fallbackIndex: number,
+	): Promise<RuntimeTaskSessionSummary> {
 		const entry = this.ensureEntry(request.taskId);
 		entry.restartRequest = {
 			kind: "shell",
@@ -578,7 +645,18 @@ export class TerminalSessionManager implements TerminalSessionService {
 				entry.active.session.write(data);
 			},
 		});
-		const env = buildTerminalEnvironment(request.env);
+		const env = buildTerminalEnvironment(
+			request.env,
+			buildProxyEnvVars(
+				request.proxyEnabled ?? false,
+				request.proxyHost ?? "",
+				request.proxyPort ?? "",
+				request.proxyUsername ?? "",
+				request.proxyPassword ?? "",
+				request.noProxy ?? "",
+			),
+		);
+		const sessionStartedAt = now();
 
 		let session: PtySession;
 		try {
@@ -627,6 +705,63 @@ export class TerminalSessionManager implements TerminalSessionService {
 						return;
 					}
 					stopWorkspaceTrustTimers(currentActive);
+
+					const sessionDurationMs = now() - sessionStartedAt;
+					const isImmediateExit =
+						event.exitCode === 0 &&
+						sessionDurationMs < SHELL_IMMEDIATE_EXIT_THRESHOLD_MS &&
+						!currentActive.session.wasInterrupted();
+
+					// Check if we should try a fallback shell strategy
+					if (isImmediateExit && fallbackIndex < SHELL_FALLBACK_STRATEGIES.length) {
+						const strategy = SHELL_FALLBACK_STRATEGIES[fallbackIndex];
+						// Skip if strategy uses the same binary AND args as the current request
+						if (
+							strategy.binary === request.binary &&
+							JSON.stringify(strategy.args) === JSON.stringify(request.args ?? [])
+						) {
+							void this.spawnShellProcess(request, fallbackIndex + 1);
+							return;
+						}
+						// Notify listeners about the retry
+						const retryMessage = Buffer.from(
+							`\r\n[kanban] Shell exited immediately. Trying fallback: ${strategy.label}\r\n`,
+							"utf8",
+						);
+						for (const taskListener of currentEntry.listeners.values()) {
+							taskListener.onOutput?.(retryMessage);
+						}
+						// Build fallback request, optionally with minimal env
+						const fallbackRequest: StartShellSessionRequest = {
+							...request,
+							binary: strategy.binary,
+							args: strategy.args,
+						};
+						if (strategy.minimalEnv) {
+							fallbackRequest.env = buildMinimalShellEnvironment();
+						}
+						void this.spawnShellProcess(fallbackRequest, fallbackIndex + 1);
+						return;
+					}
+
+					// All fallbacks exhausted - output diagnostic info
+					if (isImmediateExit) {
+						const runtimeName = typeof Bun !== "undefined" ? "bun" : "node";
+						const envKeyCount = Object.keys(env).length;
+						const diagMessage = Buffer.from(
+							`\r\n[kanban] All shell fallbacks failed.\r\n` +
+							`  Runtime: ${runtimeName} ${typeof process !== "undefined" ? process.version : "unknown"}\r\n` +
+							`  CWD: ${request.cwd}\r\n` +
+							`  Shell: ${request.binary} ${request.args?.join(" ") ?? ""}\r\n` +
+							`  Env keys: ${envKeyCount}\r\n` +
+							`  Exit code: ${event.exitCode}\r\n` +
+							`  Duration: ${sessionDurationMs}ms\r\n`,
+							"utf8",
+						);
+						for (const taskListener of currentEntry.listeners.values()) {
+							taskListener.onOutput?.(diagMessage);
+						}
+					}
 
 					const summary = updateSummary(currentEntry, {
 						state: currentActive.session.wasInterrupted() ? "interrupted" : "idle",
@@ -687,7 +822,7 @@ export class TerminalSessionManager implements TerminalSessionService {
 			agentId: null,
 			workspacePath: request.cwd,
 			pid: session.pid,
-			startedAt: now(),
+			startedAt: sessionStartedAt,
 			lastOutputAt: null,
 			reviewReason: null,
 			exitCode: null,
@@ -712,7 +847,7 @@ export class TerminalSessionManager implements TerminalSessionService {
 		}
 
 		// Preserve agentId so the server can route to the correct agent type
-		// (Cline SDK vs terminal PTY) when a task is restored from trash.
+		// (kanban vs terminal PTY) when a task is restored from trash.
 		const summary = updateSummary(entry, {
 			state: "idle",
 			workspacePath: null,

@@ -183,6 +183,14 @@ function AgentTerminalPanelLayout({
 		}
 		return normalizedCommand.split(/\s+/)[0] ?? null;
 	}, [agentCommand]);
+	const isTerminalEmpty = !summary?.lastOutputAt && summary?.state !== "running" && summary?.state !== "idle";
+	const sessionErrorMessage =
+		lastError ??
+		(summary?.state === "failed"
+			? (summary.warningMessage ?? "Session failed to start.")
+			: isTerminalEmpty && summary?.pid === null
+				? "Agent exited without producing output. Check that the required API key is configured and try again."
+				: null);
 
 	return (
 		<div
@@ -302,16 +310,35 @@ function AgentTerminalPanelLayout({
 					</div>
 				</div>
 			) : null}
-			<div style={{ flex: "1 1 0", minHeight: 0, overflow: "hidden", padding: "3px 1.5px 3px 3px" }}>
+			<div style={{ flex: "1 1 0", minHeight: 0, overflow: "hidden", padding: "3px 1.5px 3px 3px", position: "relative" }}>
 				<div
 					ref={containerRef}
 					className="kb-terminal-container"
 					style={{ height: "100%", width: "100%", background: terminalBackgroundColor }}
 				/>
+				{!summary && !lastError && !sessionErrorMessage ? (
+					<div
+						style={{
+							position: "absolute",
+							inset: 0,
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							gap: 8,
+							background: "rgba(0, 0, 0, 0.3)",
+							zIndex: 1,
+						}}
+					>
+						<Spinner size={16} />
+						<span style={{ color: "var(--color-text-secondary)", fontSize: 13 }}>
+							Starting session…
+						</span>
+					</div>
+				) : null}
 			</div>
-			{lastError ? (
+			{sessionErrorMessage ? (
 				<div className="flex gap-2 rounded-none border-t border-status-red/30 bg-status-red/10 p-3 text-[13px] text-status-red">
-					{lastError}
+					{sessionErrorMessage}
 				</div>
 			) : null}
 			{showMoveToTrash && onMoveToTrash ? (

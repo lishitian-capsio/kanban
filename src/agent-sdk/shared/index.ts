@@ -1,0 +1,44 @@
+export { createAbortableStream, once, untilAborted } from "./abortable";
+export * from "./async";
+export * from "./color";
+export * from "./dirs";
+export * from "./env";
+export * from "./fetch-retry";
+export * from "./format";
+export * from "./frontmatter";
+export * from "./fs-error";
+export * from "./hook-fetch";
+export * from "./json";
+export * as logger from "./logger";
+export * from "./mermaid-ascii";
+export * from "./mime";
+export * from "./peek-file";
+export * as prompt from "./prompt";
+export * from "./sanitize-text";
+export * from "./snowflake";
+export * from "./stream";
+export * from "./tab-spacing";
+export * from "./temp";
+export * from "./type-guards";
+export * from "./which";
+
+function isPlainObject(val: object): val is Record<string, unknown> {
+	return Object.getPrototypeOf(val) === Object.prototype || Array.isArray(val);
+}
+
+export function structuredCloneJSON<T>(value: T): T {
+	// primitives|null|undefined, copy
+	if (!value || typeof value !== "object") {
+		return value;
+	}
+
+	// deep clone
+	if (isPlainObject(value)) {
+		try {
+			return structuredClone(value);
+		} catch {
+			// might still fail due to nested structures
+		}
+	}
+	return JSON.parse(JSON.stringify(value)) as T;
+}

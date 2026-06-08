@@ -1,15 +1,15 @@
 import { z } from "zod";
 
 import {
-	type RuntimeClineAccountSwitchRequest,
-	type RuntimeClineAddProviderRequest,
-	type RuntimeClineDeviceAuthCompleteRequest,
-	type RuntimeClineMcpOAuthRequest,
-	type RuntimeClineMcpSettingsSaveRequest,
-	type RuntimeClineOauthLoginRequest,
-	type RuntimeClineProviderModelsRequest,
-	type RuntimeClineProviderSettingsSaveRequest,
-	type RuntimeClineUpdateProviderRequest,
+	type RuntimeKanbanAccountSwitchRequest,
+	type RuntimeKanbanAddProviderRequest,
+	type RuntimeKanbanDeviceAuthCompleteRequest,
+	type RuntimeKanbanMcpOAuthRequest,
+	type RuntimeKanbanMcpSettingsSaveRequest,
+	type RuntimeKanbanOauthLoginRequest,
+	type RuntimeKanbanProviderModelsRequest,
+	type RuntimeKanbanProviderSettingsSaveRequest,
+	type RuntimeKanbanUpdateProviderRequest,
 	type RuntimeCommandRunRequest,
 	type RuntimeConfigSaveRequest,
 	type RuntimeDirectoryListRequest,
@@ -33,15 +33,15 @@ import {
 	type RuntimeWorkspaceStateSaveRequest,
 	type RuntimeWorktreeDeleteRequest,
 	type RuntimeWorktreeEnsureRequest,
-	runtimeClineAccountSwitchRequestSchema,
-	runtimeClineAddProviderRequestSchema,
-	runtimeClineDeviceAuthCompleteRequestSchema,
-	runtimeClineMcpOAuthRequestSchema,
-	runtimeClineMcpSettingsSaveRequestSchema,
-	runtimeClineOauthLoginRequestSchema,
-	runtimeClineProviderModelsRequestSchema,
-	runtimeClineProviderSettingsSaveRequestSchema,
-	runtimeClineUpdateProviderRequestSchema,
+	runtimeKanbanAccountSwitchRequestSchema,
+	runtimeKanbanAddProviderRequestSchema,
+	runtimeKanbanDeviceAuthCompleteRequestSchema,
+	runtimeKanbanMcpOAuthRequestSchema,
+	runtimeKanbanMcpSettingsSaveRequestSchema,
+	runtimeKanbanOauthLoginRequestSchema,
+	runtimeKanbanProviderModelsRequestSchema,
+	runtimeKanbanProviderSettingsSaveRequestSchema,
+	runtimeKanbanUpdateProviderRequestSchema,
 	runtimeCommandRunRequestSchema,
 	runtimeConfigSaveRequestSchema,
 	runtimeDirectoryListRequestSchema,
@@ -320,8 +320,8 @@ export function parseTaskChatCancelRequest(value: unknown): RuntimeTaskChatCance
 	};
 }
 
-export function parseClineProviderModelsRequest(value: unknown): RuntimeClineProviderModelsRequest {
-	const parsed = parseWithSchema(runtimeClineProviderModelsRequestSchema, value);
+export function parseKanbanProviderModelsRequest(value: unknown): RuntimeKanbanProviderModelsRequest {
+	const parsed = parseWithSchema(runtimeKanbanProviderModelsRequestSchema, value);
 	const providerId = parsed.providerId.trim();
 	if (!providerId) {
 		throw new Error("Provider ID cannot be empty.");
@@ -331,8 +331,8 @@ export function parseClineProviderModelsRequest(value: unknown): RuntimeClinePro
 	};
 }
 
-export function parseClineAddProviderRequest(value: unknown): RuntimeClineAddProviderRequest {
-	const parsed = parseWithSchema(runtimeClineAddProviderRequestSchema, value);
+export function parseKanbanAddProviderRequest(value: unknown): RuntimeKanbanAddProviderRequest {
+	const parsed = parseWithSchema(runtimeKanbanAddProviderRequestSchema, value);
 	const providerId = parsed.providerId.trim().toLowerCase().replace(/\s+/g, "-");
 	if (!providerId) {
 		throw new Error("Provider ID cannot be empty.");
@@ -372,8 +372,8 @@ export function parseClineAddProviderRequest(value: unknown): RuntimeClineAddPro
 	};
 }
 
-export function parseClineUpdateProviderRequest(value: unknown): RuntimeClineUpdateProviderRequest {
-	const parsed = parseWithSchema(runtimeClineUpdateProviderRequestSchema, value);
+export function parseKanbanUpdateProviderRequest(value: unknown): RuntimeKanbanUpdateProviderRequest {
+	const parsed = parseWithSchema(runtimeKanbanUpdateProviderRequestSchema, value);
 	const providerId = parsed.providerId.trim().toLowerCase().replace(/\s+/g, "-");
 	if (!providerId) {
 		throw new Error("Provider ID cannot be empty.");
@@ -405,8 +405,8 @@ export function parseClineUpdateProviderRequest(value: unknown): RuntimeClineUpd
 	};
 }
 
-export function parseClineProviderSettingsSaveRequest(value: unknown): RuntimeClineProviderSettingsSaveRequest {
-	const parsed = parseWithSchema(runtimeClineProviderSettingsSaveRequestSchema, value);
+export function parseKanbanProviderSettingsSaveRequest(value: unknown): RuntimeKanbanProviderSettingsSaveRequest {
+	const parsed = parseWithSchema(runtimeKanbanProviderSettingsSaveRequestSchema, value);
 	const providerId = parsed.providerId.trim();
 	if (!providerId) {
 		throw new Error("Provider ID cannot be empty.");
@@ -442,8 +442,8 @@ export function parseClineProviderSettingsSaveRequest(value: unknown): RuntimeCl
 	};
 }
 
-export function parseClineMcpSettingsSaveRequest(value: unknown): RuntimeClineMcpSettingsSaveRequest {
-	const parsed = parseWithSchema(runtimeClineMcpSettingsSaveRequestSchema, value);
+export function parseKanbanMcpSettingsSaveRequest(value: unknown): RuntimeKanbanMcpSettingsSaveRequest {
+	const parsed = parseWithSchema(runtimeKanbanMcpSettingsSaveRequestSchema, value);
 	const normalizedServers = parsed.servers.map((server) => {
 		const name = server.name.trim();
 		if (!name) {
@@ -511,8 +511,8 @@ export function parseClineMcpSettingsSaveRequest(value: unknown): RuntimeClineMc
 	};
 }
 
-export function parseClineMcpOAuthRequest(value: unknown): RuntimeClineMcpOAuthRequest {
-	const parsed = parseWithSchema(runtimeClineMcpOAuthRequestSchema, value);
+export function parseKanbanMcpOAuthRequest(value: unknown): RuntimeKanbanMcpOAuthRequest {
+	const parsed = parseWithSchema(runtimeKanbanMcpOAuthRequestSchema, value);
 	const serverName = parsed.serverName.trim();
 	if (!serverName) {
 		throw new Error("MCP server name cannot be empty.");
@@ -522,16 +522,16 @@ export function parseClineMcpOAuthRequest(value: unknown): RuntimeClineMcpOAuthR
 	};
 }
 
-export function parseClineOauthLoginRequest(value: unknown): RuntimeClineOauthLoginRequest {
-	const parsed = parseWithSchema(runtimeClineOauthLoginRequestSchema, value);
+export function parseKanbanOauthLoginRequest(value: unknown): RuntimeKanbanOauthLoginRequest {
+	const parsed = parseWithSchema(runtimeKanbanOauthLoginRequestSchema, value);
 	return {
 		...parsed,
 		baseUrl: typeof parsed.baseUrl === "string" ? parsed.baseUrl.trim() || null : parsed.baseUrl,
 	};
 }
 
-export function parseClineDeviceAuthCompleteRequest(value: unknown): RuntimeClineDeviceAuthCompleteRequest {
-	const parsed = parseWithSchema(runtimeClineDeviceAuthCompleteRequestSchema, value);
+export function parseKanbanDeviceAuthCompleteRequest(value: unknown): RuntimeKanbanDeviceAuthCompleteRequest {
+	const parsed = parseWithSchema(runtimeKanbanDeviceAuthCompleteRequestSchema, value);
 	return {
 		...parsed,
 		baseUrl: typeof parsed.baseUrl === "string" ? parsed.baseUrl.trim() || null : parsed.baseUrl,
@@ -600,6 +600,6 @@ export function parseDirectoryListRequest(value: unknown): RuntimeDirectoryListR
 	return parseWithSchema(runtimeDirectoryListRequestSchema, value);
 }
 
-export function parseClineAccountSwitchRequest(value: unknown): RuntimeClineAccountSwitchRequest {
-	return parseWithSchema(runtimeClineAccountSwitchRequestSchema, value);
+export function parseKanbanAccountSwitchRequest(value: unknown): RuntimeKanbanAccountSwitchRequest {
+	return parseWithSchema(runtimeKanbanAccountSwitchRequestSchema, value);
 }

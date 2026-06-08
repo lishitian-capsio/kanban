@@ -43,7 +43,7 @@ function createBoard(taskId: string): BoardData {
 function createWorkspaceState(taskId: string, revision: number): RuntimeWorkspaceStateResponse {
 	return {
 		repoPath: "/tmp/project-a",
-		statePath: "/tmp/project-a/.cline/kanban",
+		statePath: "/tmp/project-a/.kanban/kanban",
 		git: {
 			currentBranch: "main",
 			defaultBranch: "main",
@@ -63,7 +63,7 @@ function createSessionSummary(
 	return {
 		taskId,
 		state: finalMessage ? "awaiting_review" : "running",
-		agentId: "cline",
+		agentId: "pi",
 		workspacePath: "/tmp/project-a",
 		pid: null,
 		startedAt: updatedAt - 100,
@@ -80,7 +80,7 @@ function createSessionSummary(
 					finalMessage,
 					hookEventName: "agent_end",
 					notificationType: null,
-					source: "cline-sdk",
+					source: "pi",
 				}
 			: null,
 		latestTurnCheckpoint: null,

@@ -42,7 +42,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=22"
+    "bun": ">=1.3.14"
   },
   "scripts": {
     "clean": "shx rm -rf dist coverage",
@@ -51,7 +51,7 @@
     "dogfood": "node scripts/dogfood.mjs",
     "link": "npm run build && npm link",
     "unlink": "npm unlink -g kanban",
-    "dev": "NODE_ENV=development tsx watch src/cli.ts",
+    "dev": "NODE_ENV=development bun --watch run src/cli.ts",
     "dev:full": "node scripts/dev-full.mjs",
     "web:dev": "npm --prefix web-ui run dev",
     "web:build": "npm --prefix web-ui run build",
@@ -61,7 +61,7 @@
     "lint": "npx @biomejs/biome lint src test web-ui/src web-ui/tests vitest.config.ts web-ui/vite.config.ts web-ui/vitest.config.ts web-ui/playwright.config.ts",
     "format": "npx @biomejs/biome check --write .",
     "check": "npx @biomejs/biome check . && npm run typecheck && npm run test",
-    "test": "vitest run",
+    "test": "bun vitest run",
     "test:fast": "vitest run test/runtime test/utilities",
     "test:integration": "vitest run test/integration",
     "test:precommit": "npm run test:fast",
@@ -73,6 +73,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.3.5",
     "@sentry/cli": "^3.3.3",
+    "@types/bun": "latest",
     "@types/node": "^22.10.5",
     "@types/proper-lockfile": "^4.1.4",
     "@types/ws": "^8.18.1",
@@ -91,22 +92,28 @@
     "@rolldown/binding-linux-x64-gnu": "1.0.0-rc.9"
   },
   "dependencies": {
-    "@clinebot/core": "^0.0.38",
-    "@clinebot/shared": "^0.0.38",
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@opentelemetry/api": "^1.9.0",
     "@sentry/node": "^10.45.0",
     "@trpc/client": "^11.11.0",
     "@trpc/server": "^11.11.0",
     "@xterm/addon-serialize": "^0.14.0",
     "@xterm/headless": "^6.0.0",
+    "beautiful-mermaid": "^1.0.0",
     "commander": "^14.0.3",
+    "handlebars": "^4.7.8",
+    "js-tiktoken": "^1.0.14",
     "node-pty": "^1.2.0-beta.11",
     "open": "^11.0.0",
+    "openai": "^4.86.0",
     "ora": "^9.3.0",
+    "partial-json": "^0.1.7",
     "proper-lockfile": "^4.1.2",
     "tree-kill": "^1.2.2",
+    "winston": "^3.17.0",
+    "winston-daily-rotate-file": "^5.0.0",
     "ws": "^8.18.0",
-    "zod": "^4.3.6"
+    "zod": "^3.25.76"
   },
   "overrides": {
     "protobufjs": "7.5.8"

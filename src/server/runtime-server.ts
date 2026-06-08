@@ -4,12 +4,11 @@ import { createServer as createHttpsServer } from "node:https";
 import { join } from "node:path";
 
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
-import { handleClineMcpOauthCallback } from "../cline-sdk/cline-mcp-runtime-service";
 import {
-	type ClineTaskSessionService,
-	createInMemoryClineTaskSessionService,
-} from "../cline-sdk/cline-task-session-service";
-import { createClineWatcherRegistry } from "../cline-sdk/cline-watcher-registry";
+	type PiTaskSessionService,
+	createInMemoryPiTaskSessionService,
+} from "../agent-sdk/kanban/pi-task-session-service";
+import { handleMcpOauthCallback } from "../agent-sdk/kanban/mcp-runtime-service";
 import type {
 	RuntimeCommandRunResponse,
 	RuntimeRunUpdateResponse,
@@ -141,38 +140,38 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 
 	const getScopedTerminalManager = async (scope: RuntimeTrpcWorkspaceScope): Promise<TerminalSessionManager> =>
 		await deps.ensureTerminalManagerForWorkspace(scope.workspaceId, scope.workspacePath);
-	const clineTaskSessionServiceByWorkspaceId = new Map<string, ClineTaskSessionService>();
-	const clineWatcherRegistry = createClineWatcherRegistry();
-	const getScopedClineTaskSessionService = async (
+
+	// Pi task session service management
+	const piTaskSessionServiceByWorkspaceId = new Map<string, PiTaskSessionService>();
+	const getScopedPiTaskSessionService = async (
 		scope: RuntimeTrpcWorkspaceScope,
-	): Promise<ClineTaskSessionService> => {
-		let service = clineTaskSessionServiceByWorkspaceId.get(scope.workspaceId);
+	): Promise<PiTaskSessionService> => {
+		let service = piTaskSessionServiceByWorkspaceId.get(scope.workspaceId);
 		if (!service) {
-			service = createInMemoryClineTaskSessionService({
-				watcherRegistry: clineWatcherRegistry,
-			});
-			clineTaskSessionServiceByWorkspaceId.set(scope.workspaceId, service);
-			deps.runtimeStateHub.trackClineTaskSessionService(scope.workspaceId, scope.workspacePath, service);
+			service = createInMemoryPiTaskSessionService({});
+			piTaskSessionServiceByWorkspaceId.set(scope.workspaceId, service);
+			deps.runtimeStateHub.trackPiTaskSessionService(scope.workspaceId, scope.workspacePath, service);
 		}
 		return service;
 	};
-	const disposeClineTaskSessionServiceAsync = async (workspaceId: string): Promise<void> => {
-		const service = clineTaskSessionServiceByWorkspaceId.get(workspaceId);
+	const disposePiTaskSessionServiceAsync = async (workspaceId: string): Promise<void> => {
+		const service = piTaskSessionServiceByWorkspaceId.get(workspaceId);
 		if (!service) {
 			return;
 		}
-		clineTaskSessionServiceByWorkspaceId.delete(workspaceId);
+		piTaskSessionServiceByWorkspaceId.delete(workspaceId);
 		await service.dispose();
 	};
-	const disposeClineTaskSessionService = (workspaceId: string): void => {
-		void disposeClineTaskSessionServiceAsync(workspaceId);
+	const disposePiTaskSessionService = (workspaceId: string): void => {
+		void disposePiTaskSessionServiceAsync(workspaceId);
 	};
+
 	const prepareForStateReset = async (): Promise<void> => {
 		const workspaceIds = new Set<string>();
 		for (const { workspaceId } of deps.workspaceRegistry.listManagedWorkspaces()) {
 			workspaceIds.add(workspaceId);
 		}
-		for (const workspaceId of clineTaskSessionServiceByWorkspaceId.keys()) {
+		for (const workspaceId of piTaskSessionServiceByWorkspaceId.keys()) {
 			workspaceIds.add(workspaceId);
 		}
 		const activeWorkspaceId = deps.workspaceRegistry.getActiveWorkspaceId();
@@ -180,7 +179,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 			workspaceIds.add(activeWorkspaceId);
 		}
 		for (const workspaceId of workspaceIds) {
-			await disposeClineTaskSessionServiceAsync(workspaceId);
+			await disposePiTaskSessionServiceAsync(workspaceId);
 			deps.disposeWorkspace(workspaceId, {
 				stopTerminalSessions: true,
 			});
@@ -200,19 +199,19 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				loadScopedRuntimeConfig: deps.workspaceRegistry.loadScopedRuntimeConfig,
 				setActiveRuntimeConfig: deps.workspaceRegistry.setActiveRuntimeConfig,
 				getScopedTerminalManager,
-				getScopedClineTaskSessionService,
+				getScopedPiTaskSessionService,
 				resolveInteractiveShellCommand: deps.resolveInteractiveShellCommand,
 				runCommand: deps.runCommand,
-				broadcastClineMcpAuthStatusesUpdated: deps.runtimeStateHub.broadcastClineMcpAuthStatusesUpdated,
+				broadcastKanbanMcpAuthStatusesUpdated: deps.runtimeStateHub.broadcastKanbanMcpAuthStatusesUpdated,
 				broadcastTaskChatCleared: deps.runtimeStateHub.broadcastTaskChatCleared,
-				bumpClineSessionContextVersion: deps.runtimeStateHub.bumpClineSessionContextVersion,
+				bumpKanbanSessionContextVersion: deps.runtimeStateHub.bumpKanbanSessionContextVersion,
 				prepareForStateReset,
 				getUpdateStatus: deps.getUpdateStatus,
 				runUpdateNow: deps.runUpdateNow,
 			}),
 			workspaceApi: createWorkspaceApi({
 				ensureTerminalManagerForWorkspace: deps.ensureTerminalManagerForWorkspace,
-				getScopedClineTaskSessionService,
+				getScopedPiTaskSessionService,
 				broadcastRuntimeWorkspaceStateUpdated: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
 				broadcastRuntimeProjectsUpdated: deps.runtimeStateHub.broadcastRuntimeProjectsUpdated,
 				buildWorkspaceStateSnapshot: deps.workspaceRegistry.buildWorkspaceStateSnapshot,
@@ -231,7 +230,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				broadcastRuntimeProjectsUpdated: deps.runtimeStateHub.broadcastRuntimeProjectsUpdated,
 				getTerminalManagerForWorkspace: deps.workspaceRegistry.getTerminalManagerForWorkspace,
 				disposeWorkspace: (workspaceId, options) => {
-					disposeClineTaskSessionService(workspaceId);
+					disposePiTaskSessionService(workspaceId);
 					return deps.disposeWorkspace(workspaceId, options);
 				},
 				collectProjectWorktreeTaskIdsForRemoval: deps.collectProjectWorktreeTaskIdsForRemoval,
@@ -389,7 +388,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 			}
 			// ── End passcode gate ──────────────────────────────────────────────
 
-			const oauthCallbackResponse = await handleClineMcpOauthCallback(requestUrl);
+			const oauthCallbackResponse = await handleMcpOauthCallback(requestUrl);
 			if (oauthCallbackResponse) {
 				res.writeHead(oauthCallbackResponse.statusCode, {
 					"Content-Type": "text/html; charset=utf-8",
@@ -497,12 +496,11 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		url,
 		close: async () => {
 			await Promise.all(
-				Array.from(clineTaskSessionServiceByWorkspaceId.values()).map(async (service) => {
+				Array.from(piTaskSessionServiceByWorkspaceId.values()).map(async (service) => {
 					await service.dispose();
 				}),
 			);
-			clineTaskSessionServiceByWorkspaceId.clear();
-			await clineWatcherRegistry.close();
+			piTaskSessionServiceByWorkspaceId.clear();
 			await deps.runtimeStateHub.close();
 			await terminalWebSocketBridge.close();
 			await new Promise<void>((resolveClose, rejectClose) => {
