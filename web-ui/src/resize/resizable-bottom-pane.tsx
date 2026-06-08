@@ -85,10 +85,10 @@ export function ResizableBottomPane({
 		setHeight(getDefaultPaneHeight(minHeight));
 	}, [initialHeight, minHeight]);
 
-	useEffect(() => {
-		onHeightChange?.(height);
-	}, [height, onHeightChange]);
-
+	// Only a user drag should persist a height. Reporting every internal height
+	// change (including the programmatic expand/collapse driven by initialHeight)
+	// feeds the temporary fullscreen height back into the shared pane height and
+	// oscillates the pane between expanded and collapsed states.
 	const handleMouseMove = useCallback(
 		(event: MouseEvent) => {
 			if (!isDragging) {
@@ -107,8 +107,9 @@ export function ResizableBottomPane({
 			}
 			const nextHeight = clampHeight(dragState.startHeight - deltaY, minHeight);
 			setHeight(nextHeight);
+			onHeightChange?.(nextHeight);
 		},
-		[isDragging, minHeight, onCollapse, stopDrag],
+		[isDragging, minHeight, onCollapse, onHeightChange, stopDrag],
 	);
 
 	const handleMouseUp = useCallback(
