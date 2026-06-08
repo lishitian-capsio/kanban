@@ -1,8 +1,7 @@
 import * as Collapsible from "@radix-ui/react-collapsible";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, ChevronUp, Ellipsis, ExternalLink, Info, Lightbulb, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Ellipsis, Lightbulb, Plus, X } from "lucide-react";
 import { type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { canShowFeaturebaseFeedbackButton } from "@/components/featurebase-feedback-button";
 import { Button } from "@/components/ui/button";
 import { KanbanIcon } from "@/components/ui/kanban-icon";
 import { cn } from "@/components/ui/cn";
@@ -18,9 +17,8 @@ import {
 } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
-import type { FeaturebaseFeedbackState } from "@/hooks/use-featurebase-feedback-widget";
 import { useIsMobile } from "@/hooks/use-is-mobile";
-import type { RuntimeAgentId, RuntimeKanbanProviderSettings, RuntimeProjectSummary } from "@/runtime/types";
+import type { RuntimeAgentId, RuntimeProjectSummary } from "@/runtime/types";
 import {
 	LocalStorageKey,
 	readLocalStorageItem,
@@ -35,7 +33,6 @@ const COLLAPSED_WIDTH = 48;
 const SIDEBAR_COLLAPSE_THRESHOLD = 120;
 const SIDEBAR_MIN_EXPANDED_WIDTH = 200;
 const SIDEBAR_MAX_EXPANDED_WIDTH = 600;
-const GITHUB_ISSUES_URL = "https://github.com/kanban/kanban/issues";
 
 interface TaskCountBadge {
 	id: string;
@@ -55,8 +52,6 @@ export function ProjectNavigationPanel({
 	canShowAgentSection,
 	agentSectionContent,
 	selectedAgentId,
-	kanbanProviderSettings,
-	featurebaseFeedbackState,
 	onSelectProject,
 	onRemoveProject,
 	onAddProject,
@@ -74,8 +69,6 @@ export function ProjectNavigationPanel({
 	canShowAgentSection: boolean;
 	agentSectionContent?: ReactNode;
 	selectedAgentId?: RuntimeAgentId | null;
-	kanbanProviderSettings?: RuntimeKanbanProviderSettings | null;
-	featurebaseFeedbackState?: FeaturebaseFeedbackState;
 	onSelectProject: (projectId: string) => void;
 	onRemoveProject: (projectId: string) => Promise<boolean>;
 	onAddProject: () => void;
@@ -85,11 +78,6 @@ export function ProjectNavigationPanel({
 	setSidebarCollapsed: (collapsed: boolean, persist?: boolean) => void;
 }): React.ReactElement {
 	const sortedProjects = [...projects].sort((a, b) => a.path.localeCompare(b.path));
-	const shouldShowFeaturebaseFeedback = canShowFeaturebaseFeedbackButton({
-		selectedAgentId,
-		kanbanProviderSettings,
-		featurebaseFeedbackState,
-	});
 
 	const [pendingProjectRemoval, setPendingProjectRemoval] = useState<RuntimeProjectSummary | null>(null);
 	const isProjectRemovalPending = pendingProjectRemoval !== null && removingProjectId === pendingProjectRemoval.id;
@@ -395,10 +383,6 @@ export function ProjectNavigationPanel({
 						) : null}
 					</div>
 					<ShortcutsCard />
-					<ProjectSupportFooter
-						shouldShowFeaturebaseFeedback={shouldShowFeaturebaseFeedback}
-						featurebaseFeedbackState={featurebaseFeedbackState}
-					/>
 				</>
 			) : (
 				<div className="flex flex-1 min-h-0 flex-col">
@@ -540,47 +524,6 @@ function TerminalAgentHints(): React.ReactElement {
 					</li>
 				))}
 			</ul>
-		</div>
-	);
-}
-
-function ProjectSupportFooter({
-	shouldShowFeaturebaseFeedback,
-	featurebaseFeedbackState,
-}: {
-	shouldShowFeaturebaseFeedback: boolean;
-	featurebaseFeedbackState?: FeaturebaseFeedbackState;
-}): React.ReactElement {
-	const isOpening = featurebaseFeedbackState?.authState === "loading";
-
-	const handleAction = () => {
-		if (shouldShowFeaturebaseFeedback) {
-			void featurebaseFeedbackState?.openFeedbackWidget();
-		} else {
-			window.open(GITHUB_ISSUES_URL, "_blank");
-		}
-	};
-
-	const actionLabel = shouldShowFeaturebaseFeedback ? (isOpening ? "Opening..." : "Send feedback") : "Report issue";
-
-	return (
-		<div style={{ padding: "4px 12px 12px" }}>
-			<div className="flex items-start gap-2 rounded-md border border-border bg-surface-2 px-3 py-2.5">
-				<Info size={14} className="mt-px shrink-0 text-text-tertiary" />
-				<div className="flex flex-col gap-1.5">
-					<p className="m-0 text-xs text-text-secondary">
-						Kanban is in beta. Help us improve by sharing your experience.
-					</p>
-					<button
-						type="button"
-						className="m-0 flex cursor-pointer items-center gap-1 self-start border-none bg-transparent p-0 text-xs font-semibold text-text-secondary hover:text-text-primary active:text-text-tertiary disabled:cursor-default disabled:opacity-50"
-						disabled={shouldShowFeaturebaseFeedback && isOpening}
-						onClick={handleAction}
-					>
-						{actionLabel} {!isOpening && <ExternalLink size={11} />}
-					</button>
-				</div>
-			</div>
 		</div>
 	);
 }
