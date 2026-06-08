@@ -1847,6 +1847,54 @@ describe("createRuntimeApi startTaskSession", () => {
 		}
 	});
 
+	it("discovers provider models from a non-standard /models envelope", async () => {
+		const api = createTestRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => ({}) as never),
+			getScopedPiTaskSessionService: vi.fn(async () => createPiTaskSessionServiceMock() as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+		// Some gateways (e.g. Aliyun Bailian compatible-mode) return models under a
+		// `{ models: [...] }` envelope rather than the OpenAI-standard `{ data }`.
+		// Discovery must tolerate that instead of silently returning nothing.
+		setSelectedProviderSettings({
+			provider: "aliyun-token-plan",
+			model: "qwen3.7-max",
+			apiKey: "aliyun-key",
+			baseUrl: "https://token-plan.example.com/compatible-mode/v1",
+		});
+		const fetchMock = vi.fn(async () => ({
+			ok: true,
+			json: async () => ({
+				object: "list",
+				models: [{ id: "qwen3.7-max" }, { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus" }],
+			}),
+		}));
+		vi.stubGlobal("fetch", fetchMock);
+
+		try {
+			const response = await api.getKanbanProviderModels(
+				{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
+				{ providerId: "aliyun-token-plan" },
+			);
+
+			expect(fetchMock).toHaveBeenCalledWith(
+				"https://token-plan.example.com/compatible-mode/v1/models",
+				expect.objectContaining({ method: "GET" }),
+			);
+			expect(response.providerId).toBe("aliyun-token-plan");
+			expect(response.models).toEqual([
+				{ id: "qwen3-coder-plus", name: "Qwen3 Coder Plus" },
+				{ id: "qwen3.7-max", name: "qwen3.7-max" },
+			]);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
 	it("prefers the bundled registry over endpoint discovery", async () => {
 		const api = createTestRuntimeApi({
 			getActiveWorkspaceId: vi.fn(() => "workspace-1"),

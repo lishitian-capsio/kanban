@@ -295,10 +295,13 @@ export function createProviderService() {
 				};
 			}
 		
-			// Try to discover models from the provider's /models endpoint
+			// Try to discover models from the provider's OpenAI-compatible /models endpoint.
 			const savedSettings = getProviderSettings(normalizedProviderId);
 			if (savedSettings?.baseUrl) {
-				const discoveredModels = await fetchModelsFromEndpoint(savedSettings.baseUrl, savedSettings.apiKey);
+				const discoveredModels = await fetchModelsFromEndpoint(
+					savedSettings.baseUrl,
+					resolveVisibleApiKey(savedSettings) ?? undefined,
+				);
 				if (discoveredModels.length > 0) {
 					return {
 						providerId: normalizedProviderId || providerId,
@@ -583,23 +586,52 @@ function formatProviderName(id: string): string {
 }
 
 /**
- * Fetch available models from an OpenAI-compatible /models endpoint.
- * Returns an empty array if the request fails or the response format is unexpected.
+ * Extracts model records from an OpenAI-compatible `/models` payload.
+ *
+ * Tolerant of envelope shape: most gateways return `{ data: [...] }`, but
+ * variants such as `{ models: [...] }`, `{ result: [...] }`, `{ items: [...] }`,
+ * or a bare top-level array are also accepted. Aliyun Bailian compatible-mode,
+ * for example, does not use the `{ data }` envelope, so a `{ data }`-only parser
+ * silently drops every model and the picker never populates.
  */
-async function fetchModelsFromEndpoint(
-	baseUrl: string,
-	apiKey?: string,
-): Promise<RuntimeKanbanProviderModel[]> {
-	// Build the models URL: ensure baseUrl doesn't have trailing slash
-	const normalizedBase = baseUrl.replace(/\/+$/, "");
-	const modelsUrl = `${normalizedBase}/models`;
+function extractModelRecords(payload: unknown): Array<{ id: string; name?: string }> {
+	const container =
+		payload && typeof payload === "object" && !Array.isArray(payload)
+			? (payload as Record<string, unknown>)
+			: null;
+	const list = Array.isArray(payload)
+		? payload
+		: container
+			? ((container.data ?? container.models ?? container.result ?? container.items) as unknown)
+			: undefined;
+	if (!Array.isArray(list)) {
+		return [];
+	}
+	const records: Array<{ id: string; name?: string }> = [];
+	for (const item of list) {
+		if (!item || typeof item !== "object") {
+			continue;
+		}
+		const entry = item as { id?: unknown; name?: unknown };
+		const id = typeof entry.id === "string" ? entry.id.trim() : "";
+		if (id.length === 0) {
+			continue;
+		}
+		records.push({ id, name: typeof entry.name === "string" ? entry.name.trim() : undefined });
+	}
+	return records;
+}
 
+/**
+ * Fetch available models from an OpenAI-compatible `/models` endpoint.
+ * Returns an empty array if the request fails or the response is unusable.
+ */
+async function fetchModelsFromEndpoint(baseUrl: string, apiKey?: string): Promise<RuntimeKanbanProviderModel[]> {
+	const modelsUrl = `${baseUrl.replace(/\/+$/, "")}/models`;
 	try {
-		const headers: Record<string, string> = {
-			Accept: "application/json",
-		};
+		const headers: Record<string, string> = { Accept: "application/json" };
 		if (apiKey?.trim()) {
-			headers["Authorization"] = `Bearer ${apiKey.trim()}`;
+			headers.Authorization = `Bearer ${apiKey.trim()}`;
 		}
 
 		const response = await fetch(modelsUrl, {
@@ -607,33 +639,16 @@ async function fetchModelsFromEndpoint(
 			headers,
 			signal: AbortSignal.timeout(10_000), // 10 second timeout
 		});
-
 		if (!response.ok) {
 			return [];
 		}
 
-		const json = (await response.json()) as {
-			data?: Array<{ id?: string; name?: string }>;
-		};
-
-		if (!json.data || !Array.isArray(json.data)) {
-			return [];
-		}
-
-		const models: RuntimeKanbanProviderModel[] = [];
-		for (const item of json.data) {
-			const id = item.id?.trim();
-			if (id) {
-				models.push({
-					id,
-					name: item.name?.trim() || id,
-				});
-			}
-		}
-
-		return models.sort((a, b) => a.name.localeCompare(b.name));
+		const records = extractModelRecords(await response.json());
+		return records
+			.map((record) => ({ id: record.id, name: record.name || record.id }))
+			.sort((a, b) => a.name.localeCompare(b.name));
 	} catch {
-		// Network error, timeout, or parse error — return empty
+		// Network error, timeout, or parse error — return empty.
 		return [];
 	}
 }
