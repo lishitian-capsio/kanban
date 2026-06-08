@@ -33,6 +33,8 @@ const oauthMocks = vi.hoisted(() => ({
 	saveProviderSettings: vi.fn(),
 	getProviderSettings: vi.fn(),
 	getLastUsedProviderSettings: vi.fn(),
+	getAllProviders: vi.fn(() => ({})),
+	deleteProviderSettings: vi.fn(),
 }));
 
 const llmsModelMocks = vi.hoisted(() => ({
@@ -143,6 +145,20 @@ vi.mock("../../../src/agent-sdk/kanban/pi-provider-config.js", () => ({
 	PI_DEFAULT_PROVIDER_ID: "anthropic",
 	PI_DEFAULT_MODEL_ID: "claude-sonnet-4-20250514",
 	toOmpEffort: (...args: unknown[]) => piProviderConfigMocks.toOmpEffort(...args),
+}));
+
+// The omp provider service reads selected/custom provider settings from the
+// on-disk omp store. Mock it and route every read/write back through the
+// shared `oauthMocks` so the `setSelectedProviderSettings` helper drives the
+// pi code path too, and so tests never touch the real `~/.kanban` store.
+vi.mock("../../../src/agent-sdk/kanban/provider-settings-store.js", () => ({
+	getProviderSettings: (providerId: string) => oauthMocks.getProviderSettings(providerId) ?? null,
+	getLastUsedProviderSettings: () => oauthMocks.getLastUsedProviderSettings() ?? null,
+	getLastUsedProviderId: () => oauthMocks.getLastUsedProviderSettings()?.provider ?? null,
+	getAllProviders: () => oauthMocks.getAllProviders(),
+	saveProviderSettings: (input: unknown) => oauthMocks.saveProviderSettings(input),
+	deleteProviderSettings: (providerId: string) => oauthMocks.deleteProviderSettings(providerId),
+	resetProviderSettingsCache: vi.fn(),
 }));
 
 import type { RuntimeTrpcContext } from "../../../src/trpc/app-router";
@@ -301,6 +317,9 @@ describe("createRuntimeApi startTaskSession", () => {
 		oauthMocks.saveProviderSettings.mockReset();
 		oauthMocks.getProviderSettings.mockReset();
 		oauthMocks.getLastUsedProviderSettings.mockReset();
+		oauthMocks.getAllProviders.mockReset();
+		oauthMocks.getAllProviders.mockReturnValue({});
+		oauthMocks.deleteProviderSettings.mockReset();
 		kanbanAccountMocks.fetchMe.mockReset();
 		kanbanAccountMocks.fetchRemoteConfig.mockReset();
 		kanbanAccountMocks.constructedOptions.length = 0;
@@ -396,7 +415,7 @@ describe("createRuntimeApi startTaskSession", () => {
 				const modelId = input?.modelIdOverride?.trim() || "claude-sonnet-4-20250514";
 				const settings = oauthMocks.getProviderSettings(providerId) ?? oauthMocks.getLastUsedProviderSettings();
 				let apiKey: string | null = settings?.apiKey ?? null;
-				let baseUrl: string | null = settings?.baseUrl ?? null;
+				const baseUrl: string | null = settings?.baseUrl ?? null;
 				if (providerId === "cline" && settings?.auth?.accessToken) {
 					apiKey = `workos:${settings.auth.accessToken}`;
 				}
@@ -1747,7 +1766,7 @@ describe("createRuntimeApi startTaskSession", () => {
 		expect(modelsResponse.models.some((model) => model.id === "claude-sonnet-4-6")).toBe(true);
 	});
 
-	it("loads provider models through the SDK local-provider resolver with saved config", async () => {
+	it("loads provider models from the bundled model registry", async () => {
 		const api = createTestRuntimeApi({
 			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
 			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
@@ -1758,49 +1777,28 @@ describe("createRuntimeApi startTaskSession", () => {
 			runCommand: vi.fn(),
 		});
 		setSelectedProviderSettings({
-			provider: "openrouter",
-			model: "openrouter/auto",
-			apiKey: "openrouter-key",
-			baseUrl: "https://openrouter.ai/api/v1",
-		});
-		localProviderMocks.getLocalProviderModels.mockResolvedValue({
-			providerId: "openrouter",
-			models: [
-				{
-					id: "openrouter/free",
-					name: "OpenRouter Free",
-					supportsReasoning: true,
-				},
-			],
+			provider: "anthropic",
+			model: "claude-sonnet-4-6",
+			apiKey: "anthropic-key",
 		});
 
 		const response = await api.getKanbanProviderModels(
 			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
-			{ providerId: "openrouter" },
+			{ providerId: "anthropic" },
 		);
 
-		expect(localProviderMocks.getLocalProviderModels).toHaveBeenCalledWith(
-			"openrouter",
-			expect.objectContaining({
-				providerId: "openrouter",
-				modelId: "openrouter/auto",
-				apiKey: "openrouter-key",
-				baseUrl: "https://openrouter.ai/api/v1",
-			}),
-		);
-		expect(response).toEqual({
-			providerId: "openrouter",
-			models: [
-				{
-					id: "openrouter/free",
-					name: "OpenRouter Free",
-					supportsReasoningEffort: true,
-				},
-			],
-		});
+		// The omp runtime resolves models from the bundled `models.json` registry.
+		expect(response.providerId).toBe("anthropic");
+		expect(response.models.length).toBeGreaterThan(0);
+		for (const model of response.models) {
+			expect(model.id.length).toBeGreaterThan(0);
+			expect(model.name.length).toBeGreaterThan(0);
+		}
+		const names = response.models.map((model) => model.name);
+		expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
 	});
 
-	it("adds refreshed live catalog models to provider model responses", async () => {
+	it("discovers provider models from the configured /models endpoint", async () => {
 		const api = createTestRuntimeApi({
 			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
 			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
@@ -1810,116 +1808,78 @@ describe("createRuntimeApi startTaskSession", () => {
 			resolveInteractiveShellCommand: vi.fn(),
 			runCommand: vi.fn(),
 		});
+		// A custom (non-bundled) provider with a base URL discovers models from
+		// the OpenAI-compatible `/models` endpoint.
+		setSelectedProviderSettings({
+			provider: "my-proxy",
+			model: "proxy-default",
+			apiKey: "proxy-key",
+			baseUrl: "http://localhost:4010/v1",
+		});
+		const fetchMock = vi.fn(async () => ({
+			ok: true,
+			json: async () => ({
+				data: [
+					{ id: "proxy-model-b", name: "Proxy Model B" },
+					{ id: "proxy-model-a", name: "Proxy Model A" },
+				],
+			}),
+		}));
+		vi.stubGlobal("fetch", fetchMock);
+
+		try {
+			const response = await api.getKanbanProviderModels(
+				{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
+				{ providerId: "my-proxy" },
+			);
+
+			expect(fetchMock).toHaveBeenCalledWith(
+				"http://localhost:4010/v1/models",
+				expect.objectContaining({ method: "GET" }),
+			);
+			expect(response.providerId).toBe("my-proxy");
+			expect(response.models).toEqual([
+				{ id: "proxy-model-a", name: "Proxy Model A" },
+				{ id: "proxy-model-b", name: "Proxy Model B" },
+			]);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("prefers the bundled registry over endpoint discovery", async () => {
+		const api = createTestRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => ({}) as never),
+			getScopedPiTaskSessionService: vi.fn(async () => createPiTaskSessionServiceMock() as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+		// `deepseek` is a bundled provider, so even with a base URL configured the
+		// runtime serves bundled models and never calls the `/models` endpoint.
 		setSelectedProviderSettings({
 			provider: "deepseek",
-			model: "deepseek-chat",
+			model: "deepseek-v4-flash",
 			apiKey: "deepseek-key",
-			baseUrl: "https://api.deepseek.com/v1",
+			baseUrl: "http://localhost:9999/v1",
 		});
-		localProviderMocks.getLocalProviderModels.mockResolvedValue({
-			providerId: "deepseek",
-			models: [
-				{
-					id: "deepseek-chat",
-					name: "DeepSeek Chat",
-				},
-			],
-		});
-		llmsModelMocks.resolveProviderConfig.mockResolvedValue({
-			knownModels: {
-				"deepseek-v4-pro": {
-					id: "deepseek-v4-pro",
-					name: "DeepSeek V4 Pro",
-					capabilities: ["tools", "reasoning"],
-				},
-			},
-		});
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
 
-		const response = await api.getKanbanProviderModels(
-			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
-			{ providerId: "deepseek" },
-		);
+		try {
+			const response = await api.getKanbanProviderModels(
+				{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
+				{ providerId: "deepseek" },
+			);
 
-		expect(llmsModelMocks.resolveProviderModelCatalogKeys).toHaveBeenCalledWith("deepseek");
-		expect(llmsModelMocks.resolveProviderConfig).toHaveBeenCalledWith(
-			"deepseek",
-			expect.objectContaining({
-				loadLatestOnInit: true,
-				loadPrivateOnAuth: true,
-				failOnError: false,
-			}),
-			expect.objectContaining({
-				providerId: "deepseek",
-				modelId: "deepseek-chat",
-				apiKey: "deepseek-key",
-			}),
-		);
-		expect(response.models).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					id: "deepseek-v4-pro",
-					name: "DeepSeek V4 Pro",
-					supportsReasoningEffort: true,
-				}),
-				expect.objectContaining({
-					id: "deepseek-chat",
-					name: "DeepSeek Chat",
-				}),
-			]),
-		);
-	});
-
-	it("loads Kanban provider models from the SDK catalog key mapping", async () => {
-		const api = createTestRuntimeApi({
-			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
-			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
-			setActiveRuntimeConfig: vi.fn(),
-			getScopedTerminalManager: vi.fn(async () => ({}) as never),
-			getScopedPiTaskSessionService: vi.fn(async () => createPiTaskSessionServiceMock() as never),
-			resolveInteractiveShellCommand: vi.fn(),
-			runCommand: vi.fn(),
-		});
-		setSelectedProviderSettings({
-			provider: "cline",
-			model: "anthropic/claude-sonnet-4.6",
-		});
-		localProviderMocks.getLocalProviderModels.mockResolvedValue({
-			providerId: "cline",
-			models: [
-				{
-					id: "anthropic/claude-sonnet-4.6",
-					name: "Claude Sonnet 4.6",
-				},
-			],
-		});
-		llmsModelMocks.resolveProviderConfig.mockImplementation((providerId: string) =>
-			providerId === "openrouter"
-				? Promise.resolve({
-						knownModels: {
-							"deepseek/deepseek-v4-flash": {
-								id: "deepseek/deepseek-v4-flash",
-								name: "DeepSeek V4 Flash",
-								capabilities: ["tools", "reasoning"],
-							},
-						},
-					})
-				: Promise.resolve(undefined),
-		);
-
-		const response = await api.getKanbanProviderModels(
-			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
-			{ providerId: "cline" },
-		);
-
-		expect(llmsModelMocks.resolveProviderModelCatalogKeys).toHaveBeenCalledWith("cline");
-		expect(llmsModelMocks.resolveProviderConfig).toHaveBeenCalledWith(
-			"openrouter",
-			expect.objectContaining({
-				loadLatestOnInit: true,
-			}),
-			undefined,
-		);
-		expect(response.models.some((model) => model.id === "deepseek/deepseek-v4-flash")).toBe(true);
+			expect(response.providerId).toBe("deepseek");
+			expect(response.models.some((model) => model.id === "deepseek-v4-flash")).toBe(true);
+			expect(fetchMock).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it("falls back to the queried provider's saved model when provider model loading fails", async () => {
@@ -1932,42 +1892,34 @@ describe("createRuntimeApi startTaskSession", () => {
 			resolveInteractiveShellCommand: vi.fn(),
 			runCommand: vi.fn(),
 		});
+		// A custom (non-bundled) provider with no base URL cannot list models, so
+		// the runtime falls back to the provider's saved model id.
 		oauthMocks.getLastUsedProviderSettings.mockReturnValue({
-			provider: "anthropic",
-			model: "claude-sonnet-4-6",
-			apiKey: "anthropic-key",
+			provider: "my-fallback",
+			model: "my-fallback/v1",
+			apiKey: "fallback-key",
 		});
-		oauthMocks.getProviderSettings.mockImplementation((providerId: string) => {
-			if (providerId === "anthropic") {
-				return {
-					provider: "anthropic",
-					model: "claude-sonnet-4-6",
-					apiKey: "anthropic-key",
-				};
-			}
-			if (providerId === "openrouter") {
-				return {
-					provider: "openrouter",
-					model: "openrouter/free",
-					apiKey: "openrouter-key",
-					baseUrl: "https://openrouter.ai/api/v1",
-				};
-			}
-			return undefined;
-		});
-		localProviderMocks.getLocalProviderModels.mockRejectedValue(new Error("catalog unavailable"));
+		oauthMocks.getProviderSettings.mockImplementation((providerId: string) =>
+			providerId === "my-fallback"
+				? {
+						provider: "my-fallback",
+						model: "my-fallback/v1",
+						apiKey: "fallback-key",
+					}
+				: null,
+		);
 
 		const response = await api.getKanbanProviderModels(
 			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
-			{ providerId: "openrouter" },
+			{ providerId: "my-fallback" },
 		);
 
 		expect(response).toEqual({
-			providerId: "openrouter",
+			providerId: "my-fallback",
 			models: [
 				{
-					id: "openrouter/free",
-					name: "openrouter/free",
+					id: "my-fallback/v1",
+					name: "my-fallback/v1",
 				},
 			],
 		});
@@ -1983,32 +1935,18 @@ describe("createRuntimeApi startTaskSession", () => {
 			resolveInteractiveShellCommand: vi.fn(),
 			runCommand: vi.fn(),
 		});
-		llmsModelMocks.getAllProviders.mockResolvedValue([
-			{
-				id: "cline",
-				name: "Kanban",
-				defaultModelId: "claude-sonnet-4-6",
-				capabilities: ["oauth"],
-			},
-		]);
-		oauthMocks.addLocalProvider.mockImplementation(async (_manager: unknown, request: Record<string, unknown>) => {
-			oauthMocks.getProviderSettings.mockImplementation((providerId: string) =>
-				providerId === request.providerId
-					? {
-							provider: request.providerId,
-							model: request.defaultModelId,
-							apiKey: request.apiKey,
-							baseUrl: request.baseUrl,
-						}
-					: undefined,
-			);
-			return {
-				providerId: request.providerId,
-				settingsPath: "/tmp/providers.json",
-				modelsPath: "/tmp/models.json",
-				modelsCount: 1,
-			};
-		});
+		// No provider exists yet; after the save the omp store returns the new one.
+		oauthMocks.getAllProviders.mockReturnValue({});
+		oauthMocks.getProviderSettings.mockImplementation((providerId: string) =>
+			providerId === "my-provider"
+				? {
+						provider: "my-provider",
+						model: "qwen2.5-coder:32b",
+						apiKey: "secret-key",
+						baseUrl: "http://localhost:8000/v1",
+					}
+				: null,
+		);
 
 		const response = await api.addKanbanProvider(
 			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
@@ -2031,34 +1969,23 @@ describe("createRuntimeApi startTaskSession", () => {
 				apiKeyConfigured: true,
 			}),
 		);
-		expect(oauthMocks.addLocalProvider).toHaveBeenCalledWith(
-			expect.any(Object),
-			expect.objectContaining({
-				providerId: "my-provider",
-				name: "My Provider",
-				baseUrl: "http://localhost:8000/v1",
-				apiKey: "secret-key",
-				models: ["qwen2.5-coder:32b"],
-				defaultModelId: "qwen2.5-coder:32b",
-				capabilities: ["tools", "streaming"],
-			}),
-		);
-		expect(oauthMocks.ensureCustomProvidersLoaded).toHaveBeenCalled();
+		// The omp runtime persists the custom provider through the local provider
+		// settings store (one `SaveProviderSettingsInput` argument).
 		expect(oauthMocks.saveProviderSettings).toHaveBeenCalledWith(
 			expect.objectContaining({
-				provider: "my-provider",
-				model: "qwen2.5-coder:32b",
-				apiKey: "secret-key",
-				baseUrl: "http://localhost:8000/v1",
-			}),
-			expect.objectContaining({
+				settings: expect.objectContaining({
+					provider: "my-provider",
+					model: "qwen2.5-coder:32b",
+					apiKey: "secret-key",
+					baseUrl: "http://localhost:8000/v1",
+				}),
 				tokenSource: "manual",
 				setLastUsed: true,
 			}),
 		);
 	});
 
-	it("returns cline account profile for cline OAuth users", async () => {
+	it("returns a null account profile in the omp runtime", async () => {
 		const api = createTestRuntimeApi({
 			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
 			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
@@ -2083,19 +2010,14 @@ describe("createRuntimeApi startTaskSession", () => {
 			workspacePath: "/tmp/repo",
 		});
 
-		expect(response.profile).toEqual({
-			accountId: "acct-1",
-			email: "saoud@example.com",
-			displayName: "Saoud",
-		});
-		expect(kanbanAccountMocks.constructedOptions[0]?.apiBaseUrl).toBe("https://api.cline.bot");
-		expect(kanbanAccountMocks.fetchMe).toHaveBeenCalledTimes(1);
-		expect(oauthMocks.getValidKanbanCredentials).not.toHaveBeenCalled();
-		const getAuthToken = kanbanAccountMocks.constructedOptions[0]?.getAuthToken;
-		await expect(getAuthToken?.()).resolves.toBe("workos:oauth-access");
+		// The omp runtime has no Kanban account backend; profile is always null and
+		// no remote account service is constructed or queried.
+		expect(response.profile).toBeNull();
+		expect(kanbanAccountMocks.constructedOptions).toHaveLength(0);
+		expect(kanbanAccountMocks.fetchMe).not.toHaveBeenCalled();
 	});
 
-	it("refreshes cline OAuth credentials and retries profile lookup when direct profile fetch fails", async () => {
+	it("returns a null account profile even when OAuth credentials are present", async () => {
 		const api = createTestRuntimeApi({
 			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
 			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
@@ -2105,13 +2027,6 @@ describe("createRuntimeApi startTaskSession", () => {
 			resolveInteractiveShellCommand: vi.fn(),
 			runCommand: vi.fn(),
 		});
-		kanbanAccountMocks.fetchMe
-			.mockRejectedValueOnce(new Error("Kanban account request failed with status 401"))
-			.mockResolvedValueOnce({
-				id: "acct-1",
-				email: "saoud@example.com",
-				displayName: "Saoud",
-			});
 		setSelectedProviderSettings({
 			provider: "cline",
 			auth: {
@@ -2127,18 +2042,13 @@ describe("createRuntimeApi startTaskSession", () => {
 			workspacePath: "/tmp/repo",
 		});
 
-		expect(response.profile).toEqual({
-			accountId: "acct-1",
-			email: "saoud@example.com",
-			displayName: "Saoud",
-		});
-		expect(kanbanAccountMocks.fetchMe).toHaveBeenCalledTimes(2);
-		expect(oauthMocks.getValidKanbanCredentials).toHaveBeenCalledTimes(1);
-		const refreshedGetAuthToken = kanbanAccountMocks.constructedOptions[1]?.getAuthToken;
-		await expect(refreshedGetAuthToken?.()).resolves.toBe("workos:oauth-access");
+		expect(response.profile).toBeNull();
+		// No OAuth credential refresh is attempted in the omp runtime.
+		expect(oauthMocks.getValidKanbanCredentials).not.toHaveBeenCalled();
+		expect(kanbanAccountMocks.fetchMe).not.toHaveBeenCalled();
 	});
 
-	it("blocks kanban when remote config explicitly disables it", async () => {
+	it("keeps kanban access enabled and ignores remote config in the omp runtime", async () => {
 		const api = createTestRuntimeApi({
 			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
 			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
@@ -2157,6 +2067,8 @@ describe("createRuntimeApi startTaskSession", () => {
 				expiresAt: 1_700_000_000_000,
 			},
 		});
+		// Even a remote config that would disable kanban is irrelevant: the omp
+		// runtime never consults the remote account service.
 		kanbanAccountMocks.fetchRemoteConfig.mockResolvedValueOnce({
 			organizationId: "org-1",
 			enabled: true,
@@ -2165,20 +2077,16 @@ describe("createRuntimeApi startTaskSession", () => {
 			}),
 		});
 
-		kanbanAccountMocks.fetchOrganization.mockResolvedValueOnce({
-			externalOrganizationId: "test",
-		});
-
 		const response = await api.getKanbanKanbanAccess({
 			workspaceId: "workspace-1",
 			workspacePath: "/tmp/repo",
 		});
 
-		expect(response.enabled).toBe(false);
-		expect(kanbanAccountMocks.fetchRemoteConfig).toHaveBeenCalledTimes(1);
+		expect(response.enabled).toBe(true);
+		expect(kanbanAccountMocks.fetchRemoteConfig).not.toHaveBeenCalled();
 	});
 
-	it("allows kanban when remote config fetch fails", async () => {
+	it("keeps kanban access enabled regardless of remote config availability", async () => {
 		const api = createTestRuntimeApi({
 			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
 			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
@@ -2197,32 +2105,20 @@ describe("createRuntimeApi startTaskSession", () => {
 				expiresAt: 1_700_000_000_000,
 			},
 		});
-		kanbanAccountMocks.fetchRemoteConfig
-			.mockResolvedValueOnce({
-				organizationId: "org-1",
-				enabled: true,
-				value: JSON.stringify({
-					kanbanEnabled: false,
-				}),
-			})
-			.mockRejectedValueOnce(new Error("remote config request failed"));
-
-		kanbanAccountMocks.fetchOrganization.mockResolvedValueOnce({
-			externalOrganizationId: "test",
-		});
+		kanbanAccountMocks.fetchRemoteConfig.mockRejectedValue(new Error("remote config request failed"));
 
 		const initialResponse = await api.getKanbanKanbanAccess({
 			workspaceId: "workspace-1",
 			workspacePath: "/tmp/repo",
 		});
-		const failedFetchResponse = await api.getKanbanKanbanAccess({
+		const secondResponse = await api.getKanbanKanbanAccess({
 			workspaceId: "workspace-1",
 			workspacePath: "/tmp/repo",
 		});
 
-		expect(initialResponse.enabled).toBe(false);
-		expect(failedFetchResponse.enabled).toBe(true);
-		expect(kanbanAccountMocks.fetchRemoteConfig).toHaveBeenCalledTimes(2);
+		expect(initialResponse.enabled).toBe(true);
+		expect(secondResponse.enabled).toBe(true);
+		expect(kanbanAccountMocks.fetchRemoteConfig).not.toHaveBeenCalled();
 	});
 
 	it("allows kanban by default for non-cline providers", async () => {
@@ -2249,7 +2145,7 @@ describe("createRuntimeApi startTaskSession", () => {
 		expect(kanbanAccountMocks.fetchRemoteConfig).not.toHaveBeenCalled();
 	});
 
-	it("runs oauth login for selected provider and persists provider settings", async () => {
+	it("reports that provider OAuth login is not supported in the omp runtime", async () => {
 		const terminalManager = {
 			writeInput: vi.fn(),
 		};
@@ -2271,39 +2167,15 @@ describe("createRuntimeApi startTaskSession", () => {
 			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
 			{ provider: "cline" },
 		);
-		expect(response.ok).toBe(true);
+
+		// The omp runtime does not manage provider OAuth; it reports failure
+		// without touching the SDK login flow or persisting settings.
+		expect(response.ok).toBe(false);
 		expect(response.provider).toBe("cline");
-		expect(response.settings).toEqual(
-			expect.objectContaining({
-				providerId: "cline",
-				oauthProvider: "cline",
-				oauthAccessTokenConfigured: true,
-				oauthRefreshTokenConfigured: true,
-				oauthAccountId: "acct-1",
-			}),
-		);
-		expect(oauthMocks.saveProviderSettings).toHaveBeenCalledWith(
-			expect.objectContaining({
-				provider: "cline",
-				auth: expect.objectContaining({
-					accessToken: "workos:oauth-access",
-					refreshToken: "oauth-refresh",
-					accountId: "acct-1",
-				}),
-			}),
-			expect.objectContaining({
-				tokenSource: "oauth",
-				setLastUsed: true,
-			}),
-		);
-		expect(oauthMocks.loginKanbanOAuth).toHaveBeenCalledTimes(1);
-		expect(bumpKanbanSessionContextVersion).toHaveBeenCalledTimes(1);
-		const loginInput = oauthMocks.loginKanbanOAuth.mock.calls[0]?.[0] as
-			| {
-					callbacks?: { onManualCodeInput?: unknown };
-			  }
-			| undefined;
-		expect(loginInput?.callbacks?.onManualCodeInput).toBeUndefined();
+		expect(response.error).toMatch(/not supported in the omp runtime/i);
+		expect(oauthMocks.loginKanbanOAuth).not.toHaveBeenCalled();
+		expect(oauthMocks.saveProviderSettings).not.toHaveBeenCalled();
+		expect(bumpKanbanSessionContextVersion).not.toHaveBeenCalled();
 	});
 
 	it("bumps cline session context when provider settings are saved", async () => {
@@ -2543,9 +2415,9 @@ describe("createRuntimeApi startTaskSession", () => {
 		process.env.HOME = tempHome;
 		mkdirSync(tempHome, { recursive: true });
 		const debugPaths = [
-			join(tempHome, ".cline", "data"),
-			join(tempHome, ".cline", "kanban"),
-			join(tempHome, ".cline", "worktrees"),
+			join(tempHome, ".kanban", "data"),
+			join(tempHome, ".kanban", "projects"),
+			join(tempHome, ".kanban", "worktrees"),
 		];
 		for (const path of debugPaths) {
 			mkdirSync(path, { recursive: true });
@@ -2591,9 +2463,9 @@ describe("createRuntimeApi startTaskSession", () => {
 		process.env.HOME = tempHome;
 		mkdirSync(tempHome, { recursive: true });
 		const debugPaths = [
-			join(tempHome, ".cline", "data"),
-			join(tempHome, ".cline", "kanban"),
-			join(tempHome, ".cline", "worktrees"),
+			join(tempHome, ".kanban", "data"),
+			join(tempHome, ".kanban", "projects"),
+			join(tempHome, ".kanban", "worktrees"),
 		];
 		for (const path of debugPaths) {
 			mkdirSync(path, { recursive: true });
@@ -2638,7 +2510,9 @@ describe("createRuntimeApi getFeaturebaseToken", () => {
 		kanbanAccountMocks.constructedOptions.length = 0;
 	});
 
-	it("returns JWT from SDK method", async () => {
+	const NOT_SUPPORTED = "Featurebase token is not supported in the omp runtime.";
+
+	it("throws because featurebase is not supported in the omp runtime", async () => {
 		const api = createTestRuntimeApi({
 			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
 			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
@@ -2657,19 +2531,18 @@ describe("createRuntimeApi getFeaturebaseToken", () => {
 				expiresAt: 1_700_000_000_000,
 			},
 		});
-		kanbanAccountMocks.fetchFeaturebaseToken.mockResolvedValueOnce({
-			featurebaseJwt: "jwt-token-123",
-		});
 
-		const response = await api.getFeaturebaseToken({
-			workspaceId: "workspace-1",
-			workspacePath: "/tmp/repo",
-		});
-
-		expect(response).toEqual({ featurebaseJwt: "jwt-token-123" });
+		await expect(
+			api.getFeaturebaseToken({
+				workspaceId: "workspace-1",
+				workspacePath: "/tmp/repo",
+			}),
+		).rejects.toThrow(NOT_SUPPORTED);
+		// The omp runtime never reaches the SDK featurebase call.
+		expect(kanbanAccountMocks.fetchFeaturebaseToken).not.toHaveBeenCalled();
 	});
 
-	it("throws when no provider settings configured", async () => {
+	it("throws not-supported even when no provider settings are configured", async () => {
 		const api = createTestRuntimeApi({
 			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
 			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
@@ -2686,10 +2559,10 @@ describe("createRuntimeApi getFeaturebaseToken", () => {
 				workspaceId: "workspace-1",
 				workspacePath: "/tmp/repo",
 			}),
-		).rejects.toThrow("Failed to fetch Featurebase token.");
+		).rejects.toThrow(NOT_SUPPORTED);
 	});
 
-	it("throws when provider is not cline", async () => {
+	it("throws not-supported regardless of the selected provider", async () => {
 		const api = createTestRuntimeApi({
 			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
 			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
@@ -2712,10 +2585,10 @@ describe("createRuntimeApi getFeaturebaseToken", () => {
 				workspaceId: "workspace-1",
 				workspacePath: "/tmp/repo",
 			}),
-		).rejects.toThrow("Featurebase token requires a Kanban provider.");
+		).rejects.toThrow(NOT_SUPPORTED);
 	});
 
-	it("retries after OAuth refresh when first attempt fails", async () => {
+	it("throws not-supported without attempting any OAuth refresh", async () => {
 		const api = createTestRuntimeApi({
 			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
 			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
@@ -2735,30 +2608,14 @@ describe("createRuntimeApi getFeaturebaseToken", () => {
 			},
 		});
 
-		// First attempt fails (e.g. expired token)
-		kanbanAccountMocks.fetchFeaturebaseToken.mockRejectedValueOnce(new Error("Unauthorized"));
-
-		// OAuth refresh returns fresh credentials
-		oauthMocks.getValidKanbanCredentials.mockResolvedValueOnce({
-			access: "fresh-access",
-			refresh: "fresh-refresh",
-			expires: 1_800_000_000_000,
-			accountId: "acct-1",
-		});
-
-		// Second attempt succeeds with refreshed token
-		kanbanAccountMocks.fetchFeaturebaseToken.mockResolvedValueOnce({
-			featurebaseJwt: "refreshed-jwt-456",
-		});
-
-		const response = await api.getFeaturebaseToken({
-			workspaceId: "workspace-1",
-			workspacePath: "/tmp/repo",
-		});
-
-		expect(response).toEqual({ featurebaseJwt: "refreshed-jwt-456" });
-		expect(kanbanAccountMocks.fetchFeaturebaseToken).toHaveBeenCalledTimes(2);
-		expect(oauthMocks.getValidKanbanCredentials).toHaveBeenCalledTimes(1);
+		await expect(
+			api.getFeaturebaseToken({
+				workspaceId: "workspace-1",
+				workspacePath: "/tmp/repo",
+			}),
+		).rejects.toThrow(NOT_SUPPORTED);
+		expect(kanbanAccountMocks.fetchFeaturebaseToken).not.toHaveBeenCalled();
+		expect(oauthMocks.getValidKanbanCredentials).not.toHaveBeenCalled();
 	});
 });
 
