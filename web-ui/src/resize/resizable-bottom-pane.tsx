@@ -26,6 +26,18 @@ function clampHeight(value: number, minHeight: number): number {
 	return Math.max(minHeight, Math.min(value, getMaxPaneHeight(minHeight)));
 }
 
+// Resolves the persisted (non-fullscreen) pane height. A missing value, or a
+// stored height that already fills the screen, falls back to the default so
+// that exiting fullscreen always produces a visibly smaller pane. Older builds
+// could persist a fullscreen-sized height, which otherwise made collapse a
+// no-op.
+function resolveStoredPaneHeight(initialHeight: number | undefined, minHeight: number): number {
+	if (typeof initialHeight !== "number" || initialHeight >= getMaxPaneHeight(minHeight)) {
+		return getDefaultPaneHeight(minHeight);
+	}
+	return clampHeight(initialHeight, minHeight);
+}
+
 function shouldCollapsePane(rawNextHeight: number, minHeight: number, deltaY: number, pointerY: number): boolean {
 	if (typeof window === "undefined") {
 		return false;
@@ -50,8 +62,11 @@ export function ResizableBottomPane({
 	onCollapse?: () => void;
 	isExpanded?: boolean;
 }): ReactElement {
+	// `height` only ever tracks the collapsed (non-fullscreen) pane height. The
+	// fullscreen size is derived from `isExpanded` at render time so it never
+	// leaks into the persisted height and cannot get stuck on collapse.
 	const [height, setHeight] = useState<number>(() =>
-		clampHeight(initialHeight ?? getDefaultPaneHeight(minHeight), minHeight),
+		isExpanded ? getDefaultPaneHeight(minHeight) : resolveStoredPaneHeight(initialHeight, minHeight),
 	);
 	const [isDragging, setIsDragging] = useState(false);
 	const dragStateRef = useRef<{ startY: number; startHeight: number } | null>(null);
@@ -78,12 +93,13 @@ export function ResizableBottomPane({
 	useWindowEvent("resize", handleResize);
 
 	useEffect(() => {
-		if (typeof initialHeight === "number") {
-			setHeight(clampHeight(initialHeight, minHeight));
+		// While expanded the parent feeds a fullscreen sentinel height; ignore it
+		// so the stored collapsed height is preserved and restored on collapse.
+		if (isExpanded) {
 			return;
 		}
-		setHeight(getDefaultPaneHeight(minHeight));
-	}, [initialHeight, minHeight]);
+		setHeight(resolveStoredPaneHeight(initialHeight, minHeight));
+	}, [initialHeight, isExpanded, minHeight]);
 
 	// Only a user drag should persist a height. Reporting every internal height
 	// change (including the programmatic expand/collapse driven by initialHeight)
@@ -135,6 +151,10 @@ export function ResizableBottomPane({
 	const handleResizeMouseDown = useCallback(
 		(event: ReactMouseEvent<HTMLDivElement>) => {
 			event.preventDefault();
+			// Manual resizing is disabled while expanded; the pane is fullscreen.
+			if (isExpanded) {
+				return;
+			}
 			if (isDragging) {
 				stopDrag();
 			}
@@ -150,7 +170,7 @@ export function ResizableBottomPane({
 			document.body.style.userSelect = "none";
 			document.body.style.cursor = "ns-resize";
 		},
-		[height, isDragging, stopDrag],
+		[height, isDragging, isExpanded, stopDrag],
 	);
 
 	const isMobile = useIsMobile();
@@ -178,12 +198,14 @@ export function ResizableBottomPane({
 		);
 	}
 
+	const renderedHeight = isExpanded ? getMaxPaneHeight(minHeight) : height;
+
 	return (
 		<div
 			style={{
 				position: "relative",
 				display: "flex",
-				flex: `0 0 ${height}px`,
+				flex: `0 0 ${renderedHeight}px`,
 				minHeight,
 				minWidth: 0,
 				overflow: "visible",
@@ -191,21 +213,23 @@ export function ResizableBottomPane({
 				background: "var(--color-surface-1)",
 			}}
 		>
-			<div
-				role="separator"
-				aria-orientation="horizontal"
-				aria-label="Resize terminal pane"
-				onMouseDown={handleResizeMouseDown}
-				style={{
-					position: "absolute",
-					top: 0,
-					left: 0,
-					right: 0,
-					height: 10,
-					cursor: "ns-resize",
-					zIndex: 2,
-				}}
-			/>
+			{isExpanded ? null : (
+				<div
+					role="separator"
+					aria-orientation="horizontal"
+					aria-label="Resize terminal pane"
+					onMouseDown={handleResizeMouseDown}
+					style={{
+						position: "absolute",
+						top: 0,
+						left: 0,
+						right: 0,
+						height: 10,
+						cursor: "ns-resize",
+						zIndex: 2,
+					}}
+				/>
+			)}
 			<div style={{ display: "flex", flex: "1 1 0", minWidth: 0, overflow: "hidden" }}>{children}</div>
 		</div>
 	);

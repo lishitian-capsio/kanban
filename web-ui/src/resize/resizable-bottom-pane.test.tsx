@@ -11,22 +11,45 @@ vi.mock("@/hooks/use-is-mobile", () => ({
 const EXPANDED_SENTINEL_HEIGHT = 99999;
 const MIN_HEIGHT = 200;
 const COLLAPSED_HEIGHT = 400;
+const NAVBAR_HEIGHT_PX = 40;
+
+// Matches getMaxPaneHeight in the component for the jsdom window height.
+function expectedMaxHeight(): number {
+	return Math.max(MIN_HEIGHT, Math.floor(window.innerHeight - NAVBAR_HEIGHT_PX));
+}
+
+function expectedDefaultHeight(): number {
+	return Math.max(MIN_HEIGHT, Math.floor(window.innerHeight * 0.5 - NAVBAR_HEIGHT_PX));
+}
+
+function readRenderedHeight(host: HTMLElement): number {
+	const pane = host.firstElementChild as HTMLElement | null;
+	if (!pane) {
+		throw new Error("pane not rendered");
+	}
+	const match = /(\d+(?:\.\d+)?)px/.exec(pane.style.flex || pane.style.flexBasis);
+	if (!match) {
+		throw new Error(`could not read pane height from flex: "${pane.style.flex}"`);
+	}
+	return Number(match[1]);
+}
 
 // Mirrors the real wiring in useTerminalPanels: "expanded" is represented by
 // feeding a huge sentinel initialHeight, and the persist callback's identity is
-// tied to isExpanded (it skips persisting while expanded). We intentionally do
-// NOT feed reported heights back into initialHeight so a buggy report surfaces
-// as a recorded call instead of an infinite render loop that would hang the run.
-function TerminalPaneHarness({ onReportHeight }: { onReportHeight: (height: number) => void }) {
+// tied to isExpanded (it skips persisting while expanded). The stored height is
+// fed straight back into initialHeight, exactly like the shared pane height.
+function TerminalPaneHarness({ onReportHeight }: { onReportHeight?: (height: number) => void }) {
 	const [isExpanded, setIsExpanded] = useState(false);
-	const paneHeight = isExpanded ? EXPANDED_SENTINEL_HEIGHT : COLLAPSED_HEIGHT;
+	const [storedHeight, setStoredHeight] = useState<number>(COLLAPSED_HEIGHT);
+	const paneHeight = isExpanded ? EXPANDED_SENTINEL_HEIGHT : storedHeight;
 
 	const handleHeightChange = useCallback(
 		(height: number) => {
 			if (isExpanded) {
 				return;
 			}
-			onReportHeight(height);
+			setStoredHeight(height);
+			onReportHeight?.(height);
 		},
 		[isExpanded, onReportHeight],
 	);
@@ -36,14 +59,17 @@ function TerminalPaneHarness({ onReportHeight }: { onReportHeight: (height: numb
 			<button type="button" data-testid="toggle" onClick={() => setIsExpanded((previous) => !previous)}>
 				toggle
 			</button>
-			<ResizableBottomPane
-				minHeight={MIN_HEIGHT}
-				initialHeight={paneHeight}
-				onHeightChange={handleHeightChange}
-				isExpanded={isExpanded}
-			>
-				<div>terminal</div>
-			</ResizableBottomPane>
+			<span data-testid="stored">{storedHeight}</span>
+			<div data-testid="pane-host">
+				<ResizableBottomPane
+					minHeight={MIN_HEIGHT}
+					initialHeight={paneHeight}
+					onHeightChange={handleHeightChange}
+					isExpanded={isExpanded}
+				>
+					<div>terminal</div>
+				</ResizableBottomPane>
+			</div>
 		</>
 	);
 }
@@ -75,14 +101,46 @@ describe("ResizableBottomPane", () => {
 		}
 	});
 
-	it("does not report the stale expanded height when exiting fullscreen", () => {
-		const reportedHeights: number[] = [];
-		const onReportHeight = (height: number) => {
-			reportedHeights.push(height);
-		};
+	function getHost(): HTMLElement {
+		const host = container.querySelector<HTMLElement>('[data-testid="pane-host"]');
+		if (!host) {
+			throw new Error("pane host not rendered");
+		}
+		return host;
+	}
 
+	it("returns to the collapsed height when exiting fullscreen", () => {
 		act(() => {
-			root.render(<TerminalPaneHarness onReportHeight={onReportHeight} />);
+			root.render(<TerminalPaneHarness />);
+		});
+		expect(readRenderedHeight(getHost())).toBe(COLLAPSED_HEIGHT);
+
+		const toggle = container.querySelector<HTMLButtonElement>('button[data-testid="toggle"]');
+		if (!toggle) {
+			throw new Error("toggle button not rendered");
+		}
+
+		// Enter fullscreen: the pane fills the available height.
+		act(() => {
+			toggle.click();
+		});
+		expect(readRenderedHeight(getHost())).toBe(expectedMaxHeight());
+
+		// Exit fullscreen: the pane must shrink back to the collapsed height
+		// instead of staying full-size (no oscillation, no stuck fullscreen).
+		act(() => {
+			toggle.click();
+		});
+		expect(readRenderedHeight(getHost())).toBe(COLLAPSED_HEIGHT);
+
+		const stored = container.querySelector('[data-testid="stored"]');
+		expect(stored?.textContent).toBe(String(COLLAPSED_HEIGHT));
+	});
+
+	it("does not report the fullscreen height back up when exiting fullscreen", () => {
+		const reportedHeights: number[] = [];
+		act(() => {
+			root.render(<TerminalPaneHarness onReportHeight={(height) => reportedHeights.push(height)} />);
 		});
 
 		const toggle = container.querySelector<HTMLButtonElement>('button[data-testid="toggle"]');
@@ -90,34 +148,37 @@ describe("ResizableBottomPane", () => {
 			throw new Error("toggle button not rendered");
 		}
 
-		// Enter fullscreen.
 		act(() => {
 			toggle.click();
 		});
-
 		reportedHeights.length = 0;
-
-		// Exit fullscreen. The bug reported the stale expanded height (clamped to
-		// roughly the window height) back up here because the onHeightChange
-		// identity flips with isExpanded, re-firing the report effect with the
-		// not-yet-collapsed internal height. That corrupted the shared pane height
-		// and produced the expand/collapse oscillation.
 		act(() => {
 			toggle.click();
 		});
 
-		const reportedExpandedHeight = reportedHeights.find((height) => height > COLLAPSED_HEIGHT);
-		expect(reportedExpandedHeight).toBeUndefined();
+		expect(reportedHeights.find((height) => height > COLLAPSED_HEIGHT)).toBeUndefined();
+	});
+
+	it("self-heals a stale fullscreen-sized stored height", () => {
+		// Older builds could persist a height that fills the screen, which would
+		// make a collapsed pane indistinguishable from fullscreen.
+		act(() => {
+			root.render(
+				<div data-testid="pane-host">
+					<ResizableBottomPane minHeight={MIN_HEIGHT} initialHeight={expectedMaxHeight()} isExpanded={false}>
+						<div>terminal</div>
+					</ResizableBottomPane>
+				</div>,
+			);
+		});
+
+		expect(readRenderedHeight(getHost())).toBe(expectedDefaultHeight());
 	});
 
 	it("persists the height the user drags the pane to", () => {
 		const reportedHeights: number[] = [];
-		const onReportHeight = (height: number) => {
-			reportedHeights.push(height);
-		};
-
 		act(() => {
-			root.render(<TerminalPaneHarness onReportHeight={onReportHeight} />);
+			root.render(<TerminalPaneHarness onReportHeight={(height) => reportedHeights.push(height)} />);
 		});
 
 		const separator = container.querySelector<HTMLElement>('[role="separator"]');
@@ -137,5 +198,6 @@ describe("ResizableBottomPane", () => {
 		});
 
 		expect(reportedHeights.at(-1)).toBe(450);
+		expect(readRenderedHeight(getHost())).toBe(450);
 	});
 });
