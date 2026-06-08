@@ -1297,15 +1297,6 @@ export function RuntimeSettingsDialog({
 				</div>
 			</div>
 			<DialogFooter>
-				<Button
-					size="sm"
-					variant="ghost"
-					className="mr-auto mt-[3px]"
-					icon={<ExternalLink size={14} />}
-					onClick={() => window.open("https://docs.cline.bot/kanban/overview", "_blank")}
-				>
-					Read the docs
-				</Button>
 				<Button onClick={() => handleDialogOpenChange(false)} disabled={controlsDisabled}>
 					Cancel
 				</Button>
