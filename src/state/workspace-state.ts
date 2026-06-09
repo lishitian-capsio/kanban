@@ -682,7 +682,9 @@ export async function saveWorkspaceState(
 		}
 		const board = parsedPayload.board;
 		const sessions = parsedPayload.sessions;
-		const requirements = parsedPayload.requirements ?? { items: [] };
+		// Preserve existing requirements when a (possibly legacy) payload omits them,
+		// so a board-only save never wipes the workspace's requirement items.
+		const requirements = parsedPayload.requirements ?? (await readWorkspaceRequirements(context.workspaceId));
 		const nextRevision = currentMeta.revision + 1;
 		const nextMeta: WorkspaceStateMeta = {
 			revision: nextRevision,

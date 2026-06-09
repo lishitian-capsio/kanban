@@ -6,6 +6,7 @@ import { createInitialBoardData } from "@/data/board-data";
 import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
 import type {
 	RuntimeGitRepositoryInfo,
+	RuntimeRequirementsData,
 	RuntimeTaskSessionSummary,
 	RuntimeWorkspaceStateResponse,
 } from "@/runtime/types";
@@ -21,6 +22,7 @@ interface UseWorkspaceSyncInput {
 	isDocumentVisible: boolean;
 	setBoard: Dispatch<SetStateAction<BoardData>>;
 	setSessions: Dispatch<SetStateAction<Record<string, RuntimeTaskSessionSummary>>>;
+	setRequirements: Dispatch<SetStateAction<RuntimeRequirementsData>>;
 	setCanPersistWorkspaceState: Dispatch<SetStateAction<boolean>>;
 }
 
@@ -58,6 +60,7 @@ export function useWorkspaceSync({
 	isDocumentVisible,
 	setBoard,
 	setSessions,
+	setRequirements,
 	setCanPersistWorkspaceState,
 }: UseWorkspaceSyncInput): UseWorkspaceSyncResult {
 	const [workspacePath, setWorkspacePath] = useState<string | null>(null);
@@ -93,6 +96,7 @@ export function useWorkspaceSync({
 				setAppliedWorkspaceProjectId(null);
 				setBoard(createInitialBoardData());
 				setSessions({});
+				setRequirements({ items: [] });
 				setWorkspaceRevision(null);
 				workspaceVersionRef.current = {
 					projectId: currentProjectId,
@@ -116,6 +120,7 @@ export function useWorkspaceSync({
 			if (shouldHydrateBoard) {
 				const normalized = normalizeBoardData(nextWorkspaceState.board) ?? createInitialBoardData();
 				setBoard(normalized);
+				setRequirements(nextWorkspaceState.requirements ?? { items: [] });
 				setWorkspaceHydrationNonce((current) => current + 1);
 			}
 			setWorkspaceRevision(nextWorkspaceState.revision);
@@ -126,7 +131,7 @@ export function useWorkspaceSync({
 			setAppliedWorkspaceProjectId(currentProjectId);
 			setCanPersistWorkspaceState(true);
 		},
-		[currentProjectId, setBoard, setCanPersistWorkspaceState, setSessions],
+		[currentProjectId, setBoard, setCanPersistWorkspaceState, setSessions, setRequirements],
 	);
 
 	const refreshWorkspaceState = useCallback(async () => {

@@ -12,6 +12,7 @@ import { ClearTrashDialog } from "@/components/clear-trash-dialog";
 import { DebugDialog } from "@/components/debug-dialog";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
 import { GitHistoryView } from "@/components/git-history-view";
+import { RequirementsView } from "@/components/requirements/requirements-view";
 import { KanbanBoard } from "@/components/kanban-board";
 import { ProjectNavigationPanel } from "@/components/project-navigation-panel";
 import { RuntimeSettingsDialog, type RuntimeSettingsSection } from "@/components/runtime-settings-dialog";
@@ -63,7 +64,7 @@ import {
 	selectLatestTaskChatMessageForTask,
 	selectTaskChatMessagesForTask,
 } from "@/runtime/native-agent";
-import type { RuntimeReasoningEffort, RuntimeTaskSessionSummary } from "@/runtime/types";
+import type { RuntimeReasoningEffort, RuntimeRequirementsData, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useRuntimeProjectConfig } from "@/runtime/use-runtime-project-config";
 import { useTerminalConnectionReady } from "@/runtime/use-terminal-connection-ready";
 import { useWorkspacePersistence } from "@/runtime/use-workspace-persistence";
@@ -82,18 +83,21 @@ export default function App(): ReactElement {
 	const terminalThemeColors = useTerminalThemeColors();
 	const [board, setBoard] = useState<BoardData>(() => createInitialBoardData());
 	const [sessions, setSessions] = useState<Record<string, RuntimeTaskSessionSummary>>({});
+	const [requirements, setRequirements] = useState<RuntimeRequirementsData>({ items: [] });
 	const [canPersistWorkspaceState, setCanPersistWorkspaceState] = useState(false);
 	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 	const [settingsInitialSection, setSettingsInitialSection] = useState<RuntimeSettingsSection | null>(null);
 	const [homeSidebarSection, setHomeSidebarSection] = useState<"projects" | "agent">("projects");
 	const [isClearTrashDialogOpen, setIsClearTrashDialogOpen] = useState(false);
 	const [isGitHistoryOpen, setIsGitHistoryOpen] = useState(false);
+	const [isRequirementsOpen, setIsRequirementsOpen] = useState(false);
 	const [pendingTaskStartAfterEditId, setPendingTaskStartAfterEditId] = useState<string | null>(null);
 	const taskEditorResetRef = useRef<() => void>(() => {});
 	const lastStreamErrorRef = useRef<string | null>(null);
 	const handleProjectSwitchStart = useCallback(() => {
 		setCanPersistWorkspaceState(false);
 		setIsGitHistoryOpen(false);
+		setIsRequirementsOpen(false);
 		setPendingTaskStartAfterEditId(null);
 		taskEditorResetRef.current();
 	}, []);
@@ -219,6 +223,7 @@ export default function App(): ReactElement {
 		isDocumentVisible,
 		setBoard,
 		setSessions,
+		setRequirements,
 		setCanPersistWorkspaceState,
 	});
 	const { selectedTaskId, selectedCard, setSelectedTaskId, handleBack } = useDetailTaskNavigation({
@@ -465,6 +470,7 @@ export default function App(): ReactElement {
 	useWorkspacePersistence({
 		board,
 		sessions,
+		requirements,
 		currentProjectId,
 		workspaceRevision,
 		hydrationNonce: workspaceHydrationNonce,
@@ -547,11 +553,19 @@ export default function App(): ReactElement {
 		if (hasNoProjects) {
 			return;
 		}
+		setIsRequirementsOpen(false);
 		setIsGitHistoryOpen((current) => !current);
 	}, [hasNoProjects]);
 	const handleCloseGitHistory = useCallback(() => {
 		setIsGitHistoryOpen(false);
 	}, []);
+	const handleToggleRequirements = useCallback(() => {
+		if (hasNoProjects) {
+			return;
+		}
+		setIsGitHistoryOpen(false);
+		setIsRequirementsOpen((current) => !current);
+	}, [hasNoProjects]);
 
 	const {
 		handleProgrammaticCardMoveReady,
@@ -878,6 +892,8 @@ export default function App(): ReactElement {
 						isOpeningWorkspace={isOpeningWorkspace}
 						onToggleGitHistory={hasNoProjects ? undefined : handleToggleGitHistory}
 						isGitHistoryOpen={isGitHistoryOpen}
+						onToggleRequirements={hasNoProjects ? undefined : handleToggleRequirements}
+						isRequirementsOpen={isRequirementsOpen}
 						hideProjectDependentActions={shouldHideProjectDependentTopBarActions}
 					/>
 					<div className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden">
@@ -911,7 +927,13 @@ export default function App(): ReactElement {
 							) : (
 								<div className="flex flex-1 flex-col min-h-0 min-w-0">
 									<div className="flex flex-1 min-h-0 min-w-0">
-										{isGitHistoryOpen ? (
+										{isRequirementsOpen ? (
+											<RequirementsView
+												workspaceId={currentProjectId}
+												requirements={requirements}
+												onRequirementsChange={setRequirements}
+											/>
+										) : isGitHistoryOpen ? (
 											<GitHistoryView
 												workspaceId={currentProjectId}
 												gitHistory={gitHistory}

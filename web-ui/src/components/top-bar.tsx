@@ -9,6 +9,7 @@ import {
 	CircleArrowDown,
 	Command,
 	GitBranch,
+	ListChecks,
 	Menu,
 	Play,
 	Plus,
@@ -297,6 +298,8 @@ export function TopBar({
 	isTerminalLoading,
 	onToggleGitHistory,
 	isGitHistoryOpen,
+	onToggleRequirements,
+	isRequirementsOpen,
 	onOpenSettings,
 	showDebugButton,
 	onOpenDebugDialog,
@@ -332,6 +335,8 @@ export function TopBar({
 	isTerminalLoading?: boolean;
 	onToggleGitHistory?: () => void;
 	isGitHistoryOpen?: boolean;
+	onToggleRequirements?: () => void;
+	isRequirementsOpen?: boolean;
 	onOpenSettings?: (section?: SettingsSection) => void;
 	showDebugButton?: boolean;
 	onOpenDebugDialog?: () => void;
@@ -512,6 +517,18 @@ export function TopBar({
 									onGitPull={onGitPull}
 									onGitPush={onGitPush}
 								/>
+							) : null}
+							{!hideProjectDependentActions && onToggleRequirements ? (
+								<Button
+									variant={isRequirementsOpen ? "primary" : "default"}
+									size="sm"
+									icon={<ListChecks size={14} />}
+									onClick={onToggleRequirements}
+									className={cn("shrink-0", isRequirementsOpen ? "ring-1 ring-accent" : "kb-navbar-btn")}
+									title="Requirements"
+								>
+									Requirements
+								</Button>
 							) : null}
 						</>
 					) : null}

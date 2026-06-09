@@ -187,6 +187,54 @@ describe.sequential("workspace-state integration", () => {
 		});
 	});
 
+	it("preserves existing requirements when a save payload omits them", async () => {
+		await withTemporaryHome(async () => {
+			const { path: sandboxRoot, cleanup } = createTempDir("kanban-requirements-preserve-");
+			try {
+				const workspacePath = join(sandboxRoot, "project-preserve");
+				mkdirSync(workspacePath, { recursive: true });
+				initGitRepository(workspacePath);
+
+				const initial = await loadWorkspaceState(workspacePath);
+				const withRequirements = await saveWorkspaceState(workspacePath, {
+					board: createBoard("Task One"),
+					sessions: {},
+					requirements: {
+						items: [
+							{
+								id: "req-1",
+								title: "Keep me",
+								description: "",
+								priority: "medium",
+								status: "draft",
+								linkedTaskIds: [],
+								order: 0,
+								createdAt: Date.now(),
+								updatedAt: Date.now(),
+							},
+						],
+					},
+					expectedRevision: initial.revision,
+				});
+				expect(withRequirements.requirements.items).toHaveLength(1);
+
+				// A legacy board-only save (no requirements field) must NOT wipe requirements.
+				const boardOnlySave = await saveWorkspaceState(workspacePath, {
+					board: createBoard("Task Two"),
+					sessions: {},
+					expectedRevision: withRequirements.revision,
+				});
+				expect(boardOnlySave.requirements.items).toHaveLength(1);
+				expect(boardOnlySave.requirements.items[0]?.title).toBe("Keep me");
+
+				const reloaded = await loadWorkspaceState(workspacePath);
+				expect(reloaded.requirements.items).toHaveLength(1);
+			} finally {
+				cleanup();
+			}
+		});
+	});
+
 	it("lists and removes workspace index entries across multiple projects", async () => {
 		await withTemporaryHome(async () => {
 			const { path: sandboxRoot, cleanup } = createTempDir("kanban-workspaces-");

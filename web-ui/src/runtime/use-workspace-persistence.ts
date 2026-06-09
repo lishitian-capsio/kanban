@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type {
+	RuntimeRequirementsData,
 	RuntimeTaskSessionSummary,
 	RuntimeWorkspaceStateResponse,
 	RuntimeWorkspaceStateSaveRequest,
@@ -12,6 +13,7 @@ const WORKSPACE_STATE_PERSIST_DEBOUNCE_MS = 120;
 export interface UseWorkspacePersistenceParams {
 	board: BoardData;
 	sessions: Record<string, RuntimeTaskSessionSummary>;
+	requirements: RuntimeRequirementsData;
 	currentProjectId: string | null;
 	workspaceRevision: number | null;
 	hydrationNonce: number;
@@ -30,6 +32,7 @@ export interface UseWorkspacePersistenceParams {
 export function useWorkspacePersistence({
 	board,
 	sessions,
+	requirements,
 	currentProjectId,
 	workspaceRevision,
 	hydrationNonce,
@@ -50,6 +53,7 @@ export function useWorkspacePersistence({
 	const currentProjectIdRef = useRef<string | null>(currentProjectId);
 	const sessionsRef = useRef(sessions);
 	const lastPersistedBoardRef = useRef<BoardData | null>(null);
+	const lastPersistedRequirementsRef = useRef<RuntimeRequirementsData | null>(null);
 	const lastPersistedWorkspaceIdRef = useRef<string | null>(null);
 
 	useEffect(() => {
@@ -57,6 +61,7 @@ export function useWorkspacePersistence({
 		if (lastPersistedWorkspaceIdRef.current !== currentProjectId) {
 			lastPersistedWorkspaceIdRef.current = currentProjectId;
 			lastPersistedBoardRef.current = null;
+			lastPersistedRequirementsRef.current = null;
 		}
 	}, [currentProjectId]);
 
@@ -72,7 +77,8 @@ export function useWorkspacePersistence({
 		skipNextPersistRef.current = true;
 		lastPersistedWorkspaceIdRef.current = currentProjectId;
 		lastPersistedBoardRef.current = board;
-	}, [board, currentProjectId, hydrationNonce]);
+		lastPersistedRequirementsRef.current = requirements;
+	}, [board, requirements, currentProjectId, hydrationNonce]);
 
 	useEffect(() => {
 		if (!canPersistWorkspaceState || !isDocumentVisible || isWorkspaceStateRefreshing || workspaceRevision == null) {
@@ -89,7 +95,8 @@ export function useWorkspacePersistence({
 		if (
 			currentProjectId != null &&
 			lastPersistedWorkspaceIdRef.current === currentProjectId &&
-			lastPersistedBoardRef.current === board
+			lastPersistedBoardRef.current === board &&
+			lastPersistedRequirementsRef.current === requirements
 		) {
 			return;
 		}
@@ -103,6 +110,7 @@ export function useWorkspacePersistence({
 			const payload: RuntimeWorkspaceStateSaveRequest = {
 				board,
 				sessions: sessionsRef.current,
+				requirements,
 				expectedRevision: workspaceRevision,
 			};
 			void (async () => {
@@ -120,6 +128,7 @@ export function useWorkspacePersistence({
 					}
 					lastPersistedWorkspaceIdRef.current = persistWorkspaceId;
 					lastPersistedBoardRef.current = board;
+					lastPersistedRequirementsRef.current = requirements;
 					onWorkspaceRevisionChange(saved.revision);
 				} catch (error) {
 					if (error instanceof WorkspaceStateConflictError) {
@@ -154,6 +163,7 @@ export function useWorkspacePersistence({
 		};
 	}, [
 		board,
+		requirements,
 		canPersistWorkspaceState,
 		currentProjectId,
 		isDocumentVisible,
