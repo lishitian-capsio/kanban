@@ -25,6 +25,7 @@ import {
 	getLastUsedProviderId,
 	getLastUsedProviderSettings,
 	getProviderSettings,
+	resetProviderSettingsCache,
 	saveProviderSettings,
 } from "./provider-settings-store";
 
@@ -275,7 +276,7 @@ export function createProviderService() {
 		async getProviderModels(providerId: string): Promise<RuntimeKanbanProviderModelsResponse> {
 			const normalizedProviderId = providerId.trim().toLowerCase();
 			let providerModels: RuntimeKanbanProviderModel[] = [];
-		
+			
 			// Try to get models from the bundled model registry
 			if (normalizedProviderId.length > 0) {
 				try {
@@ -287,14 +288,21 @@ export function createProviderService() {
 					// Provider not found in bundled registry
 				}
 			}
-		
+			
 			if (providerModels.length > 0) {
 				return {
 					providerId: normalizedProviderId,
 					models: providerModels,
 				};
 			}
-		
+			
+			// For custom (non-bundled) providers, invalidate the in-memory cache
+			// before reading settings so that any on-disk changes (edits, external
+			// tools, or cross-process writes) are picked up immediately.
+			if (normalizedProviderId.length > 0) {
+				resetProviderSettingsCache();
+			}
+
 			// Try to discover models from the provider's OpenAI-compatible /models endpoint.
 			const savedSettings = getProviderSettings(normalizedProviderId);
 			if (savedSettings?.baseUrl) {
@@ -308,8 +316,15 @@ export function createProviderService() {
 						models: discoveredModels,
 					};
 				}
+				console.warn(
+					`[kanban] getProviderModels: endpoint discovery returned 0 models for "${normalizedProviderId}" (baseUrl=${savedSettings.baseUrl})`,
+				);
+			} else if (normalizedProviderId.length > 0) {
+				console.warn(
+					`[kanban] getProviderModels: no baseUrl stored for custom provider "${normalizedProviderId}" — cannot discover models`,
+				);
 			}
-		
+			
 			// Fallback: return configured model if present
 			const configuredModel = savedSettings?.model?.trim() ?? "";
 			if (configuredModel.length > 0) {
@@ -318,7 +333,7 @@ export function createProviderService() {
 					models: [{ id: configuredModel, name: configuredModel }],
 				};
 			}
-		
+			
 			return {
 				providerId: normalizedProviderId || providerId,
 				models: [],
@@ -624,32 +639,52 @@ function extractModelRecords(payload: unknown): Array<{ id: string; name?: strin
 
 /**
  * Fetch available models from an OpenAI-compatible `/models` endpoint.
- * Returns an empty array if the request fails or the response is unusable.
+ * Retries once on transient failures (network error, timeout, 5xx) before
+ * giving up.  Returns an empty array if all attempts fail.
  */
 async function fetchModelsFromEndpoint(baseUrl: string, apiKey?: string): Promise<RuntimeKanbanProviderModel[]> {
 	const modelsUrl = `${baseUrl.replace(/\/+$/, "")}/models`;
-	try {
-		const headers: Record<string, string> = { Accept: "application/json" };
-		if (apiKey?.trim()) {
-			headers.Authorization = `Bearer ${apiKey.trim()}`;
-		}
+	const maxAttempts = 2;
 
-		const response = await fetch(modelsUrl, {
-			method: "GET",
-			headers,
-			signal: AbortSignal.timeout(10_000), // 10 second timeout
-		});
-		if (!response.ok) {
+	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		try {
+			const headers: Record<string, string> = { Accept: "application/json" };
+			if (apiKey?.trim()) {
+				headers.Authorization = `Bearer ${apiKey.trim()}`;
+			}
+
+			const response = await fetch(modelsUrl, {
+				method: "GET",
+				headers,
+				signal: AbortSignal.timeout(15_000), // 15 second timeout
+			});
+
+			// Retry on 5xx server errors
+			if (!response.ok && response.status >= 500 && attempt < maxAttempts) {
+				console.warn(`[kanban] /models endpoint returned ${response.status} for ${modelsUrl}, retrying (${attempt}/${maxAttempts})...`);
+				await new Promise((r) => setTimeout(r, 1000 * attempt));
+				continue;
+			}
+			if (!response.ok) {
+				console.warn(`[kanban] /models endpoint returned ${response.status} for ${modelsUrl}`);
+				return [];
+			}
+
+			const records = extractModelRecords(await response.json());
+			return records
+				.map((record) => ({ id: record.id, name: record.name || record.id }))
+				.sort((a, b) => a.name.localeCompare(b.name));
+		} catch (error) {
+			// Retry on network/timeout errors
+			if (attempt < maxAttempts) {
+				console.warn(`[kanban] /models endpoint fetch failed for ${modelsUrl}, retrying (${attempt}/${maxAttempts}):`, error instanceof Error ? error.message : error);
+				await new Promise((r) => setTimeout(r, 1000 * attempt));
+				continue;
+			}
+			console.warn(`[kanban] /models endpoint fetch failed for ${modelsUrl} after ${maxAttempts} attempts:`, error instanceof Error ? error.message : error);
 			return [];
 		}
-
-		const records = extractModelRecords(await response.json());
-		return records
-			.map((record) => ({ id: record.id, name: record.name || record.id }))
-			.sort((a, b) => a.name.localeCompare(b.name));
-	} catch {
-		// Network error, timeout, or parse error — return empty.
-		return [];
 	}
+	return [];
 }
 

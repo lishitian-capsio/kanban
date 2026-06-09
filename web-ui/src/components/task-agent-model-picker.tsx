@@ -112,7 +112,8 @@ export function useTaskAgentModelPicker({
 					setProviderModels(models);
 				}
 			})
-			.catch(() => {
+			.catch((error) => {
+				console.warn(`[kanban] Failed to load models for provider "${effectiveProviderId}":`, error instanceof Error ? error.message : error);
 				if (!cancelled) {
 					setProviderModels([]);
 				}

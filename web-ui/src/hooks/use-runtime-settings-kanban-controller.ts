@@ -2,6 +2,7 @@
 // It loads provider data, drives model selection, saves settings, and runs
 // OAuth login flows so the dialog component can stay presentation-focused.
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { showAppToast } from "@/components/app-toaster";
 import { getRuntimeKanbanProviderSettings } from "@/runtime/native-agent";
 import {
 	addKanbanProvider,
@@ -458,8 +459,14 @@ export function useRuntimeSettingsKanbanController(
 					setProviderModels(nextModels);
 				}
 			} catch (error) {
+				console.warn(`[kanban] Failed to load models for provider "${nextProviderId}":`, error instanceof Error ? error.message : error);
 				if (providerModelsRequestIdRef.current === requestId) {
 					setProviderModels([]);
+					showAppToast({
+						intent: "warning",
+						message: `Could not load models for "${nextProviderId}". Check the base URL and API key, or try the refresh button.`,
+						timeout: 6000,
+					});
 				}
 				throw error;
 			} finally {
