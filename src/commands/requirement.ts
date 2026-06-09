@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import type { Command } from "commander";
 
 import type {
@@ -7,6 +9,7 @@ import type {
 	RuntimeRequirementVersion,
 } from "../core/api-contract";
 import { addRequirement, deleteRequirement, updateRequirement } from "../core/requirement-mutations";
+import { analyzeRequirements, applyReviewPlan, reviewPlanSchema } from "../core/requirement-review";
 import { appendRequirementVersion, revertRequirementToVersion } from "../core/requirement-versions";
 import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import {
@@ -50,6 +53,26 @@ function parseVersionNumber(value: string): number {
 		throw new Error(`Invalid version "${value}". Expected a positive integer.`);
 	}
 	return parsed;
+}
+
+function parseStaleDays(value: string): number {
+	const trimmed = value.trim();
+	const parsed = Number.parseInt(trimmed, 10);
+	if (!Number.isInteger(parsed) || parsed <= 0 || String(parsed) !== trimmed) {
+		throw new Error(`Invalid stale-days "${value}". Expected a positive integer.`);
+	}
+	return parsed;
+}
+
+async function readReviewPlanInput(planPath: string | undefined): Promise<string> {
+	if (planPath !== undefined) {
+		return await readFile(planPath, "utf8");
+	}
+	const chunks: Buffer[] = [];
+	for await (const chunk of process.stdin) {
+		chunks.push(Buffer.from(chunk));
+	}
+	return Buffer.concat(chunks).toString("utf8");
 }
 
 function formatRequirementRecord(item: RuntimeRequirementItem): JsonRecord {
@@ -318,6 +341,80 @@ async function revertRequirementCommand(input: {
 	};
 }
 
+async function reviewRequirements(input: {
+	cwd: string;
+	projectPath?: string;
+	staleDays?: number;
+}): Promise<JsonRecord> {
+	const workspace = await resolveRuntimeWorkspace(input.projectPath, input.cwd, {
+		autoCreateIfMissing: false,
+	});
+	const runtimeClient = createRuntimeTrpcClient(workspace.workspaceId);
+	const state = await runtimeClient.workspace.getState.query();
+	const packet = analyzeRequirements(state.requirements, { staleDays: input.staleDays });
+	const requirements = [...state.requirements.items]
+		.sort((left, right) => left.order - right.order)
+		.map(formatRequirementRecord);
+	return {
+		ok: true,
+		workspacePath: workspace.repoPath,
+		staleDays: packet.staleDays,
+		requirements,
+		signals: packet.signals,
+		skippedGates: packet.skippedGates,
+		gateGuide: packet.gateGuide,
+		count: requirements.length,
+	};
+}
+
+async function applyRequirementReviewCommand(input: {
+	cwd: string;
+	planPath?: string;
+	projectPath?: string;
+}): Promise<JsonRecord> {
+	const raw = await readReviewPlanInput(input.planPath);
+	let parsedJson: unknown;
+	try {
+		parsedJson = JSON.parse(raw);
+	} catch (error) {
+		throw new Error(`Review plan is not valid JSON: ${toErrorMessage(error)}`);
+	}
+	const parsed = reviewPlanSchema.safeParse(parsedJson);
+	if (!parsed.success) {
+		const issues = parsed.error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ");
+		throw new Error(`Invalid review plan: ${issues}`);
+	}
+	const plan = parsed.data;
+
+	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd, {
+		autoCreateIfMissing: false,
+	});
+	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
+	const runtimeClient = createRuntimeTrpcClient(workspaceId);
+	const report = await updateRuntimeWorkspaceState(
+		runtimeClient,
+		workspaceRepoPath,
+		(state, { requirementVersions }) => {
+			const result = applyReviewPlan(state.requirements, requirementVersions, plan, {
+				randomUuid: () => globalThis.crypto.randomUUID(),
+			});
+			return {
+				board: state.board,
+				requirements: result.data,
+				requirementVersions: result.versions,
+				value: result.report,
+			};
+		},
+	);
+
+	return {
+		ok: true,
+		workspacePath: workspaceRepoPath,
+		actions: report.actions,
+		summary: report.summary,
+	};
+}
+
 async function runRequirementCommand(handler: () => Promise<JsonRecord>): Promise<void> {
 	try {
 		printJson(await handler());
@@ -463,6 +560,39 @@ export function registerRequirementCommand(program: Command): void {
 					await listRequirementHistory({
 						cwd: process.cwd(),
 						id: options.id,
+						projectPath: options.projectPath,
+					}),
+			);
+		});
+
+	const review = requirement
+		.command("review")
+		.description("Analyze requirement items and emit a review packet for an agent to reason over.")
+		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
+		.option("--stale-days <number>", "Days an active requirement may be idle before it is flagged stale.", parseStaleDays)
+		.action(async (options: { projectPath?: string; staleDays?: number }) => {
+			await runRequirementCommand(
+				async () =>
+					await reviewRequirements({
+						cwd: process.cwd(),
+						projectPath: options.projectPath,
+						staleDays: options.staleDays,
+					}),
+			);
+		});
+
+	review
+		.command("apply")
+		.description("Apply an agent-decided review plan; every change is versioned with source=agent.")
+		.option("--plan <file>", "Path to a JSON review plan. Reads from stdin when omitted.")
+		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
+		.action(async function (this: Command) {
+			const options = this.optsWithGlobals() as { plan?: string; projectPath?: string };
+			await runRequirementCommand(
+				async () =>
+					await applyRequirementReviewCommand({
+						cwd: process.cwd(),
+						planPath: options.plan,
 						projectPath: options.projectPath,
 					}),
 			);
