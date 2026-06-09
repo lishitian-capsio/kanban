@@ -1,5 +1,6 @@
 import { rootCertificates } from "node:tls";
 import { Agent } from "undici";
+import { LOOPBACK_NO_PROXY_HOSTS, mergeNoProxyEntries } from "../config/proxy-env";
 import { getInternalToken } from "../security/passcode-manager";
 
 export const DEFAULT_KANBAN_RUNTIME_HOST = "127.0.0.1";
@@ -9,6 +10,32 @@ const KANBAN_RUNTIME_TLS_CA_ENV = "KANBAN_RUNTIME_TLS_CA";
 
 let runtimeHost: string = process.env.KANBAN_RUNTIME_HOST?.trim() || DEFAULT_KANBAN_RUNTIME_HOST;
 
+/**
+ * The hosts that always reach the Kanban runtime over loopback/self: the
+ * standard loopback aliases plus whatever host the runtime is bound to.
+ * Used to keep self-communication off any outbound HTTP proxy.
+ */
+export function getKanbanRuntimeNoProxyHosts(): string[] {
+	return [...LOOPBACK_NO_PROXY_HOSTS, runtimeHost];
+}
+
+/**
+ * Ensures the runtime self-hosts are present in this process's NO_PROXY /
+ * no_proxy env so Bun's (and Node's) global fetch never routes
+ * CLI/hook -> runtime self-communication through an inherited HTTP_PROXY.
+ * Idempotent and non-destructive: existing user entries are preserved.
+ */
+function ensureRuntimeHostBypassesProxy(): void {
+	const hosts = getKanbanRuntimeNoProxyHosts();
+	process.env.NO_PROXY = mergeNoProxyEntries(process.env.NO_PROXY, hosts);
+	process.env.no_proxy = mergeNoProxyEntries(process.env.no_proxy, hosts);
+}
+
+// Apply on module load so CLI/hook sub-processes — which learn the bound host
+// from KANBAN_RUNTIME_HOST and never run the server proxy-env setup — still
+// bypass the proxy for self-communication.
+ensureRuntimeHostBypassesProxy();
+
 export function getKanbanRuntimeHost(): string {
 	return runtimeHost;
 }
@@ -16,6 +43,7 @@ export function getKanbanRuntimeHost(): string {
 export function setKanbanRuntimeHost(host: string): void {
 	runtimeHost = host;
 	process.env.KANBAN_RUNTIME_HOST = host;
+	ensureRuntimeHostBypassesProxy();
 }
 
 export function parseRuntimePort(rawPort: string | undefined): number {

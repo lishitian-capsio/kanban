@@ -7,21 +7,22 @@ import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { TRPCError } from "@trpc/server";
-import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
-import { resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
 import { createMcpRuntimeService, type McpRuntimeService } from "../agent-sdk/kanban/mcp-runtime-service";
 import { createKanbanMcpSettingsService } from "../agent-sdk/kanban/mcp-settings-service";
+import { resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
+import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
 import { createProviderService } from "../agent-sdk/kanban/provider-service";
 import { isKanbanClearSlashCommand } from "../agent-sdk/shared/slash-commands";
+import { applyProxyToProcessEnv } from "../config/proxy-env";
 import type { RuntimeConfigState } from "../config/runtime-config";
 import { updateGlobalRuntimeConfig, updateRuntimeConfig } from "../config/runtime-config";
-import { applyProxyToProcessEnv } from "../config/proxy-env";
 import type {
 	RuntimeCommandRunResponse,
 	RuntimeRunUpdateResponse,
 	RuntimeUpdateStatusResponse,
 } from "../core/api-contract";
 import {
+	parseCommandRunRequest,
 	parseKanbanAccountSwitchRequest,
 	parseKanbanAddProviderRequest,
 	parseKanbanDeviceAuthCompleteRequest,
@@ -31,7 +32,6 @@ import {
 	parseKanbanProviderModelsRequest,
 	parseKanbanProviderSettingsSaveRequest,
 	parseKanbanUpdateProviderRequest,
-	parseCommandRunRequest,
 	parseRuntimeConfigSaveRequest,
 	parseShellSessionStartRequest,
 	parseTaskChatAbortRequest,
@@ -44,6 +44,7 @@ import {
 	parseTaskSessionStopRequest,
 } from "../core/api-validation";
 import { isHomeAgentSessionId } from "../core/home-agent-session";
+import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
 import { resolveTaskTitle } from "../core/task-title.js";
 import { openInBrowser } from "../server/browser";
 import { buildRuntimeConfigResponse, resolveAgentCommand } from "../terminal/agent-registry";
@@ -101,9 +102,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			deps.broadcastKanbanMcpAuthStatusesUpdated?.(statuses);
 		},
 	});
-	const debugResetTargetPaths = [
-		join(homedir(), ".kanban"),
-	] as const;
+	const debugResetTargetPaths = [join(homedir(), ".kanban")] as const;
 
 	const buildConfigResponse = (runtimeConfig: RuntimeConfigState) =>
 		buildRuntimeConfigResponse(runtimeConfig, providerService.getProviderSettingsSummary());
@@ -160,6 +159,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				nextRuntimeConfig.proxyUsername,
 				nextRuntimeConfig.proxyPassword,
 				nextRuntimeConfig.noProxy,
+				getKanbanRuntimeNoProxyHosts(),
 			);
 			return buildConfigResponse(nextRuntimeConfig);
 		},
@@ -327,9 +327,8 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		stopTaskSession: async (workspaceScope, input) => {
 			try {
 				const body = parseTaskSessionStopRequest(input);
-				const serviceSummary = await callTaskSessionService(
-					workspaceScope,
-					async (svc) => svc.stopTaskSession(body.taskId),
+				const serviceSummary = await callTaskSessionService(workspaceScope, async (svc) =>
+					svc.stopTaskSession(body.taskId),
 				);
 				if (serviceSummary) {
 					return {
@@ -356,9 +355,8 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			try {
 				const body = parseTaskSessionInputRequest(input);
 				const payloadText = body.appendNewline ? `${body.text}\n` : body.text;
-				const serviceSummary = await callTaskSessionService(
-					workspaceScope,
-					async (svc) => svc.sendTaskSessionInput(body.taskId, payloadText),
+				const serviceSummary = await callTaskSessionService(workspaceScope, async (svc) =>
+					svc.sendTaskSessionInput(body.taskId, payloadText),
 				);
 				if (serviceSummary) {
 					return {
@@ -468,9 +466,8 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		abortTaskChatTurn: async (workspaceScope, input) => {
 			try {
 				const body = parseTaskChatAbortRequest(input);
-				const summary = await callTaskSessionService(
-					workspaceScope,
-					async (svc) => svc.abortTaskSession(body.taskId),
+				const summary = await callTaskSessionService(workspaceScope, async (svc) =>
+					svc.abortTaskSession(body.taskId),
 				);
 				if (!summary) {
 					return {
@@ -495,9 +492,8 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		cancelTaskChatTurn: async (workspaceScope, input) => {
 			try {
 				const body = parseTaskChatCancelRequest(input);
-				const summary = await callTaskSessionService(
-					workspaceScope,
-					async (svc) => svc.cancelTaskTurn(body.taskId),
+				const summary = await callTaskSessionService(workspaceScope, async (svc) =>
+					svc.cancelTaskTurn(body.taskId),
 				);
 				if (!summary) {
 					return {

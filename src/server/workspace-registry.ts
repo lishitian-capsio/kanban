@@ -7,6 +7,7 @@ import type {
 	RuntimeProjectTaskCounts,
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
+import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
 import {
 	listWorkspaceIndexEntries,
 	loadWorkspaceBoardById,
@@ -206,6 +207,7 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 		activeRuntimeConfig.proxyUsername,
 		activeRuntimeConfig.proxyPassword,
 		activeRuntimeConfig.noProxy,
+		getKanbanRuntimeNoProxyHosts(),
 	);
 	const workspacePathsById = new Map<string, string>(
 		activeWorkspaceId && activeWorkspacePath ? [[activeWorkspaceId, activeWorkspacePath]] : [],

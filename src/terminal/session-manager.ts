@@ -1,6 +1,8 @@
 // PTY-backed runtime for non-kanban task sessions and the workspace shell terminal.
 // It owns process lifecycle, terminal protocol filtering, and summary updates
 // for command-driven agents such as Claude Code, Codex, Gemini, and shell sessions.
+
+import { buildProxyEnvVars } from "../config/proxy-env";
 import type {
 	RuntimeTaskHookActivity,
 	RuntimeTaskImage,
@@ -9,7 +11,7 @@ import type {
 	RuntimeTaskSessionSummary,
 	RuntimeTaskTurnCheckpoint,
 } from "../core/api-contract";
-import { buildProxyEnvVars } from "../config/proxy-env";
+import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
 import {
 	type AgentAdapterLaunchInput,
 	type AgentOutputTransitionDetector,
@@ -395,6 +397,7 @@ export class TerminalSessionManager implements TerminalSessionService {
 				request.proxyUsername ?? "",
 				request.proxyPassword ?? "",
 				request.noProxy ?? "",
+				getKanbanRuntimeNoProxyHosts(),
 			),
 		);
 
@@ -654,6 +657,7 @@ export class TerminalSessionManager implements TerminalSessionService {
 				request.proxyUsername ?? "",
 				request.proxyPassword ?? "",
 				request.noProxy ?? "",
+				getKanbanRuntimeNoProxyHosts(),
 			),
 		);
 		const sessionStartedAt = now();
@@ -750,12 +754,12 @@ export class TerminalSessionManager implements TerminalSessionService {
 						const envKeyCount = Object.keys(env).length;
 						const diagMessage = Buffer.from(
 							`\r\n[kanban] All shell fallbacks failed.\r\n` +
-							`  Runtime: ${runtimeName} ${typeof process !== "undefined" ? process.version : "unknown"}\r\n` +
-							`  CWD: ${request.cwd}\r\n` +
-							`  Shell: ${request.binary} ${request.args?.join(" ") ?? ""}\r\n` +
-							`  Env keys: ${envKeyCount}\r\n` +
-							`  Exit code: ${event.exitCode}\r\n` +
-							`  Duration: ${sessionDurationMs}ms\r\n`,
+								`  Runtime: ${runtimeName} ${typeof process !== "undefined" ? process.version : "unknown"}\r\n` +
+								`  CWD: ${request.cwd}\r\n` +
+								`  Shell: ${request.binary} ${request.args?.join(" ") ?? ""}\r\n` +
+								`  Env keys: ${envKeyCount}\r\n` +
+								`  Exit code: ${event.exitCode}\r\n` +
+								`  Duration: ${sessionDurationMs}ms\r\n`,
 							"utf8",
 						);
 						for (const taskListener of currentEntry.listeners.values()) {
