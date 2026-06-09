@@ -4,14 +4,17 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import type { RuntimeBoardData, RuntimeTaskSessionSummary } from "../../src/core/api-contract";
+import type { RuntimeBoardData, RuntimeRequirementItem, RuntimeTaskSessionSummary } from "../../src/core/api-contract";
+import { appendRequirementVersion } from "../../src/core/requirement-versions";
 import type { WorkspaceStateConflictError } from "../../src/state/workspace-state";
 import {
 	getWorkspacesRootPath,
 	listWorkspaceIndexEntries,
 	loadWorkspaceContext,
 	loadWorkspaceContextById,
+	loadWorkspaceRequirementVersions,
 	loadWorkspaceState,
+	mutateWorkspaceState,
 	removeWorkspaceIndexEntry,
 	saveWorkspaceState,
 } from "../../src/state/workspace-state";
@@ -229,6 +232,69 @@ describe.sequential("workspace-state integration", () => {
 
 				const reloaded = await loadWorkspaceState(workspacePath);
 				expect(reloaded.requirements.items).toHaveLength(1);
+			} finally {
+				cleanup();
+			}
+		});
+	});
+
+	it("records and preserves requirement versions independently of board saves", async () => {
+		await withTemporaryHome(async () => {
+			const { path: sandboxRoot, cleanup } = createTempDir("kanban-req-versions-");
+			try {
+				const workspacePath = join(sandboxRoot, "project-versions");
+				mkdirSync(workspacePath, { recursive: true });
+				initGitRepository(workspacePath);
+
+				// Old workspace: no versions file yet → empty.
+				expect(await loadWorkspaceRequirementVersions(workspacePath)).toEqual({ versions: [] });
+
+				const snapshot: RuntimeRequirementItem = {
+					id: "req-1",
+					title: "Phone login",
+					description: "",
+					priority: "high",
+					status: "active",
+					linkedTaskIds: [],
+					order: 0,
+					createdAt: 1000,
+					updatedAt: 1000,
+				};
+
+				await mutateWorkspaceState(workspacePath, (state, { requirementVersions }) => {
+					const appended = appendRequirementVersion(requirementVersions, {
+						requirementId: "req-1",
+						snapshot,
+						changeKind: "create",
+						source: "human",
+						now: 1000,
+					});
+					return {
+						board: state.board,
+						requirements: { items: [snapshot] },
+						requirementVersions: appended.data,
+						value: null,
+					};
+				});
+
+				const stored = await loadWorkspaceRequirementVersions(workspacePath);
+				expect(stored.versions).toHaveLength(1);
+				expect(stored.versions[0]).toMatchObject({
+					requirementId: "req-1",
+					version: 1,
+					changeKind: "create",
+					source: "human",
+				});
+
+				// A board-only saveWorkspaceState must NOT wipe the versions file.
+				const current = await loadWorkspaceState(workspacePath);
+				await saveWorkspaceState(workspacePath, {
+					board: createBoard("Task Two"),
+					sessions: {},
+					expectedRevision: current.revision,
+				});
+				const afterSave = await loadWorkspaceRequirementVersions(workspacePath);
+				expect(afterSave.versions).toHaveLength(1);
 			} finally {
 				cleanup();
 			}

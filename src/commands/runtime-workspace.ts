@@ -3,12 +3,17 @@ import { createTRPCProxyClient, httpBatchLink } from "@trpc/client";
 import type {
 	RuntimeBoardData,
 	RuntimeRequirementsData,
+	RuntimeRequirementVersionsData,
 	RuntimeTaskSessionSummary,
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
 import { buildKanbanRuntimeUrl, getRuntimeFetch } from "../core/runtime-endpoint";
 import { resolveProjectInputPath } from "../projects/project-path";
-import { loadWorkspaceContext, mutateWorkspaceState } from "../state/workspace-state";
+import {
+	loadWorkspaceContext,
+	mutateWorkspaceState,
+	type RuntimeWorkspaceMutationContext,
+} from "../state/workspace-state";
 import type { RuntimeAppRouter } from "../trpc/app-router";
 
 export type JsonRecord = Record<string, unknown>;
@@ -81,20 +86,25 @@ export interface RuntimeWorkspaceMutationResult<T> {
 	board: RuntimeBoardData;
 	sessions?: Record<string, RuntimeTaskSessionSummary>;
 	requirements?: RuntimeRequirementsData;
+	requirementVersions?: RuntimeRequirementVersionsData;
 	value: T;
 }
 
 export async function updateRuntimeWorkspaceState<T>(
 	runtimeClient: RuntimeTrpcClient,
 	workspaceRepoPath: string,
-	mutate: (state: RuntimeWorkspaceStateResponse) => RuntimeWorkspaceMutationResult<T>,
+	mutate: (
+		state: RuntimeWorkspaceStateResponse,
+		context: RuntimeWorkspaceMutationContext,
+	) => RuntimeWorkspaceMutationResult<T>,
 ): Promise<T> {
-	const mutationResponse = await mutateWorkspaceState(workspaceRepoPath, (state) => {
-		const mutation = mutate(state);
+	const mutationResponse = await mutateWorkspaceState(workspaceRepoPath, (state, context) => {
+		const mutation = mutate(state, context);
 		return {
 			board: mutation.board,
 			...(mutation.sessions !== undefined ? { sessions: mutation.sessions } : {}),
 			...(mutation.requirements !== undefined ? { requirements: mutation.requirements } : {}),
+			...(mutation.requirementVersions !== undefined ? { requirementVersions: mutation.requirementVersions } : {}),
 			value: mutation.value,
 		};
 	});

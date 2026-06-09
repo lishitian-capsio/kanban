@@ -4,8 +4,10 @@ import type {
 	RuntimeRequirementItem,
 	RuntimeRequirementPriority,
 	RuntimeRequirementStatus,
+	RuntimeRequirementVersion,
 } from "../core/api-contract";
 import { addRequirement, deleteRequirement, updateRequirement } from "../core/requirement-mutations";
+import { appendRequirementVersion, revertRequirementToVersion } from "../core/requirement-versions";
 import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import {
 	createRuntimeTrpcClient,
@@ -41,6 +43,15 @@ function parseStatus(value: string | undefined): RuntimeRequirementStatus | unde
 	throw new Error(`Invalid status "${value}". Expected one of: ${REQUIREMENT_STATUSES.join(", ")}.`);
 }
 
+function parseVersionNumber(value: string): number {
+	const trimmed = value.trim();
+	const parsed = Number.parseInt(trimmed, 10);
+	if (!Number.isInteger(parsed) || parsed <= 0 || String(parsed) !== trimmed) {
+		throw new Error(`Invalid version "${value}". Expected a positive integer.`);
+	}
+	return parsed;
+}
+
 function formatRequirementRecord(item: RuntimeRequirementItem): JsonRecord {
 	return {
 		id: item.id,
@@ -52,6 +63,18 @@ function formatRequirementRecord(item: RuntimeRequirementItem): JsonRecord {
 		order: item.order,
 		createdAt: item.createdAt,
 		updatedAt: item.updatedAt,
+	};
+}
+
+function formatVersionRecord(version: RuntimeRequirementVersion): JsonRecord {
+	return {
+		requirementId: version.requirementId,
+		version: version.version,
+		changeKind: version.changeKind,
+		source: version.source,
+		reason: version.reason,
+		createdAt: version.createdAt,
+		snapshot: formatRequirementRecord(version.snapshot),
 	};
 }
 
@@ -111,23 +134,34 @@ async function createRequirementCommand(input: {
 	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd);
 	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
 	const runtimeClient = createRuntimeTrpcClient(workspaceId);
-	const created = await updateRuntimeWorkspaceState(runtimeClient, workspaceRepoPath, (state) => {
-		const result = addRequirement(
-			state.requirements,
-			{
-				title: input.title,
-				description: input.description,
-				priority: input.priority,
-				status: input.status,
-			},
-			() => globalThis.crypto.randomUUID(),
-		);
-		return {
-			board: state.board,
-			requirements: result.data,
-			value: result.requirement,
-		};
-	});
+	const created = await updateRuntimeWorkspaceState(
+		runtimeClient,
+		workspaceRepoPath,
+		(state, { requirementVersions }) => {
+			const result = addRequirement(
+				state.requirements,
+				{
+					title: input.title,
+					description: input.description,
+					priority: input.priority,
+					status: input.status,
+				},
+				() => globalThis.crypto.randomUUID(),
+			);
+			const appended = appendRequirementVersion(requirementVersions, {
+				requirementId: result.requirement.id,
+				snapshot: result.requirement,
+				changeKind: "create",
+				source: "human",
+			});
+			return {
+				board: state.board,
+				requirements: result.data,
+				requirementVersions: appended.data,
+				value: result.requirement,
+			};
+		},
+	);
 
 	return {
 		ok: true,
@@ -158,22 +192,33 @@ async function updateRequirementCommand(input: {
 	});
 	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
 	const runtimeClient = createRuntimeTrpcClient(workspaceId);
-	const updated = await updateRuntimeWorkspaceState(runtimeClient, workspaceRepoPath, (state) => {
-		const result = updateRequirement(state.requirements, input.id, {
-			title: input.title,
-			description: input.description,
-			priority: input.priority,
-			status: input.status,
-		});
-		if (!result.updated || !result.requirement) {
-			throw new Error(`Requirement "${input.id}" was not found in workspace ${workspaceRepoPath}.`);
-		}
-		return {
-			board: state.board,
-			requirements: result.data,
-			value: formatRequirementRecord(result.requirement),
-		};
-	});
+	const updated = await updateRuntimeWorkspaceState(
+		runtimeClient,
+		workspaceRepoPath,
+		(state, { requirementVersions }) => {
+			const result = updateRequirement(state.requirements, input.id, {
+				title: input.title,
+				description: input.description,
+				priority: input.priority,
+				status: input.status,
+			});
+			if (!result.updated || !result.requirement) {
+				throw new Error(`Requirement "${input.id}" was not found in workspace ${workspaceRepoPath}.`);
+			}
+			const appended = appendRequirementVersion(requirementVersions, {
+				requirementId: result.requirement.id,
+				snapshot: result.requirement,
+				changeKind: "update",
+				source: "human",
+			});
+			return {
+				board: state.board,
+				requirements: result.data,
+				requirementVersions: appended.data,
+				value: formatRequirementRecord(result.requirement),
+			};
+		},
+	);
 
 	return {
 		ok: true,
@@ -188,22 +233,88 @@ async function deleteRequirementCommand(input: { cwd: string; id: string; projec
 	});
 	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
 	const runtimeClient = createRuntimeTrpcClient(workspaceId);
-	const removed = await updateRuntimeWorkspaceState(runtimeClient, workspaceRepoPath, (state) => {
-		const result = deleteRequirement(state.requirements, input.id);
-		if (!result.deleted || !result.requirement) {
-			throw new Error(`Requirement "${input.id}" was not found in workspace ${workspaceRepoPath}.`);
-		}
-		return {
-			board: state.board,
-			requirements: result.data,
-			value: formatRequirementRecord(result.requirement),
-		};
-	});
+	const removed = await updateRuntimeWorkspaceState(
+		runtimeClient,
+		workspaceRepoPath,
+		(state, { requirementVersions }) => {
+			const result = deleteRequirement(state.requirements, input.id);
+			if (!result.deleted || !result.requirement) {
+				throw new Error(`Requirement "${input.id}" was not found in workspace ${workspaceRepoPath}.`);
+			}
+			const appended = appendRequirementVersion(requirementVersions, {
+				requirementId: result.requirement.id,
+				snapshot: result.requirement,
+				changeKind: "delete",
+				source: "human",
+			});
+			return {
+				board: state.board,
+				requirements: result.data,
+				requirementVersions: appended.data,
+				value: formatRequirementRecord(result.requirement),
+			};
+		},
+	);
 
 	return {
 		ok: true,
 		workspacePath: workspaceRepoPath,
 		requirement: removed,
+	};
+}
+
+async function listRequirementHistory(input: { cwd: string; id: string; projectPath?: string }): Promise<JsonRecord> {
+	const workspace = await resolveRuntimeWorkspace(input.projectPath, input.cwd, {
+		autoCreateIfMissing: false,
+	});
+	const runtimeClient = createRuntimeTrpcClient(workspace.workspaceId);
+	const response = await runtimeClient.workspace.getRequirementVersions.query({ requirementId: input.id });
+	const versions = [...response.versions].sort((left, right) => left.version - right.version).map(formatVersionRecord);
+	return {
+		ok: true,
+		workspacePath: workspace.repoPath,
+		requirementId: input.id,
+		versions,
+		count: versions.length,
+	};
+}
+
+async function revertRequirementCommand(input: {
+	cwd: string;
+	id: string;
+	version: number;
+	projectPath?: string;
+}): Promise<JsonRecord> {
+	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd, {
+		autoCreateIfMissing: false,
+	});
+	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
+	const runtimeClient = createRuntimeTrpcClient(workspaceId);
+	const reverted = await updateRuntimeWorkspaceState(
+		runtimeClient,
+		workspaceRepoPath,
+		(state, { requirementVersions }) => {
+			const result = revertRequirementToVersion(state.requirements, requirementVersions, input.id, input.version, {
+				source: "human",
+			});
+			const latest = result.versions.versions[result.versions.versions.length - 1];
+			return {
+				board: state.board,
+				requirements: result.data,
+				requirementVersions: result.versions,
+				value: {
+					requirement: formatRequirementRecord(result.requirement),
+					revertedToVersion: input.version,
+					newVersion: latest ? latest.version : null,
+				},
+			};
+		},
+	);
+
+	return {
+		ok: true,
+		workspacePath: workspaceRepoPath,
+		...reverted,
 	};
 }
 
@@ -336,6 +447,40 @@ export function registerRequirementCommand(program: Command): void {
 					await deleteRequirementCommand({
 						cwd: process.cwd(),
 						id: options.id,
+						projectPath: options.projectPath,
+					}),
+			);
+		});
+
+	requirement
+		.command("history")
+		.description("List the version history of a requirement item.")
+		.requiredOption("--id <id>", "Requirement ID.")
+		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
+		.action(async (options: { id: string; projectPath?: string }) => {
+			await runRequirementCommand(
+				async () =>
+					await listRequirementHistory({
+						cwd: process.cwd(),
+						id: options.id,
+						projectPath: options.projectPath,
+					}),
+			);
+		});
+
+	requirement
+		.command("revert")
+		.description("Revert a requirement item to a previous version (recorded as a new version).")
+		.requiredOption("--id <id>", "Requirement ID.")
+		.requiredOption("--version <number>", "Version number to revert to.", parseVersionNumber)
+		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
+		.action(async (options: { id: string; version: number; projectPath?: string }) => {
+			await runRequirementCommand(
+				async () =>
+					await revertRequirementCommand({
+						cwd: process.cwd(),
+						id: options.id,
+						version: options.version,
 						projectPath: options.projectPath,
 					}),
 			);

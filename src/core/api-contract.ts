@@ -174,6 +174,39 @@ export const runtimeRequirementsDataSchema = z.object({
 });
 export type RuntimeRequirementsData = z.infer<typeof runtimeRequirementsDataSchema>;
 
+export const runtimeRequirementChangeSourceSchema = z.enum(["human", "agent"]);
+export type RuntimeRequirementChangeSource = z.infer<typeof runtimeRequirementChangeSourceSchema>;
+
+export const runtimeRequirementChangeKindSchema = z.enum(["create", "update", "delete", "revert"]);
+export type RuntimeRequirementChangeKind = z.infer<typeof runtimeRequirementChangeKindSchema>;
+
+export const runtimeRequirementVersionSchema = z.object({
+	requirementId: z.string(),
+	version: z.number().int().positive(),
+	changeKind: runtimeRequirementChangeKindSchema,
+	snapshot: runtimeRequirementItemSchema,
+	source: runtimeRequirementChangeSourceSchema,
+	reason: z.string().nullable().default(null),
+	createdAt: z.number(),
+});
+export type RuntimeRequirementVersion = z.infer<typeof runtimeRequirementVersionSchema>;
+
+export const runtimeRequirementVersionsDataSchema = z.object({
+	versions: z.array(runtimeRequirementVersionSchema).default([]),
+});
+export type RuntimeRequirementVersionsData = z.infer<typeof runtimeRequirementVersionsDataSchema>;
+
+export const runtimeRequirementVersionsRequestSchema = z.object({
+	requirementId: z.string().optional(),
+});
+export type RuntimeRequirementVersionsRequest = z.infer<typeof runtimeRequirementVersionsRequestSchema>;
+
+export const runtimeRequirementVersionsResponseSchema = z.object({
+	requirementId: z.string().nullable(),
+	versions: z.array(runtimeRequirementVersionSchema),
+});
+export type RuntimeRequirementVersionsResponse = z.infer<typeof runtimeRequirementVersionsResponseSchema>;
+
 export const runtimeGitRepositoryInfoSchema = z.object({
 	currentBranch: z.string().nullable(),
 	defaultBranch: z.string().nullable(),
