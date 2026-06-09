@@ -143,6 +143,50 @@ describe.sequential("workspace-state integration", () => {
 		});
 	});
 
+	it("round-trips requirements and defaults to empty for old workspaces", async () => {
+		await withTemporaryHome(async () => {
+			const { path: sandboxRoot, cleanup } = createTempDir("kanban-requirements-");
+			try {
+				const workspacePath = join(sandboxRoot, "project-req");
+				mkdirSync(workspacePath, { recursive: true });
+				initGitRepository(workspacePath);
+
+				// Old workspace (no requirements.json yet) falls back to an empty list.
+				const initial = await loadWorkspaceState(workspacePath);
+				expect(initial.requirements).toEqual({ items: [] });
+
+				const saved = await saveWorkspaceState(workspacePath, {
+					board: createBoard("Task One"),
+					sessions: {},
+					requirements: {
+						items: [
+							{
+								id: "req-1",
+								title: "Phone login",
+								description: "Support phone-number login",
+								priority: "high",
+								status: "active",
+								linkedTaskIds: [],
+								order: 0,
+								createdAt: Date.now(),
+								updatedAt: Date.now(),
+							},
+						],
+					},
+					expectedRevision: initial.revision,
+				});
+				expect(saved.requirements.items).toHaveLength(1);
+				expect(saved.requirements.items[0]?.title).toBe("Phone login");
+
+				const reloaded = await loadWorkspaceState(workspacePath);
+				expect(reloaded.requirements.items[0]?.priority).toBe("high");
+				expect(reloaded.requirements.items[0]?.status).toBe("active");
+			} finally {
+				cleanup();
+			}
+		});
+	});
+
 	it("lists and removes workspace index entries across multiple projects", async () => {
 		await withTemporaryHome(async () => {
 			const { path: sandboxRoot, cleanup } = createTempDir("kanban-workspaces-");

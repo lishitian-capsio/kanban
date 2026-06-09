@@ -1,4 +1,3 @@
-import { createTRPCProxyClient, httpBatchLink } from "@trpc/client";
 import type { Command } from "commander";
 
 import type {
@@ -11,7 +10,7 @@ import type {
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
 import { runtimeAgentIdSchema, runtimeReasoningEffortSchema } from "../core/api-contract";
-import { buildKanbanRuntimeUrl, getKanbanRuntimeOrigin, getRuntimeFetch } from "../core/runtime-endpoint";
+import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import {
 	addTaskDependency,
 	addTaskToColumn,
@@ -23,9 +22,18 @@ import {
 	trashTaskAndGetReadyLinkedTaskIds,
 	updateTask,
 } from "../core/task-board-mutations";
-import { resolveProjectInputPath } from "../projects/project-path";
-import { loadWorkspaceContext, mutateWorkspaceState } from "../state/workspace-state";
-import type { RuntimeAppRouter } from "../trpc/app-router";
+import { mutateWorkspaceState } from "../state/workspace-state";
+import {
+	createRuntimeTrpcClient,
+	ensureRuntimeWorkspace,
+	type JsonRecord,
+	notifyRuntimeWorkspaceStateUpdated,
+	printJson,
+	resolveRuntimeWorkspace,
+	resolveWorkspaceRepoPath,
+	toErrorMessage,
+	updateRuntimeWorkspaceState,
+} from "./runtime-workspace";
 
 const LIST_TASK_COLUMNS = ["backlog", "in_progress", "review", "trash"] as const;
 type ListTaskColumn = (typeof LIST_TASK_COLUMNS)[number];
@@ -40,24 +48,6 @@ type ResolvedTaskCommandTarget =
 			kind: "column";
 			column: ListTaskColumn;
 	  };
-
-interface RuntimeWorkspaceMutationResult<T> {
-	board: RuntimeWorkspaceStateResponse["board"];
-	value: T;
-}
-
-type JsonRecord = Record<string, unknown>;
-
-function toErrorMessage(error: unknown): string {
-	if (error instanceof Error && error.message.trim().length > 0) {
-		return error.message;
-	}
-	return String(error);
-}
-
-function printJson(payload: unknown): void {
-	process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-}
 
 function parseListColumn(value: string | undefined): ListTaskColumn | undefined {
 	if (value === undefined) {
@@ -242,79 +232,6 @@ function resolveTaskCommandTarget(input: TaskCommandTarget, commandName: string)
 		};
 	}
 	throw new Error(`${commandName} requires either --task-id or --column.`);
-}
-
-function createRuntimeTrpcClient(workspaceId: string | null) {
-	return createTRPCProxyClient<RuntimeAppRouter>({
-		links: [
-			httpBatchLink({
-				url: buildKanbanRuntimeUrl("/api/trpc"),
-				headers: () => (workspaceId ? { "x-kanban-workspace-id": workspaceId } : {}),
-				fetch: async (url, options) => {
-					const runtimeFetch = await getRuntimeFetch();
-					return runtimeFetch(url, options);
-				},
-			}),
-		],
-	});
-}
-
-async function resolveRuntimeWorkspace(
-	projectPath: string | undefined,
-	cwd: string,
-	options: { autoCreateIfMissing?: boolean } = {},
-) {
-	const normalizedProjectPath = (projectPath ?? "").trim();
-	const resolvedPath = normalizedProjectPath ? resolveProjectInputPath(normalizedProjectPath, cwd) : cwd;
-	return await loadWorkspaceContext(resolvedPath, {
-		autoCreateIfMissing: options.autoCreateIfMissing ?? true,
-	});
-}
-
-async function resolveWorkspaceRepoPath(
-	projectPath: string | undefined,
-	cwd: string,
-	options: { autoCreateIfMissing?: boolean } = {},
-): Promise<string> {
-	const workspace = await resolveRuntimeWorkspace(projectPath, cwd, options);
-	return workspace.repoPath;
-}
-
-async function ensureRuntimeWorkspace(workspaceRepoPath: string): Promise<string> {
-	const runtimeClient = createRuntimeTrpcClient(null);
-	const added = await runtimeClient.projects.add.mutate({
-		path: workspaceRepoPath,
-	});
-	if (!added.ok || !added.project) {
-		throw new Error(added.error ?? `Could not register project ${workspaceRepoPath} in Kanban runtime.`);
-	}
-	return added.project.id;
-}
-
-async function notifyRuntimeWorkspaceStateUpdated(
-	runtimeClient: ReturnType<typeof createRuntimeTrpcClient>,
-): Promise<void> {
-	await runtimeClient.workspace.notifyStateUpdated.mutate().catch(() => null);
-}
-
-async function updateRuntimeWorkspaceState<T>(
-	runtimeClient: ReturnType<typeof createRuntimeTrpcClient>,
-	workspaceRepoPath: string,
-	mutate: (state: RuntimeWorkspaceStateResponse) => RuntimeWorkspaceMutationResult<T>,
-): Promise<T> {
-	const mutationResponse = await mutateWorkspaceState(workspaceRepoPath, (state) => {
-		const mutation = mutate(state);
-		return {
-			board: mutation.board,
-			value: mutation.value,
-		};
-	});
-
-	if (mutationResponse.saved) {
-		await notifyRuntimeWorkspaceStateUpdated(runtimeClient);
-	}
-
-	return mutationResponse.value;
 }
 
 function resolveTaskBaseRef(state: RuntimeWorkspaceStateResponse): string {

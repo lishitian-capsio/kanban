@@ -7,6 +7,7 @@ import { Command, Option } from "commander";
 import ora, { type Ora } from "ora";
 import packageJson from "../package.json" with { type: "json" };
 import { registerHooksCommand } from "./commands/hooks";
+import { registerRequirementCommand } from "./commands/requirement";
 import { registerTaskCommand } from "./commands/task";
 import { loadGlobalRuntimeConfig, loadRuntimeConfig } from "./config/runtime-config";
 import type { RuntimeCommandRunResponse } from "./core/api-contract";
@@ -695,6 +696,7 @@ function createProgram(invocationArgs: string[]): Command {
 	program.addOption(new Option("--agent <id>", "Deprecated compatibility flag. Ignored.").hideHelp());
 
 	registerTaskCommand(program);
+	registerRequirementCommand(program);
 	registerHooksCommand(program);
 
 	program

@@ -149,6 +149,31 @@ export const runtimeBoardDataSchema = z.object({
 });
 export type RuntimeBoardData = z.infer<typeof runtimeBoardDataSchema>;
 
+export const runtimeRequirementPrioritySchema = z.enum(["low", "medium", "high", "urgent"]);
+export type RuntimeRequirementPriority = z.infer<typeof runtimeRequirementPrioritySchema>;
+
+export const runtimeRequirementStatusSchema = z.enum(["draft", "active", "done", "archived"]);
+export type RuntimeRequirementStatus = z.infer<typeof runtimeRequirementStatusSchema>;
+
+export const runtimeRequirementItemSchema = z.object({
+	id: z.string(),
+	title: z.string(),
+	description: z.string().default(""),
+	priority: runtimeRequirementPrioritySchema.default("medium"),
+	status: runtimeRequirementStatusSchema.default("draft"),
+	// Reserved for the future "link / split a requirement into tasks" capability.
+	linkedTaskIds: z.array(z.string()).default([]),
+	order: z.number().default(0),
+	createdAt: z.number(),
+	updatedAt: z.number(),
+});
+export type RuntimeRequirementItem = z.infer<typeof runtimeRequirementItemSchema>;
+
+export const runtimeRequirementsDataSchema = z.object({
+	items: z.array(runtimeRequirementItemSchema).default([]),
+});
+export type RuntimeRequirementsData = z.infer<typeof runtimeRequirementsDataSchema>;
+
 export const runtimeGitRepositoryInfoSchema = z.object({
 	currentBranch: z.string().nullable(),
 	defaultBranch: z.string().nullable(),
@@ -264,6 +289,7 @@ export const runtimeWorkspaceStateResponseSchema = z.object({
 	git: runtimeGitRepositoryInfoSchema,
 	board: runtimeBoardDataSchema,
 	sessions: z.record(z.string(), runtimeTaskSessionSummarySchema),
+	requirements: runtimeRequirementsDataSchema.default({ items: [] }),
 	revision: z.number(),
 });
 export type RuntimeWorkspaceStateResponse = z.infer<typeof runtimeWorkspaceStateResponseSchema>;
@@ -271,6 +297,7 @@ export type RuntimeWorkspaceStateResponse = z.infer<typeof runtimeWorkspaceState
 export const runtimeWorkspaceStateSaveRequestSchema = z.object({
 	board: runtimeBoardDataSchema,
 	sessions: z.record(z.string(), runtimeTaskSessionSummarySchema),
+	requirements: runtimeRequirementsDataSchema.optional(),
 	expectedRevision: z.number().int().nonnegative().optional(),
 });
 export type RuntimeWorkspaceStateSaveRequest = z.infer<typeof runtimeWorkspaceStateSaveRequestSchema>;

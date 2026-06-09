@@ -9,10 +9,12 @@ import {
 	type RuntimeBoardColumnId,
 	type RuntimeBoardData,
 	type RuntimeGitRepositoryInfo,
+	type RuntimeRequirementsData,
 	type RuntimeTaskSessionSummary,
 	type RuntimeWorkspaceStateResponse,
 	type RuntimeWorkspaceStateSaveRequest,
 	runtimeBoardDataSchema,
+	runtimeRequirementsDataSchema,
 	runtimeTaskSessionSummarySchema,
 	runtimeWorkspaceStateSaveRequestSchema,
 } from "../core/api-contract";
@@ -26,6 +28,7 @@ const WORKSPACES_DIR = "workspaces";
 const INDEX_FILENAME = "index.json";
 const BOARD_FILENAME = "board.json";
 const SESSIONS_FILENAME = "sessions.json";
+const REQUIREMENTS_FILENAME = "requirements.json";
 const META_FILENAME = "meta.json";
 const INDEX_VERSION = 1;
 const WORKSPACE_ID_COLLISION_SUFFIX_LENGTH = 4;
@@ -185,6 +188,10 @@ function getWorkspaceSessionsPath(workspaceId: string): string {
 	return join(getWorkspaceDirectoryPath(workspaceId), SESSIONS_FILENAME);
 }
 
+function getWorkspaceRequirementsPath(workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(workspaceId), REQUIREMENTS_FILENAME);
+}
+
 function getWorkspaceMetaPath(workspaceId: string): string {
 	return join(getWorkspaceDirectoryPath(workspaceId), META_FILENAME);
 }
@@ -256,7 +263,7 @@ function parsePersistedStateFile<T>(
 	filePath: string,
 	fileLabel: string,
 	raw: unknown | null,
-	schema: z.ZodType<T>,
+	schema: z.ZodType<T, z.ZodTypeDef, unknown>,
 	defaultValue: T,
 ): T {
 	if (raw === null) {
@@ -307,6 +314,14 @@ async function readWorkspaceSessions(workspaceId: string): Promise<Record<string
 	const sessionsPath = getWorkspaceSessionsPath(workspaceId);
 	const rawSessions = await readJsonFile(sessionsPath);
 	return parsePersistedStateFile(sessionsPath, SESSIONS_FILENAME, rawSessions, workspaceSessionsSchema, {});
+}
+
+async function readWorkspaceRequirements(workspaceId: string): Promise<RuntimeRequirementsData> {
+	const requirementsPath = getWorkspaceRequirementsPath(workspaceId);
+	const rawRequirements = await readJsonFile(requirementsPath);
+	return parsePersistedStateFile(requirementsPath, REQUIREMENTS_FILENAME, rawRequirements, runtimeRequirementsDataSchema, {
+		items: [],
+	});
 }
 
 async function readWorkspaceMeta(workspaceId: string): Promise<WorkspaceStateMeta> {
@@ -525,6 +540,7 @@ function toWorkspaceStateResponse(
 	context: RuntimeWorkspaceContext,
 	board: RuntimeBoardData,
 	sessions: Record<string, RuntimeTaskSessionSummary>,
+	requirements: RuntimeRequirementsData,
 	revision: number,
 ): RuntimeWorkspaceStateResponse {
 	return {
@@ -533,6 +549,7 @@ function toWorkspaceStateResponse(
 		git: context.git,
 		board,
 		sessions,
+		requirements,
 		revision,
 	};
 }
@@ -640,8 +657,9 @@ export async function loadWorkspaceState(cwd: string): Promise<RuntimeWorkspaceS
 	const context = await loadWorkspaceContext(cwd);
 	const board = await readWorkspaceBoard(context.workspaceId);
 	const sessions = await readWorkspaceSessions(context.workspaceId);
+	const requirements = await readWorkspaceRequirements(context.workspaceId);
 	const meta = await readWorkspaceMeta(context.workspaceId);
-	return toWorkspaceStateResponse(context, board, sessions, meta.revision);
+	return toWorkspaceStateResponse(context, board, sessions, requirements, meta.revision);
 }
 
 export async function saveWorkspaceState(
@@ -664,6 +682,7 @@ export async function saveWorkspaceState(
 		}
 		const board = parsedPayload.board;
 		const sessions = parsedPayload.sessions;
+		const requirements = parsedPayload.requirements ?? { items: [] };
 		const nextRevision = currentMeta.revision + 1;
 		const nextMeta: WorkspaceStateMeta = {
 			revision: nextRevision,
@@ -676,17 +695,21 @@ export async function saveWorkspaceState(
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceSessionsPath(context.workspaceId), sessions, {
 			lock: null,
 		});
+		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceRequirementsPath(context.workspaceId), requirements, {
+			lock: null,
+		});
 		await lockedFileSystem.writeJsonFileAtomic(metaPath, nextMeta, {
 			lock: null,
 		});
 
-		return toWorkspaceStateResponse(context, board, sessions, nextRevision);
+		return toWorkspaceStateResponse(context, board, sessions, requirements, nextRevision);
 	});
 }
 
 export interface RuntimeWorkspaceAtomicMutationResult<T> {
 	board: RuntimeBoardData;
 	sessions?: Record<string, RuntimeTaskSessionSummary>;
+	requirements?: RuntimeRequirementsData;
 	value: T;
 	save?: boolean;
 }
@@ -705,8 +728,15 @@ export async function mutateWorkspaceState<T>(
 	return await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(context.workspaceId), async () => {
 		const currentBoard = await readWorkspaceBoard(context.workspaceId);
 		const currentSessions = await readWorkspaceSessions(context.workspaceId);
+		const currentRequirements = await readWorkspaceRequirements(context.workspaceId);
 		const currentMeta = await readWorkspaceMeta(context.workspaceId);
-		const currentState = toWorkspaceStateResponse(context, currentBoard, currentSessions, currentMeta.revision);
+		const currentState = toWorkspaceStateResponse(
+			context,
+			currentBoard,
+			currentSessions,
+			currentRequirements,
+			currentMeta.revision,
+		);
 
 		const mutation = mutate(currentState);
 		if (mutation.save === false) {
@@ -719,6 +749,7 @@ export async function mutateWorkspaceState<T>(
 
 		const nextBoard = mutation.board;
 		const nextSessions = mutation.sessions ?? currentSessions;
+		const nextRequirements = mutation.requirements ?? currentRequirements;
 		const nextRevision = currentMeta.revision + 1;
 		const nextMeta: WorkspaceStateMeta = {
 			revision: nextRevision,
@@ -731,13 +762,16 @@ export async function mutateWorkspaceState<T>(
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceSessionsPath(context.workspaceId), nextSessions, {
 			lock: null,
 		});
+		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceRequirementsPath(context.workspaceId), nextRequirements, {
+			lock: null,
+		});
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceMetaPath(context.workspaceId), nextMeta, {
 			lock: null,
 		});
 
 		return {
 			value: mutation.value,
-			state: toWorkspaceStateResponse(context, nextBoard, nextSessions, nextRevision),
+			state: toWorkspaceStateResponse(context, nextBoard, nextSessions, nextRequirements, nextRevision),
 			saved: true,
 		};
 	});
