@@ -1,11 +1,14 @@
 import * as esbuild from "esbuild";
 
 /**
- * Runtime externals. `node-pty` is a native addon with a compiled binding
- * and a spawn-helper binary that must live on disk, so it can't be bundled.
- * Everything else esbuild can inline.
+ * Runtime externals.
+ * - `node-pty` is a native addon with a compiled binding and a spawn-helper
+ *   binary that must live on disk, so it can't be bundled.
+ * - `ws` is externalised because Bun's `node:http` upgrade handling does not
+ *   work with esbuild's CJS-wrapped `ws` package (WebSocket upgrades hang).
+ * - `bun:sqlite` and `bun` are Bun-specific and cannot be bundled.
  */
-const external = ["node-pty", "bun:sqlite", "bun"];
+const external = ["node-pty", "bun:sqlite", "bun", "ws"];
 
 /** Bake OTEL telemetry env vars into the bundle at build time. */
 const define = {
@@ -54,7 +57,18 @@ await Promise.all([
 		...shared,
 		entryPoints: ["src/cli.ts"],
 		outfile: "dist/cli.js",
-		banner: { js: "#!/usr/bin/env bun" },
+		banner: {
+			js: [
+				"#!/usr/bin/env bun",
+				// Sentry's bundled `isCjs()` contains a bare `typeof module` check
+				// that causes Bun to classify the entire ESM file as CJS, which then
+				// conflicts with ESM `import` statements.  Declaring a local `module`
+				// binding before any code runs satisfies Bun's CJS heuristic without
+				// affecting runtime behaviour (the Sentry code path correctly falls
+				// through to `false`).
+				"var module = { exports: {} };",
+			].join("\n"),
+		},
 	}),
 	// Library export
 	esbuild.build({
