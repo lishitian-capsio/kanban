@@ -6,11 +6,15 @@ import type {
 	RuntimeRequirementItem,
 	RuntimeRequirementPriority,
 	RuntimeRequirementStatus,
+	RuntimeRequirementTaskLink,
+	RuntimeRequirementTaskLinkStatus,
+	RuntimeRequirementTaskLinksData,
 	RuntimeRequirementVersion,
 } from "../core/api-contract";
 import { addRequirement, deleteRequirement, updateRequirement } from "../core/requirement-mutations";
 import { analyzeReconcile, applyReconcilePlan, reconcilePlanSchema } from "../core/requirement-reconcile";
 import { analyzeRequirements, applyReviewPlan, reviewPlanSchema } from "../core/requirement-review";
+import { confirmLink, proposeLink, rejectLink, unlink } from "../core/requirement-task-link-mutations";
 import {
 	appendRequirementVersion,
 	formatRequirementVersionLabel,
@@ -30,6 +34,7 @@ import {
 
 const REQUIREMENT_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 const REQUIREMENT_STATUSES = ["draft", "active", "done", "archived"] as const;
+const REQUIREMENT_LINK_STATES = ["proposed", "confirmed"] as const;
 
 function parsePriority(value: string | undefined): RuntimeRequirementPriority | undefined {
 	if (value === undefined) {
@@ -49,6 +54,13 @@ function parseStatus(value: string | undefined): RuntimeRequirementStatus | unde
 		return value as RuntimeRequirementStatus;
 	}
 	throw new Error(`Invalid status "${value}". Expected one of: ${REQUIREMENT_STATUSES.join(", ")}.`);
+}
+
+function parseLinkState(value: string): RuntimeRequirementTaskLinkStatus {
+	if ((REQUIREMENT_LINK_STATES as readonly string[]).includes(value)) {
+		return value as RuntimeRequirementTaskLinkStatus;
+	}
+	throw new Error(`Invalid state "${value}". Expected one of: ${REQUIREMENT_LINK_STATES.join(", ")}.`);
 }
 
 function parseVersionNumber(value: string): number {
@@ -107,6 +119,20 @@ function formatVersionRecord(version: RuntimeRequirementVersion): JsonRecord {
 	};
 }
 
+function formatLinkRecord(link: RuntimeRequirementTaskLink): JsonRecord {
+	return {
+		requirementId: link.requirementId,
+		taskId: link.taskId,
+		status: link.status,
+		source: link.source,
+		createdAt: link.createdAt,
+	};
+}
+
+function formatLinkedTasks(links: RuntimeRequirementTaskLinksData, requirementId: string): JsonRecord[] {
+	return links.links.filter((link) => link.requirementId === requirementId).map(formatLinkRecord);
+}
+
 async function listRequirements(input: {
 	cwd: string;
 	projectPath?: string;
@@ -123,7 +149,10 @@ async function listRequirements(input: {
 		.filter((item) => (input.status ? item.status === input.status : true))
 		.filter((item) => (input.priority ? item.priority === input.priority : true))
 		.sort((left, right) => left.order - right.order)
-		.map(formatRequirementRecord);
+		.map((item) => ({
+			...formatRequirementRecord(item),
+			linkedTasks: formatLinkedTasks(state.requirementTaskLinks, item.id),
+		}));
 
 	return {
 		ok: true,
@@ -148,7 +177,10 @@ async function showRequirement(input: { cwd: string; id: string; projectPath?: s
 	return {
 		ok: true,
 		workspacePath: workspace.repoPath,
-		requirement: formatRequirementRecord(requirement),
+		requirement: {
+			...formatRequirementRecord(requirement),
+			linkedTasks: formatLinkedTasks(state.requirementTaskLinks, requirement.id),
+		},
 	};
 }
 
@@ -494,6 +526,162 @@ async function applyRequirementReconcileCommand(input: {
 	};
 }
 
+async function linkTaskCommand(input: {
+	cwd: string;
+	id: string;
+	taskId: string;
+	state: RuntimeRequirementTaskLinkStatus;
+	projectPath?: string;
+}): Promise<JsonRecord> {
+	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd, {
+		autoCreateIfMissing: false,
+	});
+	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
+	const runtimeClient = createRuntimeTrpcClient(workspaceId);
+	const link = await updateRuntimeWorkspaceState(
+		runtimeClient,
+		workspaceRepoPath,
+		(state, { requirementTaskLinks, requirementVersions }) => {
+			const mutate = input.state === "confirmed" ? confirmLink : proposeLink;
+			const result = mutate(state.requirements, requirementTaskLinks, requirementVersions, input.id, input.taskId, {
+				source: "human",
+			});
+			return {
+				board: state.board,
+				requirements: result.requirements,
+				requirementTaskLinks: result.links,
+				requirementVersions: result.versions,
+				value: formatLinkRecord(result.link),
+			};
+		},
+	);
+
+	return {
+		ok: true,
+		workspacePath: workspaceRepoPath,
+		link,
+	};
+}
+
+async function unlinkTaskCommand(input: {
+	cwd: string;
+	id: string;
+	taskId: string;
+	projectPath?: string;
+}): Promise<JsonRecord> {
+	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd, {
+		autoCreateIfMissing: false,
+	});
+	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
+	const runtimeClient = createRuntimeTrpcClient(workspaceId);
+	const link = await updateRuntimeWorkspaceState(
+		runtimeClient,
+		workspaceRepoPath,
+		(state, { requirementTaskLinks, requirementVersions }) => {
+			const result = unlink(state.requirements, requirementTaskLinks, requirementVersions, input.id, input.taskId, {
+				source: "human",
+			});
+			return {
+				board: state.board,
+				requirements: result.requirements,
+				requirementTaskLinks: result.links,
+				requirementVersions: result.versions,
+				value: formatLinkRecord(result.link),
+			};
+		},
+	);
+
+	return {
+		ok: true,
+		workspacePath: workspaceRepoPath,
+		link,
+	};
+}
+
+async function confirmLinkCommand(input: {
+	cwd: string;
+	id: string;
+	taskId: string;
+	projectPath?: string;
+}): Promise<JsonRecord> {
+	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd, {
+		autoCreateIfMissing: false,
+	});
+	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
+	const runtimeClient = createRuntimeTrpcClient(workspaceId);
+	const link = await updateRuntimeWorkspaceState(
+		runtimeClient,
+		workspaceRepoPath,
+		(state, { requirementTaskLinks, requirementVersions }) => {
+			const result = confirmLink(
+				state.requirements,
+				requirementTaskLinks,
+				requirementVersions,
+				input.id,
+				input.taskId,
+				{
+					source: "human",
+				},
+			);
+			return {
+				board: state.board,
+				requirements: result.requirements,
+				requirementTaskLinks: result.links,
+				requirementVersions: result.versions,
+				value: formatLinkRecord(result.link),
+			};
+		},
+	);
+
+	return {
+		ok: true,
+		workspacePath: workspaceRepoPath,
+		link,
+	};
+}
+
+async function rejectLinkCommand(input: {
+	cwd: string;
+	id: string;
+	taskId: string;
+	projectPath?: string;
+}): Promise<JsonRecord> {
+	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd, {
+		autoCreateIfMissing: false,
+	});
+	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
+	const runtimeClient = createRuntimeTrpcClient(workspaceId);
+	const link = await updateRuntimeWorkspaceState(
+		runtimeClient,
+		workspaceRepoPath,
+		(state, { requirementTaskLinks, requirementVersions }) => {
+			const result = rejectLink(
+				state.requirements,
+				requirementTaskLinks,
+				requirementVersions,
+				input.id,
+				input.taskId,
+				{
+					source: "human",
+				},
+			);
+			return {
+				board: state.board,
+				requirements: result.requirements,
+				requirementTaskLinks: result.links,
+				requirementVersions: result.versions,
+				value: formatLinkRecord(result.link),
+			};
+		},
+	);
+
+	return {
+		ok: true,
+		workspacePath: workspaceRepoPath,
+		link,
+	};
+}
+
 async function runRequirementCommand(handler: () => Promise<JsonRecord>): Promise<void> {
 	try {
 		printJson(await handler());
@@ -643,6 +831,87 @@ export function registerRequirementCommand(program: Command): void {
 					await listRequirementHistory({
 						cwd: process.cwd(),
 						id: options.id,
+						projectPath: options.projectPath,
+					}),
+			);
+		});
+
+	requirement
+		.command("link-task")
+		.description("Link a requirement to a task by id (defaults to a confirmed, human-made link).")
+		.requiredOption("--id <id>", "Requirement ID.")
+		.requiredOption("--task-id <taskId>", "Task ID to link.")
+		.option("--state <state>", "Link state: proposed | confirmed. Defaults to confirmed.", parseLinkState)
+		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
+		.action(
+			async (options: {
+				id: string;
+				taskId: string;
+				state?: RuntimeRequirementTaskLinkStatus;
+				projectPath?: string;
+			}) => {
+				await runRequirementCommand(
+					async () =>
+						await linkTaskCommand({
+							cwd: process.cwd(),
+							id: options.id,
+							taskId: options.taskId,
+							state: options.state ?? "confirmed",
+							projectPath: options.projectPath,
+						}),
+				);
+			},
+		);
+
+	requirement
+		.command("unlink-task")
+		.description("Remove a confirmed link between a requirement and a task.")
+		.requiredOption("--id <id>", "Requirement ID.")
+		.requiredOption("--task-id <taskId>", "Task ID to unlink.")
+		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
+		.action(async (options: { id: string; taskId: string; projectPath?: string }) => {
+			await runRequirementCommand(
+				async () =>
+					await unlinkTaskCommand({
+						cwd: process.cwd(),
+						id: options.id,
+						taskId: options.taskId,
+						projectPath: options.projectPath,
+					}),
+			);
+		});
+
+	requirement
+		.command("confirm-link")
+		.description("Confirm a proposed requirement→task link.")
+		.requiredOption("--id <id>", "Requirement ID.")
+		.requiredOption("--task-id <taskId>", "Task ID whose proposed link to confirm.")
+		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
+		.action(async (options: { id: string; taskId: string; projectPath?: string }) => {
+			await runRequirementCommand(
+				async () =>
+					await confirmLinkCommand({
+						cwd: process.cwd(),
+						id: options.id,
+						taskId: options.taskId,
+						projectPath: options.projectPath,
+					}),
+			);
+		});
+
+	requirement
+		.command("reject-link")
+		.description("Reject a proposed requirement→task link.")
+		.requiredOption("--id <id>", "Requirement ID.")
+		.requiredOption("--task-id <taskId>", "Task ID whose proposed link to reject.")
+		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
+		.action(async (options: { id: string; taskId: string; projectPath?: string }) => {
+			await runRequirementCommand(
+				async () =>
+					await rejectLinkCommand({
+						cwd: process.cwd(),
+						id: options.id,
+						taskId: options.taskId,
 						projectPath: options.projectPath,
 					}),
 			);
