@@ -931,6 +931,7 @@ export default function App(): ReactElement {
 											<RequirementsView
 												workspaceId={currentProjectId}
 												requirements={requirements}
+												revision={workspaceRevision ?? 0}
 												onRequirementsChange={setRequirements}
 											/>
 										) : isGitHistoryOpen ? (

@@ -10,7 +10,11 @@ import type {
 } from "../core/api-contract";
 import { addRequirement, deleteRequirement, updateRequirement } from "../core/requirement-mutations";
 import { analyzeRequirements, applyReviewPlan, reviewPlanSchema } from "../core/requirement-review";
-import { appendRequirementVersion, revertRequirementToVersion } from "../core/requirement-versions";
+import {
+	appendRequirementVersion,
+	formatRequirementVersionLabel,
+	revertRequirementToVersion,
+} from "../core/requirement-versions";
 import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import {
 	createRuntimeTrpcClient,
@@ -93,6 +97,7 @@ function formatVersionRecord(version: RuntimeRequirementVersion): JsonRecord {
 	return {
 		requirementId: version.requirementId,
 		version: version.version,
+		versionLabel: formatRequirementVersionLabel(version.version),
 		changeKind: version.changeKind,
 		source: version.source,
 		reason: version.reason,
@@ -328,7 +333,9 @@ async function revertRequirementCommand(input: {
 				value: {
 					requirement: formatRequirementRecord(result.requirement),
 					revertedToVersion: input.version,
+					revertedToVersionLabel: formatRequirementVersionLabel(input.version),
 					newVersion: latest ? latest.version : null,
+					newVersionLabel: latest ? formatRequirementVersionLabel(latest.version) : null,
 				},
 			};
 		},

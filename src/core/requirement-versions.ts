@@ -33,6 +33,75 @@ export interface RevertRequirementResult {
 	requirement: RuntimeRequirementItem;
 }
 
+/** Render a requirement version number in the user-facing `v1` / `v2` form. */
+export function formatRequirementVersionLabel(version: number): string {
+	return `v${version}`;
+}
+
+export interface DiffRequirementVersionsOptions {
+	source: RuntimeRequirementChangeSource;
+	now?: number;
+}
+
+/**
+ * Fields whose change is meaningful enough to record a new version. These mirror what
+ * {@link revertRequirementToVersion} restores, so versioning and reverting stay in sync.
+ * Non-content fields like `order` and `updatedAt` are intentionally excluded so reordering
+ * never spawns a version.
+ */
+const VERSIONED_FIELDS = ["title", "description", "priority", "status"] as const;
+
+function hasVersionedChange(previous: RuntimeRequirementItem, next: RuntimeRequirementItem): boolean {
+	return VERSIONED_FIELDS.some((field) => previous[field] !== next[field]);
+}
+
+/**
+ * Compare a previous and next requirement snapshot set and append version records for every
+ * create / update / delete, so whole-snapshot saves (e.g. from the web UI) stay versioned the
+ * same way the per-operation CLI commands are. Returns the original `versions` reference
+ * untouched when nothing meaningful changed.
+ */
+export function diffRequirementVersions(
+	previous: RuntimeRequirementsData,
+	next: RuntimeRequirementsData,
+	versions: RuntimeRequirementVersionsData,
+	options: DiffRequirementVersionsOptions,
+): RuntimeRequirementVersionsData {
+	const now = options.now ?? Date.now();
+	const previousById = new Map(previous.items.map((item) => [item.id, item]));
+	const nextById = new Map(next.items.map((item) => [item.id, item]));
+
+	let result = versions;
+	const append = (snapshot: RuntimeRequirementItem, changeKind: RuntimeRequirementChangeKind): void => {
+		result = appendRequirementVersion(result, {
+			requirementId: snapshot.id,
+			snapshot,
+			changeKind,
+			source: options.source,
+			now,
+		}).data;
+	};
+
+	// Creates and updates, in next's order so numbering is deterministic.
+	for (const item of next.items) {
+		const prior = previousById.get(item.id);
+		if (!prior) {
+			append(item, "create");
+		} else if (hasVersionedChange(prior, item)) {
+			append(item, "update");
+		}
+	}
+
+	// Deletes, in previous's order.
+	for (const item of previous.items) {
+		if (!nextById.has(item.id)) {
+			append(item, "delete");
+		}
+	}
+
+	return result;
+}
+
 export function nextRequirementVersionNumber(data: RuntimeRequirementVersionsData, requirementId: string): number {
 	let max = 0;
 	for (const version of data.versions) {

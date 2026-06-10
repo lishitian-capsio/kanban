@@ -7,7 +7,9 @@ import type {
 } from "../../src/core/api-contract";
 import {
 	appendRequirementVersion,
+	diffRequirementVersions,
 	findRequirementVersion,
+	formatRequirementVersionLabel,
 	listRequirementVersions,
 	nextRequirementVersionNumber,
 	revertRequirementToVersion,
@@ -31,6 +33,115 @@ function makeItem(overrides: Partial<RuntimeRequirementItem> = {}): RuntimeRequi
 		...overrides,
 	};
 }
+
+describe("formatRequirementVersionLabel", () => {
+	it("renders a version number in v1/v2 form", () => {
+		expect(formatRequirementVersionLabel(1)).toBe("v1");
+		expect(formatRequirementVersionLabel(2)).toBe("v2");
+		expect(formatRequirementVersionLabel(42)).toBe("v42");
+	});
+});
+
+describe("diffRequirementVersions", () => {
+	it("appends a create version for a requirement that only exists in next", () => {
+		const next: RuntimeRequirementsData = { items: [makeItem({ id: "aaaaa" })] };
+		const result = diffRequirementVersions({ items: [] }, next, emptyVersions(), { source: "human", now: 5000 });
+		const history = listRequirementVersions(result, "aaaaa");
+		expect(history).toHaveLength(1);
+		expect(history[0]).toMatchObject({ version: 1, changeKind: "create", source: "human", createdAt: 5000 });
+		expect(history[0]?.snapshot.title).toBe("Phone login");
+	});
+
+	it("appends an update version when a versioned field changes", () => {
+		const previous: RuntimeRequirementsData = { items: [makeItem({ id: "aaaaa", title: "Old" })] };
+		const seed = appendRequirementVersion(emptyVersions(), {
+			requirementId: "aaaaa",
+			snapshot: makeItem({ id: "aaaaa", title: "Old" }),
+			changeKind: "create",
+			source: "human",
+			now: 1000,
+		}).data;
+		const next: RuntimeRequirementsData = { items: [makeItem({ id: "aaaaa", title: "New" })] };
+		const result = diffRequirementVersions(previous, next, seed, { source: "human", now: 6000 });
+		const history = listRequirementVersions(result, "aaaaa");
+		expect(history.map((v) => v.version)).toEqual([1, 2]);
+		expect(history[1]).toMatchObject({ version: 2, changeKind: "update", source: "human" });
+		expect(history[1]?.snapshot.title).toBe("New");
+	});
+
+	it("does not append a version when no versioned field changes", () => {
+		const item = makeItem({ id: "aaaaa", order: 0 });
+		const seed = appendRequirementVersion(emptyVersions(), {
+			requirementId: "aaaaa",
+			snapshot: item,
+			changeKind: "create",
+			source: "human",
+			now: 1000,
+		}).data;
+		// Only `order` and `updatedAt` change — those are not versioned fields.
+		const next: RuntimeRequirementsData = { items: [makeItem({ id: "aaaaa", order: 3, updatedAt: 9999 })] };
+		const result = diffRequirementVersions({ items: [item] }, next, seed, { source: "human", now: 6000 });
+		expect(listRequirementVersions(result, "aaaaa").map((v) => v.version)).toEqual([1]);
+	});
+
+	it("appends a delete version for a requirement removed in next", () => {
+		const item = makeItem({ id: "aaaaa" });
+		const seed = appendRequirementVersion(emptyVersions(), {
+			requirementId: "aaaaa",
+			snapshot: item,
+			changeKind: "create",
+			source: "human",
+			now: 1000,
+		}).data;
+		const result = diffRequirementVersions({ items: [item] }, { items: [] }, seed, { source: "human", now: 7000 });
+		const history = listRequirementVersions(result, "aaaaa");
+		expect(history.map((v) => v.version)).toEqual([1, 2]);
+		expect(history[1]).toMatchObject({ version: 2, changeKind: "delete", source: "human" });
+		expect(history[1]?.snapshot.title).toBe("Phone login");
+	});
+
+	it("handles create, update, and delete in a single diff with per-requirement numbering", () => {
+		const kept = makeItem({ id: "aaaaa", title: "Kept" });
+		const removed = makeItem({ id: "bbbbb", title: "Removed" });
+		let seed = appendRequirementVersion(emptyVersions(), {
+			requirementId: "aaaaa",
+			snapshot: kept,
+			changeKind: "create",
+			source: "human",
+			now: 1000,
+		}).data;
+		seed = appendRequirementVersion(seed, {
+			requirementId: "bbbbb",
+			snapshot: removed,
+			changeKind: "create",
+			source: "human",
+			now: 1000,
+		}).data;
+		const previous: RuntimeRequirementsData = { items: [kept, removed] };
+		const next: RuntimeRequirementsData = {
+			items: [makeItem({ id: "aaaaa", title: "Kept edited" }), makeItem({ id: "ccccc", title: "Added" })],
+		};
+		const result = diffRequirementVersions(previous, next, seed, { source: "human", now: 8000 });
+		expect(listRequirementVersions(result, "aaaaa").map((v) => v.changeKind)).toEqual(["create", "update"]);
+		expect(listRequirementVersions(result, "bbbbb").map((v) => v.changeKind)).toEqual(["create", "delete"]);
+		expect(listRequirementVersions(result, "ccccc").map((v) => ({ version: v.version, kind: v.changeKind }))).toEqual([
+			{ version: 1, kind: "create" },
+		]);
+	});
+
+	it("returns the same versions reference when nothing changed", () => {
+		const item = makeItem({ id: "aaaaa" });
+		const seed = appendRequirementVersion(emptyVersions(), {
+			requirementId: "aaaaa",
+			snapshot: item,
+			changeKind: "create",
+			source: "human",
+			now: 1000,
+		}).data;
+		const result = diffRequirementVersions({ items: [item] }, { items: [item] }, seed, { source: "human", now: 9000 });
+		expect(result).toBe(seed);
+	});
+});
 
 describe("nextRequirementVersionNumber", () => {
 	it("starts at 1 and increments per requirement id", () => {

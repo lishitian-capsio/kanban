@@ -23,6 +23,7 @@ import {
 	runtimeWorkspaceStateSaveRequestSchema,
 } from "../core/api-contract";
 import { createGitProcessEnv } from "../core/git-process-env";
+import { diffRequirementVersions } from "../core/requirement-versions";
 import { updateTaskDependencies } from "../core/task-board-mutations";
 import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
 
@@ -741,10 +742,18 @@ export async function saveWorkspaceState(
 		const sessions = parsedPayload.sessions;
 		// Preserve existing requirements when a (possibly legacy) payload omits them,
 		// so a board-only save never wipes the workspace's requirement items.
-		const requirements = parsedPayload.requirements ?? (await readWorkspaceRequirements(context.workspaceId));
+		const previousRequirements = await readWorkspaceRequirements(context.workspaceId);
+		const requirements = parsedPayload.requirements ?? previousRequirements;
 		// Likewise preserve requirement<->task links when a payload omits them.
 		const requirementTaskLinks =
 			parsedPayload.requirementTaskLinks ?? (await readWorkspaceRequirementTaskLinks(context.workspaceId));
+		// Whole-snapshot saves (the web UI path) don't carry per-operation intent, so diff the
+		// previous and next requirement sets to record create/update/delete versions — keeping the
+		// version history complete regardless of whether edits came from the CLI or the UI.
+		const previousVersions = await readWorkspaceRequirementVersions(context.workspaceId);
+		const nextVersions = diffRequirementVersions(previousRequirements, requirements, previousVersions, {
+			source: "human",
+		});
 		const nextRevision = currentMeta.revision + 1;
 		const nextMeta: WorkspaceStateMeta = {
 			revision: nextRevision,
@@ -765,6 +774,13 @@ export async function saveWorkspaceState(
 			requirementTaskLinks,
 			{ lock: null },
 		);
+		if (nextVersions !== previousVersions) {
+			await lockedFileSystem.writeJsonFileAtomic(
+				getWorkspaceRequirementVersionsPath(context.workspaceId),
+				nextVersions,
+				{ lock: null },
+			);
+		}
 		await lockedFileSystem.writeJsonFileAtomic(metaPath, nextMeta, {
 			lock: null,
 		});

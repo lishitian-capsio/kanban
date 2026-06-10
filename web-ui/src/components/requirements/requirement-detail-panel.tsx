@@ -23,18 +23,29 @@ import {
 	RequirementSelect,
 	STATUS_LABELS,
 } from "./requirement-meta";
+import { RequirementVersionHistory } from "./requirement-version-history";
+import { useRequirementVersions } from "./use-requirement-versions";
 
 interface RequirementDetailPanelProps {
 	requirement: RuntimeRequirementItem;
+	workspaceId: string | null;
+	revision: number;
 	onPatch: (id: string, patch: RequirementPatch) => void;
 	onDelete: (id: string) => void;
 }
 
 export function RequirementDetailPanel({
 	requirement,
+	workspaceId,
+	revision,
 	onPatch,
 	onDelete,
 }: RequirementDetailPanelProps): React.ReactElement {
+	const { versions, isLoading: isVersionsLoading, errorMessage: versionsError } = useRequirementVersions({
+		workspaceId,
+		requirementId: requirement.id,
+		revision,
+	});
 	const [title, setTitle] = useState(requirement.title);
 	const [description, setDescription] = useState(requirement.description);
 	const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -109,15 +120,19 @@ export function RequirementDetailPanel({
 				</div>
 			</div>
 
-			<div className="flex flex-1 flex-col gap-1.5 px-5 py-4">
+			<div className="flex flex-col gap-1.5 px-5 py-4">
 				<span className="text-[12px] font-medium text-text-secondary">Description</span>
 				<textarea
 					value={description}
 					onChange={(event) => setDescription(event.target.value)}
 					onBlur={commitDescription}
 					placeholder="No description yet. Add acceptance criteria, context, links…"
-					className="min-h-[12rem] flex-1 resize-none rounded-md border border-border-bright bg-surface-2 px-3 py-2 text-[13px] leading-relaxed text-text-primary outline-none placeholder:text-text-tertiary focus:border-border-focus"
+					className="min-h-[12rem] resize-none rounded-md border border-border-bright bg-surface-2 px-3 py-2 text-[13px] leading-relaxed text-text-primary outline-none placeholder:text-text-tertiary focus:border-border-focus"
 				/>
+			</div>
+
+			<div className="border-t border-border">
+				<RequirementVersionHistory versions={versions} isLoading={isVersionsLoading} errorMessage={versionsError} />
 			</div>
 
 			<AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>

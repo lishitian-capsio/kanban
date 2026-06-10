@@ -426,6 +426,79 @@ describe.sequential("workspace-state integration", () => {
 		});
 	});
 
+	it("versions requirement create/update/delete made through saveWorkspaceState", async () => {
+		await withTemporaryHome(async () => {
+			const { path: sandboxRoot, cleanup } = createTempDir("kanban-save-versions-");
+			try {
+				const workspacePath = join(sandboxRoot, "project-save-versions");
+				mkdirSync(workspacePath, { recursive: true });
+				initGitRepository(workspacePath);
+
+				const makeReq = (overrides: Partial<RuntimeRequirementItem>): RuntimeRequirementItem => ({
+					id: "req-1",
+					title: "Phone login",
+					description: "",
+					priority: "medium",
+					status: "draft",
+					linkedTaskIds: [],
+					order: 0,
+					createdAt: 1000,
+					updatedAt: 1000,
+					...overrides,
+				});
+
+				const initial = await loadWorkspaceState(workspacePath);
+
+				// Create through the web-UI save path → v1.
+				const created = await saveWorkspaceState(workspacePath, {
+					board: createBoard("Task One"),
+					sessions: {},
+					requirements: { items: [makeReq({})] },
+					expectedRevision: initial.revision,
+				});
+				let versions = await loadWorkspaceRequirementVersions(workspacePath);
+				expect(versions.versions.map((v) => ({ version: v.version, kind: v.changeKind, source: v.source }))).toEqual([
+					{ version: 1, kind: "create", source: "human" },
+				]);
+
+				// Edit a versioned field → v2.
+				const edited = await saveWorkspaceState(workspacePath, {
+					board: createBoard("Task One"),
+					sessions: {},
+					requirements: { items: [makeReq({ title: "Phone + email login", status: "active" })] },
+					expectedRevision: created.revision,
+				});
+				versions = await loadWorkspaceRequirementVersions(workspacePath);
+				expect(versions.versions.map((v) => v.version)).toEqual([1, 2]);
+				expect(versions.versions[1]).toMatchObject({ version: 2, changeKind: "update", source: "human" });
+				expect(versions.versions[1]?.snapshot.title).toBe("Phone + email login");
+
+				// Reordering only (no versioned field) must NOT create a version.
+				const reordered = await saveWorkspaceState(workspacePath, {
+					board: createBoard("Task One"),
+					sessions: {},
+					requirements: { items: [makeReq({ title: "Phone + email login", status: "active", order: 5 })] },
+					expectedRevision: edited.revision,
+				});
+				versions = await loadWorkspaceRequirementVersions(workspacePath);
+				expect(versions.versions.map((v) => v.version)).toEqual([1, 2]);
+
+				// Delete (item removed from the snapshot) → v3.
+				await saveWorkspaceState(workspacePath, {
+					board: createBoard("Task One"),
+					sessions: {},
+					requirements: { items: [] },
+					expectedRevision: reordered.revision,
+				});
+				versions = await loadWorkspaceRequirementVersions(workspacePath);
+				expect(versions.versions.map((v) => v.version)).toEqual([1, 2, 3]);
+				expect(versions.versions[2]).toMatchObject({ version: 3, changeKind: "delete", source: "human" });
+			} finally {
+				cleanup();
+			}
+		});
+	});
+
 	it("lists and removes workspace index entries across multiple projects", async () => {
 		await withTemporaryHome(async () => {
 			const { path: sandboxRoot, cleanup } = createTempDir("kanban-workspaces-");

@@ -32,6 +32,8 @@ import {
 interface RequirementsViewProps {
 	workspaceId: string | null;
 	requirements: RuntimeRequirementsData;
+	/** Persisted workspace revision; bumps after each save so version history can refetch. */
+	revision: number;
 	onRequirementsChange: (next: RuntimeRequirementsData) => void;
 }
 
@@ -44,6 +46,7 @@ const PRIORITY_FILTER_LABELS: Record<PriorityFilter, string> = { all: "All prior
 export function RequirementsView({
 	workspaceId,
 	requirements,
+	revision,
 	onRequirementsChange,
 }: RequirementsViewProps): React.ReactElement {
 	const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -138,7 +141,13 @@ export function RequirementsView({
 					/>
 				</div>
 				{selected ? (
-					<RequirementDetailPanel requirement={selected} onPatch={handlePatch} onDelete={handleDelete} />
+					<RequirementDetailPanel
+						requirement={selected}
+						workspaceId={workspaceId}
+						revision={revision}
+						onPatch={handlePatch}
+						onDelete={handleDelete}
+					/>
 				) : (
 					<div className="flex flex-1 items-center justify-center bg-surface-0 px-4 text-center text-[13px] text-text-tertiary">
 						{requirements.items.length === 0
