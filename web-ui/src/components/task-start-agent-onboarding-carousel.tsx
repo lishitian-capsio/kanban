@@ -83,7 +83,7 @@ export const TASK_START_ONBOARDING_SLIDES: OnboardingSlide[] = [
 	},
 ];
 
-const ONBOARDING_AGENT_IDS: readonly RuntimeAgentId[] = ["cline", "claude", "codex", "droid", "kiro"];
+const ONBOARDING_AGENT_IDS: readonly RuntimeAgentId[] = ["pi", "claude", "codex", "droid", "kiro"];
 const FALLBACK_ONBOARDING_SLIDE: OnboardingSlide = {
 	kind: "agent-selection",
 	title: "",
@@ -362,7 +362,7 @@ export function TaskStartAgentOnboardingCarousel({
 	const agentSettings = useRuntimeSettingsKanbanController({
 		open,
 		workspaceId,
-		selectedAgentId: activeAgentId ?? selectedAgentId ?? "cline",
+		selectedAgentId: activeAgentId ?? selectedAgentId ?? "pi",
 		config: runtimeConfig,
 	});
 	const onboardingAgents = useMemo(
@@ -428,7 +428,7 @@ export function TaskStartAgentOnboardingCarousel({
 				return { ok: false, message };
 			}
 		}
-		if (activeAgentId !== "cline") {
+		if (activeAgentId !== "pi") {
 			return { ok: true };
 		}
 		if (!agentSettings.hasUnsavedChanges) {

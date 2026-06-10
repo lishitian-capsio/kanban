@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { UseTaskAgentModelPickerResult } from "@/components/task-agent-model-picker";
 import type {
-	RuntimeAgentId,
 	RuntimeKanbanProviderCatalogItem,
 	RuntimeKanbanProviderModel,
 	RuntimeTaskAgentSettings,
@@ -392,7 +391,7 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 		await act(async () =>
 			root.render(
 				<TaskAgentModelPicker
-					agentId={"cline" as RuntimeAgentId}
+					agentId={"pi"}
 					onAgentIdChange={() => {}}
 					agentSettings={createTaskAgentSettings({
 						providerId: "groq",
@@ -404,7 +403,7 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 					kanbanModelOptions={modelOptions}
 					isLoadingProviders={false}
 					isLoadingModels={false}
-					defaultAgentId={"cline" as RuntimeAgentId}
+					defaultAgentId={"pi"}
 					defaultProviderId="anthropic"
 				/>,
 			),
@@ -430,7 +429,7 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 		await act(async () =>
 			root.render(
 				<TaskAgentModelPicker
-					agentId={"cline" as RuntimeAgentId}
+					agentId={"pi"}
 					onAgentIdChange={() => {}}
 					agentSettings={createTaskAgentSettings({
 						providerId: "groq",
@@ -442,7 +441,7 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 					kanbanModelOptions={modelOptions}
 					isLoadingProviders={false}
 					isLoadingModels={false}
-					defaultAgentId={"cline" as RuntimeAgentId}
+					defaultAgentId={"pi"}
 					defaultProviderId="anthropic"
 				/>,
 			),
@@ -460,7 +459,7 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 		await act(async () =>
 			root.render(
 				<TaskAgentModelPicker
-					agentId={"cline" as RuntimeAgentId}
+					agentId={"pi"}
 					onAgentIdChange={() => {}}
 					agentSettings={createTaskAgentSettings({
 						providerId: "groq",
@@ -472,7 +471,7 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 					kanbanModelOptions={modelOptions}
 					isLoadingProviders={false}
 					isLoadingModels={true} // <-- still loading
-					defaultAgentId={"cline" as RuntimeAgentId}
+					defaultAgentId={"pi"}
 					defaultProviderId="anthropic"
 				/>,
 			),
@@ -491,7 +490,7 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 		await act(async () =>
 			root.render(
 				<TaskAgentModelPicker
-					agentId={"cline" as RuntimeAgentId}
+					agentId={"pi"}
 					onAgentIdChange={() => {}}
 					agentSettings={createTaskAgentSettings({
 						providerId: "groq",
@@ -503,7 +502,7 @@ describe("TaskAgentModelPicker – auto-reset invalid model selection", () => {
 					kanbanModelOptions={modelOptions}
 					isLoadingProviders={false}
 					isLoadingModels={false} // <-- false (initial state before fetch sets it to true)
-					defaultAgentId={"cline" as RuntimeAgentId}
+					defaultAgentId={"pi"}
 					defaultProviderId="anthropic"
 				/>,
 			),
@@ -521,7 +520,7 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 		await act(async () =>
 			root.render(
 				<TaskAgentModelPicker
-					agentId={"cline" as RuntimeAgentId}
+					agentId={"pi"}
 					onAgentIdChange={() => {}}
 					agentSettings={undefined}
 					onKanbanSettingsChange={() => {}}
@@ -538,7 +537,7 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 					]}
 					isLoadingProviders={false}
 					isLoadingModels={false}
-					defaultAgentId={"cline" as RuntimeAgentId}
+					defaultAgentId={"pi"}
 					defaultProviderId="cline"
 					defaultReasoningEffort="high"
 				/>,
@@ -571,7 +570,7 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 			await act(async () =>
 				root.render(
 					<TaskAgentModelPicker
-						agentId={"cline" as RuntimeAgentId}
+						agentId={"pi"}
 						onAgentIdChange={() => {}}
 						agentSettings={undefined}
 						onKanbanSettingsChange={() => {}}
@@ -585,7 +584,7 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 						providerModels={providerModels}
 						isLoadingProviders={false}
 						isLoadingModels={false}
-						defaultAgentId={"cline" as RuntimeAgentId}
+						defaultAgentId={"pi"}
 						defaultProviderId="cline"
 						defaultReasoningEffort="high"
 					/>,
@@ -618,7 +617,7 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 		await act(async () =>
 			root.render(
 				<TaskAgentModelPicker
-					agentId={"cline" as RuntimeAgentId}
+					agentId={"pi"}
 					onAgentIdChange={() => {}}
 					agentSettings={undefined}
 					onKanbanSettingsChange={onKanbanSettingsChange}
@@ -635,7 +634,7 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 					]}
 					isLoadingProviders={false}
 					isLoadingModels={false}
-					defaultAgentId={"cline" as RuntimeAgentId}
+					defaultAgentId={"pi"}
 					defaultProviderId="cline"
 					defaultReasoningEffort="high"
 				/>,
@@ -676,7 +675,7 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 		await act(async () =>
 			root.render(
 				<TaskAgentModelPicker
-					agentId={"cline" as RuntimeAgentId}
+					agentId={"pi"}
 					onAgentIdChange={() => {}}
 					agentSettings={undefined}
 					onKanbanSettingsChange={onKanbanSettingsChange}
@@ -687,7 +686,7 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 					providerModels={[{ id: "openai/gpt-5.4", name: "GPT-5.4", supportsReasoningEffort: true }]}
 					isLoadingProviders={false}
 					isLoadingModels={false}
-					defaultAgentId={"cline" as RuntimeAgentId}
+					defaultAgentId={"pi"}
 					defaultProviderId="cline"
 					defaultReasoningEffort="high"
 				/>,
@@ -725,7 +724,7 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 		await act(async () =>
 			root.render(
 				<TaskAgentModelPicker
-					agentId={"cline" as RuntimeAgentId}
+					agentId={"pi"}
 					onAgentIdChange={() => {}}
 					agentSettings={createTaskAgentSettings({
 						modelId: "openai/gpt-5.3-codex",
@@ -744,7 +743,7 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 					]}
 					isLoadingProviders={false}
 					isLoadingModels={false}
-					defaultAgentId={"cline" as RuntimeAgentId}
+					defaultAgentId={"pi"}
 					defaultProviderId="cline"
 					defaultReasoningEffort="high"
 				/>,

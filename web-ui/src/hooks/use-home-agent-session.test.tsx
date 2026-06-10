@@ -68,7 +68,7 @@ function createRuntimeConfig(overrides: Partial<RuntimeConfigResponse> = {}): Ru
 		globalConfigPath: "/tmp/global-config.json",
 		projectConfigPath: "/tmp/project-config.json",
 		readyForReviewNotificationsEnabled: true,
-		detectedCommands: ["codex", "claude", "cline"],
+		detectedCommands: ["codex", "claude", "pi"],
 		agents: [
 			{
 				id: "codex",
@@ -203,7 +203,7 @@ function HookHarness({
 		if (!seedSessionSummary || !result.taskId) {
 			return;
 		}
-		upsertSessionSummary(createSummary(result.taskId, config?.selectedAgentId ?? "cline"));
+		upsertSessionSummary(createSummary(result.taskId, config?.selectedAgentId ?? "pi"));
 	}, [config?.selectedAgentId, result.taskId, seedSessionSummary, upsertSessionSummary]);
 
 	useEffect(() => {
@@ -232,7 +232,7 @@ describe("useHomeAgentSession", () => {
 		}));
 		reloadTaskChatSessionMutateMock.mockImplementation(async ({ taskId }: { taskId: string }) => ({
 			ok: true,
-			summary: createSummary(taskId, "cline"),
+			summary: createSummary(taskId, "pi"),
 		}));
 		notifyErrorMock.mockReset();
 		previousActEnvironment = (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
@@ -389,7 +389,7 @@ describe("useHomeAgentSession", () => {
 				<HookHarness
 					config={createRuntimeConfig({
 						selectedAgentId: "pi",
-						effectiveCommand: "cline",
+						effectiveCommand: "pi",
 					})}
 					currentProjectId="workspace-1"
 					onSnapshot={(snapshot) => {
@@ -411,7 +411,7 @@ describe("useHomeAgentSession", () => {
 				<HookHarness
 					config={createRuntimeConfig({
 						selectedAgentId: "pi",
-						effectiveCommand: "cline",
+						effectiveCommand: "pi",
 						kanbanProviderSettings: {
 							providerId: "oca",
 							modelId: "gpt-5",
@@ -449,7 +449,7 @@ describe("useHomeAgentSession", () => {
 				<HookHarness
 					config={createRuntimeConfig({
 						selectedAgentId: "pi",
-						effectiveCommand: "cline",
+						effectiveCommand: "pi",
 					})}
 					kanbanSessionContextVersion={0}
 					currentProjectId="workspace-1"
@@ -471,7 +471,7 @@ describe("useHomeAgentSession", () => {
 				<HookHarness
 					config={createRuntimeConfig({
 						selectedAgentId: "pi",
-						effectiveCommand: "cline",
+						effectiveCommand: "pi",
 					})}
 					kanbanSessionContextVersion={1}
 					currentProjectId="workspace-1"
@@ -503,7 +503,7 @@ describe("useHomeAgentSession", () => {
 				<HookHarness
 					config={createLegacyRuntimeConfig({
 						selectedAgentId: "pi",
-						effectiveCommand: "cline",
+						effectiveCommand: "pi",
 					})}
 					currentProjectId="workspace-1"
 					onSnapshot={(snapshot) => {
@@ -528,7 +528,7 @@ describe("useHomeAgentSession", () => {
 				<HookHarness
 					config={createRuntimeConfig({
 						selectedAgentId: "pi",
-						effectiveCommand: "cline",
+						effectiveCommand: "pi",
 					})}
 					currentProjectId="workspace-1"
 					onSnapshot={(snapshot) => {
@@ -552,7 +552,7 @@ describe("useHomeAgentSession", () => {
 				<HookHarness
 					config={createRuntimeConfig({
 						selectedAgentId: "pi",
-						effectiveCommand: "cline",
+						effectiveCommand: "pi",
 					})}
 					currentProjectId="workspace-1"
 					onSnapshot={(snapshot) => {

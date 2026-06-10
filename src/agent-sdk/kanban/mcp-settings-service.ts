@@ -8,9 +8,9 @@ import { lockedFileSystem } from "../../fs/locked-file-system";
 
 const stringRecordSchema = z.record(z.string(), z.string());
 
-// Matches Cline's flat server config schema.
+// Flat MCP server config schema (the de-facto on-disk format shared by most MCP clients).
 // Servers with `command` are stdio; servers with `url` are sse or streamableHttp.
-// `type` is optional on disk (Cline infers from fields), but we always resolve it on read.
+// `type` is optional on disk (inferred from the present fields), but we always resolve it on read.
 const persistedServerBaseSchema = z.object({
 	type: z.enum(["stdio", "sse", "streamableHttp"]).optional(),
 	transportType: z.enum(["stdio", "sse", "http", "streamableHttp"]).optional(),
@@ -45,7 +45,7 @@ function resolveUrlServerType(raw: z.infer<typeof persistedUrlServerSchema>): "s
 	if (raw.transportType === "sse") {
 		return "sse";
 	}
-	// Default for url-based servers without explicit type (Cline's default for legacy configs)
+	// Default for url-based servers without explicit type (matches legacy configs)
 	return "sse";
 }
 

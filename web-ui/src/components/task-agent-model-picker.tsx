@@ -69,7 +69,7 @@ export function useTaskAgentModelPicker({
 	const effectiveAgentId = agentId ?? defaultAgentId ?? null;
 
 	useEffect(() => {
-		if (!active || effectiveAgentId !== "cline") {
+		if (!active || effectiveAgentId !== "pi") {
 			return;
 		}
 		let cancelled = false;
@@ -100,7 +100,7 @@ export function useTaskAgentModelPicker({
 	const effectiveProviderId = (savedProviderId ?? defaultProviderId ?? "").trim() || null;
 
 	useEffect(() => {
-		if (!active || effectiveAgentId !== "cline" || !effectiveProviderId) {
+		if (!active || effectiveAgentId !== "pi" || !effectiveProviderId) {
 			setProviderModels([]);
 			return;
 		}
@@ -275,10 +275,10 @@ export function TaskAgentModelPicker({
 		[agentSettings, onKanbanSettingsChange],
 	);
 
-	// Show the Kanban provider picker when the effective agent is "cline"
-	// (either explicitly overridden to cline, or defaulting to cline)
+	// Show the Kanban provider picker when the effective agent is the native "pi" agent
+	// (either explicitly overridden to pi, or defaulting to pi)
 	const effectiveAgentId = agentId ?? defaultAgentId ?? null;
-	const showKanbanProviderPicker = effectiveAgentId === "cline";
+	const showKanbanProviderPicker = effectiveAgentId === "pi";
 
 	// Show the Kanban model picker when a provider is effectively selected
 	// (either explicitly overridden, or the global default provider is set)
@@ -474,7 +474,7 @@ export function TaskAgentModelPicker({
 								onChange={(e) => {
 									const value = e.currentTarget.value;
 									onAgentIdChange(value ? (value as RuntimeAgentId) : undefined);
-									if (value !== "cline") {
+									if (value !== "pi") {
 										onKanbanSettingsChange?.(undefined);
 										setReasoningEffort("");
 									}

@@ -93,7 +93,7 @@ describe("FeaturebaseFeedbackButton", () => {
 		act(() => {
 			root.render(
 				<FeaturebaseFeedbackButton
-					selectedAgentId={"cline"}
+					selectedAgentId={"pi"}
 					kanbanProviderSettings={defaultKanbanProviderSettings}
 					featurebaseFeedbackState={fbState}
 				/>,
@@ -107,7 +107,7 @@ describe("FeaturebaseFeedbackButton", () => {
 		act(() => {
 			root.render(
 				<FeaturebaseFeedbackButton
-					selectedAgentId={"cline"}
+					selectedAgentId={"pi"}
 					kanbanProviderSettings={tokensOnlySettings}
 					featurebaseFeedbackState={fbState}
 				/>,
@@ -121,7 +121,7 @@ describe("FeaturebaseFeedbackButton", () => {
 		act(() => {
 			root.render(
 				<FeaturebaseFeedbackButton
-					selectedAgentId={"cline"}
+					selectedAgentId={"pi"}
 					kanbanProviderSettings={authenticatedKanbanSettings}
 					featurebaseFeedbackState={fbState}
 				/>,
@@ -137,7 +137,7 @@ describe("FeaturebaseFeedbackButton", () => {
 		act(() => {
 			root.render(
 				<FeaturebaseFeedbackButton
-					selectedAgentId={"cline"}
+					selectedAgentId={"pi"}
 					kanbanProviderSettings={authenticatedKanbanSettings}
 					featurebaseFeedbackState={fbState}
 				/>,
@@ -154,7 +154,7 @@ describe("FeaturebaseFeedbackButton", () => {
 		act(() => {
 			root.render(
 				<FeaturebaseFeedbackButton
-					selectedAgentId={"cline"}
+					selectedAgentId={"pi"}
 					kanbanProviderSettings={authenticatedKanbanSettings}
 					featurebaseFeedbackState={fbState}
 				/>,
@@ -170,7 +170,7 @@ describe("FeaturebaseFeedbackButton", () => {
 		act(() => {
 			root.render(
 				<FeaturebaseFeedbackButton
-					selectedAgentId={"cline"}
+					selectedAgentId={"pi"}
 					kanbanProviderSettings={authenticatedKanbanSettings}
 					featurebaseFeedbackState={fbState}
 				/>,
@@ -188,7 +188,7 @@ describe("FeaturebaseFeedbackButton", () => {
 		act(() => {
 			root.render(
 				<FeaturebaseFeedbackButton
-					selectedAgentId={"cline"}
+					selectedAgentId={"pi"}
 					kanbanProviderSettings={authenticatedKanbanSettings}
 					featurebaseFeedbackState={fbState}
 					onClick={handleClick}
@@ -206,7 +206,7 @@ describe("FeaturebaseFeedbackButton", () => {
 	it("renders nothing when featurebaseFeedbackState is undefined", () => {
 		act(() => {
 			root.render(
-				<FeaturebaseFeedbackButton selectedAgentId={"cline"} kanbanProviderSettings={authenticatedKanbanSettings} />,
+				<FeaturebaseFeedbackButton selectedAgentId={"pi"} kanbanProviderSettings={authenticatedKanbanSettings} />,
 			);
 		});
 		expect(container.innerHTML).toBe("");

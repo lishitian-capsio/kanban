@@ -95,7 +95,7 @@ export type RuntimeSettingsSection = "shortcuts";
 
 const SETTINGS_AGENT_ORDER: readonly RuntimeAgentId[] = ["pi", "claude", "codex", "droid", "kiro"];
 
-type SettingsNavId = "general" | "cline" | "proxy" | "git-prompts" | "notifications" | "appearance" | "project";
+type SettingsNavId = "general" | "pi" | "proxy" | "git-prompts" | "notifications" | "appearance" | "project";
 
 const SETTINGS_NAV_ITEMS: ReadonlyArray<{
 	id: SettingsNavId;
@@ -104,7 +104,7 @@ const SETTINGS_NAV_ITEMS: ReadonlyArray<{
 	kanbanOnly?: boolean;
 }> = [
 	{ id: "general", label: "General", icon: <SlidersHorizontal size={16} /> },
-	{ id: "cline", label: "Pi", icon: <Bot size={16} />, kanbanOnly: true },
+	{ id: "pi", label: "Pi", icon: <Bot size={16} />, kanbanOnly: true },
 	{ id: "proxy", label: "Network Proxy", icon: <Globe size={16} /> },
 	{ id: "git-prompts", label: "Git Prompts", icon: <GitCommit size={16} /> },
 	{ id: "notifications", label: "Notifications", icon: <Bell size={16} /> },
@@ -633,7 +633,7 @@ export function RuntimeSettingsDialog({
 	});
 
 	useEffect(() => {
-		if (activeSection === "cline" && selectedAgentId !== "pi") {
+		if (activeSection === "pi" && selectedAgentId !== "pi") {
 			setActiveSection("general");
 		}
 	}, [activeSection, selectedAgentId]);
@@ -867,7 +867,7 @@ export function RuntimeSettingsDialog({
 					{/* ---- Kanban ---- */}
 					{selectedAgentId === "pi" ? (
 						<>
-							<div data-settings-section="cline" />
+							<div data-settings-section="pi" />
 							<div className="sticky top-0 -mx-5 px-5 pt-4 pb-2 bg-surface-1 z-10">
 								<h2 className="flex items-center gap-2 text-base font-semibold text-text-primary m-0">
 									<Bot size={16} className="text-text-secondary" />

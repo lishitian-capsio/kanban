@@ -71,7 +71,7 @@ export const runtimeSlashCommandsResponseSchema = z.object({
 });
 export type RuntimeSlashCommandsResponse = z.infer<typeof runtimeSlashCommandsResponseSchema>;
 
-export const runtimeAgentIdSchema = z.enum(["claude", "codex", "gemini", "opencode", "droid", "kiro", "cline", "pi"]);
+export const runtimeAgentIdSchema = z.enum(["claude", "codex", "gemini", "opencode", "droid", "kiro", "pi"]);
 export type RuntimeAgentId = z.infer<typeof runtimeAgentIdSchema>;
 
 const runtimeBoardColumnIdEnum = z.enum(["backlog", "in_progress", "review", "trash"]);
@@ -640,6 +640,9 @@ export const runtimeProjectShortcutSchema = z.object({
 });
 export type RuntimeProjectShortcut = z.infer<typeof runtimeProjectShortcutSchema>;
 
+// Managed OAuth providers for the Kanban-native (pi) agent's model access.
+// "cline" here is the Cline-hosted account/model API (app.cline.bot / api.cline.bot),
+// NOT the removed external Cline CLI agent — keep it.
 export const runtimeKanbanOauthProviderSchema = z.enum(["cline", "oca", "openai-codex"]);
 export type RuntimeKanbanOauthProvider = z.infer<typeof runtimeKanbanOauthProviderSchema>;
 

@@ -71,11 +71,11 @@ function createRuntimeConfigResponse(
 		selectedAgentId: "pi",
 		selectedShortcutLabel: null,
 		agentAutonomousModeEnabled: true,
-		effectiveCommand: "cline",
+		effectiveCommand: "pi",
 		globalConfigPath: "/tmp/global-config.json",
 		projectConfigPath: "/tmp/project/.kanban/kanban/config.json",
 		readyForReviewNotificationsEnabled: true,
-		detectedCommands: ["cline"],
+		detectedCommands: ["pi"],
 		agents: [
 			{
 				id: "pi",

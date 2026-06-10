@@ -27,7 +27,6 @@ export interface RenderAppendSystemPromptOptions {
 const APPEND_PROMPT_AGENT_IDS: readonly RuntimeAgentId[] = [
 	"claude",
 	"codex",
-	"cline",
 	"droid",
 	"kiro",
 	"gemini",
@@ -52,8 +51,6 @@ function resolveHomeAgentId(taskId: string): RuntimeAgentId | null {
 
 function renderLinearSetupGuidanceForAgent(agentId: RuntimeAgentId | null): string {
 	switch (agentId) {
-		case "cline":
-			return "- If Linear MCP is not available in the current agent (Cline), direct the user to open settings and go to the MCP section where they can add the Linear integration.";
 		case "claude":
 			return "- If Linear MCP is not available in the current agent (Claude Code), suggest running: `claude mcp add --transport http --scope user linear https://mcp.linear.app/mcp`";
 		case "codex":

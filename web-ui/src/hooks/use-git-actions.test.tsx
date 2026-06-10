@@ -147,7 +147,7 @@ function HookHarness({
 		currentProjectId: "project-1",
 		board: createBoard(),
 		selectedCard: null,
-		runtimeProjectConfig: createRuntimeConfig("cline"),
+		runtimeProjectConfig: createRuntimeConfig("pi"),
 		sendTaskSessionInput,
 		sendTaskChatMessage,
 		fetchTaskWorkspaceInfo: async () => createWorkspaceInfo(),

@@ -1,6 +1,6 @@
 // Persists Kanban-owned runtime preferences on disk.
 // This module should store Kanban settings such as selected agents,
-// shortcuts, and prompt templates, not SDK-owned Cline secrets or OAuth data.
+// shortcuts, and prompt templates, not SDK-owned provider secrets or OAuth data.
 import { readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";

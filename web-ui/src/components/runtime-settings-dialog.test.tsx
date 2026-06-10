@@ -86,7 +86,7 @@ vi.mock("@runtime-agent-catalog", () => ({
 		autonomousArgs: [],
 	})),
 	getRuntimeLaunchSupportedAgentCatalog: vi.fn(() => [
-		{ id: "cline", label: "Kanban", binary: "cline" },
+		{ id: "pi", label: "Pi", binary: "pi" },
 		{ id: "claude", label: "Claude Code", binary: "claude" },
 	]),
 }));
@@ -171,7 +171,7 @@ const savedKanbanOauthConfig = {
 	selectedShortcutLabel: null,
 	agentAutonomousModeEnabled: true,
 	readyForReviewNotificationsEnabled: false,
-	effectiveCommand: "cline",
+	effectiveCommand: "pi",
 	detectedCommands: [],
 	shortcuts: [],
 	commitPromptTemplate: "",
