@@ -6,6 +6,7 @@ import { createInitialBoardData } from "@/data/board-data";
 import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
 import type {
 	RuntimeGitRepositoryInfo,
+	RuntimeRequirementTaskLinksData,
 	RuntimeRequirementsData,
 	RuntimeTaskSessionSummary,
 	RuntimeWorkspaceStateResponse,
@@ -23,6 +24,7 @@ interface UseWorkspaceSyncInput {
 	setBoard: Dispatch<SetStateAction<BoardData>>;
 	setSessions: Dispatch<SetStateAction<Record<string, RuntimeTaskSessionSummary>>>;
 	setRequirements: Dispatch<SetStateAction<RuntimeRequirementsData>>;
+	setRequirementTaskLinks: Dispatch<SetStateAction<RuntimeRequirementTaskLinksData>>;
 	setCanPersistWorkspaceState: Dispatch<SetStateAction<boolean>>;
 }
 
@@ -61,6 +63,7 @@ export function useWorkspaceSync({
 	setBoard,
 	setSessions,
 	setRequirements,
+	setRequirementTaskLinks,
 	setCanPersistWorkspaceState,
 }: UseWorkspaceSyncInput): UseWorkspaceSyncResult {
 	const [workspacePath, setWorkspacePath] = useState<string | null>(null);
@@ -97,6 +100,7 @@ export function useWorkspaceSync({
 				setBoard(createInitialBoardData());
 				setSessions({});
 				setRequirements({ items: [] });
+				setRequirementTaskLinks({ links: [] });
 				setWorkspaceRevision(null);
 				workspaceVersionRef.current = {
 					projectId: currentProjectId,
@@ -121,6 +125,7 @@ export function useWorkspaceSync({
 				const normalized = normalizeBoardData(nextWorkspaceState.board) ?? createInitialBoardData();
 				setBoard(normalized);
 				setRequirements(nextWorkspaceState.requirements ?? { items: [] });
+				setRequirementTaskLinks(nextWorkspaceState.requirementTaskLinks ?? { links: [] });
 				setWorkspaceHydrationNonce((current) => current + 1);
 			}
 			setWorkspaceRevision(nextWorkspaceState.revision);
@@ -131,7 +136,7 @@ export function useWorkspaceSync({
 			setAppliedWorkspaceProjectId(currentProjectId);
 			setCanPersistWorkspaceState(true);
 		},
-		[currentProjectId, setBoard, setCanPersistWorkspaceState, setSessions, setRequirements],
+		[currentProjectId, setBoard, setCanPersistWorkspaceState, setSessions, setRequirements, setRequirementTaskLinks],
 	);
 
 	const refreshWorkspaceState = useCallback(async () => {

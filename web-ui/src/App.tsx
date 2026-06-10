@@ -64,7 +64,7 @@ import {
 	selectLatestTaskChatMessageForTask,
 	selectTaskChatMessagesForTask,
 } from "@/runtime/native-agent";
-import type { RuntimeReasoningEffort, RuntimeRequirementsData, RuntimeTaskSessionSummary } from "@/runtime/types";
+import type { RuntimeReasoningEffort, RuntimeRequirementTaskLinksData, RuntimeRequirementsData, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useRuntimeProjectConfig } from "@/runtime/use-runtime-project-config";
 import { useTerminalConnectionReady } from "@/runtime/use-terminal-connection-ready";
 import { useWorkspacePersistence } from "@/runtime/use-workspace-persistence";
@@ -84,6 +84,7 @@ export default function App(): ReactElement {
 	const [board, setBoard] = useState<BoardData>(() => createInitialBoardData());
 	const [sessions, setSessions] = useState<Record<string, RuntimeTaskSessionSummary>>({});
 	const [requirements, setRequirements] = useState<RuntimeRequirementsData>({ items: [] });
+	const [requirementTaskLinks, setRequirementTaskLinks] = useState<RuntimeRequirementTaskLinksData>({ links: [] });
 	const [canPersistWorkspaceState, setCanPersistWorkspaceState] = useState(false);
 	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 	const [settingsInitialSection, setSettingsInitialSection] = useState<RuntimeSettingsSection | null>(null);
@@ -224,6 +225,7 @@ export default function App(): ReactElement {
 		setBoard,
 		setSessions,
 		setRequirements,
+		setRequirementTaskLinks,
 		setCanPersistWorkspaceState,
 	});
 	const { selectedTaskId, selectedCard, setSelectedTaskId, handleBack } = useDetailTaskNavigation({
@@ -471,6 +473,7 @@ export default function App(): ReactElement {
 		board,
 		sessions,
 		requirements,
+		requirementTaskLinks,
 		currentProjectId,
 		workspaceRevision,
 		hydrationNonce: workspaceHydrationNonce,
@@ -932,7 +935,10 @@ export default function App(): ReactElement {
 												workspaceId={currentProjectId}
 												requirements={requirements}
 												revision={workspaceRevision ?? 0}
+												requirementTaskLinks={requirementTaskLinks}
+												board={board}
 												onRequirementsChange={setRequirements}
+												onRequirementTaskLinksChange={setRequirementTaskLinks}
 											/>
 										) : isGitHistoryOpen ? (
 											<GitHistoryView
