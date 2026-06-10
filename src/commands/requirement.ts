@@ -9,6 +9,7 @@ import type {
 	RuntimeRequirementVersion,
 } from "../core/api-contract";
 import { addRequirement, deleteRequirement, updateRequirement } from "../core/requirement-mutations";
+import { analyzeReconcile, applyReconcilePlan, reconcilePlanSchema } from "../core/requirement-reconcile";
 import { analyzeRequirements, applyReviewPlan, reviewPlanSchema } from "../core/requirement-review";
 import {
 	appendRequirementVersion,
@@ -388,7 +389,9 @@ async function applyRequirementReviewCommand(input: {
 	}
 	const parsed = reviewPlanSchema.safeParse(parsedJson);
 	if (!parsed.success) {
-		const issues = parsed.error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ");
+		const issues = parsed.error.issues
+			.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+			.join("; ");
 		throw new Error(`Invalid review plan: ${issues}`);
 	}
 	const plan = parsed.data;
@@ -422,6 +425,75 @@ async function applyRequirementReviewCommand(input: {
 	};
 }
 
+async function reconcileRequirements(input: { cwd: string; projectPath?: string }): Promise<JsonRecord> {
+	const workspace = await resolveRuntimeWorkspace(input.projectPath, input.cwd, {
+		autoCreateIfMissing: false,
+	});
+	const runtimeClient = createRuntimeTrpcClient(workspace.workspaceId);
+	const state = await runtimeClient.workspace.getState.query();
+	const packet = analyzeReconcile(state.board, state.requirements, state.requirementTaskLinks);
+	return {
+		ok: true,
+		workspacePath: workspace.repoPath,
+		orphanTasks: packet.orphanTasks,
+		requirementCatalog: packet.requirementCatalog,
+		pendingProposed: packet.pendingProposed,
+		orphanCount: packet.orphanTasks.length,
+		requirementCount: packet.requirementCatalog.length,
+	};
+}
+
+async function applyRequirementReconcileCommand(input: {
+	cwd: string;
+	planPath?: string;
+	projectPath?: string;
+}): Promise<JsonRecord> {
+	const raw = await readReviewPlanInput(input.planPath);
+	let parsedJson: unknown;
+	try {
+		parsedJson = JSON.parse(raw);
+	} catch (error) {
+		throw new Error(`Reconcile plan is not valid JSON: ${toErrorMessage(error)}`);
+	}
+	const parsed = reconcilePlanSchema.safeParse(parsedJson);
+	if (!parsed.success) {
+		const issues = parsed.error.issues
+			.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+			.join("; ");
+		throw new Error(`Invalid reconcile plan: ${issues}`);
+	}
+	const plan = parsed.data;
+
+	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd, {
+		autoCreateIfMissing: false,
+	});
+	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
+	const runtimeClient = createRuntimeTrpcClient(workspaceId);
+	const report = await updateRuntimeWorkspaceState(
+		runtimeClient,
+		workspaceRepoPath,
+		(state, { requirementTaskLinks, requirementVersions }) => {
+			const result = applyReconcilePlan(state.requirements, requirementTaskLinks, requirementVersions, plan, {
+				randomUuid: () => globalThis.crypto.randomUUID(),
+			});
+			return {
+				board: state.board,
+				requirements: result.requirements,
+				requirementTaskLinks: result.links,
+				requirementVersions: result.versions,
+				value: result.report,
+			};
+		},
+	);
+
+	return {
+		ok: true,
+		workspacePath: workspaceRepoPath,
+		entries: report.entries,
+		summary: report.summary,
+	};
+}
+
 async function runRequirementCommand(handler: () => Promise<JsonRecord>): Promise<void> {
 	try {
 		printJson(await handler());
@@ -448,7 +520,11 @@ export function registerRequirementCommand(program: Command): void {
 		.option("--status <status>", "Filter by status: draft | active | done | archived.", parseStatus)
 		.option("--priority <priority>", "Filter by priority: low | medium | high | urgent.", parsePriority)
 		.action(
-			async (options: { projectPath?: string; status?: RuntimeRequirementStatus; priority?: RuntimeRequirementPriority }) => {
+			async (options: {
+				projectPath?: string;
+				status?: RuntimeRequirementStatus;
+				priority?: RuntimeRequirementPriority;
+			}) => {
 				await runRequirementCommand(
 					async () =>
 						await listRequirements({
@@ -576,7 +652,11 @@ export function registerRequirementCommand(program: Command): void {
 		.command("review")
 		.description("Analyze requirement items and emit a review packet for an agent to reason over.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.option("--stale-days <number>", "Days an active requirement may be idle before it is flagged stale.", parseStaleDays)
+		.option(
+			"--stale-days <number>",
+			"Days an active requirement may be idle before it is flagged stale.",
+			parseStaleDays,
+		)
 		.action(async (options: { projectPath?: string; staleDays?: number }) => {
 			await runRequirementCommand(
 				async () =>
@@ -598,6 +678,39 @@ export function registerRequirementCommand(program: Command): void {
 			await runRequirementCommand(
 				async () =>
 					await applyRequirementReviewCommand({
+						cwd: process.cwd(),
+						planPath: options.plan,
+						projectPath: options.projectPath,
+					}),
+			);
+		});
+
+	const reconcile = requirement
+		.command("reconcile")
+		.description("Analyze tasks with no requirement link and emit a reconcile packet for an agent to reason over.")
+		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
+		.action(async (options: { projectPath?: string }) => {
+			await runRequirementCommand(
+				async () =>
+					await reconcileRequirements({
+						cwd: process.cwd(),
+						projectPath: options.projectPath,
+					}),
+			);
+		});
+
+	reconcile
+		.command("apply")
+		.description(
+			"Apply an agent reconcile plan; links land as proposed and new requirements as draft (source=agent).",
+		)
+		.option("--plan <file>", "Path to a JSON reconcile plan. Reads from stdin when omitted.")
+		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
+		.action(async function (this: Command) {
+			const options = this.optsWithGlobals() as { plan?: string; projectPath?: string };
+			await runRequirementCommand(
+				async () =>
+					await applyRequirementReconcileCommand({
 						cwd: process.cwd(),
 						planPath: options.plan,
 						projectPath: options.projectPath,
