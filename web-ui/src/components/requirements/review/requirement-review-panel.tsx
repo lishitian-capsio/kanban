@@ -90,7 +90,7 @@ export function RequirementReviewPanel({
 			) : null}
 
 			{proposals.inbox.length > 0 ? (
-				<Section icon={<Inbox size={14} />} title="待确认 Inbox" count={proposals.inbox.length}>
+				<Section icon={<Inbox size={14} />} title="Inbox" count={proposals.inbox.length}>
 					{proposals.inbox.map((proposal) => (
 						<LinkProposalRow
 							key={`inbox:${proposal.link.requirementId}:${proposal.link.taskId}`}
