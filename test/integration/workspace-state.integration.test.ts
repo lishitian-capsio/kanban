@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { RuntimeBoardData, RuntimeRequirementItem, RuntimeTaskSessionSummary } from "../../src/core/api-contract";
+import { confirmLink, proposeLink } from "../../src/core/requirement-task-link-mutations";
 import { appendRequirementVersion } from "../../src/core/requirement-versions";
 import type { WorkspaceStateConflictError } from "../../src/state/workspace-state";
 import {
@@ -12,6 +13,7 @@ import {
 	listWorkspaceIndexEntries,
 	loadWorkspaceContext,
 	loadWorkspaceContextById,
+	loadWorkspaceRequirementTaskLinks,
 	loadWorkspaceRequirementVersions,
 	loadWorkspaceState,
 	mutateWorkspaceState,
@@ -295,6 +297,129 @@ describe.sequential("workspace-state integration", () => {
 				});
 				const afterSave = await loadWorkspaceRequirementVersions(workspacePath);
 				expect(afterSave.versions).toHaveLength(1);
+			} finally {
+				cleanup();
+			}
+		});
+	});
+
+	it("round-trips requirement task links and defaults to empty for old workspaces", async () => {
+		await withTemporaryHome(async () => {
+			const { path: sandboxRoot, cleanup } = createTempDir("kanban-req-links-");
+			try {
+				const workspacePath = join(sandboxRoot, "project-links");
+				mkdirSync(workspacePath, { recursive: true });
+				initGitRepository(workspacePath);
+
+				// Old workspace: no requirement-task-links.json yet → empty list.
+				const initial = await loadWorkspaceState(workspacePath);
+				expect(initial.requirementTaskLinks).toEqual({ links: [] });
+				expect(await loadWorkspaceRequirementTaskLinks(workspacePath)).toEqual({ links: [] });
+
+				const requirement: RuntimeRequirementItem = {
+					id: "req-1",
+					title: "Phone login",
+					description: "",
+					priority: "high",
+					status: "active",
+					linkedTaskIds: [],
+					order: 0,
+					createdAt: 1000,
+					updatedAt: 1000,
+				};
+
+				// An agent proposes a link, then a human confirms it — all through the atomic pipeline.
+				await mutateWorkspaceState(workspacePath, (state, { requirementTaskLinks, requirementVersions }) => {
+					const proposed = proposeLink(
+						{ items: [requirement] },
+						requirementTaskLinks,
+						requirementVersions,
+						"req-1",
+						"task-1",
+						{ source: "agent", now: 2000 },
+					);
+					return {
+						board: state.board,
+						requirements: proposed.requirements,
+						requirementTaskLinks: proposed.links,
+						requirementVersions: proposed.versions,
+						value: null,
+					};
+				});
+
+				const afterPropose = await loadWorkspaceState(workspacePath);
+				expect(afterPropose.requirementTaskLinks.links).toEqual([
+					{ requirementId: "req-1", taskId: "task-1", status: "proposed", source: "agent", createdAt: 2000 },
+				]);
+				// Proposed links are not yet confirmed associations.
+				expect(afterPropose.requirements.items[0]?.linkedTaskIds).toEqual([]);
+
+				await mutateWorkspaceState(workspacePath, (state, { requirementTaskLinks, requirementVersions }) => {
+					const confirmed = confirmLink(
+						state.requirements,
+						requirementTaskLinks,
+						requirementVersions,
+						"req-1",
+						"task-1",
+						{ source: "human", now: 3000 },
+					);
+					return {
+						board: state.board,
+						requirements: confirmed.requirements,
+						requirementTaskLinks: confirmed.links,
+						requirementVersions: confirmed.versions,
+						value: null,
+					};
+				});
+
+				const afterConfirm = await loadWorkspaceState(workspacePath);
+				expect(afterConfirm.requirementTaskLinks.links[0]?.status).toBe("confirmed");
+				// Confirmed associations are mirrored into the requirement's linkedTaskIds.
+				expect(afterConfirm.requirements.items[0]?.linkedTaskIds).toEqual(["task-1"]);
+
+				const versions = await loadWorkspaceRequirementVersions(workspacePath);
+				expect(versions.versions.map((v) => v.source)).toEqual(["agent", "human"]);
+			} finally {
+				cleanup();
+			}
+		});
+	});
+
+	it("preserves existing requirement task links when a save payload omits them", async () => {
+		await withTemporaryHome(async () => {
+			const { path: sandboxRoot, cleanup } = createTempDir("kanban-req-links-preserve-");
+			try {
+				const workspacePath = join(sandboxRoot, "project-links-preserve");
+				mkdirSync(workspacePath, { recursive: true });
+				initGitRepository(workspacePath);
+
+				const initial = await loadWorkspaceState(workspacePath);
+				const withLinks = await saveWorkspaceState(workspacePath, {
+					board: createBoard("Task One"),
+					sessions: {},
+					requirementTaskLinks: {
+						links: [
+							{
+								requirementId: "req-1",
+								taskId: "task-1",
+								status: "proposed",
+								source: "agent",
+								createdAt: 2000,
+							},
+						],
+					},
+					expectedRevision: initial.revision,
+				});
+				expect(withLinks.requirementTaskLinks.links).toHaveLength(1);
+
+				// A legacy board-only save (no requirementTaskLinks field) must NOT wipe the links.
+				const boardOnlySave = await saveWorkspaceState(workspacePath, {
+					board: createBoard("Task Two"),
+					sessions: {},
+					expectedRevision: withLinks.revision,
+				});
+				expect(boardOnlySave.requirementTaskLinks.links).toHaveLength(1);
+				expect(boardOnlySave.requirementTaskLinks.links[0]?.taskId).toBe("task-1");
 			} finally {
 				cleanup();
 			}

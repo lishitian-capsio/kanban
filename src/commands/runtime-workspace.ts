@@ -3,6 +3,7 @@ import { createTRPCProxyClient, httpBatchLink } from "@trpc/client";
 import type {
 	RuntimeBoardData,
 	RuntimeRequirementsData,
+	RuntimeRequirementTaskLinksData,
 	RuntimeRequirementVersionsData,
 	RuntimeTaskSessionSummary,
 	RuntimeWorkspaceStateResponse,
@@ -86,6 +87,7 @@ export interface RuntimeWorkspaceMutationResult<T> {
 	board: RuntimeBoardData;
 	sessions?: Record<string, RuntimeTaskSessionSummary>;
 	requirements?: RuntimeRequirementsData;
+	requirementTaskLinks?: RuntimeRequirementTaskLinksData;
 	requirementVersions?: RuntimeRequirementVersionsData;
 	value: T;
 }
@@ -104,6 +106,9 @@ export async function updateRuntimeWorkspaceState<T>(
 			board: mutation.board,
 			...(mutation.sessions !== undefined ? { sessions: mutation.sessions } : {}),
 			...(mutation.requirements !== undefined ? { requirements: mutation.requirements } : {}),
+			...(mutation.requirementTaskLinks !== undefined
+				? { requirementTaskLinks: mutation.requirementTaskLinks }
+				: {}),
 			...(mutation.requirementVersions !== undefined ? { requirementVersions: mutation.requirementVersions } : {}),
 			value: mutation.value,
 		};

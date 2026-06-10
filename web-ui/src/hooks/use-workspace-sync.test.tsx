@@ -56,6 +56,7 @@ function createWorkspaceState(taskId: string, revision: number): RuntimeWorkspac
 		board: createBoard(taskId),
 		sessions: {},
 		requirements: { items: [] },
+		requirementTaskLinks: { links: [] },
 		revision,
 	};
 }

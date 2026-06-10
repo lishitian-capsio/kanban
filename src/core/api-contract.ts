@@ -104,7 +104,6 @@ export const runtimeTaskImageSchema = z.object({
 });
 export type RuntimeTaskImage = z.infer<typeof runtimeTaskImageSchema>;
 
-
 export const runtimeBoardCardSchema = z
 	.object({
 		id: z.string(),
@@ -206,6 +205,28 @@ export const runtimeRequirementVersionsResponseSchema = z.object({
 	versions: z.array(runtimeRequirementVersionSchema),
 });
 export type RuntimeRequirementVersionsResponse = z.infer<typeof runtimeRequirementVersionsResponseSchema>;
+
+export const runtimeRequirementTaskLinkStatusSchema = z.enum(["proposed", "confirmed"]);
+export type RuntimeRequirementTaskLinkStatus = z.infer<typeof runtimeRequirementTaskLinkStatusSchema>;
+
+// A one-way requirement -> task association. Lives entirely on the requirement side:
+// the task board/card schema is never touched and only its id is referenced here.
+// `confirmed` links are mirrored into the requirement's linkedTaskIds (the source of
+// truth for confirmed associations); `proposed` links are agent suggestions awaiting
+// human confirmation and exist only in this store.
+export const runtimeRequirementTaskLinkSchema = z.object({
+	requirementId: z.string(),
+	taskId: z.string(),
+	status: runtimeRequirementTaskLinkStatusSchema,
+	source: runtimeRequirementChangeSourceSchema,
+	createdAt: z.number(),
+});
+export type RuntimeRequirementTaskLink = z.infer<typeof runtimeRequirementTaskLinkSchema>;
+
+export const runtimeRequirementTaskLinksDataSchema = z.object({
+	links: z.array(runtimeRequirementTaskLinkSchema).default([]),
+});
+export type RuntimeRequirementTaskLinksData = z.infer<typeof runtimeRequirementTaskLinksDataSchema>;
 
 export const runtimeGitRepositoryInfoSchema = z.object({
 	currentBranch: z.string().nullable(),
@@ -323,6 +344,7 @@ export const runtimeWorkspaceStateResponseSchema = z.object({
 	board: runtimeBoardDataSchema,
 	sessions: z.record(z.string(), runtimeTaskSessionSummarySchema),
 	requirements: runtimeRequirementsDataSchema.default({ items: [] }),
+	requirementTaskLinks: runtimeRequirementTaskLinksDataSchema.default({ links: [] }),
 	revision: z.number(),
 });
 export type RuntimeWorkspaceStateResponse = z.infer<typeof runtimeWorkspaceStateResponseSchema>;
@@ -331,6 +353,7 @@ export const runtimeWorkspaceStateSaveRequestSchema = z.object({
 	board: runtimeBoardDataSchema,
 	sessions: z.record(z.string(), runtimeTaskSessionSummarySchema),
 	requirements: runtimeRequirementsDataSchema.optional(),
+	requirementTaskLinks: runtimeRequirementTaskLinksDataSchema.optional(),
 	expectedRevision: z.number().int().nonnegative().optional(),
 });
 export type RuntimeWorkspaceStateSaveRequest = z.infer<typeof runtimeWorkspaceStateSaveRequestSchema>;

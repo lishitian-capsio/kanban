@@ -1,0 +1,197 @@
+import { describe, expect, it } from "vitest";
+
+import type {
+	RuntimeRequirementItem,
+	RuntimeRequirementsData,
+	RuntimeRequirementTaskLinksData,
+	RuntimeRequirementVersionsData,
+} from "../../src/core/api-contract";
+import { confirmLink, proposeLink, rejectLink, unlink } from "../../src/core/requirement-task-link-mutations";
+import { listRequirementVersions } from "../../src/core/requirement-versions";
+
+function makeItem(overrides: Partial<RuntimeRequirementItem> = {}): RuntimeRequirementItem {
+	return {
+		id: "req-1",
+		title: "Phone login",
+		description: "",
+		priority: "medium",
+		status: "draft",
+		linkedTaskIds: [],
+		order: 0,
+		createdAt: 1000,
+		updatedAt: 1000,
+		...overrides,
+	};
+}
+
+function seed(item: RuntimeRequirementItem = makeItem()): {
+	requirements: RuntimeRequirementsData;
+	links: RuntimeRequirementTaskLinksData;
+	versions: RuntimeRequirementVersionsData;
+} {
+	return {
+		requirements: { items: [item] },
+		links: { links: [] },
+		versions: { versions: [] },
+	};
+}
+
+describe("proposeLink", () => {
+	it("adds a proposed link without touching linkedTaskIds and records a version", () => {
+		const { requirements, links, versions } = seed();
+
+		const result = proposeLink(requirements, links, versions, "req-1", "task-1", { source: "agent", now: 2000 });
+
+		expect(result.link).toEqual({
+			requirementId: "req-1",
+			taskId: "task-1",
+			status: "proposed",
+			source: "agent",
+			createdAt: 2000,
+		});
+		expect(result.links.links).toHaveLength(1);
+		// Proposed links are NOT confirmed associations, so linkedTaskIds stays empty.
+		expect(result.requirements.items[0]?.linkedTaskIds).toEqual([]);
+
+		const history = listRequirementVersions(result.versions, "req-1");
+		expect(history).toHaveLength(1);
+		expect(history[0]).toMatchObject({ changeKind: "update", source: "agent", version: 1 });
+		expect(history[0]?.reason).toMatch(/propose/i);
+	});
+
+	it("throws when the requirement does not exist", () => {
+		const { requirements, links, versions } = seed();
+		expect(() => proposeLink(requirements, links, versions, "missing", "task-1", { source: "agent" })).toThrow(
+			/not found/i,
+		);
+	});
+
+	it("throws when a link for the pair already exists", () => {
+		const { requirements, links, versions } = seed();
+		const first = proposeLink(requirements, links, versions, "req-1", "task-1", { source: "agent", now: 2000 });
+		expect(() =>
+			proposeLink(first.requirements, first.links, first.versions, "req-1", "task-1", { source: "human" }),
+		).toThrow(/already/i);
+	});
+});
+
+describe("confirmLink", () => {
+	it("flips a proposed link to confirmed and mirrors it into linkedTaskIds", () => {
+		const { requirements, links, versions } = seed();
+		const proposed = proposeLink(requirements, links, versions, "req-1", "task-1", { source: "agent", now: 2000 });
+
+		const result = confirmLink(proposed.requirements, proposed.links, proposed.versions, "req-1", "task-1", {
+			source: "human",
+			now: 3000,
+		});
+
+		expect(result.link).toMatchObject({ status: "confirmed", source: "agent", createdAt: 2000 });
+		expect(result.requirements.items[0]?.linkedTaskIds).toEqual(["task-1"]);
+		expect(result.requirements.items[0]?.updatedAt).toBe(3000);
+
+		const history = listRequirementVersions(result.versions, "req-1");
+		expect(history.map((v) => v.version)).toEqual([1, 2]);
+		expect(history[1]).toMatchObject({ changeKind: "update", source: "human" });
+		expect(history[1]?.snapshot.linkedTaskIds).toEqual(["task-1"]);
+	});
+
+	it("creates a confirmed link directly when no proposal exists (human linking)", () => {
+		const { requirements, links, versions } = seed();
+
+		const result = confirmLink(requirements, links, versions, "req-1", "task-1", { source: "human", now: 3000 });
+
+		expect(result.link).toMatchObject({ status: "confirmed", source: "human", createdAt: 3000 });
+		expect(result.requirements.items[0]?.linkedTaskIds).toEqual(["task-1"]);
+	});
+
+	it("throws when the link is already confirmed", () => {
+		const { requirements, links, versions } = seed();
+		const confirmed = confirmLink(requirements, links, versions, "req-1", "task-1", { source: "human", now: 3000 });
+		expect(() =>
+			confirmLink(confirmed.requirements, confirmed.links, confirmed.versions, "req-1", "task-1", {
+				source: "human",
+			}),
+		).toThrow(/confirmed/i);
+	});
+
+	it("throws when the requirement does not exist", () => {
+		const { requirements, links, versions } = seed();
+		expect(() => confirmLink(requirements, links, versions, "missing", "task-1", { source: "human" })).toThrow(
+			/not found/i,
+		);
+	});
+});
+
+describe("rejectLink", () => {
+	it("removes a proposed link and leaves linkedTaskIds untouched", () => {
+		const { requirements, links, versions } = seed();
+		const proposed = proposeLink(requirements, links, versions, "req-1", "task-1", { source: "agent", now: 2000 });
+
+		const result = rejectLink(proposed.requirements, proposed.links, proposed.versions, "req-1", "task-1", {
+			source: "human",
+			now: 4000,
+		});
+
+		expect(result.link).toMatchObject({ status: "proposed", taskId: "task-1" });
+		expect(result.links.links).toHaveLength(0);
+		expect(result.requirements.items[0]?.linkedTaskIds).toEqual([]);
+
+		// One version from the prior propose, one from this reject.
+		const history = listRequirementVersions(result.versions, "req-1");
+		expect(history.map((v) => v.version)).toEqual([1, 2]);
+		expect(history[1]).toMatchObject({ changeKind: "update", source: "human" });
+		expect(history[1]?.reason).toMatch(/reject/i);
+	});
+
+	it("throws when rejecting a confirmed link", () => {
+		const { requirements, links, versions } = seed();
+		const confirmed = confirmLink(requirements, links, versions, "req-1", "task-1", { source: "human", now: 3000 });
+		expect(() =>
+			rejectLink(confirmed.requirements, confirmed.links, confirmed.versions, "req-1", "task-1", {
+				source: "human",
+			}),
+		).toThrow(/unlink/i);
+	});
+
+	it("throws when no link exists for the pair", () => {
+		const { requirements, links, versions } = seed();
+		expect(() => rejectLink(requirements, links, versions, "req-1", "task-1", { source: "human" })).toThrow(
+			/not found/i,
+		);
+	});
+});
+
+describe("unlink", () => {
+	it("removes a confirmed link and strips it from linkedTaskIds", () => {
+		const { requirements, links, versions } = seed();
+		const confirmed = confirmLink(requirements, links, versions, "req-1", "task-1", { source: "human", now: 3000 });
+
+		const result = unlink(confirmed.requirements, confirmed.links, confirmed.versions, "req-1", "task-1", {
+			source: "human",
+			now: 5000,
+		});
+
+		expect(result.link).toMatchObject({ status: "confirmed", taskId: "task-1" });
+		expect(result.links.links).toHaveLength(0);
+		expect(result.requirements.items[0]?.linkedTaskIds).toEqual([]);
+		expect(result.requirements.items[0]?.updatedAt).toBe(5000);
+
+		const history = listRequirementVersions(result.versions, "req-1");
+		expect(history.map((v) => v.version)).toEqual([1, 2]);
+		expect(history[1]?.reason).toMatch(/unlink/i);
+		expect(history[1]?.snapshot.linkedTaskIds).toEqual([]);
+	});
+
+	it("throws when unlinking a still-proposed link", () => {
+		const { requirements, links, versions } = seed();
+		const proposed = proposeLink(requirements, links, versions, "req-1", "task-1", { source: "agent", now: 2000 });
+		expect(() =>
+			unlink(proposed.requirements, proposed.links, proposed.versions, "req-1", "task-1", { source: "human" }),
+		).toThrow(/reject/i);
+	});
+
+	it("throws when no link exists for the pair", () => {
+		const { requirements, links, versions } = seed();
+		expect(() => unlink(requirements, links, versions, "req-1", "task-1", { source: "human" })).toThrow(/not found/i);
+	});
+});
