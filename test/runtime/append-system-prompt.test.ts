@@ -65,6 +65,17 @@ describe("renderAppendSystemPrompt", () => {
 		expect(rendered).toContain("Provide exactly one of");
 		expect(rendered).toContain("task delete --column done");
 		expect(rendered).toContain("kanban task link");
+		expect(rendered).toContain("kanban requirement create");
+		expect(rendered).toContain("kanban requirement list");
+		expect(rendered).toContain("kanban requirement link-task");
+		expect(rendered).toContain("kanban requirement unlink-task");
+		expect(rendered).toContain("kanban requirement history");
+		expect(rendered).toContain("kanban requirement revert");
+		expect(rendered).toContain("Tasks and requirements are two independent lists");
+		expect(rendered).not.toContain("requirement review");
+		expect(rendered).not.toContain("requirement reconcile");
+		expect(rendered).not.toContain("requirement confirm-link");
+		expect(rendered).not.toContain("requirement reject-link");
 		expect(rendered).toContain("If a task command fails because the runtime is unavailable");
 		expect(rendered).toContain("If the user asks for GitHub work");
 		expect(rendered).toContain("gh issue view");
