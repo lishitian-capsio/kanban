@@ -44,6 +44,31 @@ export function mergeNoProxyEntries(existing: string | null | undefined, additio
 	return result.join(",");
 }
 
+/**
+ * Decides whether a request to `host` should bypass the outbound proxy,
+ * following NO_PROXY conventions. Loopback hosts always bypass. A `*` entry
+ * bypasses everything. Otherwise an entry matches when the host equals it or
+ * is a subdomain of it (boundary-aware, leading dot tolerated), all
+ * case-insensitively. `host` may carry IPv6 brackets (as URL.hostname does).
+ */
+export function shouldBypassProxy(host: string, noProxyList: string | null | undefined): boolean {
+	const normalizedHost = host
+		.trim()
+		.replace(/^\[|\]$/g, "")
+		.toLowerCase();
+	if (!normalizedHost) return true;
+	if ((LOOPBACK_NO_PROXY_HOSTS as readonly string[]).includes(normalizedHost)) return true;
+	for (const rawEntry of (noProxyList ?? "").split(",")) {
+		const entry = rawEntry.trim().toLowerCase();
+		if (!entry) continue;
+		if (entry === "*") return true;
+		const suffix = entry.replace(/^\./, "").replace(/^\[|\]$/g, "");
+		if (!suffix) continue;
+		if (normalizedHost === suffix || normalizedHost.endsWith(`.${suffix}`)) return true;
+	}
+	return false;
+}
+
 export function buildProxyEnvVars(
 	enabled: boolean,
 	host: string,

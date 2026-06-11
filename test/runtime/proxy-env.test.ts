@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { applyProxyToProcessEnv, buildProxyEnvVars, mergeNoProxyEntries } from "../../src/config/proxy-env";
+import {
+	applyProxyToProcessEnv,
+	buildProxyEnvVars,
+	mergeNoProxyEntries,
+	shouldBypassProxy,
+} from "../../src/config/proxy-env";
 
 describe("mergeNoProxyEntries", () => {
 	it("appends new hosts after existing entries", () => {
@@ -32,6 +37,44 @@ describe("mergeNoProxyEntries", () => {
 		expect(mergeNoProxyEntries(undefined, ["localhost", "192.168.50.203"])).toBe("localhost,192.168.50.203");
 		expect(mergeNoProxyEntries(null, ["localhost"])).toBe("localhost");
 		expect(mergeNoProxyEntries("", ["localhost"])).toBe("localhost");
+	});
+});
+
+describe("shouldBypassProxy", () => {
+	it("always bypasses loopback hosts regardless of the list", () => {
+		expect(shouldBypassProxy("localhost", "")).toBe(true);
+		expect(shouldBypassProxy("127.0.0.1", "")).toBe(true);
+		expect(shouldBypassProxy("::1", "")).toBe(true);
+		expect(shouldBypassProxy("[::1]", "")).toBe(true);
+	});
+
+	it("does not bypass a non-loopback host when the list is empty", () => {
+		expect(shouldBypassProxy("api.openai.com", "")).toBe(false);
+	});
+
+	it("bypasses an exact host match (case-insensitive)", () => {
+		expect(shouldBypassProxy("example.com", "example.com,foo.com")).toBe(true);
+		expect(shouldBypassProxy("Example.COM", "example.com")).toBe(true);
+	});
+
+	it("bypasses subdomains of a bare domain entry", () => {
+		expect(shouldBypassProxy("api.example.com", "example.com")).toBe(true);
+	});
+
+	it("bypasses subdomains of a leading-dot entry", () => {
+		expect(shouldBypassProxy("api.example.com", ".example.com")).toBe(true);
+	});
+
+	it("does not match on a non-boundary suffix", () => {
+		expect(shouldBypassProxy("notexample.com", "example.com")).toBe(false);
+	});
+
+	it("bypasses everything when the list contains a wildcard", () => {
+		expect(shouldBypassProxy("anything.example.org", "*")).toBe(true);
+	});
+
+	it("matches against the bound runtime host", () => {
+		expect(shouldBypassProxy("192.168.50.203", "localhost,127.0.0.1,192.168.50.203")).toBe(true);
 	});
 });
 

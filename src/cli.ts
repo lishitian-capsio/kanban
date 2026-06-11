@@ -9,6 +9,7 @@ import packageJson from "../package.json" with { type: "json" };
 import { registerHooksCommand } from "./commands/hooks";
 import { registerRequirementCommand } from "./commands/requirement";
 import { registerTaskCommand } from "./commands/task";
+import { installProxyFetch } from "./config/proxy-fetch";
 import { loadGlobalRuntimeConfig, loadRuntimeConfig } from "./config/runtime-config";
 import type { RuntimeCommandRunResponse } from "./core/api-contract";
 import { createGitProcessEnv } from "./core/git-process-env";
@@ -376,6 +377,12 @@ async function startServer(): Promise<{
 	close: () => Promise<void>;
 	shutdown: (options?: { skipSessionCleanup?: boolean }) => Promise<void>;
 }> {
+	// Install the live-proxy fetch interceptor before any provider SDK module is
+	// loaded, so every in-process outbound request reads the current proxy holder
+	// at call time (see config/proxy-fetch.ts). The holder is seeded from config
+	// during workspace-registry init and updated on every settings save.
+	installProxyFetch();
+	console.log("[proxy-fetch] installed global fetch proxy interceptor");
 	/*
 		Server-only modules are loaded lazily because task-oriented subcommands like
 		`kanban task create` and `kanban hooks ingest` do not need the runtime server.

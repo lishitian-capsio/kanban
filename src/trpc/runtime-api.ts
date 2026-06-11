@@ -14,6 +14,7 @@ import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-s
 import { createProviderService } from "../agent-sdk/kanban/provider-service";
 import { isKanbanClearSlashCommand } from "../agent-sdk/shared/slash-commands";
 import { applyProxyToProcessEnv } from "../config/proxy-env";
+import { setRuntimeProxyStateFromConfig } from "../config/proxy-fetch";
 import type { RuntimeConfigState } from "../config/runtime-config";
 import { updateGlobalRuntimeConfig, updateRuntimeConfig } from "../config/runtime-config";
 import type {
@@ -153,6 +154,15 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				deps.setActiveRuntimeConfig(nextRuntimeConfig);
 			}
 			applyProxyToProcessEnv(
+				nextRuntimeConfig.proxyEnabled,
+				nextRuntimeConfig.proxyHost,
+				nextRuntimeConfig.proxyPort,
+				nextRuntimeConfig.proxyUsername,
+				nextRuntimeConfig.proxyPassword,
+				nextRuntimeConfig.noProxy,
+				getKanbanRuntimeNoProxyHosts(),
+			);
+			setRuntimeProxyStateFromConfig(
 				nextRuntimeConfig.proxyEnabled,
 				nextRuntimeConfig.proxyHost,
 				nextRuntimeConfig.proxyPort,

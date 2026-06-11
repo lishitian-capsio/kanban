@@ -1,4 +1,5 @@
 import { applyProxyToProcessEnv } from "../config/proxy-env";
+import { setRuntimeProxyStateFromConfig } from "../config/proxy-fetch";
 import { type RuntimeConfigState, toGlobalRuntimeConfigState } from "../config/runtime-config";
 import type {
 	RuntimeBoardColumnId,
@@ -201,6 +202,15 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 		? await deps.loadRuntimeConfig(activeWorkspacePath)
 		: globalRuntimeConfig;
 	applyProxyToProcessEnv(
+		activeRuntimeConfig.proxyEnabled,
+		activeRuntimeConfig.proxyHost,
+		activeRuntimeConfig.proxyPort,
+		activeRuntimeConfig.proxyUsername,
+		activeRuntimeConfig.proxyPassword,
+		activeRuntimeConfig.noProxy,
+		getKanbanRuntimeNoProxyHosts(),
+	);
+	setRuntimeProxyStateFromConfig(
 		activeRuntimeConfig.proxyEnabled,
 		activeRuntimeConfig.proxyHost,
 		activeRuntimeConfig.proxyPort,
