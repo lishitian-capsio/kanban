@@ -18,7 +18,7 @@ export interface RequirementTaskLinkMutationResult {
 	requirements: RuntimeRequirementsData;
 	links: RuntimeRequirementTaskLinksData;
 	versions: RuntimeRequirementVersionsData;
-	/** The link affected by the mutation (added, updated, or removed). */
+	/** The link affected by the mutation (added or removed). */
 	link: RuntimeRequirementTaskLink;
 }
 
@@ -59,7 +59,7 @@ function recordVersion(
 	}).data;
 }
 
-export function proposeLink(
+export function linkTask(
 	requirements: RuntimeRequirementsData,
 	links: RuntimeRequirementTaskLinksData,
 	versions: RuntimeRequirementVersionsData,
@@ -75,41 +75,9 @@ export function proposeLink(
 	const link: RuntimeRequirementTaskLink = {
 		requirementId,
 		taskId,
-		status: "proposed",
 		source: options.source,
 		createdAt: now,
 	};
-	return {
-		requirements,
-		links: { ...links, links: [...links.links, link] },
-		versions: recordVersion(versions, requirement, options, now, `Proposed link to task ${taskId}`),
-		link,
-	};
-}
-
-export function confirmLink(
-	requirements: RuntimeRequirementsData,
-	links: RuntimeRequirementTaskLinksData,
-	versions: RuntimeRequirementVersionsData,
-	requirementId: string,
-	taskId: string,
-	options: RequirementTaskLinkChangeOptions,
-): RequirementTaskLinkMutationResult {
-	const now = options.now ?? Date.now();
-	const requirement = findRequirement(requirements, requirementId);
-	const existing = findLink(links, requirementId, taskId);
-	if (existing?.status === "confirmed") {
-		throw new Error(`The link between requirement "${requirementId}" and task "${taskId}" is already confirmed.`);
-	}
-
-	// Preserve the originating source (e.g. an agent proposal) while flipping to confirmed.
-	const link: RuntimeRequirementTaskLink = existing
-		? { ...existing, status: "confirmed" }
-		: { requirementId, taskId, status: "confirmed", source: options.source, createdAt: now };
-	const nextLinks: RuntimeRequirementTaskLink[] = existing
-		? links.links.map((entry) => (entry === existing ? link : entry))
-		: [...links.links, link];
-
 	const linkedTaskIds = requirement.linkedTaskIds.includes(taskId)
 		? requirement.linkedTaskIds
 		: [...requirement.linkedTaskIds, taskId];
@@ -117,34 +85,9 @@ export function confirmLink(
 
 	return {
 		requirements: replaceRequirement(requirements, nextRequirement),
-		links: { ...links, links: nextLinks },
-		versions: recordVersion(versions, nextRequirement, options, now, `Confirmed link to task ${taskId}`),
+		links: { ...links, links: [...links.links, link] },
+		versions: recordVersion(versions, nextRequirement, options, now, `Linked task ${taskId}`),
 		link,
-	};
-}
-
-export function rejectLink(
-	requirements: RuntimeRequirementsData,
-	links: RuntimeRequirementTaskLinksData,
-	versions: RuntimeRequirementVersionsData,
-	requirementId: string,
-	taskId: string,
-	options: RequirementTaskLinkChangeOptions,
-): RequirementTaskLinkMutationResult {
-	const now = options.now ?? Date.now();
-	const requirement = findRequirement(requirements, requirementId);
-	const existing = findLink(links, requirementId, taskId);
-	if (!existing) {
-		throw new Error(`A link between requirement "${requirementId}" and task "${taskId}" was not found.`);
-	}
-	if (existing.status === "confirmed") {
-		throw new Error(`Cannot reject a confirmed link between "${requirementId}" and "${taskId}"; use unlink instead.`);
-	}
-	return {
-		requirements,
-		links: { ...links, links: links.links.filter((entry) => entry !== existing) },
-		versions: recordVersion(versions, requirement, options, now, `Rejected proposed link to task ${taskId}`),
-		link: existing,
 	};
 }
 
@@ -161,9 +104,6 @@ export function unlink(
 	const existing = findLink(links, requirementId, taskId);
 	if (!existing) {
 		throw new Error(`A link between requirement "${requirementId}" and task "${taskId}" was not found.`);
-	}
-	if (existing.status === "proposed") {
-		throw new Error(`Cannot unlink a proposed link between "${requirementId}" and "${taskId}"; use reject instead.`);
 	}
 	const nextRequirement: RuntimeRequirementItem = {
 		...requirement,

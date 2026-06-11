@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-
 import type { Command } from "commander";
 
 import type {
@@ -7,14 +5,11 @@ import type {
 	RuntimeRequirementPriority,
 	RuntimeRequirementStatus,
 	RuntimeRequirementTaskLink,
-	RuntimeRequirementTaskLinkStatus,
 	RuntimeRequirementTaskLinksData,
 	RuntimeRequirementVersion,
 } from "../core/api-contract";
 import { addRequirement, deleteRequirement, updateRequirement } from "../core/requirement-mutations";
-import { analyzeReconcile, applyReconcilePlan, reconcilePlanSchema } from "../core/requirement-reconcile";
-import { analyzeRequirements, applyReviewPlan, reviewPlanSchema } from "../core/requirement-review";
-import { confirmLink, proposeLink, rejectLink, unlink } from "../core/requirement-task-link-mutations";
+import { linkTask, unlink } from "../core/requirement-task-link-mutations";
 import {
 	appendRequirementVersion,
 	formatRequirementVersionLabel,
@@ -34,7 +29,6 @@ import {
 
 const REQUIREMENT_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 const REQUIREMENT_STATUSES = ["draft", "active", "done", "archived"] as const;
-const REQUIREMENT_LINK_STATES = ["proposed", "confirmed"] as const;
 
 function parsePriority(value: string | undefined): RuntimeRequirementPriority | undefined {
 	if (value === undefined) {
@@ -56,13 +50,6 @@ function parseStatus(value: string | undefined): RuntimeRequirementStatus | unde
 	throw new Error(`Invalid status "${value}". Expected one of: ${REQUIREMENT_STATUSES.join(", ")}.`);
 }
 
-function parseLinkState(value: string): RuntimeRequirementTaskLinkStatus {
-	if ((REQUIREMENT_LINK_STATES as readonly string[]).includes(value)) {
-		return value as RuntimeRequirementTaskLinkStatus;
-	}
-	throw new Error(`Invalid state "${value}". Expected one of: ${REQUIREMENT_LINK_STATES.join(", ")}.`);
-}
-
 function parseVersionNumber(value: string): number {
 	const trimmed = value.trim();
 	const parsed = Number.parseInt(trimmed, 10);
@@ -70,26 +57,6 @@ function parseVersionNumber(value: string): number {
 		throw new Error(`Invalid version "${value}". Expected a positive integer.`);
 	}
 	return parsed;
-}
-
-function parseStaleDays(value: string): number {
-	const trimmed = value.trim();
-	const parsed = Number.parseInt(trimmed, 10);
-	if (!Number.isInteger(parsed) || parsed <= 0 || String(parsed) !== trimmed) {
-		throw new Error(`Invalid stale-days "${value}". Expected a positive integer.`);
-	}
-	return parsed;
-}
-
-async function readReviewPlanInput(planPath: string | undefined): Promise<string> {
-	if (planPath !== undefined) {
-		return await readFile(planPath, "utf8");
-	}
-	const chunks: Buffer[] = [];
-	for await (const chunk of process.stdin) {
-		chunks.push(Buffer.from(chunk));
-	}
-	return Buffer.concat(chunks).toString("utf8");
 }
 
 function formatRequirementRecord(item: RuntimeRequirementItem): JsonRecord {
@@ -123,7 +90,6 @@ function formatLinkRecord(link: RuntimeRequirementTaskLink): JsonRecord {
 	return {
 		requirementId: link.requirementId,
 		taskId: link.taskId,
-		status: link.status,
 		source: link.source,
 		createdAt: link.createdAt,
 	};
@@ -381,156 +347,10 @@ async function revertRequirementCommand(input: {
 	};
 }
 
-async function reviewRequirements(input: {
-	cwd: string;
-	projectPath?: string;
-	staleDays?: number;
-}): Promise<JsonRecord> {
-	const workspace = await resolveRuntimeWorkspace(input.projectPath, input.cwd, {
-		autoCreateIfMissing: false,
-	});
-	const runtimeClient = createRuntimeTrpcClient(workspace.workspaceId);
-	const state = await runtimeClient.workspace.getState.query();
-	const packet = analyzeRequirements(state.requirements, { staleDays: input.staleDays });
-	const requirements = [...state.requirements.items]
-		.sort((left, right) => left.order - right.order)
-		.map(formatRequirementRecord);
-	return {
-		ok: true,
-		workspacePath: workspace.repoPath,
-		staleDays: packet.staleDays,
-		requirements,
-		signals: packet.signals,
-		skippedGates: packet.skippedGates,
-		gateGuide: packet.gateGuide,
-		count: requirements.length,
-	};
-}
-
-async function applyRequirementReviewCommand(input: {
-	cwd: string;
-	planPath?: string;
-	projectPath?: string;
-}): Promise<JsonRecord> {
-	const raw = await readReviewPlanInput(input.planPath);
-	let parsedJson: unknown;
-	try {
-		parsedJson = JSON.parse(raw);
-	} catch (error) {
-		throw new Error(`Review plan is not valid JSON: ${toErrorMessage(error)}`);
-	}
-	const parsed = reviewPlanSchema.safeParse(parsedJson);
-	if (!parsed.success) {
-		const issues = parsed.error.issues
-			.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
-			.join("; ");
-		throw new Error(`Invalid review plan: ${issues}`);
-	}
-	const plan = parsed.data;
-
-	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd, {
-		autoCreateIfMissing: false,
-	});
-	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
-	const runtimeClient = createRuntimeTrpcClient(workspaceId);
-	const report = await updateRuntimeWorkspaceState(
-		runtimeClient,
-		workspaceRepoPath,
-		(state, { requirementVersions }) => {
-			const result = applyReviewPlan(state.requirements, requirementVersions, plan, {
-				randomUuid: () => globalThis.crypto.randomUUID(),
-			});
-			return {
-				board: state.board,
-				requirements: result.data,
-				requirementVersions: result.versions,
-				value: result.report,
-			};
-		},
-	);
-
-	return {
-		ok: true,
-		workspacePath: workspaceRepoPath,
-		actions: report.actions,
-		summary: report.summary,
-	};
-}
-
-async function reconcileRequirements(input: { cwd: string; projectPath?: string }): Promise<JsonRecord> {
-	const workspace = await resolveRuntimeWorkspace(input.projectPath, input.cwd, {
-		autoCreateIfMissing: false,
-	});
-	const runtimeClient = createRuntimeTrpcClient(workspace.workspaceId);
-	const state = await runtimeClient.workspace.getState.query();
-	const packet = analyzeReconcile(state.board, state.requirements, state.requirementTaskLinks);
-	return {
-		ok: true,
-		workspacePath: workspace.repoPath,
-		orphanTasks: packet.orphanTasks,
-		requirementCatalog: packet.requirementCatalog,
-		pendingProposed: packet.pendingProposed,
-		orphanCount: packet.orphanTasks.length,
-		requirementCount: packet.requirementCatalog.length,
-	};
-}
-
-async function applyRequirementReconcileCommand(input: {
-	cwd: string;
-	planPath?: string;
-	projectPath?: string;
-}): Promise<JsonRecord> {
-	const raw = await readReviewPlanInput(input.planPath);
-	let parsedJson: unknown;
-	try {
-		parsedJson = JSON.parse(raw);
-	} catch (error) {
-		throw new Error(`Reconcile plan is not valid JSON: ${toErrorMessage(error)}`);
-	}
-	const parsed = reconcilePlanSchema.safeParse(parsedJson);
-	if (!parsed.success) {
-		const issues = parsed.error.issues
-			.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
-			.join("; ");
-		throw new Error(`Invalid reconcile plan: ${issues}`);
-	}
-	const plan = parsed.data;
-
-	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd, {
-		autoCreateIfMissing: false,
-	});
-	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
-	const runtimeClient = createRuntimeTrpcClient(workspaceId);
-	const report = await updateRuntimeWorkspaceState(
-		runtimeClient,
-		workspaceRepoPath,
-		(state, { requirementTaskLinks, requirementVersions }) => {
-			const result = applyReconcilePlan(state.requirements, requirementTaskLinks, requirementVersions, plan, {
-				randomUuid: () => globalThis.crypto.randomUUID(),
-			});
-			return {
-				board: state.board,
-				requirements: result.requirements,
-				requirementTaskLinks: result.links,
-				requirementVersions: result.versions,
-				value: result.report,
-			};
-		},
-	);
-
-	return {
-		ok: true,
-		workspacePath: workspaceRepoPath,
-		entries: report.entries,
-		summary: report.summary,
-	};
-}
-
 async function linkTaskCommand(input: {
 	cwd: string;
 	id: string;
 	taskId: string;
-	state: RuntimeRequirementTaskLinkStatus;
 	projectPath?: string;
 }): Promise<JsonRecord> {
 	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd, {
@@ -542,10 +362,14 @@ async function linkTaskCommand(input: {
 		runtimeClient,
 		workspaceRepoPath,
 		(state, { requirementTaskLinks, requirementVersions }) => {
-			const mutate = input.state === "confirmed" ? confirmLink : proposeLink;
-			const result = mutate(state.requirements, requirementTaskLinks, requirementVersions, input.id, input.taskId, {
-				source: "human",
-			});
+			const result = linkTask(
+				state.requirements,
+				requirementTaskLinks,
+				requirementVersions,
+				input.id,
+				input.taskId,
+				{ source: "human" },
+			);
 			return {
 				board: state.board,
 				requirements: result.requirements,
@@ -581,90 +405,6 @@ async function unlinkTaskCommand(input: {
 			const result = unlink(state.requirements, requirementTaskLinks, requirementVersions, input.id, input.taskId, {
 				source: "human",
 			});
-			return {
-				board: state.board,
-				requirements: result.requirements,
-				requirementTaskLinks: result.links,
-				requirementVersions: result.versions,
-				value: formatLinkRecord(result.link),
-			};
-		},
-	);
-
-	return {
-		ok: true,
-		workspacePath: workspaceRepoPath,
-		link,
-	};
-}
-
-async function confirmLinkCommand(input: {
-	cwd: string;
-	id: string;
-	taskId: string;
-	projectPath?: string;
-}): Promise<JsonRecord> {
-	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd, {
-		autoCreateIfMissing: false,
-	});
-	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
-	const runtimeClient = createRuntimeTrpcClient(workspaceId);
-	const link = await updateRuntimeWorkspaceState(
-		runtimeClient,
-		workspaceRepoPath,
-		(state, { requirementTaskLinks, requirementVersions }) => {
-			const result = confirmLink(
-				state.requirements,
-				requirementTaskLinks,
-				requirementVersions,
-				input.id,
-				input.taskId,
-				{
-					source: "human",
-				},
-			);
-			return {
-				board: state.board,
-				requirements: result.requirements,
-				requirementTaskLinks: result.links,
-				requirementVersions: result.versions,
-				value: formatLinkRecord(result.link),
-			};
-		},
-	);
-
-	return {
-		ok: true,
-		workspacePath: workspaceRepoPath,
-		link,
-	};
-}
-
-async function rejectLinkCommand(input: {
-	cwd: string;
-	id: string;
-	taskId: string;
-	projectPath?: string;
-}): Promise<JsonRecord> {
-	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd, {
-		autoCreateIfMissing: false,
-	});
-	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
-	const runtimeClient = createRuntimeTrpcClient(workspaceId);
-	const link = await updateRuntimeWorkspaceState(
-		runtimeClient,
-		workspaceRepoPath,
-		(state, { requirementTaskLinks, requirementVersions }) => {
-			const result = rejectLink(
-				state.requirements,
-				requirementTaskLinks,
-				requirementVersions,
-				input.id,
-				input.taskId,
-				{
-					source: "human",
-				},
-			);
 			return {
 				board: state.board,
 				requirements: result.requirements,
@@ -838,34 +578,25 @@ export function registerRequirementCommand(program: Command): void {
 
 	requirement
 		.command("link-task")
-		.description("Link a requirement to a task by id (defaults to a confirmed, human-made link).")
+		.description("Link a requirement to a task by id.")
 		.requiredOption("--id <id>", "Requirement ID.")
 		.requiredOption("--task-id <taskId>", "Task ID to link.")
-		.option("--state <state>", "Link state: proposed | confirmed. Defaults to confirmed.", parseLinkState)
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(
-			async (options: {
-				id: string;
-				taskId: string;
-				state?: RuntimeRequirementTaskLinkStatus;
-				projectPath?: string;
-			}) => {
-				await runRequirementCommand(
-					async () =>
-						await linkTaskCommand({
-							cwd: process.cwd(),
-							id: options.id,
-							taskId: options.taskId,
-							state: options.state ?? "confirmed",
-							projectPath: options.projectPath,
-						}),
-				);
-			},
-		);
+		.action(async (options: { id: string; taskId: string; projectPath?: string }) => {
+			await runRequirementCommand(
+				async () =>
+					await linkTaskCommand({
+						cwd: process.cwd(),
+						id: options.id,
+						taskId: options.taskId,
+						projectPath: options.projectPath,
+					}),
+			);
+		});
 
 	requirement
 		.command("unlink-task")
-		.description("Remove a confirmed link between a requirement and a task.")
+		.description("Remove the link between a requirement and a task.")
 		.requiredOption("--id <id>", "Requirement ID.")
 		.requiredOption("--task-id <taskId>", "Task ID to unlink.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
@@ -876,112 +607,6 @@ export function registerRequirementCommand(program: Command): void {
 						cwd: process.cwd(),
 						id: options.id,
 						taskId: options.taskId,
-						projectPath: options.projectPath,
-					}),
-			);
-		});
-
-	requirement
-		.command("confirm-link")
-		.description("Confirm a proposed requirement→task link.")
-		.requiredOption("--id <id>", "Requirement ID.")
-		.requiredOption("--task-id <taskId>", "Task ID whose proposed link to confirm.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { id: string; taskId: string; projectPath?: string }) => {
-			await runRequirementCommand(
-				async () =>
-					await confirmLinkCommand({
-						cwd: process.cwd(),
-						id: options.id,
-						taskId: options.taskId,
-						projectPath: options.projectPath,
-					}),
-			);
-		});
-
-	requirement
-		.command("reject-link")
-		.description("Reject a proposed requirement→task link.")
-		.requiredOption("--id <id>", "Requirement ID.")
-		.requiredOption("--task-id <taskId>", "Task ID whose proposed link to reject.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { id: string; taskId: string; projectPath?: string }) => {
-			await runRequirementCommand(
-				async () =>
-					await rejectLinkCommand({
-						cwd: process.cwd(),
-						id: options.id,
-						taskId: options.taskId,
-						projectPath: options.projectPath,
-					}),
-			);
-		});
-
-	const review = requirement
-		.command("review")
-		.description("Analyze requirement items and emit a review packet for an agent to reason over.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.option(
-			"--stale-days <number>",
-			"Days an active requirement may be idle before it is flagged stale.",
-			parseStaleDays,
-		)
-		.action(async (options: { projectPath?: string; staleDays?: number }) => {
-			await runRequirementCommand(
-				async () =>
-					await reviewRequirements({
-						cwd: process.cwd(),
-						projectPath: options.projectPath,
-						staleDays: options.staleDays,
-					}),
-			);
-		});
-
-	review
-		.command("apply")
-		.description("Apply an agent-decided review plan; every change is versioned with source=agent.")
-		.option("--plan <file>", "Path to a JSON review plan. Reads from stdin when omitted.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async function (this: Command) {
-			const options = this.optsWithGlobals() as { plan?: string; projectPath?: string };
-			await runRequirementCommand(
-				async () =>
-					await applyRequirementReviewCommand({
-						cwd: process.cwd(),
-						planPath: options.plan,
-						projectPath: options.projectPath,
-					}),
-			);
-		});
-
-	const reconcile = requirement
-		.command("reconcile")
-		.description("Analyze tasks with no requirement link and emit a reconcile packet for an agent to reason over.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { projectPath?: string }) => {
-			await runRequirementCommand(
-				async () =>
-					await reconcileRequirements({
-						cwd: process.cwd(),
-						projectPath: options.projectPath,
-					}),
-			);
-		});
-
-	reconcile
-		.command("apply")
-		.description(
-			"Apply an agent reconcile plan; links land as proposed and new requirements as draft (source=agent).",
-		)
-		.option("--plan <file>", "Path to a JSON reconcile plan. Reads from stdin when omitted.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async function (this: Command) {
-			const options = this.optsWithGlobals() as { plan?: string; projectPath?: string };
-			await runRequirementCommand(
-				async () =>
-					await applyRequirementReconcileCommand({
-						cwd: process.cwd(),
-						planPath: options.plan,
 						projectPath: options.projectPath,
 					}),
 			);

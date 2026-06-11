@@ -17,7 +17,6 @@ import { createTempDir } from "../utilities/temp-dir";
 interface LinkRecord {
 	requirementId: string;
 	taskId: string;
-	status: "proposed" | "confirmed";
 	source: "human" | "agent";
 	createdAt: number;
 }
@@ -38,7 +37,7 @@ function parseJson<T>(result: { stdout: string; stderr: string; exitCode: number
 }
 
 describe("source requirement link commands", () => {
-	it("links, lists, confirms, rejects, and unlinks task associations", { timeout: 60_000 }, async () => {
+	it("links, lists, and unlinks task associations", { timeout: 60_000 }, async () => {
 		const { path: homeDir, cleanup: cleanupHome } = createTempDir("kanban-home-req-link-");
 		const { path: projectPath, cleanup: cleanupProject } = createTempDir("kanban-project-req-link-");
 
@@ -72,70 +71,52 @@ describe("source requirement link commands", () => {
 				const requirementId = created.requirement.id;
 				expect(typeof requirementId).toBe("string");
 
-				// link-task defaults to a confirmed, human-made link.
+				// link-task creates a human-made link.
 				const linkedAlpha = parseJson<{ ok: boolean; link: LinkRecord }>(
 					await runRequirement(["link-task", "--id", requirementId, "--task-id", "task-alpha"]),
 				);
 				expect(linkedAlpha.ok).toBe(true);
-				expect(linkedAlpha.link).toMatchObject({
-					taskId: "task-alpha",
-					status: "confirmed",
-					source: "human",
-				});
+				expect(linkedAlpha.link).toMatchObject({ taskId: "task-alpha", source: "human" });
+				expect(linkedAlpha.link).not.toHaveProperty("status");
 
-				// Confirmed links mirror into linkedTaskIds and appear in linkedTasks.
+				// Links mirror into linkedTaskIds and appear in linkedTasks.
 				const shownAfterAlpha = parseJson<{ ok: boolean; requirement: RequirementRecord }>(
 					await runRequirement(["show", "--id", requirementId]),
 				);
 				expect(shownAfterAlpha.requirement.linkedTaskIds).toContain("task-alpha");
 				expect(shownAfterAlpha.requirement.linkedTasks).toEqual([
-					expect.objectContaining({ taskId: "task-alpha", status: "confirmed" }),
+					expect.objectContaining({ taskId: "task-alpha" }),
 				]);
 
-				// --state proposed records an agent-style suggestion (here made by a human).
+				// A second link to another task.
 				const linkedBeta = parseJson<{ ok: boolean; link: LinkRecord }>(
-					await runRequirement([
-						"link-task",
-						"--id",
-						requirementId,
-						"--task-id",
-						"task-beta",
-						"--state",
-						"proposed",
-					]),
+					await runRequirement(["link-task", "--id", requirementId, "--task-id", "task-beta"]),
 				);
 				expect(linkedBeta.ok).toBe(true);
-				expect(linkedBeta.link).toMatchObject({ taskId: "task-beta", status: "proposed" });
+				expect(linkedBeta.link).toMatchObject({ taskId: "task-beta", source: "human" });
 
-				// list surfaces both links with their states.
+				// list surfaces both links, both mirrored into linkedTaskIds.
 				const listed = parseJson<{ ok: boolean; requirements: RequirementRecord[] }>(
 					await runRequirement(["list"]),
 				);
 				const listedRequirement = listed.requirements.find((item) => item.id === requirementId);
 				expect(listedRequirement).toBeDefined();
-				const statusByTask = new Map(
-					(listedRequirement?.linkedTasks ?? []).map((link) => [link.taskId, link.status]),
+				const linkedTaskIdsFromLinks = new Set(
+					(listedRequirement?.linkedTasks ?? []).map((link) => link.taskId),
 				);
-				expect(statusByTask.get("task-alpha")).toBe("confirmed");
-				expect(statusByTask.get("task-beta")).toBe("proposed");
-				// proposed links are not mirrored into linkedTaskIds.
-				expect(listedRequirement?.linkedTaskIds).not.toContain("task-beta");
+				expect(linkedTaskIdsFromLinks.has("task-alpha")).toBe(true);
+				expect(linkedTaskIdsFromLinks.has("task-beta")).toBe(true);
+				expect(listedRequirement?.linkedTaskIds).toContain("task-alpha");
+				expect(listedRequirement?.linkedTaskIds).toContain("task-beta");
 
-				// reject-link only applies to proposed links: rejecting a confirmed one fails.
-				const rejectConfirmed = JSON.parse(
-					(await runRequirement(["reject-link", "--id", requirementId, "--task-id", "task-alpha"])).stdout,
+				// Re-linking an existing pair fails (a link either exists or it does not).
+				const relink = JSON.parse(
+					(await runRequirement(["link-task", "--id", requirementId, "--task-id", "task-alpha"])).stdout,
 				) as { ok: boolean; error?: string };
-				expect(rejectConfirmed.ok).toBe(false);
-				expect(rejectConfirmed.error).toContain("confirmed");
+				expect(relink.ok).toBe(false);
+				expect(relink.error).toContain("already");
 
-				// confirm-link flips the proposed beta link to confirmed.
-				const confirmedBeta = parseJson<{ ok: boolean; link: LinkRecord }>(
-					await runRequirement(["confirm-link", "--id", requirementId, "--task-id", "task-beta"]),
-				);
-				expect(confirmedBeta.ok).toBe(true);
-				expect(confirmedBeta.link).toMatchObject({ taskId: "task-beta", status: "confirmed" });
-
-				// unlink-task removes a confirmed link.
+				// unlink-task removes a link.
 				const unlinkedAlpha = parseJson<{ ok: boolean; link: LinkRecord }>(
 					await runRequirement(["unlink-task", "--id", requirementId, "--task-id", "task-alpha"]),
 				);
@@ -147,26 +128,15 @@ describe("source requirement link commands", () => {
 				);
 				expect(shownAfterUnlink.requirement.linkedTaskIds).not.toContain("task-alpha");
 				expect(shownAfterUnlink.requirement.linkedTasks).toEqual([
-					expect.objectContaining({ taskId: "task-beta", status: "confirmed" }),
+					expect.objectContaining({ taskId: "task-beta" }),
 				]);
 
-				// Guard: a proposed link cannot be unlinked; the data layer steers to reject.
-				parseJson<{ ok: boolean }>(
-					await runRequirement([
-						"link-task",
-						"--id",
-						requirementId,
-						"--task-id",
-						"task-gamma",
-						"--state",
-						"proposed",
-					]),
-				);
-				const unlinkProposed = JSON.parse(
-					(await runRequirement(["unlink-task", "--id", requirementId, "--task-id", "task-gamma"])).stdout,
+				// Unlinking a pair that has no link fails.
+				const unlinkMissing = JSON.parse(
+					(await runRequirement(["unlink-task", "--id", requirementId, "--task-id", "task-alpha"])).stdout,
 				) as { ok: boolean; error?: string };
-				expect(unlinkProposed.ok).toBe(false);
-				expect(unlinkProposed.error).toContain("reject");
+				expect(unlinkMissing.ok).toBe(false);
+				expect(unlinkMissing.error).toContain("not found");
 			} finally {
 				await stopRuntimeServer(serverProcess);
 			}

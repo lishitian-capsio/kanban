@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { RuntimeBoardData, RuntimeRequirementItem, RuntimeTaskSessionSummary } from "../../src/core/api-contract";
-import { confirmLink, proposeLink } from "../../src/core/requirement-task-link-mutations";
+import { linkTask } from "../../src/core/requirement-task-link-mutations";
 import { appendRequirementVersion } from "../../src/core/requirement-versions";
 import type { WorkspaceStateConflictError } from "../../src/state/workspace-state";
 import {
@@ -328,35 +328,10 @@ describe.sequential("workspace-state integration", () => {
 					updatedAt: 1000,
 				};
 
-				// An agent proposes a link, then a human confirms it — all through the atomic pipeline.
+				// A human links a task — through the atomic pipeline.
 				await mutateWorkspaceState(workspacePath, (state, { requirementTaskLinks, requirementVersions }) => {
-					const proposed = proposeLink(
+					const linked = linkTask(
 						{ items: [requirement] },
-						requirementTaskLinks,
-						requirementVersions,
-						"req-1",
-						"task-1",
-						{ source: "agent", now: 2000 },
-					);
-					return {
-						board: state.board,
-						requirements: proposed.requirements,
-						requirementTaskLinks: proposed.links,
-						requirementVersions: proposed.versions,
-						value: null,
-					};
-				});
-
-				const afterPropose = await loadWorkspaceState(workspacePath);
-				expect(afterPropose.requirementTaskLinks.links).toEqual([
-					{ requirementId: "req-1", taskId: "task-1", status: "proposed", source: "agent", createdAt: 2000 },
-				]);
-				// Proposed links are not yet confirmed associations.
-				expect(afterPropose.requirements.items[0]?.linkedTaskIds).toEqual([]);
-
-				await mutateWorkspaceState(workspacePath, (state, { requirementTaskLinks, requirementVersions }) => {
-					const confirmed = confirmLink(
-						state.requirements,
 						requirementTaskLinks,
 						requirementVersions,
 						"req-1",
@@ -365,20 +340,22 @@ describe.sequential("workspace-state integration", () => {
 					);
 					return {
 						board: state.board,
-						requirements: confirmed.requirements,
-						requirementTaskLinks: confirmed.links,
-						requirementVersions: confirmed.versions,
+						requirements: linked.requirements,
+						requirementTaskLinks: linked.links,
+						requirementVersions: linked.versions,
 						value: null,
 					};
 				});
 
-				const afterConfirm = await loadWorkspaceState(workspacePath);
-				expect(afterConfirm.requirementTaskLinks.links[0]?.status).toBe("confirmed");
-				// Confirmed associations are mirrored into the requirement's linkedTaskIds.
-				expect(afterConfirm.requirements.items[0]?.linkedTaskIds).toEqual(["task-1"]);
+				const afterLink = await loadWorkspaceState(workspacePath);
+				expect(afterLink.requirementTaskLinks.links).toEqual([
+					{ requirementId: "req-1", taskId: "task-1", source: "human", createdAt: 3000 },
+				]);
+				// A link is mirrored into the requirement's linkedTaskIds.
+				expect(afterLink.requirements.items[0]?.linkedTaskIds).toEqual(["task-1"]);
 
 				const versions = await loadWorkspaceRequirementVersions(workspacePath);
-				expect(versions.versions.map((v) => v.source)).toEqual(["agent", "human"]);
+				expect(versions.versions.map((v) => v.source)).toEqual(["human"]);
 			} finally {
 				cleanup();
 			}
@@ -402,8 +379,7 @@ describe.sequential("workspace-state integration", () => {
 							{
 								requirementId: "req-1",
 								taskId: "task-1",
-								status: "proposed",
-								source: "agent",
+								source: "human",
 								createdAt: 2000,
 							},
 						],

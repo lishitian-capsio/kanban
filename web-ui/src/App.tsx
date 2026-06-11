@@ -935,10 +935,7 @@ export default function App(): ReactElement {
 												workspaceId={currentProjectId}
 												requirements={requirements}
 												revision={workspaceRevision ?? 0}
-												requirementTaskLinks={requirementTaskLinks}
-												board={board}
 												onRequirementsChange={setRequirements}
-												onRequirementTaskLinksChange={setRequirementTaskLinks}
 											/>
 										) : isGitHistoryOpen ? (
 											<GitHistoryView

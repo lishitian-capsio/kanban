@@ -206,18 +206,14 @@ export const runtimeRequirementVersionsResponseSchema = z.object({
 });
 export type RuntimeRequirementVersionsResponse = z.infer<typeof runtimeRequirementVersionsResponseSchema>;
 
-export const runtimeRequirementTaskLinkStatusSchema = z.enum(["proposed", "confirmed"]);
-export type RuntimeRequirementTaskLinkStatus = z.infer<typeof runtimeRequirementTaskLinkStatusSchema>;
-
 // A one-way requirement -> task association. Lives entirely on the requirement side:
 // the task board/card schema is never touched and only its id is referenced here.
-// `confirmed` links are mirrored into the requirement's linkedTaskIds (the source of
-// truth for confirmed associations); `proposed` links are agent suggestions awaiting
-// human confirmation and exist only in this store.
+// A link either exists or it does not — there is a single confirmed state, and every
+// link is mirrored into the requirement's linkedTaskIds (the source of truth for
+// associations).
 export const runtimeRequirementTaskLinkSchema = z.object({
 	requirementId: z.string(),
 	taskId: z.string(),
-	status: runtimeRequirementTaskLinkStatusSchema,
 	source: runtimeRequirementChangeSourceSchema,
 	createdAt: z.number(),
 });
