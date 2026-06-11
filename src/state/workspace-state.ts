@@ -28,6 +28,14 @@ import { createGitProcessEnv } from "../core/git-process-env";
 import { diffRequirementVersions } from "../core/requirement-versions";
 import { updateTaskDependencies } from "../core/task-board-mutations";
 import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
+import {
+	readRequirementsSharded,
+	readRequirementTaskLinksSharded,
+	readRequirementVersionsSharded,
+	writeRequirementsSharded,
+	writeRequirementTaskLinksSharded,
+	writeRequirementVersionsSharded,
+} from "./requirement-store";
 
 const RUNTIME_HOME_DIR = ".kanban";
 const RUNTIME_WORKTREES_DIR = "worktrees";
@@ -38,6 +46,13 @@ const SESSIONS_FILENAME = "sessions.json";
 const REQUIREMENTS_FILENAME = "requirements.json";
 const REQUIREMENT_VERSIONS_FILENAME = "requirement-versions.json";
 const REQUIREMENT_TASK_LINKS_FILENAME = "requirement-task-links.json";
+// Requirement data is sharded by requirement id into these directories (one
+// `<reqId>.json` per requirement) so cross-branch edits to different requirements
+// never collide on a single file. The `*_FILENAME` single files above remain only
+// as migration sources + pre-sharding read fallbacks.
+const REQUIREMENTS_SHARD_DIRNAME = "requirements";
+const REQUIREMENT_VERSIONS_SHARD_DIRNAME = "requirement-versions";
+const REQUIREMENT_TASK_LINKS_SHARD_DIRNAME = "requirement-task-links";
 const HOME_THREADS_FILENAME = "threads.json";
 const META_FILENAME = "meta.json";
 const RUNTIME_HOME_GITIGNORE_FILENAME = ".gitignore";
@@ -47,9 +62,10 @@ const RUNTIME_HOME_GITIGNORE_FILENAME = ".gitignore";
 // secret paths are ignored. Binary file-library content goes through Git LFS,
 // configured by files/.gitattributes (see src/files/file-library-store.ts).
 const RUNTIME_HOME_GITIGNORE_CONTENT = `# Kanban runtime data boundary — see docs/superpowers/plans for rationale.
-# Committed (content): workspaces/<id>/board.json, requirements*.json,
-# files/ (manifest + LFS blobs), and future tasks/. Everything below is
-# machine-local or secret.
+# Committed (content): workspaces/<id>/board.json, the requirement shard dirs
+# (requirements/, requirement-versions/, requirement-task-links/), files/
+# (manifest + LFS blobs), and future tasks/. Everything below is machine-local
+# or secret.
 
 # Machine-local runtime state
 worktrees/
@@ -271,6 +287,18 @@ function getWorkspaceRequirementTaskLinksPath(repoPath: string, workspaceId: str
 	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_TASK_LINKS_FILENAME);
 }
 
+function getWorkspaceRequirementsShardDir(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENTS_SHARD_DIRNAME);
+}
+
+function getWorkspaceRequirementVersionsShardDir(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_VERSIONS_SHARD_DIRNAME);
+}
+
+function getWorkspaceRequirementTaskLinksShardDir(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_TASK_LINKS_SHARD_DIRNAME);
+}
+
 function getWorkspaceHomeThreadsPath(repoPath: string, workspaceId: string): string {
 	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), HOME_THREADS_FILENAME);
 }
@@ -443,6 +471,10 @@ async function readWorkspaceSessions(
 }
 
 async function readWorkspaceRequirements(repoPath: string, workspaceId: string): Promise<RuntimeRequirementsData> {
+	const shardDir = getWorkspaceRequirementsShardDir(repoPath, workspaceId);
+	if (await pathExists(shardDir)) {
+		return await readRequirementsSharded(shardDir);
+	}
 	const requirementsPath = getWorkspaceRequirementsPath(repoPath, workspaceId);
 	const rawRequirements = await readJsonFileWithLegacyFallback(
 		requirementsPath,
@@ -505,6 +537,10 @@ async function readWorkspaceRequirementVersions(
 	repoPath: string,
 	workspaceId: string,
 ): Promise<RuntimeRequirementVersionsData> {
+	const shardDir = getWorkspaceRequirementVersionsShardDir(repoPath, workspaceId);
+	if (await pathExists(shardDir)) {
+		return await readRequirementVersionsSharded(shardDir);
+	}
 	const versionsPath = getWorkspaceRequirementVersionsPath(repoPath, workspaceId);
 	const rawVersions = await readJsonFileWithLegacyFallback(
 		versionsPath,
@@ -528,6 +564,10 @@ async function readWorkspaceRequirementTaskLinks(
 	repoPath: string,
 	workspaceId: string,
 ): Promise<RuntimeRequirementTaskLinksData> {
+	const shardDir = getWorkspaceRequirementTaskLinksShardDir(repoPath, workspaceId);
+	if (await pathExists(shardDir)) {
+		return await readRequirementTaskLinksSharded(shardDir);
+	}
 	const linksPath = getWorkspaceRequirementTaskLinksPath(repoPath, workspaceId);
 	const rawLinks = await readJsonFileWithLegacyFallback(
 		linksPath,
@@ -691,6 +731,78 @@ async function migrateWorkspaceDataFromLegacyHome(repoPath: string, workspaceId:
 		return;
 	}
 	await cp(legacy, target, { recursive: true, force: false, errorOnExist: false });
+}
+
+/**
+ * Split one legacy single-file aggregate (`<file>.json`) into its per-id shard
+ * directory, then remove the single file so the repo holds exactly one
+ * representation. No-op when the single file is absent. When the shard directory
+ * already exists it wins, and any leftover single file is dropped as stale.
+ */
+async function migrateSingleFileToShards<T>(
+	singleFilePath: string,
+	shardDir: string,
+	fileLabel: string,
+	schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+	defaultValue: T,
+	writeShards: (dir: string, data: T) => Promise<void>,
+): Promise<void> {
+	if (!(await pathExists(singleFilePath))) {
+		return;
+	}
+	if (await pathExists(shardDir)) {
+		await rm(singleFilePath, { force: true });
+		return;
+	}
+	const raw = await readJsonFile(singleFilePath);
+	const data = parsePersistedStateFile(singleFilePath, fileLabel, raw, schema, defaultValue);
+	await writeShards(shardDir, data);
+	await rm(singleFilePath, { force: true });
+}
+
+/**
+ * One-time conversion of a workspace's repo-rooted single-file requirement data
+ * (`requirements.json` etc.) into the per-id shard directories. Runs after the T1
+ * legacy copy-migration, so a machine-home single file is first copied into the
+ * repo and then sharded here. Idempotent and lock-guarded; the cheap pre-check
+ * skips the lock entirely once no single files remain (the common case).
+ */
+async function migrateRequirementsToShards(repoPath: string, workspaceId: string): Promise<void> {
+	const singleFilePaths = [
+		getWorkspaceRequirementsPath(repoPath, workspaceId),
+		getWorkspaceRequirementVersionsPath(repoPath, workspaceId),
+		getWorkspaceRequirementTaskLinksPath(repoPath, workspaceId),
+	];
+	const present = await Promise.all(singleFilePaths.map((path) => pathExists(path)));
+	if (!present.some(Boolean)) {
+		return;
+	}
+	await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
+		await migrateSingleFileToShards(
+			getWorkspaceRequirementsPath(repoPath, workspaceId),
+			getWorkspaceRequirementsShardDir(repoPath, workspaceId),
+			REQUIREMENTS_FILENAME,
+			runtimeRequirementsDataSchema,
+			{ items: [] },
+			writeRequirementsSharded,
+		);
+		await migrateSingleFileToShards(
+			getWorkspaceRequirementVersionsPath(repoPath, workspaceId),
+			getWorkspaceRequirementVersionsShardDir(repoPath, workspaceId),
+			REQUIREMENT_VERSIONS_FILENAME,
+			runtimeRequirementVersionsDataSchema,
+			{ versions: [] },
+			writeRequirementVersionsSharded,
+		);
+		await migrateSingleFileToShards(
+			getWorkspaceRequirementTaskLinksPath(repoPath, workspaceId),
+			getWorkspaceRequirementTaskLinksShardDir(repoPath, workspaceId),
+			REQUIREMENT_TASK_LINKS_FILENAME,
+			runtimeRequirementTaskLinksDataSchema,
+			{ links: [] },
+			writeRequirementTaskLinksSharded,
+		);
+	});
 }
 
 /**
@@ -885,6 +997,7 @@ export async function loadWorkspaceContext(
 async function prepareRepoRuntimeHome(repoPath: string, workspaceId: string): Promise<void> {
 	await migrateWorkspaceDataFromLegacyHome(repoPath, workspaceId);
 	await ensureRuntimeHomeGitignore(repoPath);
+	await migrateRequirementsToShards(repoPath, workspaceId);
 }
 
 export async function loadWorkspaceContextById(workspaceId: string): Promise<RuntimeWorkspaceContext | null> {
@@ -993,19 +1106,15 @@ export async function saveWorkspaceState(
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceSessionsPath(repoPath, workspaceId), sessions, {
 			lock: null,
 		});
-		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceRequirementsPath(repoPath, workspaceId), requirements, {
-			lock: null,
-		});
-		await lockedFileSystem.writeJsonFileAtomic(
-			getWorkspaceRequirementTaskLinksPath(repoPath, workspaceId),
+		await writeRequirementsSharded(getWorkspaceRequirementsShardDir(repoPath, workspaceId), requirements);
+		await writeRequirementTaskLinksSharded(
+			getWorkspaceRequirementTaskLinksShardDir(repoPath, workspaceId),
 			requirementTaskLinks,
-			{ lock: null },
 		);
 		if (nextVersions !== previousVersions) {
-			await lockedFileSystem.writeJsonFileAtomic(
-				getWorkspaceRequirementVersionsPath(repoPath, workspaceId),
+			await writeRequirementVersionsSharded(
+				getWorkspaceRequirementVersionsShardDir(repoPath, workspaceId),
 				nextVersions,
-				{ lock: null },
 			);
 		}
 		await lockedFileSystem.writeJsonFileAtomic(metaPath, nextMeta, {
@@ -1091,22 +1200,14 @@ export async function mutateWorkspaceState<T>(
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceSessionsPath(repoPath, workspaceId), nextSessions, {
 			lock: null,
 		});
-		await lockedFileSystem.writeJsonFileAtomic(
-			getWorkspaceRequirementsPath(repoPath, workspaceId),
-			nextRequirements,
-			{
-				lock: null,
-			},
-		);
-		await lockedFileSystem.writeJsonFileAtomic(
-			getWorkspaceRequirementTaskLinksPath(repoPath, workspaceId),
+		await writeRequirementsSharded(getWorkspaceRequirementsShardDir(repoPath, workspaceId), nextRequirements);
+		await writeRequirementTaskLinksSharded(
+			getWorkspaceRequirementTaskLinksShardDir(repoPath, workspaceId),
 			nextRequirementTaskLinks,
-			{ lock: null },
 		);
-		await lockedFileSystem.writeJsonFileAtomic(
-			getWorkspaceRequirementVersionsPath(repoPath, workspaceId),
+		await writeRequirementVersionsSharded(
+			getWorkspaceRequirementVersionsShardDir(repoPath, workspaceId),
 			nextRequirementVersions,
-			{ lock: null },
 		);
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceMetaPath(repoPath, workspaceId), nextMeta, {
 			lock: null,
