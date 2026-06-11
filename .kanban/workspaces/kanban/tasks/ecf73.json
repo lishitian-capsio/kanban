@@ -1,0 +1,14 @@
+{
+  "id": "ecf73",
+  "title": "T3 requirements 迁入 repo-local 并提交",
+  "prompt": "把 requirements 数据从 home 迁到 <repo>/.kanban/ 并纳入 git,让 clone 即带需求。依赖 T1(.kanban 迁入仓库)。\n\n现状:requirements 存在 ~/.kanban/workspaces/<id>/ 下的 requirements.json / requirement-versions.json / requirement-task-links.json(src/state/workspace-state.ts:36-38)。\n\n要做:\n1. 把这三类数据迁到 <repo>/.kanban/ 下、纳入 git 跟踪(commit)。\n2. 若单文件并发冲突是隐患,考虑按需求 id 分片(与 T2 的任务分片思路一致);版本历史(requirement-versions)保留。\n3. requirement-task-links 也随之迁移,保证任务/需求的横向 link 在 clone 后仍有效(任务定义见 T2 已入 git)。\n4. 一次性迁移 + 兼容旧位置。写测试。遵守 AGENTS.md。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "baseRef": "main",
+  "createdAt": 1781162339789,
+  "updatedAt": 1781171115058,
+  "column": "trash",
+  "rank": "a5",
+  "dependsOn": []
+}

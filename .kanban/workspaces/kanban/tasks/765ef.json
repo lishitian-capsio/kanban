@@ -1,0 +1,14 @@
+{
+  "id": "765ef",
+  "title": "home 聊天线:API/contract(列出/新建/重命名/关闭)",
+  "prompt": "在基础层(会话模型 + 线程注册表)之上,新增 home 聊天线的 API/contract,供前端管理多条并行聊天线。依赖前置任务'会话模型 + 线程注册表/持久化'。\n\n范围:\n1) 在 src/core/api-contract.ts 增加 home 聊天线相关的 schema/类型(线程项:id、agentId、name、createdAt;以及 list/create/rename/close 的请求与响应),保持与 RuntimeAgentId 等既有契约一致;注意 web-ui 通过 @runtime-contract 别名共享该文件,改动需保证 web:typecheck 通过。\n2) 在 tRPC 运行时 API(src/trpc/runtime-api.ts)与运行时 server 接线(src/server/runtime-server.ts)中暴露 list/create/rename/close home 线的端点,调用基础层注册表逻辑。\n3) 创建新线时按 __home_agent__:<workspaceId>:<agentId>:<threadId> 规则生成会话 id;关闭线时停止/清理对应会话。每条线可指定自己的 agentId(默认取工作区 selectedAgentId)。\n\n要求:遵循 AGENTS.md;为端点/契约补必要测试;注意 commander/trpc 既有约定。先 plan mode 出方案。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "baseRef": "main",
+  "createdAt": 1781164111566,
+  "updatedAt": 1781171115058,
+  "column": "trash",
+  "rank": "a3",
+  "dependsOn": []
+}

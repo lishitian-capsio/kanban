@@ -1,0 +1,14 @@
+{
+  "id": "d45c3",
+  "title": "修复 --host 绑定非 localhost 时内部通信被代理拦截",
+  "prompt": "## 问题\n用 `bun run dev --host <LAN-IP>`（如 192.168.50.203）启动 Kanban 后，CLI 命令和 Claude Code 的 UserPromptSubmit hook 都失败，报错：\n  Unable to transform response from server / kanban hooks ingest: Unable to transform response from server\n\n## 已确认的根因（已经过只读探查 + 实测验证）\n- 运行时跑在 Bun 上，Bun 的全局 fetch 会原生读取 shell 的 HTTP_PROXY/NO_PROXY 环境变量。\n- 本机环境设了 HTTP_PROXY=http://192.168.50.142:7897，而 NO_PROXY 只有 localhost,127.0.0.1。\n- CLI / hook 的内部 fetch 走 getRuntimeFetch()（src/core/runtime-endpoint.ts:136），本质是全局 fetch，只处理 TLS CA，不处理 proxy，也不读 settings 里的 noProxy。\n- 因此访问 http://<LAN-IP>:3484 时请求被代理拦截，返回非 JSON → 解析失败报 'Unable to transform response'。\n- 实测：在 CLI 命令前内联 NO_PROXY=...,<LAN-IP> 即可恢复正常；在 settings/network proxy 的 no-proxy 里加该 IP **无效**（CLI/hook 不消费该设置，只认进程继承的 env）。\n\n## 相关代码位置\n- proxy 配置 schema：src/config/runtime-config.ts:20-25（proxyEnabled/proxyHost/proxyPort/.../noProxy）\n- proxy env 构建 / 应用：src/config/proxy-env.ts（buildProxyEnvVars / applyProxyToProcessEnv）\n- 应用到运行时 process.env：src/server/workspace-registry.ts:202、src/trpc/runtime-api.ts:156\n- CLI/hook 内部 fetch：src/core/runtime-endpoint.ts:136-167（getRuntimeFetch）、buildKanbanRuntimeUrl\n- hook ingest：src/commands/hooks.ts:378-404\n- task 命令 fetch：src/commands/task.ts:247-260\n- --host 启动处理：src/cli.ts:540-543（setKanbanRuntimeHost），src/cli.ts:18\n\n## 期望修复（两步配合，第1步是核心）\n1. 启动时把绑定的 host 自动并入 process.env.NO_PROXY（在 setKanbanRuntimeHost 之后，cli.ts:540 附近）。追加 localhost,127.0.0.1,<bound-host>，要求幂等、不覆盖用户已有项；换 host 重启时新 host 也要进。这样 Bun 全局 fetch 会放行内部自我通信，直接修好 CLI/hook。\n2. 同步把相同的值自动填进 settings/network proxy 的 noProxy，保持 agent 子进程 / UI / 运行时一致，语义自洽。\n3. （加固，可选）让 getRuntimeFetch() 对访问自身运行时 endpoint 的请求无条件 bypass 代理——因为自我通信永远是 loopback/本机，本就不该走对外代理。注意不要影响 agent 出网调用 LLM API 的代理链路。\n\n## 验收标准\n- 在设有 HTTP_PROXY 且 NO_PROXY 不含 LAN IP 的环境下，用 `bun run dev --host <LAN-IP>` 启动后：\n  - `task list` 等 CLI 命令能正常返回 JSON，不再报 'Unable to transform response'。\n  - UserPromptSubmit hook ingest 正常。\n  - agent 调用外部 LLM API 仍能正常走代理（不被回归破坏）。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "baseRef": "main",
+  "createdAt": 1780971026732,
+  "updatedAt": 1780972275615,
+  "column": "trash",
+  "rank": "aX",
+  "dependsOn": []
+}

@@ -1,0 +1,14 @@
+{
+  "id": "ae40b",
+  "title": "验证方案A:全局 fetch monkey-patch 实现代理即时切换(无本地 hop)",
+  "prompt": "目标:验证「方案 A」——在 settings 改了 network proxy 后,Kanban 进程内的对外网络请求即时使用新代理,无需重启。这是一个验证 + 实现任务,先出 plan,验证可行再实现。\n\n== 背景与已知事实(务必先读,别重走老路)==\n- 现状:进程内代理靠把 HTTP_PROXY/HTTPS_PROXY/NO_PROXY 写进 process.env 来实现(src/config/proxy-env.ts 的 applyProxyToProcessEnv;保存设置入口在 src/trpc/runtime-api.ts ~155 行;启动时在 src/server/workspace-registry.ts ~199 行 apply 一次)。\n- 已证实的坑:Bun 1.3.14 的 globalThis.fetch 不读 HTTP_PROXY 环境变量,只有 fetch 的 {proxy} 选项有效。Node 的 undici 全局 fetch 默认同样不读 HTTP_PROXY。所以「改 env 让进程内 fetch 换代理」这条逻辑在当前 runtime 下根本不生效。\n- getRuntimeFetch()(src/core/runtime-endpoint.ts ~164 行)只包 localhost 内部通信、且专门绕过代理,不是对外流量的收口点。\n- 进程内对外请求没有单一收口,散在三条路径:(1) Provider SDK 调用——走 streamSimple() → new OpenAI({fetch})/new Anthropic({fetch}) 等,SDK 接受 fetch 注入但 Agent 类没透传;(2) OAuth + 模型发现——src/agent-sdk/ai/utils/oauth/* 与 models.dev 拉取等 40+ 处直接 globalThis.fetch,无注入口;(3) auth-broker——有 fetchImpl 注入口但没人传。\n\n== 历史教训 ==\n- 之前分支 feat/live-proxy-switching 用「proxy-chain 常驻本地代理 + fetch-wrapper」做实时切换,隔离能跑但真实 app 不可用,已放弃。真正的薄弱点被怀疑是那个 always-on 的本地代理 hop。\n- 本方案 A 的关键区别:不起任何本地代理、没有 always-on hop。只是用一个 globalThis.fetch monkey-patch,内部从一个可变的「当前代理」holder 现读代理 URL,通过原生 fetch 的 {proxy} 选项传进去。保存设置时更新该 holder(同时仍写 env 给子进程用)。\n\n== 任务要求 ==\n1. 先出 plan,不要直接大改。\n2. 做一个最小可行验证(MVP):在 runtime 启动早期 patch globalThis.fetch,使其对走代理的请求注入 {proxy: 当前holder值};holder 由保存代理设置的入口更新。\n3. 验证:在不重启的前提下,settings 改代理后,进程内的模型请求(以及 OAuth/模型发现这类直连 fetch)即时走新代理;关闭代理后即时恢复直连。给出可观测的验证证据(日志/抓包/请求是否经过代理)。\n4. 重点确认:patch globalThis.fetch 是否能真正覆盖上面三条路径(尤其是各 Provider SDK 内部是否最终调用 globalThis.fetch,还是用了自带的 http/https/undici dispatcher 而绕过 patch——Bedrock 用 AWS SDK、Cursor 用 HTTP/2 已知不是 fetch)。把覆盖到的和绕过的分别列出来。\n5. 注意 NO_PROXY/绕过逻辑:localhost、运行时 host 必须继续绕过代理(参考 getKanbanRuntimeNoProxyHosts / mergeNoProxyEntries)。\n6. CLAUDE.md 不鼓励 monkey-patch——在 plan 里说明为何此处可接受、影响面、以及是否需要在文件顶部加注释说明。\n7. 子进程(agent 会话)这条已经是 spawn 时现算 env、新会话即时生效,本任务不需要改动它,除非验证中发现它也有问题。\n\n交付:plan + MVP 实现 + 验证证据 + 一份「全局 patch 能覆盖 / 不能覆盖 的请求清单」。如果验证发现纯 monkey-patch 在真实 app 不可行,明确写出原因,不要硬上。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "baseRef": "main",
+  "createdAt": 1781153120127,
+  "updatedAt": 1781171115058,
+  "column": "trash",
+  "rank": "aD",
+  "dependsOn": []
+}

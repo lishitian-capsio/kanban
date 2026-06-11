@@ -1,0 +1,14 @@
+{
+  "id": "ec5b1",
+  "title": "CLI 关联原语(task↔requirement)",
+  "prompt": "在 requirement CLI 下新增 task↔requirement 关联原语,复用上游'需求↔任务关联数据层'任务建好的纯函数与存储。【不要修改 task 命令或 board schema】,任务侧只读引用 ID。\n\n新增子命令(对齐现有 requirement CLI 风格,JSON 输出 { ok, ... }):\n- requirement link-task --id <reqId> --task-id <taskId> [--state proposed|confirmed](默认 confirmed,人工操作)\n- requirement unlink-task --id <reqId> --task-id <taskId>\n- requirement confirm-link / reject-link --id <reqId> --task-id <taskId>(把 proposed 关联确认/驳回)\n- requirement list / show 输出里带上该需求的关联任务及其 state\n\n先读 src/commands/requirement.ts 与上游关联数据层。遵循仓库 TS 规范,no any。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "baseRef": "main",
+  "createdAt": 1781057663429,
+  "updatedAt": 1781144383402,
+  "column": "trash",
+  "rank": "aI",
+  "dependsOn": []
+}

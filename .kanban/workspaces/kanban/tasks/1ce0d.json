@@ -1,0 +1,14 @@
+{
+  "id": "1ce0d",
+  "title": "会话消息落盘 + 重启读取与渲染",
+  "prompt": "把统一会话消息模型的消息增量落盘，并在 Kanban 重启后读回、在侧边栏/任务卡渲染历史。这是用户痛点的核心：重启后能【查看】之前 claude code 会话内容。\n\n现状：src/state/workspace-state.ts 只把 RuntimeTaskSessionSummary 落盘到 ~/.kanban/workspaces/<id>/sessions.json；消息（pi 的 PiMessageStore 与 CLI 的转录）都只在内存，重启即丢。\n\n任务：\n1. 为每个会话的消息设计增量落盘：~/.kanban/workspaces/<id>/sessions/<taskId>/messages.jsonl（append-only，避免每条都重写整文件）。pi 与 CLI 转录共用这套落盘（依赖前两个任务的统一模型）。\n2. Kanban 启动/加载 workspace 时读回每个会话的 messages.jsonl，填充消息源，使会话摘要可携带历史。\n3. 侧边栏与任务卡在重启后能渲染历史消息（前端通过现有 trpc/WS 路径取到消息即可，必要时补一个\"读取历史消息\"的查询）。\n4. 注意磁盘占用与并发写安全；超大转录可设上限或滚动。pi 现有行为不能回归。\n\n依赖：需先完成\"CLI agent 轻量转录捕获\"（从而 pi 与 CLI 都产出统一消息）。遵循仓库 TypeScript 规范：无 any、无 inline import。完成后跑 typecheck/相关测试，并手动验证：起一个 claude code 会话→关 Kanban→重开→历史可见。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "baseRef": "main",
+  "createdAt": 1781156060775,
+  "updatedAt": 1781171115058,
+  "column": "trash",
+  "rank": "aA",
+  "dependsOn": []
+}

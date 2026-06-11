@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "columns": [
+    {
+      "id": "backlog",
+      "title": "Backlog"
+    },
+    {
+      "id": "in_progress",
+      "title": "In Progress"
+    },
+    {
+      "id": "review",
+      "title": "Review"
+    },
+    {
+      "id": "trash",
+      "title": "Done"
+    }
+  ]
+}

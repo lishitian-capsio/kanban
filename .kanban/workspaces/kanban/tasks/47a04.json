@@ -1,0 +1,14 @@
+{
+  "id": "47a04",
+  "title": "精简需求管理为「人主导」模型，移除 agent 自主整理工作流",
+  "prompt": "把需求管理收敛为「人主导、agent 辅助」模型。核心心智:任务与需求是两份独立清单,彼此没有先后/从属,之间只有一根可选的横向关联。\n\n== 保留 ==\n- requirement CRUD: create / list / show / update / delete\n- 横向关联: link-task / unlink-task,且关联只有单一 confirmed 态\n- 版本管理: history / revert + web-ui 的版本历史/diff/回滚面板(保留,需求作为可演进条目需要留痕)\n\n== 移除(整套 agent 自主整理及其连带物) ==\n- requirement review 子命令 + review apply(6 道闸门审需求)\n- requirement reconcile 子命令 + reconcile apply(任务反推需求/孤儿认领)\n- 关联的 proposed 状态,以及 confirm-link / reject-link 命令\n- web-ui 的 proposal review 面板 / RequirementsView 的 List/Review 切换(proposal 审阅入口)\n- 以上各项专属的 schema 字段、类型、纯函数 helper、测试\n\n== 约束 ==\n- 关联模型收敛为单一 confirmed 态:要么有连线要么没有,不再有 proposed/confirmed 双态。\n- 绝不破坏 board / task schema 与现有任务流程;任务侧本就不持有 requirementId,保持不动。\n- 不破坏版本历史数据层(它保留)。\n- 跑通 typecheck 与相关测试;web:typecheck 也要过。\n- 完成后用 grep -rli 自查 review / reconcile / proposed / confirm-link 残留,逐处说明为何保留或确认已清。\n\n先读 src/commands/requirement.ts、src/core/requirement-review.ts、web-ui/src/components/requirements/ 与 web-ui/src/state/requirement-task-links-state.ts 了解现状再动手。遵循仓库 TS 规范,no any。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "baseRef": "main",
+  "createdAt": 1781141095128,
+  "updatedAt": 1781144383402,
+  "column": "trash",
+  "rank": "aH",
+  "dependsOn": []
+}

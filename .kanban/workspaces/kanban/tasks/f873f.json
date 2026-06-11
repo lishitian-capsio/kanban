@@ -1,0 +1,14 @@
+{
+  "id": "f873f",
+  "title": "代理启用时彻底避免本地 502:自动排除回环 + 内部客户端绕过代理",
+  "prompt": "背景:Kanban 有两类代理来源会导致连不上本地运行时(127.0.0.1:3484)报 502 / 'Unable to transform response from server':(1) 用户系统/shell 级全局代理(如 Clash);(2) Kanban settings 里的 network proxy 功能(src/config/proxy-env.ts)注入 HTTP_PROXY/HTTPS_PROXY。两者共同问题是:启用代理但未把 localhost 排除,导致发往 127.0.0.1 的内部请求也被丢给代理而失败。\n\n请实现【方案 C】,两层都修:\n\nA. 代理设置自动排除回环地址\n- 修改 src/config/proxy-env.ts 的 buildProxyEnvVars 和 applyProxyToProcessEnv:只要启用代理,就始终把 localhost,127.0.0.1,::1 合并进 NO_PROXY / no_proxy,并与用户在设置里填写的 noProxy 值合并去重(保留用户自定义项,顺序稳定)。即使用户把 no-proxy 栏留空,本地回环也必须被排除。\n- 补充/更新对应单元测试覆盖:空 noProxy、用户已填部分项、重复项去重等场景。\n\nB. 内部 localhost 客户端永远绕过代理\n- 让 Kanban 连接本机运行时(127.0.0.1:3484)的 HTTP / tRPC 客户端无视任何代理环境变量,始终直连(例如使用 undici 的 no-proxy dispatcher,或显式 ProxyAgent 排除回环)。定位 CLI 与 web-ui 中访问本地运行时的客户端入口(参考 src/trpc/runtime-api.ts、web-ui/src/runtime/trpc-client.ts、src/cli.ts、src/commands/task.ts)。\n- 注意:不要影响 agent 会话访问外网 API 时正常走代理的需求——只对本地回环目标绕过代理。\n\n要求:\n- 遵循项目 TypeScript 规范(无 any、优先用 SDK/undici 已有类型与能力,不要本地重造)。\n- 不要为修类型错误而降级依赖。\n- 加必要测试,确保:启用系统代理或 Kanban 代理时,本地 127.0.0.1 请求仍能直连成功。\n\n参考已确认根因:proxy-env.ts 的 noProxy 为可选,留空时 NO_PROXY 不会被设置;且 CLI 走交互 shell 的 http_proxy 时连本地也被代理。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "baseRef": "main",
+  "createdAt": 1780902552170,
+  "updatedAt": 1780902908307,
+  "column": "trash",
+  "rank": "ac",
+  "dependsOn": []
+}

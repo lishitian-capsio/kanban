@@ -1,0 +1,78 @@
+[
+  {
+    "requirementId": "84973",
+    "version": 1,
+    "changeKind": "create",
+    "snapshot": {
+      "id": "84973",
+      "title": "Kanban sidebar agent 应具备主动式能力(监听任务状态变化并主动汇报)",
+      "description": "现状:Kanban sidebar agent 是被动/请求驱动的——只在用户说话时才动作,没有常驻后台循环,不会主动巡逻看板或推送。目前「定时盯任务状态并提醒」只能靠 harness(如 Claude Code)的定时唤醒外挂实现,属于 agent 自带能力之外,且换 agent 不一定具备。真正事件驱动的自动推进(auto-review、任务链接自动拉起)在 Kanban 引擎侧,不在 sidebar agent。\n\n期望:让 sidebar agent 具备内建的主动能力,例如:\n- 监听任务/会话状态变化(in_progress → review → done、session 结束/报错),在关键节点主动通知用户,而不必用户来问。\n- 不依赖某一特定 home agent 的调度特性,作为 Kanban 自身能力提供。\n\n待讨论的设计点:\n- 主动性落在 sidebar agent 层还是 Kanban 引擎层(事件订阅/通知机制)。\n- 通知通道与节流策略(只在状态变化时打断,避免噪音)。\n- 与现有 auto-review、任务链接等事件驱动机制如何配合,避免职责重叠。",
+      "priority": "medium",
+      "status": "draft",
+      "linkedTaskIds": [],
+      "order": 0,
+      "createdAt": 1781153652201,
+      "updatedAt": 1781153652201
+    },
+    "source": "human",
+    "reason": null,
+    "createdAt": 1781153652202
+  },
+  {
+    "requirementId": "84973",
+    "version": 2,
+    "changeKind": "update",
+    "snapshot": {
+      "id": "84973",
+      "title": "Kanban sidebar agent 应具备主动式能力(监听任务状态变化并主动汇报)",
+      "description": "现状:Kanban sidebar agent 是被动/请求驱动的——只在用户说话时才动作,没有常驻后台循环,不会主动巡逻看板或推送。目前「定时盯任务状态并提醒」只能靠 harness(如 Claude Code)的定时唤醒外挂实现,属于 agent 自带能力之外,且换 agent 不一定具备。真正事件驱动的自动推进(auto-review、任务链接自动拉起)在 Kanban 引擎侧,不在 sidebar agent。\n\n期望:让 sidebar agent 具备内建的主动能力,例如:\n- 监听任务/会话状态变化(in_progress → review → done、session 结束/报错),在关键节点主动通知用户,而不必用户来问。\n- 不依赖某一特定 home agent 的调度特性,作为 Kanban 自身能力提供。\n\n待讨论的设计点:\n- 主动性落在 sidebar agent 层还是 Kanban 引擎层(事件订阅/通知机制)。\n- 通知通道与节流策略(只在状态变化时打断,避免噪音)。xx\n- 与现有 auto-review、任务链接等事件驱动机制如何配合,避免职责重叠。",
+      "priority": "medium",
+      "status": "draft",
+      "linkedTaskIds": [],
+      "order": 0,
+      "createdAt": 1781153652201,
+      "updatedAt": 1781153812083
+    },
+    "source": "human",
+    "reason": null,
+    "createdAt": 1781153811434
+  },
+  {
+    "requirementId": "84973",
+    "version": 3,
+    "changeKind": "update",
+    "snapshot": {
+      "id": "84973",
+      "title": "Kanban sidebar agent 应具备主动式能力(监听任务状态变化并主动汇报)",
+      "description": "现状:Kanban sidebar agent 是被动/请求驱动的——只在用户说话时才动作,没有常驻后台循环,不会主动巡逻看板或推送。目前「定时盯任务状态并提醒」只能靠 harness(如 Claude Code)的定时唤醒外挂实现,属于 agent 自带能力之外,且换 agent 不一定具备。真正事件驱动的自动推进(auto-review、任务链接自动拉起)在 Kanban 引擎侧,不在 sidebar agent。\n\n期望:让 sidebar agent 具备内建的主动能力,例如:\n- 监听任务/会话状态变化(in_progress → review → done、session 结束/报错),在关键节点主动通知用户,而不必用户来问。\n- 不依赖某一特定 home agent 的调度特性,作为 Kanban 自身能力提供。\n\n待讨论的设计点:\n- 主动性落在 sidebar agent 层还是 Kanban 引擎层(事件订阅/通知机制)。\n- 通知通道与节流策略(只在状态变化时打断,避免噪音)。\n- 与现有 auto-review、任务链接等事件驱动机制如何配合,避免职责重叠。",
+      "priority": "medium",
+      "status": "draft",
+      "linkedTaskIds": [],
+      "order": 0,
+      "createdAt": 1781153652201,
+      "updatedAt": 1781153815682
+    },
+    "source": "human",
+    "reason": null,
+    "createdAt": 1781153815045
+  },
+  {
+    "requirementId": "84973",
+    "version": 4,
+    "changeKind": "delete",
+    "snapshot": {
+      "id": "84973",
+      "title": "Kanban sidebar agent 应具备主动式能力(监听任务状态变化并主动汇报)",
+      "description": "现状:Kanban sidebar agent 是被动/请求驱动的——只在用户说话时才动作,没有常驻后台循环,不会主动巡逻看板或推送。目前「定时盯任务状态并提醒」只能靠 harness(如 Claude Code)的定时唤醒外挂实现,属于 agent 自带能力之外,且换 agent 不一定具备。真正事件驱动的自动推进(auto-review、任务链接自动拉起)在 Kanban 引擎侧,不在 sidebar agent。\n\n期望:让 sidebar agent 具备内建的主动能力,例如:\n- 监听任务/会话状态变化(in_progress → review → done、session 结束/报错),在关键节点主动通知用户,而不必用户来问。\n- 不依赖某一特定 home agent 的调度特性,作为 Kanban 自身能力提供。\n\n待讨论的设计点:\n- 主动性落在 sidebar agent 层还是 Kanban 引擎层(事件订阅/通知机制)。\n- 通知通道与节流策略(只在状态变化时打断,避免噪音)。\n- 与现有 auto-review、任务链接等事件驱动机制如何配合,避免职责重叠。",
+      "priority": "medium",
+      "status": "draft",
+      "linkedTaskIds": [],
+      "order": 0,
+      "createdAt": 1781153652201,
+      "updatedAt": 1781153815682
+    },
+    "source": "human",
+    "reason": null,
+    "createdAt": 1781153919227
+  }
+]

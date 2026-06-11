@@ -1,0 +1,14 @@
+{
+  "id": "1250a",
+  "title": "彻底移除 cline agent 选项",
+  "prompt": "目标：把 cline 作为可选任务 agent 的支持从代码中彻底清除（嵌入式 Cline SDK runtime 之前已移除，本任务只清残留的 CLI agent 选项）。\n\n请处理以下已知引用点（先用 grep -rli cline src/ 复查，确保不遗漏新出现的）：\n\n1. src/terminal/agent-session-adapters.ts — 删除 clineAdapter（约 1373 行）及其在 adapter 注册表里的 'cline:' 条目（约 1437 行）。\n2. src/core/api-contract.ts — 从 runtimeAgentIdSchema 枚举（约 74 行）移除 'cline'；评估 runtimeKanbanOauthProviderSchema（约 643 行）里的 'cline' 是否还需要，若仅服务于已删的 cline agent 则一并移除。\n3. src/commands/task.ts — 从 --agent-id 选项的帮助文本（约 1045、1107 行）移除 cline。\n4. src/prompts/append-system-prompt.ts — 移除 'cline' 分支（约 30、55-56 行）。\n5. src/agent-sdk/kanban/provider-service.ts — 处理 provider: 'cline'（约 579 行）的逻辑。\n6. src/agent-sdk/kanban/mcp-settings-service.ts — 评估 Cline flat config schema 注释/逻辑是否还被其他 agent 复用；若 schema 形状仍被通用 MCP 配置读取，保留但更新注释，不要误删通用逻辑。\n\n注意事项：\n- 仅清理 cline 作为 agent 选项的代码，不要动 package.json 里 GitHub 仓库 URL / author 等 'cline' 字样（那是仓库归属，不是 agent）。\n- src/cli.ts、src/core/graceful-shutdown.ts 里的 cline 只是历史注释/文档说明，按需更新措辞即可，不影响功能。\n- 改完跑类型检查和相关测试，确保枚举收窄后没有遗漏的穷尽匹配 / switch case。\n- 完成后用 grep -rli cline src/ 自查，说明每处剩余引用为何保留。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "baseRef": "main",
+  "createdAt": 1781071316438,
+  "updatedAt": 1781144383402,
+  "column": "trash",
+  "rank": "aJ",
+  "dependsOn": []
+}

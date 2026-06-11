@@ -1,0 +1,14 @@
+{
+  "id": "45228",
+  "title": "调研+设计：统一 Agent 管理层（跨 agent 持久化）",
+  "prompt": "目标：为 Kanban 调研并设计一个【agent 无关的统一管理层】，让不论底层跑的是哪个 agent（pi / claude / cline 等），都被纳入同一套管理（持久记忆/上下文、统一会话与状态总览、可接管/接手）。本任务只做现状调研 + 方向性设计，产出设计文档/计划，不要直接实现功能代码。\n\n背景痛点：\n- 当前 Kanban 的侧边栏/编排 agent 是无状态的：会话关闭、或在不同 agent 之间来回切换后，之前的上下文、决策、进度都会丢失（“一关就忘”）。\n- 用户希望 Kanban 升一层，成为一个 agent 无关的统一管理层（agent manager / 类 agent 操作系统）：不管用哪个 agent，都共享同一套持久上下文与统一管理视图。\n\n调研要点（先彻底摸清现状再谈设计）：\n1. 现有 agent 抽象与多 agent 支持：通读 src/agent-sdk/（pi/oh-my-pi 适配层 src/agent-sdk/kanban/）与 src/cline-sdk/ 边界，runtime-api.ts / runtime-server.ts 的双路设计，搞清楚 Kanban 今天是如何区分/启动/管理不同 agent 服务的（参考 AGENTS.md 里的 dual-path 说明）。\n2. 会话与状态：task 的 session、worktree、运行状态、RuntimeTaskSessionSummary 等是如何建模与持久化的？哪些是内存态、哪些落盘？切换/重启后哪些会丢。\n3. 记忆/上下文：当前是否有任何持久记忆机制（如 .claude memory、AGENTS.md、task prompt 等）？跨 agent、跨会话能共享什么、不能共享什么。\n4. 基于现状，提出“统一 agent 管理层”的方向性设计：\n   - 一份 agent 无关的持久上下文/记忆存储（任何 agent 可读写），解决“一关就忘”。\n   - 统一的 agent 会话/状态总览（不同厂商 agent 当前在跑什么、做到哪、历史会话，可接管/接手）。\n   - 把“用哪个 agent”做成可替换/可插拔适配层，同一任务可换 agent 续跑而上下文不断。\n   对每一块给出与现有架构的契合点、改造范围、风险与取舍，并给推荐的分期路线。\n5. 列出实现拆分建议（持久层 / agent 适配抽象 / runtime 接口 / web-ui 总览 各自子任务）及依赖关系，方便后续在 Kanban 上拆成多个可并行/有依赖的 task。\n\n交付物：一份方向性设计方案（可写在 .plan/ 下的 markdown 文档里），包含现状梳理、统一管理层架构、改造范围与风险、推荐分期路线、以及实现任务拆分与依赖图。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "baseRef": "main",
+  "createdAt": 1780973745482,
+  "updatedAt": 1780983273346,
+  "column": "trash",
+  "rank": "aW",
+  "dependsOn": []
+}

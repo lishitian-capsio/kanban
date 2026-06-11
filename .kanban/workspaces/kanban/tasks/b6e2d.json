@@ -1,0 +1,14 @@
+{
+  "id": "b6e2d",
+  "title": "统一会话消息模型（agent 无关契约）",
+  "prompt": "把 pi 现有的 KanbanTaskMessage[] 消息模型提升为一个 agent 无关的会话消息模型，作为后续 CLI agent 转录、落盘、续聊的共同基础。\n\n现状：消息模型只服务 pi——KanbanTaskMessage 定义在 src/agent-sdk/kanban/session-state.ts，存储在 pi-task-session-service.ts 的 PiMessageStore（仅内存）。CLI/terminal agent 没有任何消息模型，只有 src/terminal/terminal-state-mirror.ts 的内存终端镜像。\n\n任务：\n1. 把 KanbanTaskMessage 及相关辅助（createMessage、消息流式更新 helper）从 pi 专属位置抽到一个 agent 无关的共享模块（如 src/core/ 或 src/session/），不破坏 pi 现有行为。\n2. 定义一个 agent 无关的会话消息源接口（如 SessionMessageSource），pi 的 PiTaskSessionService 实现它；为后续 terminal session 实现预留。\n3. 保证消息模型能同时表达 pi 的富结构（user/assistant/tool/reasoning）和 CLI agent 的轻量转录（按回合的 assistant 文本块），即模型要足够通用。\n4. 不改变现有 WS 广播契约（runtime-state-hub.ts 的 onMessage / task_chat_message），保持向后兼容。\n\n仅做模型/接口抽取与重构，不做落盘、不做 CLI 捕获（后续任务）。遵循仓库 TypeScript 规范：无 any、无 inline import。完成后跑 typecheck/相关测试确认无回归。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "baseRef": "main",
+  "createdAt": 1781156033753,
+  "updatedAt": 1781171115058,
+  "column": "trash",
+  "rank": "aC",
+  "dependsOn": []
+}

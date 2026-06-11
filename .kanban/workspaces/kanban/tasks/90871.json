@@ -1,0 +1,14 @@
+{
+  "id": "90871",
+  "title": "调研+设计：项目 Wiki（项目级知识库）",
+  "prompt": "目标：为 Kanban 调研并设计一个【项目级 Wiki】功能——每个 Kanban 项目/工作区自带一个 wiki，作为这个项目的知识库/活文档，沉淀架构说明、决策记录、背景、使用文档等，长在项目之上。本任务只做现状调研 + 方向性设计，产出设计文档/计划，不要直接实现功能代码。\n\n定位：\n- 这是项目的 wiki：以 Kanban 的 project/workspace 为单位，每个项目一套 wiki。\n- 内容是项目级长期知识（不是单个 task 的临时上下文）。\n- 后续可能与任务/agent 打通（任务产出沉淀进 wiki、agent 检索引用 wiki），但本期先把 wiki 本身的形态与项目归属理清楚。\n\n调研要点：\n1. 通读 Kanban 现有的 project/workspace 概念与持久化方式（项目是怎么注册/存储的，参考 src/ 下相关模块与 task 存储），给出 wiki 应如何按项目归属、如何建模与存储（页面/层级/链接等）。\n2. 梳理 CLI 与 runtime 后端层（src/cli.ts、runtime-api.ts / runtime-server.ts），给出 wiki 的命令与接口设计草案。\n3. web-ui 形态：wiki 在前端怎么呈现（独立项目 wiki 视图 / 侧栏 / 页面树 + 富文本或 markdown 编辑），对比方案并给推荐，附简单 UI 结构示意。遵循 AGENTS.md 的 web-ui 技术栈与设计 token。\n4. 关系分析（重要）：明确本 wiki 与另外两个进行中的调研方向的边界与协同——任务 0f13f 需求条目管理（需求背景/决策是否应沉淀进 wiki），任务 45228 统一 agent 管理层/跨 agent 持久记忆（wiki 是否作为 agent 可检索的持久知识载体，还是人读的 wiki 与 agent 用的记忆分层）。给出清晰建议：合并、复用底层存储、还是各自独立。\n5. 列出实现拆分建议（数据/存储 / CLI / runtime 接口 / web-ui 各自子任务）及依赖关系，方便后续在 Kanban 上拆成多个可并行/有依赖的 task。\n\n交付物：一份方向性设计方案（可写在 .plan/ 下的 markdown 文档里），包含数据模型、CLI/接口设计、UI 建议、与需求管理及统一记忆层的关系结论、推荐分期路线、实现任务拆分与依赖图。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "baseRef": "main",
+  "createdAt": 1780976179240,
+  "updatedAt": 1780983273346,
+  "column": "trash",
+  "rank": "aV",
+  "dependsOn": []
+}
