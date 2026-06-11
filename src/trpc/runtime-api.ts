@@ -48,6 +48,7 @@ import { isHomeAgentSessionId } from "../core/home-agent-session";
 import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
 import { resolveTaskTitle } from "../core/task-title.js";
 import { openInBrowser } from "../server/browser";
+import type { HomeThreadStore } from "../session/home-thread-store";
 import { buildRuntimeConfigResponse, resolveAgentCommand } from "../terminal/agent-registry";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { resolveTaskCwd } from "../workspace/task-worktree";
@@ -61,6 +62,9 @@ export interface CreateRuntimeApiDependencies {
 	setActiveRuntimeConfig: (config: RuntimeConfigState) => void;
 	getScopedTerminalManager: (scope: RuntimeTrpcWorkspaceScope) => Promise<TerminalSessionManager>;
 	getScopedPiTaskSessionService: (scope: RuntimeTrpcWorkspaceScope) => Promise<PiTaskSessionService>;
+	// Per-workspace home chat thread registry. Consumed by a later endpoint layer;
+	// wired here so the construction/lifecycle seam exists in the foundation.
+	getScopedHomeThreadStore?: (scope: RuntimeTrpcWorkspaceScope) => HomeThreadStore;
 	resolveInteractiveShellCommand: () => { binary: string; args: string[] };
 	runCommand: (command: string, cwd: string) => Promise<RuntimeCommandRunResponse>;
 	broadcastKanbanMcpAuthStatusesUpdated?: (

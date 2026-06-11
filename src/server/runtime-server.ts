@@ -15,6 +15,7 @@ import type {
 	RuntimeUpdateStatusResponse,
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
+import { parseHomeAgentSessionId } from "../core/home-agent-session";
 import {
 	buildKanbanRuntimeUrl,
 	getKanbanRuntimeHost,
@@ -35,6 +36,7 @@ import {
 	validatePasscode,
 	validateSession,
 } from "../security/passcode-manager";
+import { createWorkspaceHomeThreadStore, type HomeThreadStore } from "../session/home-thread-store";
 import { FileSessionMessageJournal } from "../session/session-message-journal";
 import { getWorkspaceSessionMessagesDirPath, loadWorkspaceContextById } from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
@@ -169,6 +171,34 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		void disposePiTaskSessionServiceAsync(workspaceId);
 	};
 
+	// Home chat thread registry management. One store per workspace; closing a
+	// thread cleans up its backing session via the matching session manager.
+	const homeThreadStoreByWorkspaceId = new Map<string, HomeThreadStore>();
+	const getScopedHomeThreadStore = (scope: RuntimeTrpcWorkspaceScope): HomeThreadStore => {
+		let store = homeThreadStoreByWorkspaceId.get(scope.workspaceId);
+		if (!store) {
+			store = createWorkspaceHomeThreadStore(scope.workspaceId, {
+				onCloseSession: async (sessionId) => {
+					// Route cleanup to the agent that actually backs the session, so
+					// closing a thread never lazily spins up the other manager.
+					const parts = parseHomeAgentSessionId(sessionId);
+					if (parts?.agentId === "pi") {
+						await piTaskSessionServiceByWorkspaceId.get(scope.workspaceId)?.closeTaskSession(sessionId);
+						return;
+					}
+					await deps.workspaceRegistry
+						.getTerminalManagerForWorkspace(scope.workspaceId)
+						?.closeTaskSession(sessionId);
+				},
+			});
+			homeThreadStoreByWorkspaceId.set(scope.workspaceId, store);
+		}
+		return store;
+	};
+	const disposeHomeThreadStore = (workspaceId: string): void => {
+		homeThreadStoreByWorkspaceId.delete(workspaceId);
+	};
+
 	const prepareForStateReset = async (): Promise<void> => {
 		const workspaceIds = new Set<string>();
 		for (const { workspaceId } of deps.workspaceRegistry.listManagedWorkspaces()) {
@@ -183,6 +213,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		}
 		for (const workspaceId of workspaceIds) {
 			await disposePiTaskSessionServiceAsync(workspaceId);
+			disposeHomeThreadStore(workspaceId);
 			deps.disposeWorkspace(workspaceId, {
 				stopTerminalSessions: true,
 			});
@@ -203,6 +234,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				setActiveRuntimeConfig: deps.workspaceRegistry.setActiveRuntimeConfig,
 				getScopedTerminalManager,
 				getScopedPiTaskSessionService,
+				getScopedHomeThreadStore,
 				resolveInteractiveShellCommand: deps.resolveInteractiveShellCommand,
 				runCommand: deps.runCommand,
 				broadcastKanbanMcpAuthStatusesUpdated: deps.runtimeStateHub.broadcastKanbanMcpAuthStatusesUpdated,
@@ -234,6 +266,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				getTerminalManagerForWorkspace: deps.workspaceRegistry.getTerminalManagerForWorkspace,
 				disposeWorkspace: (workspaceId, options) => {
 					disposePiTaskSessionService(workspaceId);
+					disposeHomeThreadStore(workspaceId);
 					return deps.disposeWorkspace(workspaceId, options);
 				},
 				collectProjectWorktreeTaskIdsForRemoval: deps.collectProjectWorktreeTaskIdsForRemoval,
@@ -504,6 +537,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				}),
 			);
 			piTaskSessionServiceByWorkspaceId.clear();
+			homeThreadStoreByWorkspaceId.clear();
 			await deps.runtimeStateHub.close();
 			await terminalWebSocketBridge.close();
 			await new Promise<void>((resolveClose, rejectClose) => {

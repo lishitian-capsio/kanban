@@ -3,7 +3,7 @@ import { realpathSync } from "node:fs";
 import packageJson from "../../package.json" with { type: "json" };
 
 import type { RuntimeAgentId } from "../core/api-contract";
-import { isHomeAgentSessionId } from "../core/home-agent-session";
+import { isHomeAgentSessionId, parseHomeAgentSessionId } from "../core/home-agent-session";
 import { resolveKanbanCommandParts } from "../core/kanban-command";
 import { buildShellCommandLine } from "../core/shell";
 import { detectAutoUpdateInstallation, UpdatePackageManager } from "../update/update";
@@ -24,29 +24,18 @@ export interface RenderAppendSystemPromptOptions {
 	agentId?: RuntimeAgentId | null;
 }
 
-const APPEND_PROMPT_AGENT_IDS: readonly RuntimeAgentId[] = [
-	"claude",
-	"codex",
-	"droid",
-	"kiro",
-	"gemini",
-	"opencode",
-];
+const APPEND_PROMPT_AGENT_IDS: readonly RuntimeAgentId[] = ["claude", "codex", "droid", "kiro", "gemini", "opencode"];
 
 function isRuntimeAgentId(value: string): value is RuntimeAgentId {
 	return APPEND_PROMPT_AGENT_IDS.includes(value as RuntimeAgentId);
 }
 
 function resolveHomeAgentId(taskId: string): RuntimeAgentId | null {
-	if (!isHomeAgentSessionId(taskId)) {
+	const parts = parseHomeAgentSessionId(taskId);
+	if (!parts || !isRuntimeAgentId(parts.agentId)) {
 		return null;
 	}
-	const parts = taskId.split(":");
-	const maybeAgentId = parts.at(-1) ?? null;
-	if (!maybeAgentId || !isRuntimeAgentId(maybeAgentId)) {
-		return null;
-	}
-	return maybeAgentId;
+	return parts.agentId;
 }
 
 function renderLinearSetupGuidanceForAgent(agentId: RuntimeAgentId | null): string {

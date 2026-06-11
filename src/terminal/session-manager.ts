@@ -1161,6 +1161,24 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 		return cloneSummary(entry.summary);
 	}
 
+	/**
+	 * Permanently close a single session: stop any active process, drop its
+	 * in-memory entry (mirror + listeners), and delete its persisted transcript.
+	 * Used when a home chat thread is closed.
+	 */
+	async closeTaskSession(taskId: string): Promise<void> {
+		const entry = this.entries.get(taskId);
+		if (!entry) {
+			await this.messageJournal.clear(taskId);
+			return;
+		}
+		this.stopTaskSession(taskId);
+		entry.terminalStateMirror?.dispose();
+		entry.listeners.clear();
+		this.entries.delete(taskId);
+		await this.messageJournal.clear(taskId);
+	}
+
 	markInterruptedAndStopAll(): RuntimeTaskSessionSummary[] {
 		const activeEntries = Array.from(this.entries.values()).filter((entry) => entry.active != null);
 		for (const entry of activeEntries) {

@@ -173,6 +173,24 @@ export const runtimeRequirementsDataSchema = z.object({
 });
 export type RuntimeRequirementsData = z.infer<typeof runtimeRequirementsDataSchema>;
 
+// A single home sidebar chat thread. `id` is the thread id (the fourth segment
+// of the home agent session id), NOT the full synthetic session id. Each thread
+// is bound to one agent; the full session id is derived via
+// `createHomeAgentSessionId(workspaceId, agentId, id)`.
+export const runtimeHomeChatThreadSchema = z.object({
+	id: z.string(),
+	agentId: runtimeAgentIdSchema,
+	name: z.string(),
+	createdAt: z.number(),
+	updatedAt: z.number(),
+});
+export type RuntimeHomeChatThread = z.infer<typeof runtimeHomeChatThreadSchema>;
+
+export const runtimeHomeChatThreadsDataSchema = z.object({
+	threads: z.array(runtimeHomeChatThreadSchema).default([]),
+});
+export type RuntimeHomeChatThreadsData = z.infer<typeof runtimeHomeChatThreadsDataSchema>;
+
 export const runtimeRequirementChangeSourceSchema = z.enum(["human", "agent"]);
 export type RuntimeRequirementChangeSource = z.infer<typeof runtimeRequirementChangeSourceSchema>;
 

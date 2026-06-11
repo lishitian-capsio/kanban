@@ -87,6 +87,26 @@ describe("TerminalSessionManager", () => {
 		expect(manager.getSummary("task-resume")?.agentSessionId).toBe("550e8400-e29b-41d4-a716-446655440000");
 	});
 
+	it("closes a session: removes the entry and clears its persisted transcript", async () => {
+		const clear = vi.fn(async () => undefined);
+		const journal = {
+			recordMessage: vi.fn(),
+			loadMessages: vi.fn(async () => []),
+			clear,
+			flush: vi.fn(async () => undefined),
+			dispose: vi.fn(async () => undefined),
+		};
+		const manager = new TerminalSessionManager({ messageJournal: journal });
+		manager.hydrateFromRecord({
+			"task-close": createSummary({ taskId: "task-close", state: "interrupted" }),
+		});
+
+		await manager.closeTaskSession("task-close");
+
+		expect(manager.getSummary("task-close")).toBeNull();
+		expect(clear).toHaveBeenCalledWith("task-close");
+	});
+
 	it("resets stale running sessions without active processes", () => {
 		const manager = new TerminalSessionManager();
 		manager.hydrateFromRecord({

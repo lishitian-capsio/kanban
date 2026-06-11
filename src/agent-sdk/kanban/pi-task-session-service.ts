@@ -67,6 +67,8 @@ export interface PiTaskSessionService extends SessionMessageSource {
 	): Promise<RuntimeTaskSessionSummary | null>;
 	reloadTaskSession(taskId: string): Promise<RuntimeTaskSessionSummary | null>;
 	clearTaskSession(taskId: string): Promise<RuntimeTaskSessionSummary | null>;
+	/** Permanently close a session: stop, drop in-memory state, delete transcript. */
+	closeTaskSession(taskId: string): Promise<void>;
 	rebindPersistedTaskSession(taskId: string): Promise<RuntimeTaskSessionSummary | null>;
 	getSummary(taskId: string): RuntimeTaskSessionSummary | null;
 	listSummaries(): RuntimeTaskSessionSummary[];
@@ -148,6 +150,11 @@ class PiMessageStore {
 		// clear() synchronously enqueues the file removal, so a subsequent
 		// loadMessages chains after it — fire-and-forget is ordering-safe.
 		void this.journal.clear(taskId);
+	}
+
+	async deleteTaskEntry(taskId: string): Promise<void> {
+		this.entries.delete(taskId);
+		await this.journal.clear(taskId);
 	}
 
 	async dispose(): Promise<void> {
@@ -431,6 +438,13 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 		this.messageStore.setTaskEntry(taskId, clearedEntry);
 		this.messageStore.emitSummary(clearedEntry.summary);
 		return cloneSummary(clearedEntry.summary);
+	}
+
+	async closeTaskSession(taskId: string): Promise<void> {
+		this.pendingTurnCancelTaskIds.delete(taskId);
+		await this.stopTaskSession(taskId).catch(() => null);
+		await this.agentRuntime.clearSessions(taskId).catch(() => undefined);
+		await this.messageStore.deleteTaskEntry(taskId);
 	}
 
 	async rebindPersistedTaskSession(taskId: string): Promise<RuntimeTaskSessionSummary | null> {

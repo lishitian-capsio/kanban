@@ -9,6 +9,7 @@ import {
 	type RuntimeBoardColumnId,
 	type RuntimeBoardData,
 	type RuntimeGitRepositoryInfo,
+	type RuntimeHomeChatThreadsData,
 	type RuntimeRequirementsData,
 	type RuntimeRequirementTaskLinksData,
 	type RuntimeRequirementVersionsData,
@@ -16,6 +17,7 @@ import {
 	type RuntimeWorkspaceStateResponse,
 	type RuntimeWorkspaceStateSaveRequest,
 	runtimeBoardDataSchema,
+	runtimeHomeChatThreadsDataSchema,
 	runtimeRequirementsDataSchema,
 	runtimeRequirementTaskLinksDataSchema,
 	runtimeRequirementVersionsDataSchema,
@@ -36,6 +38,7 @@ const SESSIONS_FILENAME = "sessions.json";
 const REQUIREMENTS_FILENAME = "requirements.json";
 const REQUIREMENT_VERSIONS_FILENAME = "requirement-versions.json";
 const REQUIREMENT_TASK_LINKS_FILENAME = "requirement-task-links.json";
+const HOME_THREADS_FILENAME = "threads.json";
 const META_FILENAME = "meta.json";
 const RUNTIME_HOME_GITIGNORE_FILENAME = ".gitignore";
 // Boundary between committed content and machine-local runtime/secrets inside a
@@ -265,6 +268,10 @@ function getWorkspaceRequirementTaskLinksPath(repoPath: string, workspaceId: str
 	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_TASK_LINKS_FILENAME);
 }
 
+function getWorkspaceHomeThreadsPath(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), HOME_THREADS_FILENAME);
+}
+
 function getWorkspaceMetaPath(repoPath: string, workspaceId: string): string {
 	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), META_FILENAME);
 }
@@ -447,6 +454,48 @@ async function readWorkspaceRequirements(repoPath: string, workspaceId: string):
 			items: [],
 		},
 	);
+}
+
+async function readWorkspaceHomeThreads(repoPath: string, workspaceId: string): Promise<RuntimeHomeChatThreadsData> {
+	const threadsPath = getWorkspaceHomeThreadsPath(repoPath, workspaceId);
+	// Home chat threads are a new (post-relocation) feature: no legacy location to fall back to.
+	const rawThreads = await readJsonFile(threadsPath);
+	return parsePersistedStateFile(threadsPath, HOME_THREADS_FILENAME, rawThreads, runtimeHomeChatThreadsDataSchema, {
+		threads: [],
+	});
+}
+
+/** Read the persisted home chat thread registry for a workspace. */
+export async function loadWorkspaceHomeThreads(workspaceId: string): Promise<RuntimeHomeChatThreadsData> {
+	const repoPath = await resolveRepoPathForWorkspaceId(workspaceId);
+	if (!repoPath) {
+		throw new Error(`Unknown workspace "${workspaceId}"; cannot resolve its repository path.`);
+	}
+	return await readWorkspaceHomeThreads(repoPath, workspaceId);
+}
+
+/**
+ * Atomically read → transform → write the home chat thread registry under the
+ * workspace directory lock. The `mutate` callback is pure (see
+ * `home-thread-registry.ts`); persistence and locking are owned here. Returns
+ * the persisted data.
+ */
+export async function mutateWorkspaceHomeThreads(
+	workspaceId: string,
+	mutate: (current: RuntimeHomeChatThreadsData) => RuntimeHomeChatThreadsData,
+): Promise<RuntimeHomeChatThreadsData> {
+	const repoPath = await resolveRepoPathForWorkspaceId(workspaceId);
+	if (!repoPath) {
+		throw new Error(`Unknown workspace "${workspaceId}"; cannot resolve its repository path.`);
+	}
+	return await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
+		const current = await readWorkspaceHomeThreads(repoPath, workspaceId);
+		const next = mutate(current);
+		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceHomeThreadsPath(repoPath, workspaceId), next, {
+			lock: null,
+		});
+		return next;
+	});
 }
 
 async function readWorkspaceRequirementVersions(
