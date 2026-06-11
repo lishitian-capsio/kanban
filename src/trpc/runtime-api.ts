@@ -403,6 +403,17 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				const summary = piService.getSummary(body.taskId);
 				const messages = await piService.loadTaskSessionMessages(body.taskId);
 				if (!summary && messages.length === 0) {
+					// Fall back to the terminal manager: CLI/terminal agents expose the
+					// same agent-agnostic transcript, captured in memory while live.
+					const terminalManager = await deps.getScopedTerminalManager(workspaceScope);
+					const terminalSummary = terminalManager.getSummary(body.taskId);
+					const terminalMessages = await terminalManager.loadTaskSessionMessages(body.taskId);
+					if (terminalSummary || terminalMessages.length > 0) {
+						return {
+							ok: true,
+							messages: terminalMessages,
+						};
+					}
 					return {
 						ok: false,
 						messages: [],

@@ -12,6 +12,8 @@ import type {
 	RuntimeTaskTurnCheckpoint,
 } from "../core/api-contract";
 import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
+import type { SessionMessage } from "../session/session-message";
+import type { SessionMessageListener, SessionMessageSource } from "../session/session-message-source";
 import {
 	type AgentAdapterLaunchInput,
 	type AgentOutputTransitionDetector,
@@ -36,6 +38,7 @@ import {
 } from "./terminal-protocol-filter";
 import type { TerminalSessionListener, TerminalSessionService } from "./terminal-session-service";
 import { TerminalStateMirror } from "./terminal-state-mirror";
+import { TerminalTranscriptCapture } from "./terminal-transcript-capture";
 
 const MAX_WORKSPACE_TRUST_BUFFER_CHARS = 16_384;
 const AUTO_RESTART_WINDOW_MS = 5_000;
@@ -87,6 +90,9 @@ interface SessionEntry {
 	summary: RuntimeTaskSessionSummary;
 	active: ActiveProcessState | null;
 	terminalStateMirror: TerminalStateMirror | null;
+	transcript: TerminalTranscriptCapture;
+	// Serializes async assistant-turn captures so committed-line bookkeeping stays consistent.
+	captureChain: Promise<void>;
 	listenerIdCounter: number;
 	listeners: Map<number, TerminalSessionListener>;
 	restartRequest: RestartableSessionRequest | null;
@@ -253,9 +259,10 @@ function hasCodexStartupUiRendered(text: string): boolean {
 	return stripped.includes("openai codex (v");
 }
 
-export class TerminalSessionManager implements TerminalSessionService {
+export class TerminalSessionManager implements TerminalSessionService, SessionMessageSource {
 	private readonly entries = new Map<string, SessionEntry>();
 	private readonly summaryListeners = new Set<(summary: RuntimeTaskSessionSummary) => void>();
+	private readonly messageListeners = new Set<SessionMessageListener>();
 
 	private trySendDeferredCodexStartupInput(taskId: string): boolean {
 		const entry = this.entries.get(taskId);
@@ -293,12 +300,59 @@ export class TerminalSessionManager implements TerminalSessionService {
 		};
 	}
 
+	onMessage(listener: SessionMessageListener): () => void {
+		this.messageListeners.add(listener);
+		return () => {
+			this.messageListeners.delete(listener);
+		};
+	}
+
+	listMessages(taskId: string): SessionMessage[] {
+		return this.entries.get(taskId)?.transcript.listMessages() ?? [];
+	}
+
+	async loadTaskSessionMessages(taskId: string): Promise<SessionMessage[]> {
+		// In-memory only for now; persistence/resume is a later task.
+		return this.listMessages(taskId);
+	}
+
+	private emitMessage(taskId: string, message: SessionMessage): void {
+		for (const listener of this.messageListeners) {
+			listener(taskId, message);
+		}
+	}
+
+	// Folds the terminal scrollback that has scrolled above the live viewport into
+	// a single `assistant` message at a turn boundary. Serialized per entry via
+	// captureChain so the committed-line cursor advances consistently.
+	private captureAssistantTurn(entry: SessionEntry): void {
+		const mirror = entry.terminalStateMirror;
+		if (!mirror) {
+			return;
+		}
+		const taskId = entry.summary.taskId;
+		entry.captureChain = entry.captureChain
+			.catch(() => undefined)
+			.then(async () => {
+				const committedLines = await mirror.getCommittedLines();
+				const message = entry.transcript.captureCommittedLines(committedLines);
+				if (message) {
+					this.emitMessage(taskId, message);
+				}
+			})
+			.catch(() => {
+				// Best effort: transcript capture must never disrupt the session lifecycle.
+			});
+	}
+
 	hydrateFromRecord(record: Record<string, RuntimeTaskSessionSummary>): void {
 		for (const [taskId, summary] of Object.entries(record)) {
 			this.entries.set(taskId, {
 				summary: cloneSummary(summary),
 				active: null,
 				terminalStateMirror: null,
+				transcript: new TerminalTranscriptCapture(taskId),
+				captureChain: Promise.resolve(),
 				listenerIdCounter: 1,
 				listeners: new Map(),
 				restartRequest: null,
@@ -591,6 +645,14 @@ export class TerminalSessionManager implements TerminalSessionService {
 		};
 		entry.active = active;
 		entry.terminalStateMirror = terminalStateMirror;
+
+		// New PTY + mirror means scrollback restarts; rebase the transcript cursor
+		// and record the kickoff prompt as the opening user message.
+		entry.transcript.resetTurnBaseline();
+		const promptMessage = entry.transcript.recordUserPrompt(request.prompt);
+		if (promptMessage) {
+			this.emitMessage(request.taskId, promptMessage);
+		}
 
 		const startedAt = now();
 		updateSummary(entry, {
@@ -889,6 +951,13 @@ export class TerminalSessionManager implements TerminalSessionService {
 			entry.active.awaitingCodexPromptAfterEnter = true;
 		}
 		entry.active.session.write(data);
+		// Fold follow-up prompts typed into an agent session into the transcript.
+		// Shell sessions (no agentId) carry no conversational transcript.
+		if (entry.summary.agentId !== null) {
+			for (const message of entry.transcript.recordInput(data.toString("utf8"))) {
+				this.emitMessage(taskId, message);
+			}
+		}
 		return cloneSummary(entry.summary);
 	}
 
@@ -1095,6 +1164,12 @@ export class TerminalSessionManager implements TerminalSessionService {
 		if (entry.active && transition.changed && transition.patch.state === "awaiting_review") {
 			entry.active.awaitingCodexPromptAfterEnter = false;
 		}
+		// Entering review is the CLI agent's turn boundary: fold the freshly
+		// committed scrollback into an assistant message. Guarded on the mirror so
+		// hydrated/inactive entries (and unit-test fakes) are skipped.
+		if (transition.changed && transition.patch.state === "awaiting_review" && entry.terminalStateMirror) {
+			this.captureAssistantTurn(entry);
+		}
 		return updateSummary(entry, transition.patch);
 	}
 
@@ -1107,6 +1182,8 @@ export class TerminalSessionManager implements TerminalSessionService {
 			summary: createDefaultSummary(taskId),
 			active: null,
 			terminalStateMirror: null,
+			transcript: new TerminalTranscriptCapture(taskId),
+			captureChain: Promise.resolve(),
 			listenerIdCounter: 1,
 			listeners: new Map(),
 			restartRequest: null,

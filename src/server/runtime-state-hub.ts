@@ -63,6 +63,7 @@ export interface RuntimeStateHub {
 
 export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): RuntimeStateHub {
 	const terminalSummaryUnsubscribeByWorkspaceId = new Map<string, () => void>();
+	const terminalMessageUnsubscribeByWorkspaceId = new Map<string, () => void>();
 	const piSummaryUnsubscribeByWorkspaceId = new Map<string, () => void>();
 	const piMessageUnsubscribeByWorkspaceId = new Map<string, () => void>();
 	const piPreviousSummaryByWorkspaceId = new Map<string, Map<string, RuntimeTaskSessionSummary>>();
@@ -249,6 +250,15 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			}
 		}
 		terminalSummaryUnsubscribeByWorkspaceId.delete(workspaceId);
+		const unsubscribeTerminalMessage = terminalMessageUnsubscribeByWorkspaceId.get(workspaceId);
+		if (unsubscribeTerminalMessage) {
+			try {
+				unsubscribeTerminalMessage();
+			} catch {
+				// Ignore listener cleanup errors during project removal.
+			}
+		}
+		terminalMessageUnsubscribeByWorkspaceId.delete(workspaceId);
 		// Pi service cleanup
 		const unsubscribePiSummary = piSummaryUnsubscribeByWorkspaceId.get(workspaceId);
 		if (unsubscribePiSummary) {
@@ -501,6 +511,12 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 				queueTaskSessionSummaryBroadcast(workspaceId, summary);
 			});
 			terminalSummaryUnsubscribeByWorkspaceId.set(workspaceId, unsubscribe);
+			// CLI/terminal agents expose the same agent-agnostic transcript as pi;
+			// stream their captured messages over the shared task_chat_message channel.
+			const unsubscribeMessage = manager.onMessage((taskId, message) => {
+				broadcastTaskChatMessage(workspaceId, taskId, message);
+			});
+			terminalMessageUnsubscribeByWorkspaceId.set(workspaceId, unsubscribeMessage);
 		},
 		trackPiTaskSessionService: (workspaceId: string, workspacePath: string, service: PiTaskSessionService) => {
 			if (piSummaryUnsubscribeByWorkspaceId.has(workspaceId)) {
@@ -566,6 +582,14 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 				}
 			}
 			terminalSummaryUnsubscribeByWorkspaceId.clear();
+			for (const unsubscribe of terminalMessageUnsubscribeByWorkspaceId.values()) {
+				try {
+					unsubscribe();
+				} catch {
+					// Ignore listener cleanup errors during shutdown.
+				}
+			}
+			terminalMessageUnsubscribeByWorkspaceId.clear();
 			// Pi service cleanup
 			for (const unsubscribe of piSummaryUnsubscribeByWorkspaceId.values()) {
 				try {

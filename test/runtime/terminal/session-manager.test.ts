@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { RuntimeTaskSessionSummary } from "../../../src/core/api-contract";
 import { buildShellCommandLine } from "../../../src/core/shell";
+import type { SessionMessage } from "../../../src/session/session-message";
 import { TerminalSessionManager } from "../../../src/terminal/session-manager";
+import { TerminalTranscriptCapture } from "../../../src/terminal/terminal-transcript-capture";
 
 function createSummary(overrides: Partial<RuntimeTaskSessionSummary> = {}): RuntimeTaskSessionSummary {
 	return {
@@ -201,6 +203,89 @@ describe("TerminalSessionManager", () => {
 		expect(resized).toBe(true);
 		expect(resizeSpy).toHaveBeenCalledWith(100, 30, 1200, 720);
 		expect(resizeMirrorSpy).toHaveBeenCalledWith(100, 30);
+	});
+
+	it("captures follow-up agent input as a user message on Enter", () => {
+		const manager = new TerminalSessionManager();
+		const entry = {
+			summary: createSummary({ taskId: "task-input", state: "running", agentId: "claude" }),
+			active: {
+				session: { write: vi.fn() },
+			},
+			transcript: new TerminalTranscriptCapture("task-input"),
+			captureChain: Promise.resolve(),
+			listenerIdCounter: 1,
+			listeners: new Map(),
+		};
+		(manager as unknown as { entries: Map<string, typeof entry> }).entries.set("task-input", entry);
+
+		const received: SessionMessage[] = [];
+		manager.onMessage((_taskId, message) => {
+			received.push(message);
+		});
+
+		manager.writeInput("task-input", Buffer.from("run the tests\r", "utf8"));
+
+		expect(received).toHaveLength(1);
+		expect(received[0]?.role).toBe("user");
+		expect(received[0]?.content).toBe("run the tests");
+		expect(manager.listMessages("task-input")).toHaveLength(1);
+	});
+
+	it("does not capture input for shell sessions without an agent", () => {
+		const manager = new TerminalSessionManager();
+		const entry = {
+			summary: createSummary({ taskId: "task-shell", state: "running", agentId: null }),
+			active: {
+				session: { write: vi.fn() },
+			},
+			transcript: new TerminalTranscriptCapture("task-shell"),
+			captureChain: Promise.resolve(),
+			listenerIdCounter: 1,
+			listeners: new Map(),
+		};
+		(manager as unknown as { entries: Map<string, typeof entry> }).entries.set("task-shell", entry);
+
+		const received: SessionMessage[] = [];
+		manager.onMessage((_taskId, message) => {
+			received.push(message);
+		});
+
+		manager.writeInput("task-shell", Buffer.from("ls -la\r", "utf8"));
+
+		expect(received).toHaveLength(0);
+		expect(manager.listMessages("task-shell")).toHaveLength(0);
+	});
+
+	it("captures committed scrollback as an assistant message when entering review", async () => {
+		const manager = new TerminalSessionManager();
+		const getCommittedLines = vi.fn(async () => ["I read the file.", "All done."]);
+		const entry = {
+			summary: createSummary({ taskId: "task-turn", state: "running", agentId: "claude", reviewReason: null }),
+			active: {
+				workspaceTrustBuffer: null,
+				awaitingCodexPromptAfterEnter: false,
+			},
+			terminalStateMirror: { getCommittedLines },
+			transcript: new TerminalTranscriptCapture("task-turn"),
+			captureChain: Promise.resolve(),
+			listenerIdCounter: 1,
+			listeners: new Map(),
+		};
+		(manager as unknown as { entries: Map<string, typeof entry> }).entries.set("task-turn", entry);
+
+		const received: SessionMessage[] = [];
+		manager.onMessage((_taskId, message) => {
+			received.push(message);
+		});
+
+		manager.transitionToReview("task-turn", "hook");
+		await entry.captureChain;
+
+		expect(getCommittedLines).toHaveBeenCalledTimes(1);
+		expect(received).toHaveLength(1);
+		expect(received[0]?.role).toBe("assistant");
+		expect(received[0]?.content).toBe("I read the file.\nAll done.");
 	});
 
 	it("returns the latest terminal restore snapshot when available", async () => {
