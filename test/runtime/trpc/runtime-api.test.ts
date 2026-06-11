@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RuntimeConfigState } from "../../../src/config/runtime-config";
-import type { RuntimeTaskSessionSummary } from "../../../src/core/api-contract";
+import type { RuntimeHomeChatThreadsData, RuntimeTaskSessionSummary } from "../../../src/core/api-contract";
 
 const agentRegistryMocks = vi.hoisted(() => ({
 	resolveAgentCommand: vi.fn(),
@@ -161,15 +161,34 @@ vi.mock("../../../src/agent-sdk/kanban/provider-settings-store.js", () => ({
 	resetProviderSettingsCache: vi.fn(),
 }));
 
+import { HomeThreadStore } from "../../../src/session/home-thread-store";
 import type { RuntimeTrpcContext } from "../../../src/trpc/app-router";
 import { type CreateRuntimeApiDependencies, createRuntimeApi } from "../../../src/trpc/runtime-api";
 
+function createInMemoryHomeThreadStore(
+	onCloseSession?: (sessionId: string) => Promise<void> | void,
+): HomeThreadStore {
+	let data: RuntimeHomeChatThreadsData = { threads: [] };
+	return new HomeThreadStore({
+		workspaceId: "workspace-1",
+		persistence: {
+			load: async () => data,
+			mutate: async (fn) => {
+				data = fn(data);
+				return data;
+			},
+		},
+		onCloseSession,
+	});
+}
+
 function createTestRuntimeApi(
-	deps: Omit<CreateRuntimeApiDependencies, "getUpdateStatus" | "runUpdateNow"> &
-		Partial<Pick<CreateRuntimeApiDependencies, "getUpdateStatus" | "runUpdateNow">>,
+	deps: Omit<CreateRuntimeApiDependencies, "getUpdateStatus" | "runUpdateNow" | "getScopedHomeThreadStore"> &
+		Partial<Pick<CreateRuntimeApiDependencies, "getUpdateStatus" | "runUpdateNow" | "getScopedHomeThreadStore">>,
 ): RuntimeTrpcContext["runtimeApi"] {
 	return createRuntimeApi({
 		...deps,
+		getScopedHomeThreadStore: deps.getScopedHomeThreadStore ?? (() => createInMemoryHomeThreadStore()),
 		getUpdateStatus:
 			deps.getUpdateStatus ??
 			vi.fn(() => ({
@@ -2722,5 +2741,115 @@ describe("createRuntimeApi update handlers", () => {
 			message: "Updated Kanban to 0.2.0.",
 		});
 		expect(runUpdateNow).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("createRuntimeApi home thread handlers", () => {
+	const workspaceScope = { workspaceId: "workspace-1", workspacePath: "/tmp/repo" };
+
+	function makeApiWithStore(onCloseSession?: (sessionId: string) => Promise<void> | void) {
+		const store = createInMemoryHomeThreadStore(onCloseSession);
+		const loadScopedRuntimeConfig = vi.fn(async () => createRuntimeConfigState());
+		const api = createTestRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig,
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => ({}) as never),
+			getScopedPiTaskSessionService: vi.fn(async () => createPiTaskSessionServiceMock() as never),
+			getScopedHomeThreadStore: () => store,
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+		return { api, store, loadScopedRuntimeConfig };
+	}
+
+	it("creates a thread defaulting agentId to the workspace selectedAgentId", async () => {
+		const { api, loadScopedRuntimeConfig } = makeApiWithStore();
+
+		const response = await api.createHomeThread(workspaceScope, { name: "  Planning  " });
+
+		expect(response.ok).toBe(true);
+		expect(response.thread?.agentId).toBe("claude");
+		expect(response.thread?.name).toBe("Planning");
+		expect(loadScopedRuntimeConfig).toHaveBeenCalled();
+	});
+
+	it("honors an explicit agentId on create", async () => {
+		const { api, loadScopedRuntimeConfig } = makeApiWithStore();
+
+		const response = await api.createHomeThread(workspaceScope, { name: "Pi thread", agentId: "pi" });
+
+		expect(response.ok).toBe(true);
+		expect(response.thread?.agentId).toBe("pi");
+		expect(loadScopedRuntimeConfig).not.toHaveBeenCalled();
+	});
+
+	it("rejects an empty thread name", async () => {
+		const { api } = makeApiWithStore();
+
+		const response = await api.createHomeThread(workspaceScope, { name: "   " });
+
+		expect(response.ok).toBe(false);
+		expect(response.thread).toBeNull();
+		expect(response.error).toContain("name");
+	});
+
+	it("lists created threads in createdAt-ascending order", async () => {
+		const { api } = makeApiWithStore();
+		await api.createHomeThread(workspaceScope, { name: "First", agentId: "claude" });
+		await api.createHomeThread(workspaceScope, { name: "Second", agentId: "pi" });
+
+		const response = await api.listHomeThreads(workspaceScope);
+
+		expect(response.ok).toBe(true);
+		expect(response.threads.map((thread) => thread.name)).toEqual(["First", "Second"]);
+	});
+
+	it("renames a thread", async () => {
+		const { api } = makeApiWithStore();
+		const created = await api.createHomeThread(workspaceScope, { name: "Old", agentId: "claude" });
+
+		const response = await api.renameHomeThread(workspaceScope, {
+			id: created.thread?.id ?? "",
+			name: "New",
+		});
+
+		expect(response.ok).toBe(true);
+		expect(response.thread?.name).toBe("New");
+	});
+
+	it("closes a thread and cleans up the derived session via onCloseSession", async () => {
+		const onCloseSession = vi.fn(async () => undefined);
+		const { api } = makeApiWithStore(onCloseSession);
+		const created = await api.createHomeThread(workspaceScope, { name: "Temp", agentId: "pi" });
+		const threadId = created.thread?.id ?? "";
+
+		const response = await api.closeHomeThread(workspaceScope, { id: threadId });
+
+		expect(response.ok).toBe(true);
+		expect(response.thread?.id).toBe(threadId);
+		// Non-default thread id => four-segment session id.
+		expect(onCloseSession).toHaveBeenCalledWith(`__home_agent__:workspace-1:pi:${threadId}`);
+		expect((await api.listHomeThreads(workspaceScope)).threads).toHaveLength(0);
+	});
+
+	it("returns ok:false when renaming a missing thread", async () => {
+		const { api } = makeApiWithStore();
+
+		const response = await api.renameHomeThread(workspaceScope, { id: "missing", name: "Nope" });
+
+		expect(response.ok).toBe(false);
+		expect(response.thread).toBeNull();
+		expect(response.error).toBeTruthy();
+	});
+
+	it("returns ok:false when closing a missing thread", async () => {
+		const { api } = makeApiWithStore();
+
+		const response = await api.closeHomeThread(workspaceScope, { id: "missing" });
+
+		expect(response.ok).toBe(false);
+		expect(response.thread).toBeNull();
+		expect(response.error).toBeTruthy();
 	});
 });

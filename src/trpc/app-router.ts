@@ -38,6 +38,11 @@ import type {
 	RuntimeGitSummaryResponse,
 	RuntimeGitSyncAction,
 	RuntimeGitSyncResponse,
+	RuntimeHomeChatThreadCloseRequest,
+	RuntimeHomeChatThreadCreateRequest,
+	RuntimeHomeChatThreadMutationResponse,
+	RuntimeHomeChatThreadRenameRequest,
+	RuntimeHomeChatThreadsListResponse,
 	RuntimeHookIngestRequest,
 	RuntimeHookIngestResponse,
 	RuntimeKanbanAccountBalanceResponse,
@@ -144,6 +149,11 @@ import {
 	runtimeGitSummaryResponseSchema,
 	runtimeGitSyncActionSchema,
 	runtimeGitSyncResponseSchema,
+	runtimeHomeChatThreadCloseRequestSchema,
+	runtimeHomeChatThreadCreateRequestSchema,
+	runtimeHomeChatThreadMutationResponseSchema,
+	runtimeHomeChatThreadRenameRequestSchema,
+	runtimeHomeChatThreadsListResponseSchema,
 	runtimeHookIngestRequestSchema,
 	runtimeHookIngestResponseSchema,
 	runtimeKanbanAccountBalanceResponseSchema,
@@ -277,6 +287,19 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeTaskChatCancelRequest,
 		) => Promise<RuntimeTaskChatCancelResponse>;
+		listHomeThreads: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeHomeChatThreadsListResponse>;
+		createHomeThread: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeHomeChatThreadCreateRequest,
+		) => Promise<RuntimeHomeChatThreadMutationResponse>;
+		renameHomeThread: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeHomeChatThreadRenameRequest,
+		) => Promise<RuntimeHomeChatThreadMutationResponse>;
+		closeHomeThread: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeHomeChatThreadCloseRequest,
+		) => Promise<RuntimeHomeChatThreadMutationResponse>;
 		getKanbanProviderCatalog: (
 			scope: RuntimeTrpcWorkspaceScope | null,
 		) => Promise<RuntimeKanbanProviderCatalogResponse>;
@@ -564,6 +587,27 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeTaskChatCancelResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.cancelTaskChatTurn(ctx.workspaceScope, input);
+			}),
+		listHomeThreads: workspaceProcedure.output(runtimeHomeChatThreadsListResponseSchema).query(async ({ ctx }) => {
+			return await ctx.runtimeApi.listHomeThreads(ctx.workspaceScope);
+		}),
+		createHomeThread: workspaceProcedure
+			.input(runtimeHomeChatThreadCreateRequestSchema)
+			.output(runtimeHomeChatThreadMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.createHomeThread(ctx.workspaceScope, input);
+			}),
+		renameHomeThread: workspaceProcedure
+			.input(runtimeHomeChatThreadRenameRequestSchema)
+			.output(runtimeHomeChatThreadMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.renameHomeThread(ctx.workspaceScope, input);
+			}),
+		closeHomeThread: workspaceProcedure
+			.input(runtimeHomeChatThreadCloseRequestSchema)
+			.output(runtimeHomeChatThreadMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.closeHomeThread(ctx.workspaceScope, input);
 			}),
 		getKanbanProviderCatalog: t.procedure
 			.output(runtimeKanbanProviderCatalogResponseSchema)

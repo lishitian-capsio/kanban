@@ -33,6 +33,9 @@ import {
 	parseKanbanProviderModelsRequest,
 	parseKanbanProviderSettingsSaveRequest,
 	parseKanbanUpdateProviderRequest,
+	parseHomeChatThreadCloseRequest,
+	parseHomeChatThreadCreateRequest,
+	parseHomeChatThreadRenameRequest,
 	parseRuntimeConfigSaveRequest,
 	parseShellSessionStartRequest,
 	parseTaskChatAbortRequest,
@@ -62,9 +65,8 @@ export interface CreateRuntimeApiDependencies {
 	setActiveRuntimeConfig: (config: RuntimeConfigState) => void;
 	getScopedTerminalManager: (scope: RuntimeTrpcWorkspaceScope) => Promise<TerminalSessionManager>;
 	getScopedPiTaskSessionService: (scope: RuntimeTrpcWorkspaceScope) => Promise<PiTaskSessionService>;
-	// Per-workspace home chat thread registry. Consumed by a later endpoint layer;
-	// wired here so the construction/lifecycle seam exists in the foundation.
-	getScopedHomeThreadStore?: (scope: RuntimeTrpcWorkspaceScope) => HomeThreadStore;
+	// Per-workspace home chat thread registry backing the home sidebar's parallel threads.
+	getScopedHomeThreadStore: (scope: RuntimeTrpcWorkspaceScope) => HomeThreadStore;
 	resolveInteractiveShellCommand: () => { binary: string; args: string[] };
 	runCommand: (command: string, cwd: string) => Promise<RuntimeCommandRunResponse>;
 	broadcastKanbanMcpAuthStatusesUpdated?: (
@@ -538,6 +540,50 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					summary: null,
 					error: message,
 				};
+			}
+		},
+		listHomeThreads: async (workspaceScope) => {
+			try {
+				const threads = await deps.getScopedHomeThreadStore(workspaceScope).list();
+				return { ok: true, threads };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, threads: [], error: message };
+			}
+		},
+		createHomeThread: async (workspaceScope, input) => {
+			try {
+				const body = parseHomeChatThreadCreateRequest(input);
+				const agentId = body.agentId ?? (await deps.loadScopedRuntimeConfig(workspaceScope)).selectedAgentId;
+				const thread = await deps.getScopedHomeThreadStore(workspaceScope).create({
+					agentId,
+					name: body.name,
+				});
+				return { ok: true, thread };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, thread: null, error: message };
+			}
+		},
+		renameHomeThread: async (workspaceScope, input) => {
+			try {
+				const body = parseHomeChatThreadRenameRequest(input);
+				const thread = await deps.getScopedHomeThreadStore(workspaceScope).rename(body.id, body.name);
+				return { ok: true, thread };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, thread: null, error: message };
+			}
+		},
+		closeHomeThread: async (workspaceScope, input) => {
+			try {
+				const body = parseHomeChatThreadCloseRequest(input);
+				// close() stops and clears the derived session via the store's onCloseSession hook.
+				const thread = await deps.getScopedHomeThreadStore(workspaceScope).close(body.id);
+				return { ok: true, thread };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, thread: null, error: message };
 			}
 		},
 		getKanbanProviderCatalog: async (_workspaceScope) => {

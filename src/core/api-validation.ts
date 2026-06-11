@@ -14,6 +14,9 @@ import {
 	type RuntimeConfigSaveRequest,
 	type RuntimeDirectoryListRequest,
 	type RuntimeGitCheckoutRequest,
+	type RuntimeHomeChatThreadCloseRequest,
+	type RuntimeHomeChatThreadCreateRequest,
+	type RuntimeHomeChatThreadRenameRequest,
 	type RuntimeHookIngestRequest,
 	type RuntimeProjectAddRequest,
 	type RuntimeProjectRemoveRequest,
@@ -46,6 +49,9 @@ import {
 	runtimeConfigSaveRequestSchema,
 	runtimeDirectoryListRequestSchema,
 	runtimeGitCheckoutRequestSchema,
+	runtimeHomeChatThreadCloseRequestSchema,
+	runtimeHomeChatThreadCreateRequestSchema,
+	runtimeHomeChatThreadRenameRequestSchema,
 	runtimeHookIngestRequestSchema,
 	runtimeProjectAddRequestSchema,
 	runtimeProjectRemoveRequestSchema,
@@ -284,6 +290,45 @@ export function parseTaskChatSendRequest(value: unknown): RuntimeTaskChatSendReq
 		...parsed,
 		taskId,
 		text,
+	};
+}
+
+export function parseHomeChatThreadCreateRequest(value: unknown): RuntimeHomeChatThreadCreateRequest {
+	const parsed = parseWithSchema(runtimeHomeChatThreadCreateRequestSchema, value);
+	const name = parsed.name.trim();
+	if (!name) {
+		throw new Error("Home chat thread name cannot be empty.");
+	}
+	return {
+		...parsed,
+		name,
+	};
+}
+
+export function parseHomeChatThreadRenameRequest(value: unknown): RuntimeHomeChatThreadRenameRequest {
+	const parsed = parseWithSchema(runtimeHomeChatThreadRenameRequestSchema, value);
+	const id = parsed.id.trim();
+	if (!id) {
+		throw new Error("Home chat thread id cannot be empty.");
+	}
+	const name = parsed.name.trim();
+	if (!name) {
+		throw new Error("Home chat thread name cannot be empty.");
+	}
+	return {
+		id,
+		name,
+	};
+}
+
+export function parseHomeChatThreadCloseRequest(value: unknown): RuntimeHomeChatThreadCloseRequest {
+	const parsed = parseWithSchema(runtimeHomeChatThreadCloseRequestSchema, value);
+	const id = parsed.id.trim();
+	if (!id) {
+		throw new Error("Home chat thread id cannot be empty.");
+	}
+	return {
+		id,
 	};
 }
 

@@ -191,6 +191,39 @@ export const runtimeHomeChatThreadsDataSchema = z.object({
 });
 export type RuntimeHomeChatThreadsData = z.infer<typeof runtimeHomeChatThreadsDataSchema>;
 
+export const runtimeHomeChatThreadsListResponseSchema = z.object({
+	ok: z.boolean(),
+	threads: z.array(runtimeHomeChatThreadSchema),
+	error: z.string().optional(),
+});
+export type RuntimeHomeChatThreadsListResponse = z.infer<typeof runtimeHomeChatThreadsListResponseSchema>;
+
+export const runtimeHomeChatThreadCreateRequestSchema = z.object({
+	name: z.string(),
+	// Optional: the agent bound to this thread. Defaults to the workspace's selectedAgentId.
+	agentId: runtimeAgentIdSchema.optional(),
+});
+export type RuntimeHomeChatThreadCreateRequest = z.infer<typeof runtimeHomeChatThreadCreateRequestSchema>;
+
+export const runtimeHomeChatThreadRenameRequestSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+});
+export type RuntimeHomeChatThreadRenameRequest = z.infer<typeof runtimeHomeChatThreadRenameRequestSchema>;
+
+export const runtimeHomeChatThreadCloseRequestSchema = z.object({
+	id: z.string(),
+});
+export type RuntimeHomeChatThreadCloseRequest = z.infer<typeof runtimeHomeChatThreadCloseRequestSchema>;
+
+// Shared by create/rename/close — each returns the affected thread (close → the removed thread).
+export const runtimeHomeChatThreadMutationResponseSchema = z.object({
+	ok: z.boolean(),
+	thread: runtimeHomeChatThreadSchema.nullable(),
+	error: z.string().optional(),
+});
+export type RuntimeHomeChatThreadMutationResponse = z.infer<typeof runtimeHomeChatThreadMutationResponseSchema>;
+
 export const runtimeRequirementChangeSourceSchema = z.enum(["human", "agent"]);
 export type RuntimeRequirementChangeSource = z.infer<typeof runtimeRequirementChangeSourceSchema>;
 

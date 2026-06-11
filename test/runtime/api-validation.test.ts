@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	parseHomeChatThreadCloseRequest,
+	parseHomeChatThreadCreateRequest,
+	parseHomeChatThreadRenameRequest,
 	parseHookIngestRequest,
 	parseTaskSessionStartRequest,
 	parseWorkspaceFileSearchRequest,
@@ -87,5 +90,49 @@ describe("parseTaskSessionStartRequest", () => {
 			baseRef: "main",
 			resumeFromTrash: true,
 		});
+	});
+});
+
+describe("parseHomeChatThreadCreateRequest", () => {
+	it("trims the name and passes agentId through", () => {
+		expect(parseHomeChatThreadCreateRequest({ name: "  Planning  ", agentId: "pi" })).toEqual({
+			name: "Planning",
+			agentId: "pi",
+		});
+	});
+
+	it("allows an omitted agentId", () => {
+		expect(parseHomeChatThreadCreateRequest({ name: "Planning" })).toEqual({ name: "Planning" });
+	});
+
+	it("throws on an empty name", () => {
+		expect(() => parseHomeChatThreadCreateRequest({ name: "   " })).toThrow("name cannot be empty");
+	});
+});
+
+describe("parseHomeChatThreadRenameRequest", () => {
+	it("trims id and name", () => {
+		expect(parseHomeChatThreadRenameRequest({ id: "  t1 ", name: "  New " })).toEqual({
+			id: "t1",
+			name: "New",
+		});
+	});
+
+	it("throws on empty id", () => {
+		expect(() => parseHomeChatThreadRenameRequest({ id: "  ", name: "New" })).toThrow("id cannot be empty");
+	});
+
+	it("throws on empty name", () => {
+		expect(() => parseHomeChatThreadRenameRequest({ id: "t1", name: " " })).toThrow("name cannot be empty");
+	});
+});
+
+describe("parseHomeChatThreadCloseRequest", () => {
+	it("trims the id", () => {
+		expect(parseHomeChatThreadCloseRequest({ id: "  t1 " })).toEqual({ id: "t1" });
+	});
+
+	it("throws on empty id", () => {
+		expect(() => parseHomeChatThreadCloseRequest({ id: "   " })).toThrow("id cannot be empty");
 	});
 });
