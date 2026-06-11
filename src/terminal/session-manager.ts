@@ -164,6 +164,7 @@ function createDefaultSummary(taskId: string): RuntimeTaskSessionSummary {
 		lastHookAt: null,
 		latestHookActivity: null,
 		warningMessage: null,
+		agentSessionId: null,
 		latestTurnCheckpoint: null,
 		previousTurnCheckpoint: null,
 	};
@@ -442,6 +443,9 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			},
 		});
 
+		// Carry forward any session id pinned on a previous launch (in-memory or hydrated from
+		// disk after a restart) so the adapter can re-attach to that exact agent conversation.
+		const recordedAgentSessionId = entry.summary.agentSessionId ?? null;
 		const launch = await prepareAgentLaunch({
 			taskId: request.taskId,
 			agentId: request.agentId,
@@ -453,6 +457,7 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			images: request.images,
 			startInPlanMode: request.startInPlanMode,
 			resumeFromTrash: request.resumeFromTrash,
+			agentSessionId: recordedAgentSessionId,
 			env: request.env,
 			workspaceId: request.workspaceId,
 		});
@@ -683,6 +688,7 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			lastHookAt: null,
 			latestHookActivity: null,
 			warningMessage: null,
+			agentSessionId: launch.agentSessionId ?? recordedAgentSessionId,
 			latestTurnCheckpoint: null,
 			previousTurnCheckpoint: null,
 		});

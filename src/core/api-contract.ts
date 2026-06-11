@@ -328,6 +328,12 @@ export const runtimeTaskSessionSummarySchema = z.object({
 	lastHookAt: z.number().nullable().default(null),
 	latestHookActivity: runtimeTaskHookActivitySchema.nullable().default(null),
 	warningMessage: z.string().nullable().optional(),
+	/**
+	 * Agent-native conversation identifier Kanban pins at launch so a session can be
+	 * resumed in its original context after a restart (e.g. `claude --session-id`/`--resume`).
+	 * Agent-agnostic by design; only the Claude adapter populates it today.
+	 */
+	agentSessionId: z.string().nullable().optional(),
 	latestTurnCheckpoint: runtimeTaskTurnCheckpointSchema.nullable().optional(),
 	previousTurnCheckpoint: runtimeTaskTurnCheckpointSchema.nullable().optional(),
 });

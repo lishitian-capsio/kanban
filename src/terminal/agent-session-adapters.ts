@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -36,6 +37,12 @@ export interface AgentAdapterLaunchInput {
 	images?: RuntimeTaskImage[];
 	startInPlanMode?: boolean;
 	resumeFromTrash?: boolean;
+	/**
+	 * Agent-native session id recorded from a previous launch of this task. When present,
+	 * adapters that support it (currently Claude) re-attach to that exact conversation
+	 * instead of starting fresh or relying on an imprecise "most recent" resume.
+	 */
+	agentSessionId?: string | null;
 	env?: Record<string, string | undefined>;
 	workspaceId?: string;
 }
@@ -55,6 +62,12 @@ export interface PreparedAgentLaunch {
 	deferredStartupInput?: string;
 	detectOutputTransition?: AgentOutputTransitionDetector;
 	shouldInspectOutputForTransition?: AgentOutputTransitionInspectionPredicate;
+	/**
+	 * The agent-native session id this launch is bound to — either freshly assigned by the
+	 * adapter (new session) or the recorded id it is resuming. Callers persist it onto the
+	 * session summary so the conversation can be resumed again later.
+	 */
+	agentSessionId?: string;
 }
 
 interface HookContext {
@@ -461,6 +474,18 @@ function toBracketedPasteSubmission(command: string): string {
 	return `\u001b[200~${command}\u001b[201~\r`;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Claude's `--session-id`/`--resume <id>` only accept a valid UUID, so a recorded id is only
+// usable if it still parses as one. Anything else is treated as "no recorded session".
+function normalizeClaudeSessionId(sessionId: string | null | undefined): string | null {
+	const trimmed = sessionId?.trim();
+	if (!trimmed || !UUID_PATTERN.test(trimmed)) {
+		return null;
+	}
+	return trimmed;
+}
+
 const claudeAdapter: AgentSessionAdapter = {
 	async prepare(input) {
 		const args = [...input.args];
@@ -475,9 +500,26 @@ const claudeAdapter: AgentSessionAdapter = {
 		) {
 			args.push("--dangerously-skip-permissions");
 		}
-		if (input.resumeFromTrash && !hasCliOption(args, "--continue")) {
-			args.push("--continue");
+		// Pin a Kanban-owned session id so this conversation can be resumed precisely later.
+		// A recorded id (from a prior launch) re-attaches to that exact session via `--resume`;
+		// a brand-new task gets a freshly minted UUID via `--session-id`. This takes priority
+		// over the legacy `--continue` "most recent session" fallback, which is only used when
+		// resuming a session that predates session-id tracking.
+		const recordedSessionId = normalizeClaudeSessionId(input.agentSessionId);
+		let assignedAgentSessionId: string | null = null;
+		const hasExplicitSessionFlag =
+			hasCliOption(args, "--session-id") || hasCliOption(args, "--resume") || hasCliOption(args, "--continue");
+		if (!hasExplicitSessionFlag) {
+			if (recordedSessionId) {
+				args.push("--resume", recordedSessionId);
+			} else if (input.resumeFromTrash) {
+				args.push("--continue");
+			} else {
+				assignedAgentSessionId = randomUUID();
+				args.push("--session-id", assignedAgentSessionId);
+			}
 		}
+		const boundAgentSessionId = assignedAgentSessionId ?? recordedSessionId ?? undefined;
 		if (input.startInPlanMode) {
 			const withoutImmediateBypass = args.filter((arg) => arg !== "--dangerously-skip-permissions");
 			args.length = 0;
@@ -564,6 +606,7 @@ const claudeAdapter: AgentSessionAdapter = {
 				...withPromptLaunch.env,
 				...env,
 			},
+			agentSessionId: boundAgentSessionId,
 		};
 	},
 };

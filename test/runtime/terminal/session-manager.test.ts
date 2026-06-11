@@ -71,6 +71,22 @@ describe("TerminalSessionManager", () => {
 		expect(typeof updated?.lastHookAt).toBe("number");
 	});
 
+	it("preserves a recorded agent session id across hydration from persisted state", () => {
+		// Mirrors the restart path: sessions.json is read back and hydrated into the manager,
+		// from where the next launch reads the pinned id and resumes the same conversation.
+		const manager = new TerminalSessionManager();
+		manager.hydrateFromRecord({
+			"task-resume": createSummary({
+				taskId: "task-resume",
+				state: "interrupted",
+				agentId: "claude",
+				agentSessionId: "550e8400-e29b-41d4-a716-446655440000",
+			}),
+		});
+
+		expect(manager.getSummary("task-resume")?.agentSessionId).toBe("550e8400-e29b-41d4-a716-446655440000");
+	});
+
 	it("resets stale running sessions without active processes", () => {
 		const manager = new TerminalSessionManager();
 		manager.hydrateFromRecord({

@@ -212,6 +212,54 @@ describe("BoardCard", () => {
 		expect(trashButton?.querySelector("svg.animate-spin")).toBeTruthy();
 	});
 
+	it("labels the trash action as restore when no agent session id is recorded", async () => {
+		await act(async () => {
+			root.render(
+				<TooltipProvider>
+					<BoardCard
+						card={createCard()}
+						index={0}
+						columnId="trash"
+						sessionSummary={createSummary("interrupted", { agentSessionId: null })}
+					/>
+				</TooltipProvider>,
+			);
+		});
+
+		expect(container.querySelector('button[aria-label="Restore task from done"]')).toBeInstanceOf(HTMLButtonElement);
+		expect(container.querySelector('button[aria-label="Continue task session"]')).toBeNull();
+	});
+
+	it("offers continue session on a trash card that has a recorded agent session id", async () => {
+		const onRestoreFromTrash = vi.fn();
+		await act(async () => {
+			root.render(
+				<TooltipProvider>
+					<BoardCard
+						card={createCard()}
+						index={0}
+						columnId="trash"
+						sessionSummary={createSummary("interrupted", {
+							agentId: "claude",
+							agentSessionId: "550e8400-e29b-41d4-a716-446655440000",
+						})}
+						onRestoreFromTrash={onRestoreFromTrash}
+					/>
+				</TooltipProvider>,
+			);
+		});
+
+		const continueButton = container.querySelector('button[aria-label="Continue task session"]');
+		expect(continueButton).toBeInstanceOf(HTMLButtonElement);
+		expect(container.querySelector('button[aria-label="Restore task from done"]')).toBeNull();
+
+		await act(async () => {
+			continueButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			(continueButton as HTMLButtonElement | null)?.click();
+		});
+		expect(onRestoreFromTrash).toHaveBeenCalledWith("task-1");
+	});
+
 	it("shows inline see more and less controls for long descriptions", async () => {
 		const description =
 			"Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau final hidden segment";

@@ -478,7 +478,10 @@ describe("prepareAgentLaunch hook strategies", () => {
 			prompt: "",
 			resumeFromTrash: true,
 		});
+		// Legacy fallback: resuming a session that predates session-id tracking has no recorded
+		// id, so Claude falls back to the imprecise "most recent session" resume.
 		expect(claudeLaunch.args).toContain("--continue");
+		expect(claudeLaunch.args).not.toContain("--session-id");
 
 		const geminiLaunch = await prepareAgentLaunch({
 			taskId: "task-gemini",
@@ -523,6 +526,87 @@ describe("prepareAgentLaunch hook strategies", () => {
 			resumeFromTrash: true,
 		});
 		expect(kiroLaunch.args).toContain("--resume");
+	});
+
+	it("pins a fresh UUID session id for a new Claude session and reports it", async () => {
+		setupTempHome();
+
+		const launch = await prepareAgentLaunch({
+			taskId: "task-claude-fresh",
+			agentId: "claude",
+			binary: "claude",
+			args: [],
+			cwd: "/tmp",
+			prompt: "do the thing",
+		});
+
+		const sessionIdIndex = launch.args.indexOf("--session-id");
+		expect(sessionIdIndex).toBeGreaterThan(-1);
+		const assignedId = launch.args[sessionIdIndex + 1];
+		expect(assignedId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+		// The bound id is surfaced so the caller can persist it onto the session summary.
+		expect(launch.agentSessionId).toBe(assignedId);
+		expect(launch.args).not.toContain("--continue");
+		expect(launch.args).not.toContain("--resume");
+	});
+
+	it("resumes a recorded Claude session id instead of starting fresh or using --continue", async () => {
+		setupTempHome();
+
+		const recordedId = "550e8400-e29b-41d4-a716-446655440000";
+		const launch = await prepareAgentLaunch({
+			taskId: "task-claude-resume",
+			agentId: "claude",
+			binary: "claude",
+			args: [],
+			cwd: "/tmp",
+			prompt: "",
+			resumeFromTrash: true,
+			agentSessionId: recordedId,
+		});
+
+		expect(launch.args).toEqual(expect.arrayContaining(["--resume", recordedId]));
+		expect(launch.args).not.toContain("--continue");
+		expect(launch.args).not.toContain("--session-id");
+		expect(launch.agentSessionId).toBe(recordedId);
+	});
+
+	it("ignores a malformed recorded Claude session id and assigns a new one", async () => {
+		setupTempHome();
+
+		const launch = await prepareAgentLaunch({
+			taskId: "task-claude-bad-id",
+			agentId: "claude",
+			binary: "claude",
+			args: [],
+			cwd: "/tmp",
+			prompt: "",
+			agentSessionId: "not-a-uuid",
+		});
+
+		const sessionIdIndex = launch.args.indexOf("--session-id");
+		expect(sessionIdIndex).toBeGreaterThan(-1);
+		expect(launch.args).not.toContain("--resume");
+		expect(launch.agentSessionId).toBe(launch.args[sessionIdIndex + 1]);
+	});
+
+	it("does not override an explicit Claude session flag supplied by the caller", async () => {
+		setupTempHome();
+
+		const launch = await prepareAgentLaunch({
+			taskId: "task-claude-explicit",
+			agentId: "claude",
+			binary: "claude",
+			args: ["--resume", "manual-session"],
+			cwd: "/tmp",
+			prompt: "",
+			agentSessionId: "550e8400-e29b-41d4-a716-446655440000",
+		});
+
+		expect(launch.args).toEqual(expect.arrayContaining(["--resume", "manual-session"]));
+		expect(launch.args).not.toContain("--session-id");
+		// The recorded id is still reported so the caller keeps tracking the same conversation.
+		expect(launch.agentSessionId).toBe("550e8400-e29b-41d4-a716-446655440000");
 	});
 
 	it("places Codex hook config before the resume subcommand", async () => {

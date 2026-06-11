@@ -2,7 +2,17 @@ import { Draggable } from "@hello-pangea/dnd";
 import { getRuntimeAgentCatalogEntry } from "@runtime-agent-catalog";
 import { formatKanbanToolCallLabel } from "@runtime-kanban-tool-call-display";
 import { buildTaskWorktreeDisplayPath } from "@runtime-task-worktree-path";
-import { AlertCircle, AlertTriangle, Bot, GitBranch, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
+import {
+	AlertCircle,
+	AlertTriangle,
+	Bot,
+	GitBranch,
+	MessageSquare,
+	Pencil,
+	Play,
+	RotateCcw,
+	Trash2,
+} from "lucide-react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -426,6 +436,10 @@ export function BoardCard({
 					deletions: reviewWorkspaceSnapshot.deletions ?? 0,
 				}
 		: null;
+	// A recorded agent-native session id means restoring can re-attach to the exact prior
+	// conversation (e.g. `claude --resume <id>`) rather than starting a fresh session, so we
+	// surface a "Continue session" affordance instead of the generic restore label.
+	const canContinueAgentSession = isTrashCard && !!sessionSummary?.agentSessionId;
 	const showReviewGitActions = columnId === "review" && (reviewWorkspaceSnapshot?.changedFiles ?? 0) > 0;
 	const isAnyGitActionLoading = isCommitLoading || isOpenPrLoading;
 	const cancelAutomaticActionLabel =
@@ -631,18 +645,28 @@ export function BoardCard({
 									<Tooltip
 										side="bottom"
 										content={
-											<>
-												Restore session
-												<br />
-												in new worktree
-											</>
+											canContinueAgentSession ? (
+												<>
+													Continue session
+													<br />
+													in original context
+												</>
+											) : (
+												<>
+													Restore session
+													<br />
+													in new worktree
+												</>
+											)
 										}
 									>
 										<Button
-											icon={<RotateCcw size={12} />}
+											icon={canContinueAgentSession ? <MessageSquare size={12} /> : <RotateCcw size={12} />}
 											variant="ghost"
 											size="sm"
-											aria-label="Restore task from done"
+											aria-label={
+												canContinueAgentSession ? "Continue task session" : "Restore task from done"
+											}
 											onMouseDown={stopEvent}
 											onClick={(event) => {
 												stopEvent(event);
