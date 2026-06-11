@@ -3,11 +3,11 @@
 // shared API contract, and fans out workspace-scoped snapshots and deltas.
 import type { IncomingMessage } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
-import type { KanbanTaskMessage, PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
+import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
 import type {
 	RuntimeKanbanMcpServerAuthStatus,
-	RuntimeStateStreamKanbanSessionContextUpdatedMessage,
 	RuntimeStateStreamErrorMessage,
+	RuntimeStateStreamKanbanSessionContextUpdatedMessage,
 	RuntimeStateStreamMcpAuthUpdatedMessage,
 	RuntimeStateStreamMessage,
 	RuntimeStateStreamProjectsMessage,
@@ -20,6 +20,7 @@ import type {
 	RuntimeStateStreamWorkspaceStateMessage,
 	RuntimeTaskSessionSummary,
 } from "../core/api-contract";
+import type { SessionMessage } from "../session/session-message";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { createWorkspaceMetadataMonitor } from "./workspace-metadata-monitor";
 import type { ResolvedWorkspaceStreamTarget, WorkspaceRegistry } from "./workspace-registry";
@@ -41,7 +42,7 @@ export interface CreateRuntimeStateHubDependencies {
 export interface RuntimeStateHub {
 	trackTerminalManager: (workspaceId: string, manager: TerminalSessionManager) => void;
 	trackPiTaskSessionService: (workspaceId: string, workspacePath: string, service: PiTaskSessionService) => void;
-	broadcastTaskChatMessage: (workspaceId: string, taskId: string, message: KanbanTaskMessage) => void;
+	broadcastTaskChatMessage: (workspaceId: string, taskId: string, message: SessionMessage) => void;
 	broadcastTaskChatCleared: (workspaceId: string, taskId: string) => void;
 	handleUpgrade: (
 		request: IncomingMessage,
@@ -182,7 +183,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 		taskSessionBroadcastTimersByWorkspaceId.set(workspaceId, timer);
 	};
 
-	const broadcastTaskChatMessage = (workspaceId: string, taskId: string, message: KanbanTaskMessage) => {
+	const broadcastTaskChatMessage = (workspaceId: string, taskId: string, message: SessionMessage) => {
 		const runtimeClients = runtimeStateClientsByWorkspaceId.get(workspaceId);
 		if (!runtimeClients || runtimeClients.size === 0) {
 			return;
@@ -453,9 +454,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 					workspaceClients.add(client);
 					runtimeStateClientsByWorkspaceId.set(monitorWorkspaceId, workspaceClients);
 					runtimeStateWorkspaceIdByClient.set(client, monitorWorkspaceId);
-					const piSummaries = Array.from(
-						piPreviousSummaryByWorkspaceId.get(monitorWorkspaceId)?.values() ?? [],
-					);
+					const piSummaries = Array.from(piPreviousSummaryByWorkspaceId.get(monitorWorkspaceId)?.values() ?? []);
 					if (piSummaries.length > 0) {
 						sendRuntimeStateMessage(client, {
 							type: "task_sessions_updated",

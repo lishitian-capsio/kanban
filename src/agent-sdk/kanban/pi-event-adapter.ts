@@ -1,19 +1,15 @@
 // Maps omp AgentEvent union type to Kanban RuntimeTaskSessionSummary.
 import type { RuntimeTaskSessionSummary } from "../../core/api-contract";
-import type { AgentEvent, AgentMessage } from "../types";
+import { now, type SessionMessage } from "../../session/session-message";
 import {
-	type KanbanTaskMessage,
-	type KanbanTaskSessionEntry,
 	clearActiveTurnState,
 	createAssistantMessage,
-	createMessage,
-	createReasoningMessage,
 	finishToolCallMessage,
-	now,
 	setOrCreateAssistantMessage,
 	startToolCallMessage,
-	updateSummary,
-} from "./session-state";
+} from "../../session/session-message-buffer";
+import type { AgentEvent, AgentMessage } from "../types";
+import { type KanbanTaskSessionEntry, updateSummary } from "./session-state";
 
 export interface ApplyPiAgentEventInput {
 	event: AgentEvent;
@@ -21,14 +17,14 @@ export interface ApplyPiAgentEventInput {
 	entry: KanbanTaskSessionEntry;
 	pendingTurnCancelTaskIds: Set<string>;
 	emitSummary: (summary: RuntimeTaskSessionSummary) => void;
-	emitMessage: (taskId: string, message: KanbanTaskMessage) => void;
+	emitMessage: (taskId: string, message: SessionMessage) => void;
 }
 
 /**
  * Translate omp AgentEvent into Kanban summary and chat mutations.
  */
 export function applyPiAgentEvent(input: ApplyPiAgentEventInput): void {
-	const { event, taskId, entry } = input;
+	const { event } = input;
 
 	switch (event.type) {
 		case "agent_start":
@@ -81,10 +77,7 @@ function handleAgentStart(input: ApplyPiAgentEventInput): void {
 	});
 }
 
-function handleAgentEnd(
-	input: ApplyPiAgentEventInput,
-	event: Extract<AgentEvent, { type: "agent_end" }>,
-): void {
+function handleAgentEnd(input: ApplyPiAgentEventInput, event: Extract<AgentEvent, { type: "agent_end" }>): void {
 	const { entry, taskId } = input;
 	const isCanceled = input.pendingTurnCancelTaskIds.has(taskId);
 
@@ -185,10 +178,7 @@ function handleTurnStart(input: ApplyPiAgentEventInput): void {
 	});
 }
 
-function handleTurnEnd(
-	input: ApplyPiAgentEventInput,
-	event: Extract<AgentEvent, { type: "turn_end" }>,
-): void {
+function handleTurnEnd(input: ApplyPiAgentEventInput, event: Extract<AgentEvent, { type: "turn_end" }>): void {
 	const { entry, taskId } = input;
 
 	// Extract assistant text from the turn_end message.
@@ -278,10 +268,7 @@ function handleMessageUpdate(
 	}
 }
 
-function handleMessageEnd(
-	input: ApplyPiAgentEventInput,
-	event: Extract<AgentEvent, { type: "message_end" }>,
-): void {
+function handleMessageEnd(input: ApplyPiAgentEventInput, event: Extract<AgentEvent, { type: "message_end" }>): void {
 	if (!isAssistantMessage(event.message)) return;
 
 	const text = extractTextFromMessage(event.message);
@@ -391,7 +378,9 @@ function extractTextFromMessage(message: AgentMessage): string | null {
 	if (typeof content === "string") return content;
 	if (Array.isArray(content)) {
 		return content
-			.filter((part: any) => part && typeof part === "object" && part.type === "text" && typeof part.text === "string")
+			.filter(
+				(part: any) => part && typeof part === "object" && part.type === "text" && typeof part.text === "string",
+			)
 			.map((part: any) => part.text)
 			.join("");
 	}

@@ -8,27 +8,27 @@ import type {
 	RuntimeTaskSessionSummary,
 	RuntimeTaskTurnCheckpoint,
 } from "../../core/api-contract";
-import {
-	type KanbanTaskMessage,
-	type KanbanTaskSessionEntry,
-	clearActiveTurnState,
-	cloneSummary,
-	createDefaultSummary,
-	createMessage,
-	now,
-	updateSummary,
-} from "./session-state";
+import { createSessionMessage, now, type SessionMessage } from "../../session/session-message";
+import { clearActiveTurnState } from "../../session/session-message-buffer";
+import type { SessionMessageSource } from "../../session/session-message-source";
 import type { AgentEvent } from "../types";
-import { applyPiAgentEvent } from "./pi-event-adapter";
 import {
 	type CreatePiAgentRuntimeOptions,
+	createInMemoryPiAgentRuntime,
 	type PiAgentRuntime,
 	type StartPiSessionRequest,
-	createInMemoryPiAgentRuntime,
 } from "./pi-agent-runtime";
+import { applyPiAgentEvent } from "./pi-event-adapter";
 import { PI_DEFAULT_MODEL_ID, PI_DEFAULT_PROVIDER_ID } from "./pi-provider-config";
+import {
+	cloneSummary,
+	createDefaultSummary,
+	createKanbanTaskSessionEntry,
+	type KanbanTaskSessionEntry,
+	updateSummary,
+} from "./session-state";
 
-export type { KanbanTaskMessage } from "./session-state";
+export type { SessionMessage } from "../../session/session-message";
 
 export interface StartPiTaskSessionRequest {
 	taskId: string;
@@ -48,9 +48,8 @@ export interface StartPiTaskSessionRequest {
 	systemPrompt?: string | null;
 }
 
-export interface PiTaskSessionService {
+export interface PiTaskSessionService extends SessionMessageSource {
 	onSummary(listener: (summary: RuntimeTaskSessionSummary) => void): () => void;
-	onMessage(listener: (taskId: string, message: KanbanTaskMessage) => void): () => void;
 	startTaskSession(request: StartPiTaskSessionRequest): Promise<RuntimeTaskSessionSummary>;
 	stopTaskSession(taskId: string): Promise<RuntimeTaskSessionSummary | null>;
 	abortTaskSession(taskId: string): Promise<RuntimeTaskSessionSummary | null>;
@@ -66,9 +65,7 @@ export interface PiTaskSessionService {
 	rebindPersistedTaskSession(taskId: string): Promise<RuntimeTaskSessionSummary | null>;
 	getSummary(taskId: string): RuntimeTaskSessionSummary | null;
 	listSummaries(): RuntimeTaskSessionSummary[];
-	listMessages(taskId: string): KanbanTaskMessage[];
 	listSlashCommands(workspacePath: string): Promise<any[]>;
-	loadTaskSessionMessages(taskId: string): Promise<KanbanTaskMessage[]>;
 	applyTurnCheckpoint(taskId: string, checkpoint: RuntimeTaskTurnCheckpoint): RuntimeTaskSessionSummary | null;
 	dispose(): Promise<void>;
 }
@@ -84,7 +81,7 @@ export interface CreatePiTaskSessionServiceOptions {
 class PiMessageStore {
 	private entries = new Map<string, KanbanTaskSessionEntry>();
 	private summaryListeners = new Set<(summary: RuntimeTaskSessionSummary) => void>();
-	private messageListeners = new Set<(taskId: string, message: KanbanTaskMessage) => void>();
+	private messageListeners = new Set<(taskId: string, message: SessionMessage) => void>();
 
 	getTaskEntry(taskId: string): KanbanTaskSessionEntry | undefined {
 		return this.entries.get(taskId);
@@ -102,7 +99,7 @@ class PiMessageStore {
 		return [...this.entries.values()].map((e) => cloneSummary(e.summary));
 	}
 
-	listMessages(taskId: string): KanbanTaskMessage[] {
+	listMessages(taskId: string): SessionMessage[] {
 		return this.entries.get(taskId)?.messages.slice() ?? [];
 	}
 
@@ -112,7 +109,7 @@ class PiMessageStore {
 		}
 	}
 
-	emitMessage(taskId: string, message: KanbanTaskMessage): void {
+	emitMessage(taskId: string, message: SessionMessage): void {
 		for (const listener of this.messageListeners) {
 			listener(taskId, message);
 		}
@@ -123,7 +120,7 @@ class PiMessageStore {
 		return () => this.summaryListeners.delete(listener);
 	}
 
-	onMessage(listener: (taskId: string, message: KanbanTaskMessage) => void): () => void {
+	onMessage(listener: (taskId: string, message: SessionMessage) => void): () => void {
 		this.messageListeners.add(listener);
 		return () => this.messageListeners.delete(listener);
 	}
@@ -181,7 +178,7 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 		return this.messageStore.onSummary(listener);
 	}
 
-	onMessage(listener: (taskId: string, message: KanbanTaskMessage) => void): () => void {
+	onMessage(listener: (taskId: string, message: SessionMessage) => void): () => void {
 		return this.messageStore.onMessage(listener);
 	}
 
@@ -208,29 +205,22 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 				: "idle";
 		const initialReviewReason = request.resumeFromTrash ? "attention" : null;
 
-		const entry: KanbanTaskSessionEntry = {
-			summary: {
-				...createDefaultSummary(request.taskId),
-				state: initialState as any,
-				mode: resolvedMode,
-				agentId: "pi",
-				workspacePath: request.cwd,
-				startedAt: now(),
-				lastOutputAt: now(),
-				reviewReason: initialReviewReason,
-			},
-			messages: [],
-			activeAssistantMessageId: null,
-			activeReasoningMessageId: null,
-			toolMessageIdByToolCallId: new Map<string, string>(),
-			toolInputByToolCallId: new Map<string, unknown>(),
-		};
+		const entry = createKanbanTaskSessionEntry({
+			...createDefaultSummary(request.taskId),
+			state: initialState as any,
+			mode: resolvedMode,
+			agentId: "pi",
+			workspacePath: request.cwd,
+			startedAt: now(),
+			lastOutputAt: now(),
+			reviewReason: initialReviewReason,
+		});
 		this.messageStore.setTaskEntry(request.taskId, entry);
 		this.pendingTurnCancelTaskIds.delete(request.taskId);
 
 		// Emit user message
 		if (!request.resumeFromTrash && (normalizedPrompt.length > 0 || hasRequestImages)) {
-			const message = createMessage(request.taskId, "user", normalizedPrompt, request.images);
+			const message = createSessionMessage(request.taskId, "user", normalizedPrompt, request.images);
 			entry.messages.push(message);
 			this.messageStore.emitMessage(request.taskId, message);
 			const runningSummary = updateSummary(entry, {
@@ -361,7 +351,7 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 		if (normalized.length === 0 && !hasImages) return null;
 
 		const effectiveMode: RuntimeTaskSessionMode = mode ?? entry.summary.mode ?? "act";
-		const message = createMessage(taskId, "user", normalized, images);
+		const message = createSessionMessage(taskId, "user", normalized, images);
 		entry.messages.push(message);
 		this.messageStore.emitMessage(taskId, message);
 		clearActiveTurnState(entry);
@@ -386,11 +376,9 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 		this.messageStore.emitSummary(waitingSummary);
 
 		// Send input asynchronously
-		void this.agentRuntime
-			.sendInput(taskId, normalized, effectiveMode, images)
-			.catch((error: unknown) => {
-				this.emitTaskFailure(taskId, entry, "send", error);
-			});
+		void this.agentRuntime.sendInput(taskId, normalized, effectiveMode, images).catch((error: unknown) => {
+			this.emitTaskFailure(taskId, entry, "send", error);
+		});
 
 		return cloneSummary(entry.summary);
 	}
@@ -417,18 +405,11 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 		this.messageStore.clearTaskMessages(taskId);
 		if (!existingEntry) return null;
 
-		const clearedEntry: KanbanTaskSessionEntry = {
-			summary: {
-				...createDefaultSummary(taskId),
-				mode: existingEntry.summary.mode,
-				workspacePath: existingEntry.summary.workspacePath,
-			},
-			messages: [],
-			activeAssistantMessageId: null,
-			activeReasoningMessageId: null,
-			toolMessageIdByToolCallId: new Map<string, string>(),
-			toolInputByToolCallId: new Map<string, unknown>(),
-		};
+		const clearedEntry = createKanbanTaskSessionEntry({
+			...createDefaultSummary(taskId),
+			mode: existingEntry.summary.mode,
+			workspacePath: existingEntry.summary.workspacePath,
+		});
 		this.messageStore.setTaskEntry(taskId, clearedEntry);
 		this.messageStore.emitSummary(clearedEntry.summary);
 		return cloneSummary(clearedEntry.summary);
@@ -450,7 +431,7 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 		return this.messageStore.listSummaries();
 	}
 
-	listMessages(taskId: string): KanbanTaskMessage[] {
+	listMessages(taskId: string): SessionMessage[] {
 		return this.messageStore.listMessages(taskId);
 	}
 
@@ -459,7 +440,7 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 		return [];
 	}
 
-	async loadTaskSessionMessages(taskId: string): Promise<KanbanTaskMessage[]> {
+	async loadTaskSessionMessages(taskId: string): Promise<SessionMessage[]> {
 		return this.messageStore.listMessages(taskId);
 	}
 
@@ -487,7 +468,7 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 		error: unknown,
 	): void {
 		const errorMessage = toErrorMessage(error);
-		const systemMessage = createMessage(
+		const systemMessage = createSessionMessage(
 			taskId,
 			"system",
 			`Pi agent ${context} failed: ${errorMessage}. You can send another message to continue.`,
@@ -525,7 +506,7 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 			emitSummary: (summary: RuntimeTaskSessionSummary) => {
 				this.messageStore.emitSummary(summary);
 			},
-			emitMessage: (eventTaskId: string, message: KanbanTaskMessage) => {
+			emitMessage: (eventTaskId: string, message: SessionMessage) => {
 				this.messageStore.emitMessage(eventTaskId, message);
 			},
 		});
