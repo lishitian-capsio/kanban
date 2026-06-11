@@ -13,9 +13,9 @@ import { DebugDialog } from "@/components/debug-dialog";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
 import { FilesView } from "@/components/files/files-view";
 import { GitHistoryView } from "@/components/git-history-view";
-import { RequirementsView } from "@/components/requirements/requirements-view";
 import { KanbanBoard } from "@/components/kanban-board";
 import { ProjectNavigationPanel } from "@/components/project-navigation-panel";
+import { RequirementsView } from "@/components/requirements/requirements-view";
 import { RuntimeSettingsDialog, type RuntimeSettingsSection } from "@/components/runtime-settings-dialog";
 import { StartupOnboardingDialog } from "@/components/startup-onboarding-dialog";
 import { TaskCreateDialog } from "@/components/task-create-dialog";
@@ -43,6 +43,7 @@ import { useDetailTaskNavigation } from "@/hooks/use-detail-task-navigation";
 import { useDocumentVisibility } from "@/hooks/use-document-visibility";
 import { useGitActions } from "@/hooks/use-git-actions";
 import { useHomeSidebarAgentPanel } from "@/hooks/use-home-sidebar-agent-panel";
+import { useHomeThreads } from "@/hooks/use-home-threads";
 import { useKanbanAccessGate } from "@/hooks/use-kanban-access-gate";
 import { useOpenWorkspace } from "@/hooks/use-open-workspace";
 import { parseRemovedProjectPathFromStreamError, useProjectNavigation } from "@/hooks/use-project-navigation";
@@ -65,7 +66,12 @@ import {
 	selectLatestTaskChatMessageForTask,
 	selectTaskChatMessagesForTask,
 } from "@/runtime/native-agent";
-import type { RuntimeReasoningEffort, RuntimeRequirementTaskLinksData, RuntimeRequirementsData, RuntimeTaskSessionSummary } from "@/runtime/types";
+import type {
+	RuntimeReasoningEffort,
+	RuntimeRequirementsData,
+	RuntimeRequirementTaskLinksData,
+	RuntimeTaskSessionSummary,
+} from "@/runtime/types";
 import { useRuntimeProjectConfig } from "@/runtime/use-runtime-project-config";
 import { useTerminalConnectionReady } from "@/runtime/use-terminal-connection-ready";
 import { useWorkspacePersistence } from "@/runtime/use-workspace-persistence";
@@ -434,10 +440,15 @@ export default function App(): ReactElement {
 		sendTaskSessionInput,
 	});
 	const homeTerminalSummary = sessions[homeTerminalTaskId] ?? null;
+	const homeThreads = useHomeThreads({
+		currentProjectId,
+		runtimeProjectConfig,
+	});
 	const homeSidebarAgentPanel = useHomeSidebarAgentPanel({
 		currentProjectId,
 		hasNoProjects,
 		runtimeProjectConfig,
+		homeThreads,
 		kanbanSessionContextVersion,
 		taskSessions: sessions,
 		workspaceGit,
@@ -839,7 +850,9 @@ export default function App(): ReactElement {
 						onActiveSectionChange={setHomeSidebarSection}
 						canShowAgentSection={!hasNoProjects && Boolean(currentProjectId)}
 						agentSectionContent={homeSidebarAgentPanel}
-						selectedAgentId={settingsRuntimeProjectConfig?.selectedAgentId ?? null}
+						selectedAgentId={
+							homeThreads.activeThread?.agentId ?? settingsRuntimeProjectConfig?.selectedAgentId ?? null
+						}
 						onSelectProject={(projectId) => {
 							void handleSelectProject(projectId);
 						}}

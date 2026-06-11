@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RuntimeConfigState } from "../../../src/config/runtime-config";
 import type { RuntimeHomeChatThreadsData, RuntimeTaskSessionSummary } from "../../../src/core/api-contract";
+import { createHomeAgentSessionId } from "../../../src/core/home-agent-session";
 
 const agentRegistryMocks = vi.hoisted(() => ({
 	resolveAgentCommand: vi.fn(),
@@ -544,6 +545,42 @@ describe("createRuntimeApi startTaskSession", () => {
 				cwd: "/tmp/existing-worktree",
 			}),
 		);
+	});
+
+	it("routes a home thread session to the agent encoded in its task id, not the global agent", async () => {
+		const terminalManager = {
+			startTaskSession: vi.fn(async () => createSummary({ agentId: "claude" })),
+			applyTurnCheckpoint: vi.fn(),
+		};
+		const piTaskSessionService = createPiTaskSessionServiceMock();
+		const api = createTestRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			// Workspace-global agent is pi, but the home thread is backed by claude.
+			loadScopedRuntimeConfig: vi.fn(async () => ({ ...createRuntimeConfigState(), selectedAgentId: "pi" })),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => terminalManager as never),
+			getScopedPiTaskSessionService: vi.fn(async () => piTaskSessionService as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+
+		const homeTaskId = createHomeAgentSessionId("workspace-1", "claude", "thread-2");
+		const response = await api.startTaskSession(
+			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
+			{ taskId: homeTaskId, baseRef: "main", prompt: "" },
+		);
+
+		expect(response.ok).toBe(true);
+		// Resolved against the thread's claude agent, not the global pi agent.
+		expect(agentRegistryMocks.resolveAgentCommand).toHaveBeenCalledWith(
+			expect.objectContaining({ selectedAgentId: "claude" }),
+		);
+		expect(terminalManager.startTaskSession).toHaveBeenCalledWith(
+			expect.objectContaining({ taskId: homeTaskId, agentId: "claude", cwd: "/tmp/repo" }),
+		);
+		expect(piTaskSessionService.startTaskSession).not.toHaveBeenCalled();
+		// Home sessions never resolve a worktree cwd.
+		expect(taskWorktreeMocks.resolveTaskCwd).not.toHaveBeenCalled();
 	});
 
 	it("ensures the worktree when no existing task cwd is available", async () => {

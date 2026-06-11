@@ -22,8 +22,12 @@ import type {
 	RuntimeRunUpdateResponse,
 	RuntimeUpdateStatusResponse,
 } from "../core/api-contract";
+import { runtimeAgentIdSchema } from "../core/api-contract";
 import {
 	parseCommandRunRequest,
+	parseHomeChatThreadCloseRequest,
+	parseHomeChatThreadCreateRequest,
+	parseHomeChatThreadRenameRequest,
 	parseKanbanAccountSwitchRequest,
 	parseKanbanAddProviderRequest,
 	parseKanbanDeviceAuthCompleteRequest,
@@ -33,9 +37,6 @@ import {
 	parseKanbanProviderModelsRequest,
 	parseKanbanProviderSettingsSaveRequest,
 	parseKanbanUpdateProviderRequest,
-	parseHomeChatThreadCloseRequest,
-	parseHomeChatThreadCreateRequest,
-	parseHomeChatThreadRenameRequest,
 	parseRuntimeConfigSaveRequest,
 	parseShellSessionStartRequest,
 	parseTaskChatAbortRequest,
@@ -47,7 +48,7 @@ import {
 	parseTaskSessionStartRequest,
 	parseTaskSessionStopRequest,
 } from "../core/api-validation";
-import { isHomeAgentSessionId } from "../core/home-agent-session";
+import { isHomeAgentSessionId, parseHomeAgentSessionId } from "../core/home-agent-session";
 import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
 import { resolveTaskTitle } from "../core/task-title.js";
 import { openInBrowser } from "../server/browser";
@@ -231,7 +232,15 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				const previousTerminalAgentId = body.resumeFromTrash
 					? (terminalManager.getSummary(body.taskId)?.agentId ?? null)
 					: null;
-				const effectiveAgentId = previousTerminalAgentId ?? body.agentId ?? scopedRuntimeConfig.selectedAgentId;
+				// Home (sidebar) sessions encode the per-thread agent in the synthetic
+				// task id (`__home_agent__:<ws>:<agent>[:<thread>]`). Each home chat thread
+				// can run a different agent than the workspace-global selection, so resolve
+				// the agent from the id rather than the workspace default.
+				const homeThreadAgentId = isHomeAgentSessionId(body.taskId)
+					? (runtimeAgentIdSchema.safeParse(parseHomeAgentSessionId(body.taskId)?.agentId).data ?? null)
+					: null;
+				const effectiveAgentId =
+					previousTerminalAgentId ?? homeThreadAgentId ?? body.agentId ?? scopedRuntimeConfig.selectedAgentId;
 				const usePiPath = effectiveAgentId === "pi";
 
 				if (usePiPath) {
@@ -455,7 +464,14 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				const body = parseTaskChatReloadRequest(input);
 				const piService = await deps.getScopedPiTaskSessionService(workspaceScope);
 				let summary = await piService.reloadTaskSession(body.taskId);
-				if (!summary && isHomeAgentSessionId(body.taskId)) {
+				// Only pi-backed home threads reload through the pi service. Terminal
+				// threads (claude/codex/...) never trigger this path (they use the
+				// terminal panel), but guard on the thread's agent id so a non-pi home
+				// session can't be accidentally restarted as pi.
+				const reloadHomeAgentId = isHomeAgentSessionId(body.taskId)
+					? (parseHomeAgentSessionId(body.taskId)?.agentId ?? null)
+					: null;
+				if (!summary && reloadHomeAgentId === "pi") {
 					const piLaunchConfig = resolvePiLaunchConfig({});
 					summary = await piService.startTaskSession({
 						taskId: body.taskId,

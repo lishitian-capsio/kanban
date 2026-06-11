@@ -1,8 +1,9 @@
-import { act, useCallback, useEffect, useState } from "react";
+import { DEFAULT_HOME_THREAD_ID } from "@runtime-home-agent-session";
+import { act, useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useHomeAgentSession } from "@/hooks/use-home-agent-session";
+import { type HomeAgentActiveThread, useHomeAgentSession } from "@/hooks/use-home-agent-session";
 import type { RuntimeConfigResponse, RuntimeGitRepositoryInfo, RuntimeTaskSessionSummary } from "@/runtime/types";
 
 const startTaskSessionMutateMock = vi.hoisted(() => vi.fn());
@@ -169,6 +170,7 @@ function requireTaskId(taskId: string | null): string {
 
 function HookHarness({
 	config,
+	activeThread,
 	kanbanSessionContextVersion = 0,
 	currentProjectId,
 	onSnapshot,
@@ -176,6 +178,9 @@ function HookHarness({
 	seedSessionSummary = false,
 }: {
 	config: RuntimeConfigResponse | null;
+	// When omitted, the harness mirrors App.tsx by treating the workspace-global
+	// agent as the default thread.
+	activeThread?: HomeAgentActiveThread | null;
 	kanbanSessionContextVersion?: number;
 	currentProjectId: string | null;
 	onSnapshot: (snapshot: HookSnapshot) => void;
@@ -189,9 +194,16 @@ function HookHarness({
 			[summary.taskId]: summary,
 		}));
 	}, []);
+	const effectiveActiveThread = useMemo<HomeAgentActiveThread | null>(() => {
+		if (activeThread !== undefined) {
+			return activeThread;
+		}
+		return config ? { id: DEFAULT_HOME_THREAD_ID, agentId: config.selectedAgentId } : null;
+	}, [activeThread, config]);
 	const result = useHomeAgentSession({
 		currentProjectId,
 		runtimeProjectConfig: config,
+		activeThread: effectiveActiveThread,
 		workspaceGit,
 		kanbanSessionContextVersion,
 		sessionSummaries,
@@ -816,6 +828,72 @@ describe("useHomeAgentSession", () => {
 		expect([...requireSnapshot(latestSnapshot).sessionKeys].sort()).toEqual(
 			[workspaceOneTaskId, workspaceTwoTaskId].sort(),
 		);
+		expect(startTaskSessionMutateMock).toHaveBeenCalledTimes(2);
+		expect(stopTaskSessionMutateMock).not.toHaveBeenCalled();
+	});
+
+	it("runs threads in parallel: switching does not stop the previous thread's session", async () => {
+		let latestSnapshot: HookSnapshot | null = null;
+		const config = createRuntimeConfig();
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					config={config}
+					activeThread={{ id: DEFAULT_HOME_THREAD_ID, agentId: "codex" }}
+					currentProjectId="workspace-1"
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await createFlushPromises();
+		});
+
+		const defaultTaskId = requireTaskId(requireSnapshot(latestSnapshot).taskId);
+		expect(defaultTaskId).toMatch(/^__home_agent__:workspace-1:codex$/);
+		expect(startTaskSessionMutateMock).toHaveBeenCalledTimes(1);
+
+		// Switch to a second, non-default thread backed by a different agent.
+		await act(async () => {
+			root.render(
+				<HookHarness
+					config={config}
+					activeThread={{ id: "thread-2", agentId: "claude" }}
+					currentProjectId="workspace-1"
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await createFlushPromises();
+		});
+
+		const secondSnapshot = requireSnapshot(latestSnapshot);
+		expect(secondSnapshot.taskId).toBe("__home_agent__:workspace-1:claude:thread-2");
+		// The new thread starts, and the default thread session keeps running.
+		expect(startTaskSessionMutateMock).toHaveBeenCalledTimes(2);
+		expect(stopTaskSessionMutateMock).not.toHaveBeenCalled();
+		expect([...secondSnapshot.sessionKeys].sort()).toEqual(
+			[defaultTaskId, "__home_agent__:workspace-1:claude:thread-2"].sort(),
+		);
+
+		// Switching back to the already-started default thread does not restart it.
+		await act(async () => {
+			root.render(
+				<HookHarness
+					config={config}
+					activeThread={{ id: DEFAULT_HOME_THREAD_ID, agentId: "codex" }}
+					currentProjectId="workspace-1"
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await createFlushPromises();
+		});
+
+		expect(requireTaskId(requireSnapshot(latestSnapshot).taskId)).toBe(defaultTaskId);
 		expect(startTaskSessionMutateMock).toHaveBeenCalledTimes(2);
 		expect(stopTaskSessionMutateMock).not.toHaveBeenCalled();
 	});

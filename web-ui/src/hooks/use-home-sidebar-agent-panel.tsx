@@ -1,19 +1,24 @@
 // Composes the sidebar agent surface for the current workspace.
-// It decides whether the synthetic home session should render native Kanban
-// chat or a terminal panel and wires that surface to shared runtime actions.
+//
+// It renders the multi-thread switcher (HomeThreadBar) and, for the active
+// thread, decides whether to render the native Kanban chat or a terminal panel
+// and wires that surface to shared runtime actions. Threads run in parallel, so
+// switching never tears down another thread's session.
 import type { ReactElement } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
 import { KanbanAgentChatPanel } from "@/components/detail-panels/kanban-agent-chat-panel";
+import { HomeThreadBar } from "@/components/home-agent/home-thread-bar";
+import { resolveAgentLabel } from "@/components/home-agent/thread-agent-badge";
 import { Spinner } from "@/components/ui/spinner";
 import { createIdleTaskSession } from "@/hooks/app-utils";
 import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
-import { useKanbanChatRuntimeActions } from "@/hooks/use-kanban-chat-runtime-actions";
-import { useHomeAgentSession } from "@/hooks/use-home-agent-session";
+import { type HomeAgentActiveThread, useHomeAgentSession } from "@/hooks/use-home-agent-session";
+import type { UseHomeThreadsResult } from "@/hooks/use-home-threads";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useKanbanChatRuntimeActions } from "@/hooks/use-kanban-chat-runtime-actions";
 import { selectLatestTaskChatMessageForTask } from "@/runtime/native-agent";
-import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type {
 	RuntimeConfigResponse,
 	RuntimeGitRepositoryInfo,
@@ -27,6 +32,7 @@ interface UseHomeSidebarAgentPanelInput {
 	currentProjectId: string | null;
 	hasNoProjects: boolean;
 	runtimeProjectConfig: RuntimeConfigResponse | null;
+	homeThreads: UseHomeThreadsResult;
 	kanbanSessionContextVersion: number;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	workspaceGit: RuntimeGitRepositoryInfo | null;
@@ -34,20 +40,11 @@ interface UseHomeSidebarAgentPanelInput {
 	taskChatMessagesByTaskId: Record<string, RuntimeTaskChatMessage[]>;
 }
 
-async function stopHomeSidebarTaskSession(workspaceId: string, taskId: string): Promise<void> {
-	try {
-		await getRuntimeTrpcClient(workspaceId).runtime.stopTaskSession.mutate({
-			taskId,
-		});
-	} catch {
-		// Ignore stop errors during stale-session cleanup.
-	}
-}
-
 export function useHomeSidebarAgentPanel({
 	currentProjectId,
 	hasNoProjects,
 	runtimeProjectConfig,
+	homeThreads,
 	kanbanSessionContextVersion,
 	taskSessions,
 	workspaceGit,
@@ -80,53 +77,46 @@ export function useHomeSidebarAgentPanel({
 		}
 		return mergedSessionSummaries;
 	}, [sessionSummaries, taskSessions]);
+
+	const activeThread = useMemo<HomeAgentActiveThread | null>(() => {
+		if (!homeThreads.activeThread) {
+			return null;
+		}
+		return { id: homeThreads.activeThread.id, agentId: homeThreads.activeThread.agentId };
+	}, [homeThreads.activeThread]);
+
 	const { panelMode, taskId } = useHomeAgentSession({
 		currentProjectId,
 		runtimeProjectConfig,
+		activeThread,
 		workspaceGit,
 		kanbanSessionContextVersion,
 		sessionSummaries: effectiveSessionSummaries,
 		setSessionSummaries,
 		upsertSessionSummary,
 	});
-	const currentTaskIdRef = useRef<string | null>(null);
 
-	useEffect(() => {
-		currentTaskIdRef.current = taskId;
-	}, [taskId]);
 	const { sendTaskChatMessage, loadTaskChatMessages, cancelTaskChatTurn } = useKanbanChatRuntimeActions({
 		currentProjectId,
 		onSessionSummary: upsertSessionSummary,
 	});
 
+	const activeAgentId = homeThreads.activeThread?.agentId ?? null;
 	const selectedAgentLabel = useMemo(() => {
-		if (!runtimeProjectConfig) {
+		if (!runtimeProjectConfig || !activeAgentId) {
 			return "selected agent";
 		}
-		return (
-			runtimeProjectConfig.agents.find((agent) => agent.id === runtimeProjectConfig.selectedAgentId)?.label ??
-			"selected agent"
-		);
-	}, [runtimeProjectConfig]);
+		return resolveAgentLabel(runtimeProjectConfig.agents, activeAgentId);
+	}, [runtimeProjectConfig, activeAgentId]);
 
 	const homeAgentPanelSummary = taskId ? (effectiveSessionSummaries[taskId] ?? null) : null;
 	const homeTaskChatMessages = taskId ? (taskChatMessagesByTaskId[taskId] ?? null) : null;
 	const latestHomeTaskChatMessage = selectLatestTaskChatMessageForTask(taskId, latestTaskChatMessage);
 
 	const handleSendHomeKanbanChatMessage = useCallback(
-		async (messageTaskId: string, text: string, options?: { mode?: "act" | "plan" }) => {
-			const result = await sendTaskChatMessage(messageTaskId, text, options);
-			if (!result.ok) {
-				return result;
-			}
-			if (currentProjectId) {
-				if (currentTaskIdRef.current !== messageTaskId) {
-					await stopHomeSidebarTaskSession(currentProjectId, messageTaskId);
-				}
-			}
-			return result;
-		},
-		[currentProjectId, sendTaskChatMessage],
+		async (messageTaskId: string, text: string, options?: { mode?: "act" | "plan" }) =>
+			await sendTaskChatMessage(messageTaskId, text, options),
+		[sendTaskChatMessage],
 	);
 
 	const handleLoadHomeKanbanChatMessages = useCallback(
@@ -151,8 +141,9 @@ export function useHomeSidebarAgentPanel({
 		);
 	}
 
+	let body: ReactElement;
 	if (panelMode === "chat" && taskId) {
-		return (
+		body = (
 			<KanbanAgentChatPanel
 				key={taskId}
 				taskId={taskId}
@@ -169,10 +160,8 @@ export function useHomeSidebarAgentPanel({
 				composerPlaceholder="Ask Kanban to add, edit, start, or link tasks"
 			/>
 		);
-	}
-
-	if (panelMode === "terminal" && taskId) {
-		return (
+	} else if (panelMode === "terminal" && taskId) {
+		body = (
 			<AgentTerminalPanel
 				key={taskId}
 				taskId={taskId}
@@ -186,19 +175,33 @@ export function useHomeSidebarAgentPanel({
 				cursorColor={terminalThemeColors.textPrimary}
 			/>
 		);
-	}
-
-	if (runtimeProjectConfig.selectedAgentId !== "pi") {
-		return (
+	} else if (activeAgentId !== "pi") {
+		body = (
 			<div className="flex w-full items-center justify-center rounded-md border border-border bg-surface-2 px-3 text-center text-sm text-text-secondary">
 				No runnable {selectedAgentLabel} command is configured. Open Settings, install the CLI, and select it.
+			</div>
+		);
+	} else {
+		body = (
+			<div className="flex w-full items-center justify-center rounded-md border border-border bg-surface-2 px-3 text-center text-sm text-text-secondary">
+				Select a Kanban provider in Settings to start a home chat session.
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex w-full items-center justify-center rounded-md border border-border bg-surface-2 px-3 text-center text-sm text-text-secondary">
-			Select a Kanban provider in Settings to start a home chat session.
+		<div className="flex h-full w-full min-h-0 flex-col gap-2">
+			<HomeThreadBar
+				threads={homeThreads.threads}
+				activeThreadId={homeThreads.activeThreadId}
+				agents={runtimeProjectConfig.agents}
+				defaultAgentId={runtimeProjectConfig.selectedAgentId}
+				onSelectThread={homeThreads.setActiveThread}
+				onCreateThread={homeThreads.createThread}
+				onRenameThread={homeThreads.renameThread}
+				onCloseThread={homeThreads.closeThread}
+			/>
+			<div className="flex min-h-0 flex-1 [&>*]:w-full [&>*]:self-stretch">{body}</div>
 		</div>
 	);
 }

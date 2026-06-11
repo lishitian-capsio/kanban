@@ -1,29 +1,45 @@
 // Manages the synthetic home agent session lifecycle for the sidebar.
-// It keeps one in-memory session identity stable per workspace while the app
-// stays open and rotates it only when the selected agent configuration
-// meaningfully changes.
+//
+// The home sidebar can host several parallel chat threads (see use-home-threads).
+// This hook drives the *active* thread: it derives the thread's synthetic task id
+// and panel mode (pi → native chat, other → terminal), lazily starts the active
+// terminal session, and reloads the active pi session when the runtime bumps the
+// Kanban session context version.
+//
+// Parallel-session rules:
+//   - Switching the active thread does NOT stop the previous thread's session —
+//     background threads keep running and are reattached on switch-back.
+//   - Only the *default* thread rotates: when the workspace-global agent changes,
+//     the default thread's session identity changes and the previous default
+//     session is stopped (preserving the historical single-home-chat behavior).
+//   - Closing a thread stops its session server-side (HomeThreadStore.onCloseSession).
 
-import { createHomeAgentSessionId, isHomeAgentSessionIdForWorkspace } from "@runtime-home-agent-session";
+import { createHomeAgentSessionId, DEFAULT_HOME_THREAD_ID } from "@runtime-home-agent-session";
 import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useMemo, useRef } from "react";
 
 import { notifyError } from "@/components/app-toaster";
-import { getRuntimeKanbanProviderSettings, isNativeAgentSelected } from "@/runtime/native-agent";
+import { isNativeAgentSelected } from "@/runtime/native-agent";
 import { estimateTaskSessionGeometry } from "@/runtime/task-session-geometry";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
-import type { RuntimeConfigResponse, RuntimeGitRepositoryInfo, RuntimeTaskSessionSummary } from "@/runtime/types";
+import type {
+	RuntimeAgentId,
+	RuntimeConfigResponse,
+	RuntimeGitRepositoryInfo,
+	RuntimeTaskSessionSummary,
+} from "@/runtime/types";
 
 type HomeAgentPanelMode = "chat" | "terminal";
 
-interface HomeAgentDescriptor {
-	panelMode: HomeAgentPanelMode;
-	descriptorKey: string;
-	taskId: string;
+export interface HomeAgentActiveThread {
+	id: string;
+	agentId: RuntimeAgentId;
 }
 
 interface UseHomeAgentSessionInput {
 	currentProjectId: string | null;
 	runtimeProjectConfig: RuntimeConfigResponse | null;
+	activeThread: HomeAgentActiveThread | null;
 	workspaceGit: RuntimeGitRepositoryInfo | null;
 	kanbanSessionContextVersion: number;
 	sessionSummaries: Record<string, RuntimeTaskSessionSummary>;
@@ -41,53 +57,8 @@ interface HomeAgentSessionIdentity {
 	taskId: string;
 }
 
-interface HomeAgentWorkspaceDescriptor {
-	descriptorKey: string;
-	panelMode: HomeAgentPanelMode;
-	taskId: string;
-}
-
-function buildKanbanDescriptor(config: RuntimeConfigResponse): string {
-	const kanbanProviderSettings = getRuntimeKanbanProviderSettings(config);
-	return JSON.stringify({
-		agentId: config.selectedAgentId,
-		providerId: kanbanProviderSettings.providerId ?? kanbanProviderSettings.oauthProvider ?? "",
-		modelId: kanbanProviderSettings.modelId ?? "",
-		baseUrl: kanbanProviderSettings.baseUrl ?? "",
-		reasoningEffort: kanbanProviderSettings.reasoningEffort ?? null,
-	});
-}
-
-function buildTerminalDescriptor(config: RuntimeConfigResponse): string {
-	return JSON.stringify({
-		agentId: config.selectedAgentId,
-		command: config.effectiveCommand ?? "",
-	});
-}
-
 function resolveHomeAgentBaseRef(workspaceGit: RuntimeGitRepositoryInfo | null): string {
 	return workspaceGit?.currentBranch ?? workspaceGit?.defaultBranch ?? "HEAD";
-}
-
-function pruneWorkspaceHomeAgentSessions(
-	setSessionSummaries: Dispatch<SetStateAction<Record<string, RuntimeTaskSessionSummary>>>,
-	workspaceId: string,
-	keepTaskId: string | null,
-): void {
-	setSessionSummaries((currentSessions) => {
-		let didChange = false;
-		const nextSessions: Record<string, RuntimeTaskSessionSummary> = {};
-
-		for (const [taskId, summary] of Object.entries(currentSessions)) {
-			if (isHomeAgentSessionIdForWorkspace(taskId, workspaceId) && taskId !== keepTaskId) {
-				didChange = true;
-				continue;
-			}
-			nextSessions[taskId] = summary;
-		}
-
-		return didChange ? nextSessions : currentSessions;
-	});
 }
 
 function buildHomeAgentSessionKey(session: HomeAgentSessionIdentity): string {
@@ -110,6 +81,7 @@ async function stopHomeAgentSession(session: HomeAgentSessionIdentity | null): P
 export function useHomeAgentSession({
 	currentProjectId,
 	runtimeProjectConfig,
+	activeThread,
 	workspaceGit,
 	kanbanSessionContextVersion,
 	sessionSummaries,
@@ -117,132 +89,80 @@ export function useHomeAgentSession({
 	upsertSessionSummary,
 }: UseHomeAgentSessionInput): UseHomeAgentSessionResult {
 	const latestBaseRefRef = useRef("HEAD");
-	const homeDescriptorByWorkspaceRef = useRef(new Map<string, HomeAgentWorkspaceDescriptor>());
-	const desiredTaskIdByWorkspaceRef = useRef(new Map<string, string>());
 	const startedSessionKeysRef = useRef(new Set<string>());
 	const failedSessionKeysRef = useRef(new Set<string>());
 	const pendingStartRequestIdsRef = useRef(new Map<string, number>());
 	const previousKanbanSessionContextVersionByWorkspaceRef = useRef(new Map<string, number>());
+	const lastDefaultTaskIdByWorkspaceRef = useRef(new Map<string, string>());
 	const nextStartRequestIdRef = useRef(0);
 	const disposedRef = useRef(false);
-	const kanbanProviderSettings = getRuntimeKanbanProviderSettings(runtimeProjectConfig);
 
 	useEffect(() => {
 		latestBaseRefRef.current = resolveHomeAgentBaseRef(workspaceGit);
 	}, [workspaceGit?.currentBranch, workspaceGit?.defaultBranch]);
 
-	const descriptor = useMemo<HomeAgentDescriptor | null>(() => {
-		if (!currentProjectId || !runtimeProjectConfig) {
-			return null;
+	const { panelMode, taskId } = useMemo<{ panelMode: HomeAgentPanelMode | null; taskId: string | null }>(() => {
+		if (!currentProjectId || !runtimeProjectConfig || !activeThread) {
+			return { panelMode: null, taskId: null };
 		}
-
-		let panelMode: HomeAgentPanelMode;
-		let descriptorKey: string;
-		if (isNativeAgentSelected(runtimeProjectConfig.selectedAgentId)) {
-			panelMode = "chat";
-			descriptorKey = buildKanbanDescriptor(runtimeProjectConfig);
-		} else {
-			if (!runtimeProjectConfig.effectiveCommand) {
-				return null;
-			}
-			panelMode = "terminal";
-			descriptorKey = buildTerminalDescriptor(runtimeProjectConfig);
+		const nextTaskId = createHomeAgentSessionId(currentProjectId, activeThread.agentId, activeThread.id);
+		if (isNativeAgentSelected(activeThread.agentId)) {
+			return { panelMode: "chat", taskId: nextTaskId };
 		}
-
-		const existingDescriptor = homeDescriptorByWorkspaceRef.current.get(currentProjectId);
-		if (
-			existingDescriptor &&
-			existingDescriptor.descriptorKey === descriptorKey &&
-			existingDescriptor.panelMode === panelMode
-		) {
-			return {
-				panelMode,
-				descriptorKey,
-				taskId: existingDescriptor.taskId,
-			};
+		// Terminal agent. The default thread mirrors the workspace-global agent, so
+		// fall back to the historical "configure an agent" message when no runnable
+		// command is resolved. Explicitly created threads pick a launch-supported
+		// agent, so render the terminal and let the backend surface launch errors.
+		if (activeThread.id === DEFAULT_HOME_THREAD_ID && !runtimeProjectConfig.effectiveCommand) {
+			return { panelMode: null, taskId: nextTaskId };
 		}
+		return { panelMode: "terminal", taskId: nextTaskId };
+	}, [currentProjectId, runtimeProjectConfig, activeThread]);
 
-		const taskId = createHomeAgentSessionId(currentProjectId, runtimeProjectConfig.selectedAgentId);
-		homeDescriptorByWorkspaceRef.current.set(currentProjectId, {
-			descriptorKey,
-			panelMode,
-			taskId,
-		});
-		return {
-			panelMode,
-			descriptorKey,
-			taskId,
-		};
-	}, [
-		currentProjectId,
-		kanbanProviderSettings.baseUrl,
-		kanbanProviderSettings.modelId,
-		kanbanProviderSettings.reasoningEffort,
-		kanbanProviderSettings.oauthProvider,
-		kanbanProviderSettings.providerId,
-		runtimeProjectConfig?.effectiveCommand,
-		runtimeProjectConfig?.selectedAgentId,
-	]);
-
-	const descriptorTaskId = descriptor?.taskId ?? null;
-	const hasLoadedRuntimeProjectConfig = runtimeProjectConfig !== null;
-
+	// Rotate the default thread: when the workspace-global agent changes, the
+	// default thread's session identity changes. Stop the previous default session
+	// and drop its cached summary so it does not linger as an orphan.
+	const defaultThreadTaskId =
+		currentProjectId && runtimeProjectConfig
+			? createHomeAgentSessionId(currentProjectId, runtimeProjectConfig.selectedAgentId, DEFAULT_HOME_THREAD_ID)
+			: null;
 	useEffect(() => {
-		if (!currentProjectId || !hasLoadedRuntimeProjectConfig) {
+		if (!currentProjectId || !defaultThreadTaskId) {
 			return;
 		}
-
-		const previousTaskId = desiredTaskIdByWorkspaceRef.current.get(currentProjectId) ?? null;
-
-		if (!descriptorTaskId) {
-			if (!previousTaskId) {
-				return;
-			}
-
-			homeDescriptorByWorkspaceRef.current.delete(currentProjectId);
-			desiredTaskIdByWorkspaceRef.current.delete(currentProjectId);
-			const previousSessionKey = buildHomeAgentSessionKey({
-				workspaceId: currentProjectId,
-				taskId: previousTaskId,
-			});
-			startedSessionKeysRef.current.delete(previousSessionKey);
-			failedSessionKeysRef.current.delete(previousSessionKey);
-			pruneWorkspaceHomeAgentSessions(setSessionSummaries, currentProjectId, null);
-			void stopHomeAgentSession({
-				workspaceId: currentProjectId,
-				taskId: previousTaskId,
-			});
+		const previousDefaultTaskId = lastDefaultTaskIdByWorkspaceRef.current.get(currentProjectId) ?? null;
+		if (previousDefaultTaskId === defaultThreadTaskId) {
 			return;
 		}
-
-		if (previousTaskId === descriptorTaskId) {
+		lastDefaultTaskIdByWorkspaceRef.current.set(currentProjectId, defaultThreadTaskId);
+		if (!previousDefaultTaskId) {
 			return;
 		}
-
-		desiredTaskIdByWorkspaceRef.current.set(currentProjectId, descriptorTaskId);
-		pruneWorkspaceHomeAgentSessions(setSessionSummaries, currentProjectId, descriptorTaskId);
-
-		if (!previousTaskId) {
-			return;
-		}
-
 		const previousSessionKey = buildHomeAgentSessionKey({
 			workspaceId: currentProjectId,
-			taskId: previousTaskId,
+			taskId: previousDefaultTaskId,
 		});
 		startedSessionKeysRef.current.delete(previousSessionKey);
 		failedSessionKeysRef.current.delete(previousSessionKey);
-		void stopHomeAgentSession({
-			workspaceId: currentProjectId,
-			taskId: previousTaskId,
+		// Drop any in-flight start for the rotated-away session so its late
+		// resolution can't re-add an orphaned summary or mark it started.
+		pendingStartRequestIdsRef.current.delete(previousSessionKey);
+		setSessionSummaries((current) => {
+			if (!(previousDefaultTaskId in current)) {
+				return current;
+			}
+			const next = { ...current };
+			delete next[previousDefaultTaskId];
+			return next;
 		});
-	}, [currentProjectId, descriptorTaskId, hasLoadedRuntimeProjectConfig, setSessionSummaries]);
+		void stopHomeAgentSession({ workspaceId: currentProjectId, taskId: previousDefaultTaskId });
+	}, [currentProjectId, defaultThreadTaskId, setSessionSummaries]);
 
-	// When MCP settings or auth change, the runtime bumps the Kanban session context version.
-	// Reload the existing home chat in place so it keeps the same sidebar task id and messages,
-	// but restarts the underlying Kanban session with a fresh MCP tool bundle.
+	// When MCP settings or auth change, the runtime bumps the Kanban session
+	// context version. Reload the active pi chat in place so it keeps the same
+	// task id and messages but restarts with a fresh MCP tool bundle.
 	useEffect(() => {
-		if (!currentProjectId || !descriptor || descriptor.panelMode !== "chat") {
+		if (!currentProjectId || panelMode !== "chat" || !taskId) {
 			return;
 		}
 
@@ -253,15 +173,13 @@ export function useHomeAgentSession({
 			return;
 		}
 
-		if (!sessionSummaries[descriptor.taskId]) {
+		if (!sessionSummaries[taskId]) {
 			return;
 		}
 
 		let cancelled = false;
 		void getRuntimeTrpcClient(currentProjectId)
-			.runtime.reloadTaskChatSession.mutate({
-				taskId: descriptor.taskId,
-			})
+			.runtime.reloadTaskChatSession.mutate({ taskId })
 			.then((response) => {
 				if (cancelled || disposedRef.current) {
 					return;
@@ -275,39 +193,30 @@ export function useHomeAgentSession({
 				if (cancelled || disposedRef.current) {
 					return;
 				}
-				const message = error instanceof Error ? error.message : String(error);
-				notifyError(message);
+				notifyError(error instanceof Error ? error.message : String(error));
 			});
 
 		return () => {
 			cancelled = true;
 		};
-	}, [kanbanSessionContextVersion, currentProjectId, descriptor, sessionSummaries, upsertSessionSummary]);
+	}, [kanbanSessionContextVersion, currentProjectId, panelMode, taskId, sessionSummaries, upsertSessionSummary]);
 
+	// Lazily start the active terminal thread's session. Background terminal
+	// threads keep running, so a started session is never stopped on switch — the
+	// AgentTerminalPanel reattaches to it. Pi chats start lazily on first message.
 	useEffect(() => {
-		if (!currentProjectId || !descriptor || descriptor.panelMode !== "terminal") {
+		if (!currentProjectId || panelMode !== "terminal" || !taskId) {
 			return;
 		}
 
-		const session = {
-			workspaceId: currentProjectId,
-			taskId: descriptor.taskId,
-		} satisfies HomeAgentSessionIdentity;
+		const session: HomeAgentSessionIdentity = { workspaceId: currentProjectId, taskId };
 		const sessionKey = buildHomeAgentSessionKey(session);
 
-		if (desiredTaskIdByWorkspaceRef.current.get(session.workspaceId) !== session.taskId) {
-			return;
-		}
-
-		if (startedSessionKeysRef.current.has(sessionKey)) {
-			return;
-		}
-
-		if (failedSessionKeysRef.current.has(sessionKey)) {
-			return;
-		}
-
-		if (pendingStartRequestIdsRef.current.has(sessionKey)) {
+		if (
+			startedSessionKeysRef.current.has(sessionKey) ||
+			failedSessionKeysRef.current.has(sessionKey) ||
+			pendingStartRequestIdsRef.current.has(sessionKey)
+		) {
 			return;
 		}
 
@@ -318,8 +227,7 @@ export function useHomeAgentSession({
 		void (async () => {
 			try {
 				const geometry = estimateTaskSessionGeometry(window.innerWidth, window.innerHeight);
-				const trpcClient = getRuntimeTrpcClient(session.workspaceId);
-				const response = await trpcClient.runtime.startTaskSession.mutate({
+				const response = await getRuntimeTrpcClient(session.workspaceId).runtime.startTaskSession.mutate({
 					taskId: session.taskId,
 					prompt: "",
 					baseRef: latestBaseRefRef.current,
@@ -327,18 +235,13 @@ export function useHomeAgentSession({
 					rows: geometry.rows,
 				});
 
-				if (!response.ok || !response.summary) {
-					throw new Error(response.error ?? "Could not start home agent session.");
-				}
-
 				if (pendingStartRequestIdsRef.current.get(sessionKey) !== requestId) {
 					return;
 				}
 				pendingStartRequestIdsRef.current.delete(sessionKey);
 
-				if (desiredTaskIdByWorkspaceRef.current.get(session.workspaceId) !== session.taskId) {
-					await stopHomeAgentSession(session);
-					return;
+				if (!response.ok || !response.summary) {
+					throw new Error(response.error ?? "Could not start home agent session.");
 				}
 
 				if (disposedRef.current) {
@@ -373,31 +276,24 @@ export function useHomeAgentSession({
 					warningMessage: message,
 				});
 
-				if (
-					disposedRef.current ||
-					desiredTaskIdByWorkspaceRef.current.get(session.workspaceId) !== session.taskId
-				) {
+				if (disposedRef.current) {
 					return;
 				}
 				notifyError(message);
 			}
 		})();
-	}, [currentProjectId, descriptor, sessionSummaries, upsertSessionSummary]);
+	}, [currentProjectId, panelMode, taskId, upsertSessionSummary]);
 
 	useEffect(() => {
 		return () => {
 			disposedRef.current = true;
-			desiredTaskIdByWorkspaceRef.current.clear();
-			homeDescriptorByWorkspaceRef.current.clear();
 			startedSessionKeysRef.current.clear();
 			failedSessionKeysRef.current.clear();
 			pendingStartRequestIdsRef.current.clear();
 			previousKanbanSessionContextVersionByWorkspaceRef.current.clear();
+			lastDefaultTaskIdByWorkspaceRef.current.clear();
 		};
 	}, []);
 
-	return {
-		panelMode: descriptor?.panelMode ?? null,
-		taskId: descriptor?.taskId ?? null,
-	};
+	return { panelMode, taskId };
 }
