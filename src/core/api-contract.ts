@@ -104,27 +104,30 @@ export const runtimeTaskImageSchema = z.object({
 });
 export type RuntimeTaskImage = z.infer<typeof runtimeTaskImageSchema>;
 
-export const runtimeBoardCardSchema = z
-	.object({
-		id: z.string(),
-		title: z.string().optional(),
-		prompt: z.string(),
-		startInPlanMode: z.boolean(),
-		autoReviewEnabled: z.boolean().optional(),
-		autoReviewMode: runtimeTaskAutoReviewModeSchema.optional(),
-		images: z.array(runtimeTaskImageSchema).optional(),
-		agentId: runtimeAgentIdSchema.optional(),
-		agentSettings: runtimeTaskAgentSettingsSchema.optional(),
-		baseRef: z.string(),
-		createdAt: z.number(),
-		updatedAt: z.number(),
-	})
-	.transform((card) => {
-		return {
-			...card,
-			title: resolveTaskTitle(card.title, card.prompt),
-		};
-	});
+// Durable task spec fields, pre-title-resolution. Exported so the on-disk sharded
+// task store (src/state/task-shard-store.ts) can extend this exact shape with its
+// storage-only fields (column, rank, dependsOn) instead of redefining the columns.
+export const runtimeBoardCardObjectSchema = z.object({
+	id: z.string(),
+	title: z.string().optional(),
+	prompt: z.string(),
+	startInPlanMode: z.boolean(),
+	autoReviewEnabled: z.boolean().optional(),
+	autoReviewMode: runtimeTaskAutoReviewModeSchema.optional(),
+	images: z.array(runtimeTaskImageSchema).optional(),
+	agentId: runtimeAgentIdSchema.optional(),
+	agentSettings: runtimeTaskAgentSettingsSchema.optional(),
+	baseRef: z.string(),
+	createdAt: z.number(),
+	updatedAt: z.number(),
+});
+
+export const runtimeBoardCardSchema = runtimeBoardCardObjectSchema.transform((card) => {
+	return {
+		...card,
+		title: resolveTaskTitle(card.title, card.prompt),
+	};
+});
 export type RuntimeBoardCard = z.infer<typeof runtimeBoardCardSchema>;
 
 export const runtimeBoardColumnSchema = z.object({

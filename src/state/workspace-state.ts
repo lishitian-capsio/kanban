@@ -6,7 +6,6 @@ import { basename, join, resolve } from "node:path";
 import { z } from "zod";
 
 import {
-	type RuntimeBoardColumnId,
 	type RuntimeBoardData,
 	type RuntimeGitRepositoryInfo,
 	type RuntimeHomeChatThreadsData,
@@ -16,7 +15,6 @@ import {
 	type RuntimeTaskSessionSummary,
 	type RuntimeWorkspaceStateResponse,
 	type RuntimeWorkspaceStateSaveRequest,
-	runtimeBoardDataSchema,
 	runtimeHomeChatThreadsDataSchema,
 	runtimeRequirementsDataSchema,
 	runtimeRequirementTaskLinksDataSchema,
@@ -36,12 +34,12 @@ import {
 	writeRequirementTaskLinksSharded,
 	writeRequirementVersionsSharded,
 } from "./requirement-store";
+import { boardNeedsSharding, convertBoardToShards, loadShardedBoard, saveShardedBoard } from "./task-shard-store";
 
 const RUNTIME_HOME_DIR = ".kanban";
 const RUNTIME_WORKTREES_DIR = "worktrees";
 const WORKSPACES_DIR = "workspaces";
 const INDEX_FILENAME = "index.json";
-const BOARD_FILENAME = "board.json";
 const SESSIONS_FILENAME = "sessions.json";
 const REQUIREMENTS_FILENAME = "requirements.json";
 const REQUIREMENT_VERSIONS_FILENAME = "requirement-versions.json";
@@ -57,15 +55,16 @@ const HOME_THREADS_FILENAME = "threads.json";
 const META_FILENAME = "meta.json";
 const RUNTIME_HOME_GITIGNORE_FILENAME = ".gitignore";
 // Boundary between committed content and machine-local runtime/secrets inside a
-// repo's `.kanban`. Denylist style: committed directories (the file library in
-// files/, and future tasks/) are tracked by default; only known runtime +
-// secret paths are ignored. Binary file-library content goes through Git LFS,
-// configured by files/.gitattributes (see src/files/file-library-store.ts).
+// repo's `.kanban`. Denylist style: committed directories (per-task shards in
+// tasks/, the requirement shard dirs, and the file library in files/) are tracked
+// by default; only known runtime + secret paths are ignored. Binary file-library
+// content goes through Git LFS, configured by files/.gitattributes (see
+// src/files/file-library-store.ts).
 const RUNTIME_HOME_GITIGNORE_CONTENT = `# Kanban runtime data boundary — see docs/superpowers/plans for rationale.
-# Committed (content): workspaces/<id>/board.json, the requirement shard dirs
-# (requirements/, requirement-versions/, requirement-task-links/), files/
-# (manifest + LFS blobs), and future tasks/. Everything below is machine-local
-# or secret.
+# Committed (content): workspaces/<id>/board.json (layout) + tasks/<id>.json, the
+# requirement shard dirs (requirements/, requirement-versions/,
+# requirement-task-links/), and files/ (manifest + LFS blobs). Everything below
+# is machine-local or secret.
 
 # Machine-local runtime state
 worktrees/
@@ -85,13 +84,6 @@ config.json
 `;
 const INDEX_VERSION = 1;
 const WORKSPACE_ID_COLLISION_SUFFIX_LENGTH = 4;
-
-const BOARD_COLUMNS: Array<{ id: RuntimeBoardColumnId; title: string }> = [
-	{ id: "backlog", title: "Backlog" },
-	{ id: "in_progress", title: "In Progress" },
-	{ id: "review", title: "Review" },
-	{ id: "trash", title: "Done" },
-];
 
 interface WorkspaceIndexEntry {
 	workspaceId: string;
@@ -194,17 +186,6 @@ export interface LoadWorkspaceContextOptions {
 	autoCreateIfMissing?: boolean;
 }
 
-function createEmptyBoard(): RuntimeBoardData {
-	return {
-		columns: BOARD_COLUMNS.map((column) => ({
-			id: column.id,
-			title: column.title,
-			cards: [],
-		})),
-		dependencies: [],
-	};
-}
-
 function createEmptyWorkspaceIndex(): WorkspaceIndexFile {
 	return {
 		version: INDEX_VERSION,
@@ -256,10 +237,6 @@ export function getWorkspaceDirectoryPath(repoPath: string, workspaceId: string)
  */
 function getLegacyWorkspaceDirectoryPath(workspaceId: string): string {
 	return join(getMachineKanbanHomePath(), WORKSPACES_DIR, workspaceId);
-}
-
-function getWorkspaceBoardPath(repoPath: string, workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), BOARD_FILENAME);
 }
 
 function getWorkspaceSessionsPath(repoPath: string, workspaceId: string): string {
@@ -440,14 +417,14 @@ function parseWorkspaceStateSavePayload(payload: RuntimeWorkspaceStateSaveReques
 }
 
 async function readWorkspaceBoard(repoPath: string, workspaceId: string): Promise<RuntimeBoardData> {
-	const boardPath = getWorkspaceBoardPath(repoPath, workspaceId);
-	const rawBoard = await readJsonFileWithLegacyFallback(
-		boardPath,
-		getLegacyWorkspaceFilePath(workspaceId, BOARD_FILENAME),
+	// The board is stored sharded (one `tasks/<id>.json` per task + a layout-only
+	// `board.json`); loadShardedBoard assembles the wire-shaped board, staying
+	// back-compatible with a legacy single-file board and the machine-rooted fallback.
+	const board = await loadShardedBoard(
+		getWorkspaceDirectoryPath(repoPath, workspaceId),
+		getLegacyWorkspaceDirectoryPath(workspaceId),
 	);
-	return updateTaskDependencies(
-		parsePersistedStateFile(boardPath, BOARD_FILENAME, rawBoard, runtimeBoardDataSchema, createEmptyBoard()),
-	);
+	return updateTaskDependencies(board);
 }
 
 export async function loadWorkspaceBoardById(workspaceId: string): Promise<RuntimeBoardData> {
@@ -998,6 +975,25 @@ async function prepareRepoRuntimeHome(repoPath: string, workspaceId: string): Pr
 	await migrateWorkspaceDataFromLegacyHome(repoPath, workspaceId);
 	await ensureRuntimeHomeGitignore(repoPath);
 	await migrateRequirementsToShards(repoPath, workspaceId);
+	await migrateWorkspaceBoardToShards(repoPath, workspaceId);
+}
+
+/**
+ * One-time, idempotent conversion of a legacy single-file `board.json` into the
+ * sharded form (per-task files + layout manifest). The cheap {@link boardNeedsSharding}
+ * check avoids taking the workspace lock once a board is already sharded; the
+ * conversion itself runs under the lock and re-checks, so concurrent loaders cannot
+ * race. Runs after the legacy-home copy so machine-rooted boards are sharded too.
+ */
+async function migrateWorkspaceBoardToShards(repoPath: string, workspaceId: string): Promise<void> {
+	const boardDir = getWorkspaceDirectoryPath(repoPath, workspaceId);
+	const legacyBoardDir = getLegacyWorkspaceDirectoryPath(workspaceId);
+	if (!(await boardNeedsSharding(boardDir, legacyBoardDir))) {
+		return;
+	}
+	await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
+		await convertBoardToShards(boardDir, legacyBoardDir);
+	});
 }
 
 export async function loadWorkspaceContextById(workspaceId: string): Promise<RuntimeWorkspaceContext | null> {
@@ -1100,9 +1096,7 @@ export async function saveWorkspaceState(
 			updatedAt: Date.now(),
 		};
 
-		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceBoardPath(repoPath, workspaceId), board, {
-			lock: null,
-		});
+		await saveShardedBoard(getWorkspaceDirectoryPath(repoPath, workspaceId), board);
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceSessionsPath(repoPath, workspaceId), sessions, {
 			lock: null,
 		});
@@ -1194,9 +1188,7 @@ export async function mutateWorkspaceState<T>(
 			updatedAt: Date.now(),
 		};
 
-		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceBoardPath(repoPath, workspaceId), nextBoard, {
-			lock: null,
-		});
+		await saveShardedBoard(getWorkspaceDirectoryPath(repoPath, workspaceId), nextBoard);
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceSessionsPath(repoPath, workspaceId), nextSessions, {
 			lock: null,
 		});
