@@ -13,6 +13,11 @@ import type {
 } from "../core/api-contract";
 import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
 import type { SessionMessage } from "../session/session-message";
+import {
+	mergeSessionMessages,
+	NoopSessionMessageJournal,
+	type SessionMessageJournal,
+} from "../session/session-message-journal";
 import type { SessionMessageListener, SessionMessageSource } from "../session/session-message-source";
 import {
 	type AgentAdapterLaunchInput,
@@ -259,10 +264,20 @@ function hasCodexStartupUiRendered(text: string): boolean {
 	return stripped.includes("openai codex (v");
 }
 
+export interface TerminalSessionManagerOptions {
+	/** Durable transcript store; defaults to an in-memory-only no-op. */
+	messageJournal?: SessionMessageJournal;
+}
+
 export class TerminalSessionManager implements TerminalSessionService, SessionMessageSource {
 	private readonly entries = new Map<string, SessionEntry>();
 	private readonly summaryListeners = new Set<(summary: RuntimeTaskSessionSummary) => void>();
 	private readonly messageListeners = new Set<SessionMessageListener>();
+	private readonly messageJournal: SessionMessageJournal;
+
+	constructor(options: TerminalSessionManagerOptions = {}) {
+		this.messageJournal = options.messageJournal ?? new NoopSessionMessageJournal();
+	}
 
 	private trySendDeferredCodexStartupInput(taskId: string): boolean {
 		const entry = this.entries.get(taskId);
@@ -312,14 +327,15 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 	}
 
 	async loadTaskSessionMessages(taskId: string): Promise<SessionMessage[]> {
-		// In-memory only for now; persistence/resume is a later task.
-		return this.listMessages(taskId);
+		const persisted = await this.messageJournal.loadMessages(taskId);
+		return mergeSessionMessages(persisted, this.listMessages(taskId));
 	}
 
 	private emitMessage(taskId: string, message: SessionMessage): void {
 		for (const listener of this.messageListeners) {
 			listener(taskId, message);
 		}
+		this.messageJournal.recordMessage(taskId, message);
 	}
 
 	// Folds the terminal scrollback that has scrolled above the live viewport into
@@ -1148,6 +1164,8 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			stopWorkspaceTrustTimers(entry.active);
 			entry.active.session.stop({ interrupted: true });
 		}
+		// Persist any debounced transcript tail before the workspace tears down.
+		void this.messageJournal.flush();
 		return activeEntries.map((entry) => cloneSummary(entry.summary));
 	}
 

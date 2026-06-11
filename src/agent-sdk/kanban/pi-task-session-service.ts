@@ -10,6 +10,11 @@ import type {
 } from "../../core/api-contract";
 import { createSessionMessage, now, type SessionMessage } from "../../session/session-message";
 import { clearActiveTurnState } from "../../session/session-message-buffer";
+import {
+	mergeSessionMessages,
+	NoopSessionMessageJournal,
+	type SessionMessageJournal,
+} from "../../session/session-message-journal";
 import type { SessionMessageSource } from "../../session/session-message-source";
 import type { AgentEvent } from "../types";
 import {
@@ -72,6 +77,8 @@ export interface PiTaskSessionService extends SessionMessageSource {
 
 export interface CreatePiTaskSessionServiceOptions {
 	createAgentRuntime?: (options: CreatePiAgentRuntimeOptions) => PiAgentRuntime;
+	/** Durable transcript store; defaults to an in-memory-only no-op. */
+	messageJournal?: SessionMessageJournal;
 }
 
 /**
@@ -82,6 +89,8 @@ class PiMessageStore {
 	private entries = new Map<string, KanbanTaskSessionEntry>();
 	private summaryListeners = new Set<(summary: RuntimeTaskSessionSummary) => void>();
 	private messageListeners = new Set<(taskId: string, message: SessionMessage) => void>();
+
+	constructor(private readonly journal: SessionMessageJournal) {}
 
 	getTaskEntry(taskId: string): KanbanTaskSessionEntry | undefined {
 		return this.entries.get(taskId);
@@ -113,6 +122,11 @@ class PiMessageStore {
 		for (const listener of this.messageListeners) {
 			listener(taskId, message);
 		}
+		this.journal.recordMessage(taskId, message);
+	}
+
+	loadPersistedMessages(taskId: string): Promise<SessionMessage[]> {
+		return this.journal.loadMessages(taskId);
 	}
 
 	onSummary(listener: (summary: RuntimeTaskSessionSummary) => void): () => void {
@@ -131,12 +145,16 @@ class PiMessageStore {
 			entry.messages = [];
 			clearActiveTurnState(entry);
 		}
+		// clear() synchronously enqueues the file removal, so a subsequent
+		// loadMessages chains after it — fire-and-forget is ordering-safe.
+		void this.journal.clear(taskId);
 	}
 
-	dispose(): void {
+	async dispose(): Promise<void> {
 		this.summaryListeners.clear();
 		this.messageListeners.clear();
 		this.entries.clear();
+		await this.journal.dispose();
 	}
 }
 
@@ -165,7 +183,7 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 	private readonly messageStore: PiMessageStore;
 
 	constructor(options: CreatePiTaskSessionServiceOptions = {}) {
-		this.messageStore = new PiMessageStore();
+		this.messageStore = new PiMessageStore(options.messageJournal ?? new NoopSessionMessageJournal());
 		const createAgentRuntime = options.createAgentRuntime ?? createInMemoryPiAgentRuntime;
 		this.agentRuntime = createAgentRuntime({
 			onTaskEvent: (taskId: string, event: AgentEvent) => {
@@ -441,7 +459,8 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 	}
 
 	async loadTaskSessionMessages(taskId: string): Promise<SessionMessage[]> {
-		return this.messageStore.listMessages(taskId);
+		const persisted = await this.messageStore.loadPersistedMessages(taskId);
+		return mergeSessionMessages(persisted, this.messageStore.listMessages(taskId));
 	}
 
 	applyTurnCheckpoint(taskId: string, checkpoint: RuntimeTaskTurnCheckpoint): RuntimeTaskSessionSummary | null {
@@ -458,7 +477,7 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 	async dispose(): Promise<void> {
 		await this.agentRuntime.dispose();
 		this.pendingTurnCancelTaskIds.clear();
-		this.messageStore.dispose();
+		await this.messageStore.dispose();
 	}
 
 	private emitTaskFailure(

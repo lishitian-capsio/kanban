@@ -195,6 +195,15 @@ function getWorkspaceSessionsPath(workspaceId: string): string {
 	return join(getWorkspaceDirectoryPath(workspaceId), SESSIONS_FILENAME);
 }
 
+/**
+ * Directory holding per-task message transcripts:
+ * `~/.kanban/workspaces/<workspaceId>/sessions/<taskId>/messages.jsonl`.
+ * Distinct from the `sessions.json` summary file in the same workspace dir.
+ */
+export function getWorkspaceSessionMessagesDirPath(workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(workspaceId), "sessions");
+}
+
 function getWorkspaceRequirementsPath(workspaceId: string): string {
 	return join(getWorkspaceDirectoryPath(workspaceId), REQUIREMENTS_FILENAME);
 }

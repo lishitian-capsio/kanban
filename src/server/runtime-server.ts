@@ -4,11 +4,11 @@ import { createServer as createHttpsServer } from "node:https";
 import { join } from "node:path";
 
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
-import {
-	type PiTaskSessionService,
-	createInMemoryPiTaskSessionService,
-} from "../agent-sdk/kanban/pi-task-session-service";
 import { handleMcpOauthCallback } from "../agent-sdk/kanban/mcp-runtime-service";
+import {
+	createInMemoryPiTaskSessionService,
+	type PiTaskSessionService,
+} from "../agent-sdk/kanban/pi-task-session-service";
 import type {
 	RuntimeCommandRunResponse,
 	RuntimeRunUpdateResponse,
@@ -35,7 +35,8 @@ import {
 	validatePasscode,
 	validateSession,
 } from "../security/passcode-manager";
-import { loadWorkspaceContextById } from "../state/workspace-state";
+import { FileSessionMessageJournal } from "../session/session-message-journal";
+import { getWorkspaceSessionMessagesDirPath, loadWorkspaceContextById } from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { createTerminalWebSocketBridge } from "../terminal/ws-server";
 import { type RuntimeTrpcContext, type RuntimeTrpcWorkspaceScope, runtimeAppRouter } from "../trpc/app-router";
@@ -143,12 +144,14 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 
 	// Pi task session service management
 	const piTaskSessionServiceByWorkspaceId = new Map<string, PiTaskSessionService>();
-	const getScopedPiTaskSessionService = async (
-		scope: RuntimeTrpcWorkspaceScope,
-	): Promise<PiTaskSessionService> => {
+	const getScopedPiTaskSessionService = async (scope: RuntimeTrpcWorkspaceScope): Promise<PiTaskSessionService> => {
 		let service = piTaskSessionServiceByWorkspaceId.get(scope.workspaceId);
 		if (!service) {
-			service = createInMemoryPiTaskSessionService({});
+			service = createInMemoryPiTaskSessionService({
+				messageJournal: new FileSessionMessageJournal({
+					sessionsDir: getWorkspaceSessionMessagesDirPath(scope.workspaceId),
+				}),
+			});
 			piTaskSessionServiceByWorkspaceId.set(scope.workspaceId, service);
 			deps.runtimeStateHub.trackPiTaskSessionService(scope.workspaceId, scope.workspacePath, service);
 		}

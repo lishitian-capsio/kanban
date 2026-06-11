@@ -9,7 +9,9 @@ import type {
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
 import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
+import { FileSessionMessageJournal } from "../session/session-message-journal";
 import {
+	getWorkspaceSessionMessagesDirPath,
 	listWorkspaceIndexEntries,
 	loadWorkspaceBoardById,
 	loadWorkspaceContext,
@@ -255,7 +257,11 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 			return loaded;
 		}
 		const loading = (async () => {
-			const manager = new TerminalSessionManager();
+			const manager = new TerminalSessionManager({
+				messageJournal: new FileSessionMessageJournal({
+					sessionsDir: getWorkspaceSessionMessagesDirPath(workspaceId),
+				}),
+			});
 			try {
 				const existingWorkspace = await loadWorkspaceState(repoPath);
 				manager.hydrateFromRecord(existingWorkspace.sessions);
