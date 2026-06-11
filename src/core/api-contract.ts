@@ -242,6 +242,111 @@ export const runtimeRequirementTaskLinksDataSchema = z.object({
 });
 export type RuntimeRequirementTaskLinksData = z.infer<typeof runtimeRequirementTaskLinksDataSchema>;
 
+// ---------------------------------------------------------------------------
+// Files library
+//
+// A first-class resource library, on par with Requirements, that any agent
+// (pi / CLI) can reference. Unlike requirements (per-workspace JSON embedded in
+// workspace-state), the file library is repo-scoped: content lives under
+// `<repo>/.kanban/files/` and is committed to git (binaries via Git LFS), so a
+// fresh clone is immediately usable. The manifest below is the index; the bytes
+// live next to it in `blobs/<id>/<name>`.
+// ---------------------------------------------------------------------------
+
+// Coarse mime-derived bucket used for grouping/filtering in the UI and CLI.
+export const runtimeFileCategorySchema = z.enum(["image", "document", "audio", "video", "archive", "text", "other"]);
+export type RuntimeFileCategory = z.infer<typeof runtimeFileCategorySchema>;
+
+export const runtimeFileItemSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	mime: z.string(),
+	category: runtimeFileCategorySchema,
+	size: z.number().int().nonnegative(),
+	addedAt: z.number(),
+});
+export type RuntimeFileItem = z.infer<typeof runtimeFileItemSchema>;
+
+export const runtimeFilesDataSchema = z.object({
+	items: z.array(runtimeFileItemSchema).default([]),
+});
+export type RuntimeFilesData = z.infer<typeof runtimeFilesDataSchema>;
+
+export const runtimeFilesListResponseSchema = z.object({
+	files: z.array(runtimeFileItemSchema),
+});
+export type RuntimeFilesListResponse = z.infer<typeof runtimeFilesListResponseSchema>;
+
+export const runtimeFileGetRequestSchema = z.object({
+	id: z.string(),
+});
+export type RuntimeFileGetRequest = z.infer<typeof runtimeFileGetRequestSchema>;
+
+export const runtimeFileGetResponseSchema = z.object({
+	file: runtimeFileItemSchema.nullable(),
+});
+export type RuntimeFileGetResponse = z.infer<typeof runtimeFileGetResponseSchema>;
+
+export const runtimeFileAddRequestSchema = z.object({
+	name: z.string(),
+	// Base64-encoded file content.
+	data: z.string(),
+	mime: z.string().optional(),
+});
+export type RuntimeFileAddRequest = z.infer<typeof runtimeFileAddRequestSchema>;
+
+export const runtimeFileAddResponseSchema = z.object({
+	file: runtimeFileItemSchema,
+});
+export type RuntimeFileAddResponse = z.infer<typeof runtimeFileAddResponseSchema>;
+
+export const runtimeFileUpdateRequestSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+});
+export type RuntimeFileUpdateRequest = z.infer<typeof runtimeFileUpdateRequestSchema>;
+
+export const runtimeFileUpdateResponseSchema = z.object({
+	file: runtimeFileItemSchema,
+});
+export type RuntimeFileUpdateResponse = z.infer<typeof runtimeFileUpdateResponseSchema>;
+
+export const runtimeFileDeleteRequestSchema = z.object({
+	id: z.string(),
+});
+export type RuntimeFileDeleteRequest = z.infer<typeof runtimeFileDeleteRequestSchema>;
+
+export const runtimeFileDeleteResponseSchema = z.object({
+	deleted: z.boolean(),
+});
+export type RuntimeFileDeleteResponse = z.infer<typeof runtimeFileDeleteResponseSchema>;
+
+export const runtimeFileBytesRequestSchema = z.object({
+	id: z.string(),
+});
+export type RuntimeFileBytesRequest = z.infer<typeof runtimeFileBytesRequestSchema>;
+
+export const runtimeFileBytesResponseSchema = z.object({
+	file: runtimeFileItemSchema.nullable(),
+	// Base64-encoded file content, ready for inline agent vision content.
+	data: z.string().nullable(),
+	mimeType: z.string().nullable(),
+});
+export type RuntimeFileBytesResponse = z.infer<typeof runtimeFileBytesResponseSchema>;
+
+export const runtimeFilePathRequestSchema = z.object({
+	id: z.string(),
+});
+export type RuntimeFilePathRequest = z.infer<typeof runtimeFilePathRequestSchema>;
+
+export const runtimeFilePathResponseSchema = z.object({
+	file: runtimeFileItemSchema.nullable(),
+	absolutePath: z.string().nullable(),
+	// Path relative to the repo root, stable across every worktree checkout.
+	relativePath: z.string().nullable(),
+});
+export type RuntimeFilePathResponse = z.infer<typeof runtimeFilePathResponseSchema>;
+
 export const runtimeGitRepositoryInfoSchema = z.object({
 	currentBranch: z.string().nullable(),
 	defaultBranch: z.string().nullable(),

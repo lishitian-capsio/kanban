@@ -6,6 +6,40 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import type {
+	RuntimeCommandRunRequest,
+	RuntimeCommandRunResponse,
+	RuntimeConfigResponse,
+	RuntimeConfigSaveRequest,
+	RuntimeDebugResetAllStateResponse,
+	RuntimeDirectoryListRequest,
+	RuntimeDirectoryListResponse,
+	RuntimeFeaturebaseTokenResponse,
+	RuntimeFileAddRequest,
+	RuntimeFileAddResponse,
+	RuntimeFileBytesRequest,
+	RuntimeFileBytesResponse,
+	RuntimeFileDeleteRequest,
+	RuntimeFileDeleteResponse,
+	RuntimeFileGetRequest,
+	RuntimeFileGetResponse,
+	RuntimeFilePathRequest,
+	RuntimeFilePathResponse,
+	RuntimeFilesListResponse,
+	RuntimeFileUpdateRequest,
+	RuntimeFileUpdateResponse,
+	RuntimeGitCheckoutRequest,
+	RuntimeGitCheckoutResponse,
+	RuntimeGitCommitDiffRequest,
+	RuntimeGitCommitDiffResponse,
+	RuntimeGitDiscardResponse,
+	RuntimeGitLogRequest,
+	RuntimeGitLogResponse,
+	RuntimeGitRefsResponse,
+	RuntimeGitSummaryResponse,
+	RuntimeGitSyncAction,
+	RuntimeGitSyncResponse,
+	RuntimeHookIngestRequest,
+	RuntimeHookIngestResponse,
 	RuntimeKanbanAccountBalanceResponse,
 	RuntimeKanbanAccountOrganizationsResponse,
 	RuntimeKanbanAccountProfileResponse,
@@ -32,27 +66,6 @@ import type {
 	RuntimeKanbanProviderSettingsSaveResponse,
 	RuntimeKanbanUpdateProviderRequest,
 	RuntimeKanbanUpdateProviderResponse,
-	RuntimeCommandRunRequest,
-	RuntimeCommandRunResponse,
-	RuntimeConfigResponse,
-	RuntimeConfigSaveRequest,
-	RuntimeDebugResetAllStateResponse,
-	RuntimeDirectoryListRequest,
-	RuntimeDirectoryListResponse,
-	RuntimeFeaturebaseTokenResponse,
-	RuntimeGitCheckoutRequest,
-	RuntimeGitCheckoutResponse,
-	RuntimeGitCommitDiffRequest,
-	RuntimeGitCommitDiffResponse,
-	RuntimeGitDiscardResponse,
-	RuntimeGitLogRequest,
-	RuntimeGitLogResponse,
-	RuntimeGitRefsResponse,
-	RuntimeGitSummaryResponse,
-	RuntimeGitSyncAction,
-	RuntimeGitSyncResponse,
-	RuntimeHookIngestRequest,
-	RuntimeHookIngestResponse,
 	RuntimeOpenFileRequest,
 	RuntimeOpenFileResponse,
 	RuntimeProjectAddRequest,
@@ -99,6 +112,40 @@ import type {
 	RuntimeWorktreeEnsureResponse,
 } from "../core/api-contract";
 import {
+	runtimeCommandRunRequestSchema,
+	runtimeCommandRunResponseSchema,
+	runtimeConfigResponseSchema,
+	runtimeConfigSaveRequestSchema,
+	runtimeDebugResetAllStateResponseSchema,
+	runtimeDirectoryListRequestSchema,
+	runtimeDirectoryListResponseSchema,
+	runtimeFeaturebaseTokenResponseSchema,
+	runtimeFileAddRequestSchema,
+	runtimeFileAddResponseSchema,
+	runtimeFileBytesRequestSchema,
+	runtimeFileBytesResponseSchema,
+	runtimeFileDeleteRequestSchema,
+	runtimeFileDeleteResponseSchema,
+	runtimeFileGetRequestSchema,
+	runtimeFileGetResponseSchema,
+	runtimeFilePathRequestSchema,
+	runtimeFilePathResponseSchema,
+	runtimeFilesListResponseSchema,
+	runtimeFileUpdateRequestSchema,
+	runtimeFileUpdateResponseSchema,
+	runtimeGitCheckoutRequestSchema,
+	runtimeGitCheckoutResponseSchema,
+	runtimeGitCommitDiffRequestSchema,
+	runtimeGitCommitDiffResponseSchema,
+	runtimeGitDiscardResponseSchema,
+	runtimeGitLogRequestSchema,
+	runtimeGitLogResponseSchema,
+	runtimeGitRefsResponseSchema,
+	runtimeGitSummaryResponseSchema,
+	runtimeGitSyncActionSchema,
+	runtimeGitSyncResponseSchema,
+	runtimeHookIngestRequestSchema,
+	runtimeHookIngestResponseSchema,
 	runtimeKanbanAccountBalanceResponseSchema,
 	runtimeKanbanAccountOrganizationsResponseSchema,
 	runtimeKanbanAccountProfileResponseSchema,
@@ -125,27 +172,6 @@ import {
 	runtimeKanbanProviderSettingsSaveResponseSchema,
 	runtimeKanbanUpdateProviderRequestSchema,
 	runtimeKanbanUpdateProviderResponseSchema,
-	runtimeCommandRunRequestSchema,
-	runtimeCommandRunResponseSchema,
-	runtimeConfigResponseSchema,
-	runtimeConfigSaveRequestSchema,
-	runtimeDebugResetAllStateResponseSchema,
-	runtimeDirectoryListRequestSchema,
-	runtimeDirectoryListResponseSchema,
-	runtimeFeaturebaseTokenResponseSchema,
-	runtimeGitCheckoutRequestSchema,
-	runtimeGitCheckoutResponseSchema,
-	runtimeGitCommitDiffRequestSchema,
-	runtimeGitCommitDiffResponseSchema,
-	runtimeGitDiscardResponseSchema,
-	runtimeGitLogRequestSchema,
-	runtimeGitLogResponseSchema,
-	runtimeGitRefsResponseSchema,
-	runtimeGitSummaryResponseSchema,
-	runtimeGitSyncActionSchema,
-	runtimeGitSyncResponseSchema,
-	runtimeHookIngestRequestSchema,
-	runtimeHookIngestResponseSchema,
 	runtimeOpenFileRequestSchema,
 	runtimeOpenFileResponseSchema,
 	runtimeProjectAddRequestSchema,
@@ -254,10 +280,14 @@ export interface RuntimeTrpcContext {
 		getKanbanProviderCatalog: (
 			scope: RuntimeTrpcWorkspaceScope | null,
 		) => Promise<RuntimeKanbanProviderCatalogResponse>;
-		getKanbanAccountProfile: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeKanbanAccountProfileResponse>;
+		getKanbanAccountProfile: (
+			scope: RuntimeTrpcWorkspaceScope | null,
+		) => Promise<RuntimeKanbanAccountProfileResponse>;
 		getKanbanKanbanAccess: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeKanbanKanbanAccessResponse>;
 		getFeaturebaseToken: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeFeaturebaseTokenResponse>;
-		getKanbanAccountBalance: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeKanbanAccountBalanceResponse>;
+		getKanbanAccountBalance: (
+			scope: RuntimeTrpcWorkspaceScope | null,
+		) => Promise<RuntimeKanbanAccountBalanceResponse>;
 		getKanbanAccountOrganizations: (
 			scope: RuntimeTrpcWorkspaceScope | null,
 		) => Promise<RuntimeKanbanAccountOrganizationsResponse>;
@@ -278,7 +308,9 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope | null,
 			input: RuntimeKanbanDeviceAuthCompleteRequest,
 		) => Promise<RuntimeKanbanDeviceAuthCompleteResponse>;
-		getKanbanMcpAuthStatuses: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeKanbanMcpAuthStatusResponse>;
+		getKanbanMcpAuthStatuses: (
+			scope: RuntimeTrpcWorkspaceScope | null,
+		) => Promise<RuntimeKanbanMcpAuthStatusResponse>;
 		runKanbanMcpServerOAuth: (
 			scope: RuntimeTrpcWorkspaceScope | null,
 			input: RuntimeKanbanMcpOAuthRequest,
@@ -343,6 +375,25 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeRequirementVersionsRequest,
 		) => Promise<RuntimeRequirementVersionsResponse>;
+		listFiles: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeFilesListResponse>;
+		getFile: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFileGetRequest) => Promise<RuntimeFileGetResponse>;
+		addFile: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFileAddRequest) => Promise<RuntimeFileAddResponse>;
+		updateFile: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeFileUpdateRequest,
+		) => Promise<RuntimeFileUpdateResponse>;
+		deleteFile: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeFileDeleteRequest,
+		) => Promise<RuntimeFileDeleteResponse>;
+		getFileBytes: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeFileBytesRequest,
+		) => Promise<RuntimeFileBytesResponse>;
+		getFilePath: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeFilePathRequest,
+		) => Promise<RuntimeFilePathResponse>;
 		notifyStateUpdated: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeWorkspaceStateNotifyResponse>;
 		saveState: (
 			scope: RuntimeTrpcWorkspaceScope,
@@ -514,9 +565,11 @@ export const runtimeAppRouter = t.router({
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.cancelTaskChatTurn(ctx.workspaceScope, input);
 			}),
-		getKanbanProviderCatalog: t.procedure.output(runtimeKanbanProviderCatalogResponseSchema).query(async ({ ctx }) => {
-			return await ctx.runtimeApi.getKanbanProviderCatalog(ctx.workspaceScope);
-		}),
+		getKanbanProviderCatalog: t.procedure
+			.output(runtimeKanbanProviderCatalogResponseSchema)
+			.query(async ({ ctx }) => {
+				return await ctx.runtimeApi.getKanbanProviderCatalog(ctx.workspaceScope);
+			}),
 		getKanbanAccountProfile: t.procedure.output(runtimeKanbanAccountProfileResponseSchema).query(async ({ ctx }) => {
 			return await ctx.runtimeApi.getKanbanAccountProfile(ctx.workspaceScope);
 		}),
@@ -570,9 +623,11 @@ export const runtimeAppRouter = t.router({
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.runKanbanProviderOAuthLogin(ctx.workspaceScope, input);
 			}),
-		startKanbanDeviceAuth: t.procedure.output(runtimeKanbanDeviceAuthStartResponseSchema).mutation(async ({ ctx }) => {
-			return await ctx.runtimeApi.startKanbanDeviceAuth(ctx.workspaceScope);
-		}),
+		startKanbanDeviceAuth: t.procedure
+			.output(runtimeKanbanDeviceAuthStartResponseSchema)
+			.mutation(async ({ ctx }) => {
+				return await ctx.runtimeApi.startKanbanDeviceAuth(ctx.workspaceScope);
+			}),
 		completeKanbanDeviceAuth: t.procedure
 			.input(runtimeKanbanDeviceAuthCompleteRequestSchema)
 			.output(runtimeKanbanDeviceAuthCompleteResponseSchema)
@@ -670,6 +725,45 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeRequirementVersionsResponseSchema)
 			.query(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.loadRequirementVersions(ctx.workspaceScope, input);
+			}),
+		listFiles: workspaceProcedure.output(runtimeFilesListResponseSchema).query(async ({ ctx }) => {
+			return await ctx.workspaceApi.listFiles(ctx.workspaceScope);
+		}),
+		getFile: workspaceProcedure
+			.input(runtimeFileGetRequestSchema)
+			.output(runtimeFileGetResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.getFile(ctx.workspaceScope, input);
+			}),
+		getFileBytes: workspaceProcedure
+			.input(runtimeFileBytesRequestSchema)
+			.output(runtimeFileBytesResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.getFileBytes(ctx.workspaceScope, input);
+			}),
+		getFilePath: workspaceProcedure
+			.input(runtimeFilePathRequestSchema)
+			.output(runtimeFilePathResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.getFilePath(ctx.workspaceScope, input);
+			}),
+		addFile: workspaceProcedure
+			.input(runtimeFileAddRequestSchema)
+			.output(runtimeFileAddResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.addFile(ctx.workspaceScope, input);
+			}),
+		updateFile: workspaceProcedure
+			.input(runtimeFileUpdateRequestSchema)
+			.output(runtimeFileUpdateResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.updateFile(ctx.workspaceScope, input);
+			}),
+		deleteFile: workspaceProcedure
+			.input(runtimeFileDeleteRequestSchema)
+			.output(runtimeFileDeleteResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.deleteFile(ctx.workspaceScope, input);
 			}),
 		notifyStateUpdated: workspaceProcedure
 			.output(runtimeWorkspaceStateNotifyResponseSchema)

@@ -18,6 +18,7 @@ import {
 	parseWorktreeDeleteRequest,
 	parseWorktreeEnsureRequest,
 } from "../core/api-validation";
+import { FileLibraryStore } from "../files/file-library-store";
 import {
 	loadWorkspaceRequirementVersions,
 	saveWorkspaceState,
@@ -305,10 +306,7 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 					const piService = await deps.getScopedPiTaskSessionService(workspaceScope);
 					sessionSummary = piService.getSummary(normalizedInput.taskId);
 				}
-				const summary = selectLastTurnSummary(
-					terminalManager.getSummary(normalizedInput.taskId),
-					sessionSummary,
-				);
+				const summary = selectLastTurnSummary(terminalManager.getSummary(normalizedInput.taskId), sessionSummary);
 				const fromCheckpoint = summary?.previousTurnCheckpoint;
 				const toCheckpoint = summary?.latestTurnCheckpoint;
 				if (!toCheckpoint) {
@@ -380,6 +378,49 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 			return {
 				ok: true,
 			};
+		},
+		listFiles: async (workspaceScope) => {
+			const files = await new FileLibraryStore(workspaceScope.workspacePath).list();
+			return { files };
+		},
+		getFile: async (workspaceScope, input) => {
+			const file = await new FileLibraryStore(workspaceScope.workspacePath).get(input.id);
+			return { file };
+		},
+		addFile: async (workspaceScope, input) => {
+			const file = await new FileLibraryStore(workspaceScope.workspacePath).add({
+				name: input.name,
+				bytes: Buffer.from(input.data, "base64"),
+				mime: input.mime,
+			});
+			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
+			return { file };
+		},
+		updateFile: async (workspaceScope, input) => {
+			const file = await new FileLibraryStore(workspaceScope.workspacePath).rename(input.id, input.name);
+			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
+			return { file };
+		},
+		deleteFile: async (workspaceScope, input) => {
+			const deleted = await new FileLibraryStore(workspaceScope.workspacePath).remove(input.id);
+			if (deleted) {
+				void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
+			}
+			return { deleted };
+		},
+		getFileBytes: async (workspaceScope, input) => {
+			const result = await new FileLibraryStore(workspaceScope.workspacePath).getBytes(input.id);
+			if (!result) {
+				return { file: null, data: null, mimeType: null };
+			}
+			return { file: result.item, data: result.data, mimeType: result.mimeType };
+		},
+		getFilePath: async (workspaceScope, input) => {
+			const result = await new FileLibraryStore(workspaceScope.workspacePath).getPath(input.id);
+			if (!result) {
+				return { file: null, absolutePath: null, relativePath: null };
+			}
+			return { file: result.item, absolutePath: result.absolutePath, relativePath: result.relativePath };
 		},
 		saveState: async (workspaceScope, input) => {
 			try {

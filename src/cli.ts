@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { Command, Option } from "commander";
 import ora, { type Ora } from "ora";
 import packageJson from "../package.json" with { type: "json" };
+import { registerFileCommand } from "./commands/file";
 import { registerHooksCommand } from "./commands/hooks";
 import { registerRequirementCommand } from "./commands/requirement";
 import { registerTaskCommand } from "./commands/task";
@@ -704,6 +705,7 @@ function createProgram(invocationArgs: string[]): Command {
 
 	registerTaskCommand(program);
 	registerRequirementCommand(program);
+	registerFileCommand(program);
 	registerHooksCommand(program);
 
 	program

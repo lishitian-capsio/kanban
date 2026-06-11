@@ -42,11 +42,14 @@ const HOME_THREADS_FILENAME = "threads.json";
 const META_FILENAME = "meta.json";
 const RUNTIME_HOME_GITIGNORE_FILENAME = ".gitignore";
 // Boundary between committed content and machine-local runtime/secrets inside a
-// repo's `.kanban`. Denylist style: future committed directories (e.g. tasks/,
-// files/) are tracked by default; only known runtime + secret paths are ignored.
+// repo's `.kanban`. Denylist style: committed directories (the file library in
+// files/, and future tasks/) are tracked by default; only known runtime +
+// secret paths are ignored. Binary file-library content goes through Git LFS,
+// configured by files/.gitattributes (see src/files/file-library-store.ts).
 const RUNTIME_HOME_GITIGNORE_CONTENT = `# Kanban runtime data boundary — see docs/superpowers/plans for rationale.
-# Committed (content): workspaces/<id>/board.json, requirements*.json, and
-# future tasks/ + files/. Everything below is machine-local or secret.
+# Committed (content): workspaces/<id>/board.json, requirements*.json,
+# files/ (manifest + LFS blobs), and future tasks/. Everything below is
+# machine-local or secret.
 
 # Machine-local runtime state
 worktrees/

@@ -1,4 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RuntimeTaskSessionSummary, RuntimeWorkspaceChangesResponse } from "../../../src/core/api-contract";
 
@@ -323,5 +327,80 @@ describe("createWorkspaceApi loadChanges", () => {
 		expect(response).toBe(emptyResponse);
 		expect(workspaceChangesMocks.createEmptyWorkspaceChangesResponse).toHaveBeenCalledWith("/tmp/repo");
 		expect(workspaceChangesMocks.getWorkspaceChanges).not.toHaveBeenCalled();
+	});
+});
+
+describe("createWorkspaceApi file library", () => {
+	let repoPath: string;
+	let broadcastRuntimeWorkspaceStateUpdated: ReturnType<typeof vi.fn>;
+
+	function createApi() {
+		broadcastRuntimeWorkspaceStateUpdated = vi.fn();
+		return createWorkspaceApi({
+			ensureTerminalManagerForWorkspace: vi.fn(),
+			getScopedPiTaskSessionService: vi.fn(),
+			broadcastRuntimeWorkspaceStateUpdated,
+			broadcastRuntimeProjectsUpdated: vi.fn(),
+			buildWorkspaceStateSnapshot: vi.fn(),
+		});
+	}
+
+	const scope = () => ({ workspaceId: "workspace-1", workspacePath: repoPath });
+
+	beforeEach(async () => {
+		repoPath = await mkdtemp(join(tmpdir(), "kanban-workspace-api-files-"));
+	});
+
+	afterEach(async () => {
+		await rm(repoPath, { recursive: true, force: true });
+	});
+
+	it("decodes base64 content on add and lists it back, broadcasting an update", async () => {
+		const api = createApi();
+		const data = Buffer.from("vision bytes").toString("base64");
+
+		const added = await api.addFile(scope(), { name: "img.png", data, mime: "image/png" });
+		expect(added.file).toMatchObject({ name: "img.png", mime: "image/png", category: "image" });
+		expect(broadcastRuntimeWorkspaceStateUpdated).toHaveBeenCalledWith("workspace-1", repoPath);
+
+		const listed = await api.listFiles(scope());
+		expect(listed.files).toHaveLength(1);
+		expect(listed.files[0]?.id).toBe(added.file.id);
+	});
+
+	it("returns base64 bytes and a repo-relative path for a stored file", async () => {
+		const api = createApi();
+		const original = Buffer.from("hello");
+		const added = await api.addFile(scope(), { name: "a.txt", data: original.toString("base64") });
+
+		const bytes = await api.getFileBytes(scope(), { id: added.file.id });
+		expect(bytes.data).toBe(original.toString("base64"));
+		expect(bytes.mimeType).toBe("text/plain");
+
+		const path = await api.getFilePath(scope(), { id: added.file.id });
+		expect(path.relativePath).toBe(join(".kanban", "files", "blobs", added.file.id, "a.txt"));
+	});
+
+	it("returns null shapes for unknown ids", async () => {
+		const api = createApi();
+		expect((await api.getFile(scope(), { id: "nope" })).file).toBeNull();
+		expect(await api.getFileBytes(scope(), { id: "nope" })).toEqual({ file: null, data: null, mimeType: null });
+		expect(await api.getFilePath(scope(), { id: "nope" })).toEqual({
+			file: null,
+			absolutePath: null,
+			relativePath: null,
+		});
+	});
+
+	it("renames and deletes files", async () => {
+		const api = createApi();
+		const added = await api.addFile(scope(), { name: "old.txt", data: Buffer.from("x").toString("base64") });
+
+		const renamed = await api.updateFile(scope(), { id: added.file.id, name: "new.txt" });
+		expect(renamed.file.name).toBe("new.txt");
+
+		expect(await api.deleteFile(scope(), { id: added.file.id })).toEqual({ deleted: true });
+		expect(await api.deleteFile(scope(), { id: added.file.id })).toEqual({ deleted: false });
+		expect((await api.listFiles(scope())).files).toHaveLength(0);
 	});
 });
