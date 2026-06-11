@@ -115,22 +115,22 @@ async function withTaskWorktreeSetupLock<T>(repoPath: string, operation: () => P
 	return await lockedFileSystem.withLock(await getTaskWorktreeSetupLock(repoPath), operation);
 }
 
-function getWorktreesRootPath(taskId: string): string {
+function getWorktreesRootPath(repoPath: string, taskId: string): string {
 	const normalizedTaskId = normalizeTaskIdForWorktreePath(taskId);
-	return join(getTaskWorktreesHomePath(), normalizedTaskId);
+	return join(getTaskWorktreesHomePath(repoPath), normalizedTaskId);
 }
 
-function getWorktreesBaseRootPath(): string {
-	return getTaskWorktreesHomePath();
+function getWorktreesBaseRootPath(repoPath: string): string {
+	return getTaskWorktreesHomePath(repoPath);
 }
 
-function getTrashedTaskPatchesRootPath(): string {
-	return join(getRuntimeHomePath(), KANBAN_TRASHED_TASK_PATCHES_DIR_NAME);
+function getTrashedTaskPatchesRootPath(repoPath: string): string {
+	return join(getRuntimeHomePath(repoPath), KANBAN_TRASHED_TASK_PATCHES_DIR_NAME);
 }
 
 function getTaskWorktreePath(repoPath: string, taskId: string): string {
 	const workspaceLabel = getWorkspaceFolderLabelForWorktreePath(repoPath);
-	return join(getWorktreesRootPath(taskId), workspaceLabel);
+	return join(getWorktreesRootPath(repoPath, taskId), workspaceLabel);
 }
 
 function getTaskPatchFilePrefix(taskId: string): string {
@@ -146,8 +146,8 @@ function parseTaskPatchCommit(taskId: string, filename: string): string | null {
 	return commit.length > 0 ? commit : null;
 }
 
-async function listTaskPatchFiles(taskId: string): Promise<string[]> {
-	const patchesRootPath = getTrashedTaskPatchesRootPath();
+async function listTaskPatchFiles(repoPath: string, taskId: string): Promise<string[]> {
+	const patchesRootPath = getTrashedTaskPatchesRootPath(repoPath);
 	try {
 		const entries = await readdir(patchesRootPath);
 		return entries.filter((entry) => parseTaskPatchCommit(taskId, entry) !== null);
@@ -156,15 +156,15 @@ async function listTaskPatchFiles(taskId: string): Promise<string[]> {
 	}
 }
 
-async function deleteTaskPatchFiles(taskId: string): Promise<void> {
-	const patchesRootPath = getTrashedTaskPatchesRootPath();
-	const filenames = await listTaskPatchFiles(taskId);
+async function deleteTaskPatchFiles(repoPath: string, taskId: string): Promise<void> {
+	const patchesRootPath = getTrashedTaskPatchesRootPath(repoPath);
+	const filenames = await listTaskPatchFiles(repoPath, taskId);
 	await Promise.all(filenames.map((filename) => rm(join(patchesRootPath, filename), { force: true })));
 }
 
-async function findTaskPatch(taskId: string): Promise<{ path: string; commit: string } | null> {
-	const patchesRootPath = getTrashedTaskPatchesRootPath();
-	const filenames = await listTaskPatchFiles(taskId);
+async function findTaskPatch(repoPath: string, taskId: string): Promise<{ path: string; commit: string } | null> {
+	const patchesRootPath = getTrashedTaskPatchesRootPath(repoPath);
+	const filenames = await listTaskPatchFiles(repoPath, taskId);
 	const filename = filenames.sort().at(-1);
 	if (!filename) {
 		return null;
@@ -219,12 +219,12 @@ async function captureTaskPatch(options: { repoPath: string; taskId: string; wor
 		}
 	}
 
-	await deleteTaskPatchFiles(options.taskId);
+	await deleteTaskPatchFiles(options.repoPath, options.taskId);
 	if (patchChunks.length === 0) {
 		return;
 	}
 
-	const patchesRootPath = getTrashedTaskPatchesRootPath();
+	const patchesRootPath = getTrashedTaskPatchesRootPath(options.repoPath);
 	await mkdir(patchesRootPath, { recursive: true });
 	const patchPath = join(
 		patchesRootPath,
@@ -500,7 +500,7 @@ export async function ensureTaskWorktreeIfDoesntExist(options: {
 			}
 			const requestedBaseCommit = baseRefResult.stdout;
 
-			const storedPatch = await findTaskPatch(taskId);
+			const storedPatch = await findTaskPatch(context.repoPath, taskId);
 			let baseCommit = storedPatch?.commit ?? requestedBaseCommit;
 			let warning: string | undefined;
 
@@ -568,10 +568,10 @@ export async function deleteTaskWorktree(options: {
 }): Promise<RuntimeWorktreeDeleteResponse> {
 	try {
 		const taskId = normalizeTaskIdForWorktreePath(options.taskId);
-		const rootPath = getWorktreesBaseRootPath();
+		const rootPath = getWorktreesBaseRootPath(options.repoPath);
 		const worktreePath = getTaskWorktreePath(options.repoPath, taskId);
 		if (!(await pathExists(worktreePath))) {
-			await deleteTaskPatchFiles(taskId);
+			await deleteTaskPatchFiles(options.repoPath, taskId);
 			await pruneEmptyParents(rootPath, dirname(worktreePath));
 			return {
 				ok: true,

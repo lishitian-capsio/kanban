@@ -259,7 +259,7 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 		const loading = (async () => {
 			const manager = new TerminalSessionManager({
 				messageJournal: new FileSessionMessageJournal({
-					sessionsDir: getWorkspaceSessionMessagesDirPath(workspaceId),
+					sessionsDir: getWorkspaceSessionMessagesDirPath(repoPath, workspaceId),
 				}),
 			});
 			try {
@@ -403,7 +403,7 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 
 			removedProjects.push(project);
 			await removeWorkspaceIndexEntry(project.workspaceId);
-			await removeWorkspaceStateFiles(project.workspaceId);
+			await removeWorkspaceStateFiles(project.repoPath, project.workspaceId);
 			disposeWorkspace(project.workspaceId);
 			options?.onRemovedWorkspace?.({
 				workspaceId: project.workspaceId,

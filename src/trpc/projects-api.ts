@@ -186,7 +186,7 @@ export function createProjectsApi(deps: CreateProjectsApiDependencies): RuntimeT
 				if (!removed) {
 					throw new Error(`Could not remove project index entry for "${body.projectId}".`);
 				}
-				await removeWorkspaceStateFiles(body.projectId);
+				await removeWorkspaceStateFiles(projectToRemove.repoPath, body.projectId);
 				deps.disposeWorkspace(body.projectId, {
 					stopTerminalSessions: false,
 				});

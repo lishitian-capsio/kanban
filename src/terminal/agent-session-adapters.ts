@@ -14,7 +14,7 @@ import { buildKanbanCommandParts } from "../core/kanban-command";
 import { quoteShellArg } from "../core/shell";
 import { lockedFileSystem } from "../fs/locked-file-system";
 import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-prompt";
-import { getRuntimeHomePath } from "../state/workspace-state";
+import { getMachineKanbanHomePath } from "../state/workspace-state";
 import { configureCodexHooks, hasCodexConfigOverride } from "./codex-hook-config";
 import { createHookRuntimeEnv } from "./hook-runtime-context";
 import {
@@ -436,7 +436,10 @@ function buildOpenCodePluginContent(
 }
 
 function getHookAgentDirectory(agentId: RuntimeAgentId): string {
-	return join(getRuntimeHomePath(), "hooks", agentId);
+	// Hook shims are generic, repo-independent, and shared across workspaces, so
+	// they stay in the machine-level Kanban home (`~/.kanban/hooks/<agentId>`)
+	// rather than moving into any single repo's `.kanban`.
+	return join(getMachineKanbanHomePath(), "hooks", agentId);
 }
 
 const KIRO_KANBAN_AGENT_NAME = "kanban";

@@ -1,5 +1,8 @@
 import type { RuntimeAgentId } from "../core/api-contract";
-import { getTaskWorktreesHomePath } from "../state/workspace-state";
+
+// Kanban task worktrees live at `<repoPath>/.kanban/worktrees/<taskId>/<label>`.
+// A path-segment match is repo-agnostic, so the trust check needs no repoPath.
+const TASK_WORKTREE_PATH_SEGMENT = "/.kanban/worktrees/";
 
 export const WORKSPACE_TRUST_CONFIRM_DELAY_MS = 100;
 
@@ -62,12 +65,11 @@ export function hasClaudeWorkspaceTrustPrompt(text: string): boolean {
 }
 
 function isTaskWorktreePath(path: string): boolean {
-	const worktreesRoot = `${getTaskWorktreesHomePath().replace(/\\/gu, "/").replace(/\/+$/u, "")}/`;
-	const normalizedPath = `${path.replace(/\\/gu, "/").replace(/\/+$/u, "")}/`;
+	const normalizedPath = path.replace(/\\/gu, "/");
 	if (process.platform === "win32") {
-		return normalizedPath.toLowerCase().startsWith(worktreesRoot.toLowerCase());
+		return normalizedPath.toLowerCase().includes(TASK_WORKTREE_PATH_SEGMENT);
 	}
-	return normalizedPath.startsWith(worktreesRoot);
+	return normalizedPath.includes(TASK_WORKTREE_PATH_SEGMENT);
 }
 
 export function shouldAutoConfirmClaudeWorkspaceTrust(agentId: RuntimeAgentId, cwd: string): boolean {

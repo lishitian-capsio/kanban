@@ -149,7 +149,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		if (!service) {
 			service = createInMemoryPiTaskSessionService({
 				messageJournal: new FileSessionMessageJournal({
-					sessionsDir: getWorkspaceSessionMessagesDirPath(scope.workspaceId),
+					sessionsDir: getWorkspaceSessionMessagesDirPath(scope.workspacePath, scope.workspaceId),
 				}),
 			});
 			piTaskSessionServiceByWorkspaceId.set(scope.workspaceId, service);

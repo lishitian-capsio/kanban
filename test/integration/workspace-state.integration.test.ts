@@ -9,7 +9,7 @@ import { linkTask } from "../../src/core/requirement-task-link-mutations";
 import { appendRequirementVersion } from "../../src/core/requirement-versions";
 import type { WorkspaceStateConflictError } from "../../src/state/workspace-state";
 import {
-	getWorkspacesRootPath,
+	getMachineKanbanHomePath,
 	listWorkspaceIndexEntries,
 	loadWorkspaceContext,
 	loadWorkspaceContextById,
@@ -433,9 +433,9 @@ describe.sequential("workspace-state integration", () => {
 					expectedRevision: initial.revision,
 				});
 				let versions = await loadWorkspaceRequirementVersions(workspacePath);
-				expect(versions.versions.map((v) => ({ version: v.version, kind: v.changeKind, source: v.source }))).toEqual([
-					{ version: 1, kind: "create", source: "human" },
-				]);
+				expect(
+					versions.versions.map((v) => ({ version: v.version, kind: v.changeKind, source: v.source })),
+				).toEqual([{ version: 1, kind: "create", source: "human" }]);
 
 				// Edit a versioned field → v2.
 				const edited = await saveWorkspaceState(workspacePath, {
@@ -680,9 +680,10 @@ describe.sequential("workspace-state integration", () => {
 
 	it("fails loudly when persisted workspace index data is malformed", async () => {
 		await withTemporaryHome(async () => {
-			mkdirSync(getWorkspacesRootPath(), { recursive: true });
+			const machineWorkspacesRoot = join(getMachineKanbanHomePath(), "workspaces");
+			mkdirSync(machineWorkspacesRoot, { recursive: true });
 			writeFileSync(
-				join(getWorkspacesRootPath(), "index.json"),
+				join(machineWorkspacesRoot, "index.json"),
 				JSON.stringify(
 					{
 						version: 1,

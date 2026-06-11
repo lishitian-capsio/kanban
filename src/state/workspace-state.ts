@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { readFile, realpath, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { z } from "zod";
@@ -37,6 +37,30 @@ const REQUIREMENTS_FILENAME = "requirements.json";
 const REQUIREMENT_VERSIONS_FILENAME = "requirement-versions.json";
 const REQUIREMENT_TASK_LINKS_FILENAME = "requirement-task-links.json";
 const META_FILENAME = "meta.json";
+const RUNTIME_HOME_GITIGNORE_FILENAME = ".gitignore";
+// Boundary between committed content and machine-local runtime/secrets inside a
+// repo's `.kanban`. Denylist style: future committed directories (e.g. tasks/,
+// files/) are tracked by default; only known runtime + secret paths are ignored.
+const RUNTIME_HOME_GITIGNORE_CONTENT = `# Kanban runtime data boundary — see docs/superpowers/plans for rationale.
+# Committed (content): workspaces/<id>/board.json, requirements*.json, and
+# future tasks/ + files/. Everything below is machine-local or secret.
+
+# Machine-local runtime state
+worktrees/
+trashed-task-patches/
+**/sessions.json
+**/sessions/
+**/meta.json
+*.lock
+.workspaces.lock
+**/*.lock
+
+# Secrets (defensive — primary copies live in ~/.kanban, never here)
+settings/
+config.json
+**/provider_settings.json
+**/*_oauth_settings.json
+`;
 const INDEX_VERSION = 1;
 const WORKSPACE_ID_COLLISION_SUFFIX_LENGTH = 4;
 
@@ -167,57 +191,82 @@ function createEmptyWorkspaceIndex(): WorkspaceIndexFile {
 	};
 }
 
-export function getRuntimeHomePath(): string {
+/**
+ * Machine-level Kanban home (`~/.kanban`). Holds cross-repo state that must not
+ * live inside any single repository: the workspace index registry, secrets
+ * (`settings/`), runtime config (`config.json`), pi logs, and agent hook shims.
+ * Per-workspace content + per-repo runtime live under {@link getRuntimeHomePath}.
+ */
+export function getMachineKanbanHomePath(): string {
 	return join(homedir(), RUNTIME_HOME_DIR);
 }
 
-export function getTaskWorktreesHomePath(): string {
-	return join(homedir(), RUNTIME_HOME_DIR, RUNTIME_WORKTREES_DIR);
+/**
+ * Per-repo Kanban home (`<repoPath>/.kanban`). Holds this workspace's content
+ * (board/requirements, committed) and per-repo runtime (worktrees, sessions,
+ * locks — gitignored). See `<repoPath>/.kanban/.gitignore` for the boundary.
+ */
+export function getRuntimeHomePath(repoPath: string): string {
+	return join(repoPath, RUNTIME_HOME_DIR);
 }
 
-export function getWorkspacesRootPath(): string {
-	return join(getRuntimeHomePath(), WORKSPACES_DIR);
+export function getTaskWorktreesHomePath(repoPath: string): string {
+	return join(getRuntimeHomePath(repoPath), RUNTIME_WORKTREES_DIR);
 }
 
+export function getWorkspacesRootPath(repoPath: string): string {
+	return join(getRuntimeHomePath(repoPath), WORKSPACES_DIR);
+}
+
+/** The workspace index is the cross-repo registry, so it stays machine-rooted. */
 function getWorkspaceIndexPath(): string {
-	return join(getWorkspacesRootPath(), INDEX_FILENAME);
+	return join(getMachineKanbanHomePath(), WORKSPACES_DIR, INDEX_FILENAME);
 }
 
-export function getWorkspaceDirectoryPath(workspaceId: string): string {
-	return join(getWorkspacesRootPath(), workspaceId);
+export function getWorkspaceDirectoryPath(repoPath: string, workspaceId: string): string {
+	return join(getWorkspacesRootPath(repoPath), workspaceId);
 }
 
-function getWorkspaceBoardPath(workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(workspaceId), BOARD_FILENAME);
+/**
+ * Old machine-rooted workspace directory (`~/.kanban/workspaces/<id>`). Used as
+ * the copy-migration source and the read fallback when the repo-rooted location
+ * does not yet exist. Never written to.
+ */
+function getLegacyWorkspaceDirectoryPath(workspaceId: string): string {
+	return join(getMachineKanbanHomePath(), WORKSPACES_DIR, workspaceId);
 }
 
-function getWorkspaceSessionsPath(workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(workspaceId), SESSIONS_FILENAME);
+function getWorkspaceBoardPath(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), BOARD_FILENAME);
+}
+
+function getWorkspaceSessionsPath(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), SESSIONS_FILENAME);
 }
 
 /**
  * Directory holding per-task message transcripts:
- * `~/.kanban/workspaces/<workspaceId>/sessions/<taskId>/messages.jsonl`.
+ * `<repoPath>/.kanban/workspaces/<workspaceId>/sessions/<taskId>/messages.jsonl`.
  * Distinct from the `sessions.json` summary file in the same workspace dir.
  */
-export function getWorkspaceSessionMessagesDirPath(workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(workspaceId), "sessions");
+export function getWorkspaceSessionMessagesDirPath(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), "sessions");
 }
 
-function getWorkspaceRequirementsPath(workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(workspaceId), REQUIREMENTS_FILENAME);
+function getWorkspaceRequirementsPath(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENTS_FILENAME);
 }
 
-function getWorkspaceRequirementVersionsPath(workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(workspaceId), REQUIREMENT_VERSIONS_FILENAME);
+function getWorkspaceRequirementVersionsPath(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_VERSIONS_FILENAME);
 }
 
-function getWorkspaceRequirementTaskLinksPath(workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(workspaceId), REQUIREMENT_TASK_LINKS_FILENAME);
+function getWorkspaceRequirementTaskLinksPath(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_TASK_LINKS_FILENAME);
 }
 
-function getWorkspaceMetaPath(workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(workspaceId), META_FILENAME);
+function getWorkspaceMetaPath(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), META_FILENAME);
 }
 
 function getWorkspaceIndexLockRequest(): LockRequest {
@@ -227,17 +276,17 @@ function getWorkspaceIndexLockRequest(): LockRequest {
 	};
 }
 
-function getWorkspaceDirectoryLockRequest(workspaceId: string): LockRequest {
+function getWorkspaceDirectoryLockRequest(repoPath: string, workspaceId: string): LockRequest {
 	return {
-		path: getWorkspaceDirectoryPath(workspaceId),
+		path: getWorkspaceDirectoryPath(repoPath, workspaceId),
 		type: "directory",
-		lockfilePath: join(getWorkspacesRootPath(), `${workspaceId}.lock`),
+		lockfilePath: join(getWorkspacesRootPath(repoPath), `${workspaceId}.lock`),
 	};
 }
 
-function getWorkspacesRootLockRequest(): LockRequest {
+function getWorkspacesRootLockRequest(repoPath: string): LockRequest {
 	return {
-		path: getWorkspacesRootPath(),
+		path: getWorkspacesRootPath(repoPath),
 		type: "directory",
 		lockfileName: ".workspaces.lock",
 	};
@@ -263,6 +312,36 @@ async function readJsonFile(path: string): Promise<unknown | null> {
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(`Could not read JSON file at ${path}. ${message}`);
 	}
+}
+
+async function pathExists(path: string): Promise<boolean> {
+	try {
+		await stat(path);
+		return true;
+	} catch (error) {
+		if (isNodeErrorWithCode(error, "ENOENT")) {
+			return false;
+		}
+		throw error;
+	}
+}
+
+/**
+ * Read JSON from the repo-rooted `primaryPath`, falling back to the old
+ * machine-rooted `legacyPath` (`~/.kanban/...`) only when the primary file does
+ * not exist. Once the repo location has the file, it is authoritative — a
+ * present-but-empty/`null` file is respected and never overridden by the legacy
+ * copy. Writes always target the primary path. See {@link migrateWorkspaceDataFromLegacyHome}.
+ */
+async function readJsonFileWithLegacyFallback(primaryPath: string, legacyPath: string): Promise<unknown | null> {
+	if (await pathExists(primaryPath)) {
+		return await readJsonFile(primaryPath);
+	}
+	return await readJsonFile(legacyPath);
+}
+
+function getLegacyWorkspaceFilePath(workspaceId: string, filename: string): string {
+	return join(getLegacyWorkspaceDirectoryPath(workspaceId), filename);
 }
 
 function formatSchemaIssuePath(pathSegments: PropertyKey[]): string {
@@ -322,27 +401,43 @@ function parseWorkspaceStateSavePayload(payload: RuntimeWorkspaceStateSaveReques
 	return parsed.data;
 }
 
-async function readWorkspaceBoard(workspaceId: string): Promise<RuntimeBoardData> {
-	const boardPath = getWorkspaceBoardPath(workspaceId);
-	const rawBoard = await readJsonFile(boardPath);
+async function readWorkspaceBoard(repoPath: string, workspaceId: string): Promise<RuntimeBoardData> {
+	const boardPath = getWorkspaceBoardPath(repoPath, workspaceId);
+	const rawBoard = await readJsonFileWithLegacyFallback(
+		boardPath,
+		getLegacyWorkspaceFilePath(workspaceId, BOARD_FILENAME),
+	);
 	return updateTaskDependencies(
 		parsePersistedStateFile(boardPath, BOARD_FILENAME, rawBoard, runtimeBoardDataSchema, createEmptyBoard()),
 	);
 }
 
 export async function loadWorkspaceBoardById(workspaceId: string): Promise<RuntimeBoardData> {
-	return await readWorkspaceBoard(workspaceId);
+	const repoPath = await resolveRepoPathForWorkspaceId(workspaceId);
+	if (!repoPath) {
+		throw new Error(`Unknown workspace "${workspaceId}"; cannot resolve its repository path.`);
+	}
+	return await readWorkspaceBoard(repoPath, workspaceId);
 }
 
-async function readWorkspaceSessions(workspaceId: string): Promise<Record<string, RuntimeTaskSessionSummary>> {
-	const sessionsPath = getWorkspaceSessionsPath(workspaceId);
-	const rawSessions = await readJsonFile(sessionsPath);
+async function readWorkspaceSessions(
+	repoPath: string,
+	workspaceId: string,
+): Promise<Record<string, RuntimeTaskSessionSummary>> {
+	const sessionsPath = getWorkspaceSessionsPath(repoPath, workspaceId);
+	const rawSessions = await readJsonFileWithLegacyFallback(
+		sessionsPath,
+		getLegacyWorkspaceFilePath(workspaceId, SESSIONS_FILENAME),
+	);
 	return parsePersistedStateFile(sessionsPath, SESSIONS_FILENAME, rawSessions, workspaceSessionsSchema, {});
 }
 
-async function readWorkspaceRequirements(workspaceId: string): Promise<RuntimeRequirementsData> {
-	const requirementsPath = getWorkspaceRequirementsPath(workspaceId);
-	const rawRequirements = await readJsonFile(requirementsPath);
+async function readWorkspaceRequirements(repoPath: string, workspaceId: string): Promise<RuntimeRequirementsData> {
+	const requirementsPath = getWorkspaceRequirementsPath(repoPath, workspaceId);
+	const rawRequirements = await readJsonFileWithLegacyFallback(
+		requirementsPath,
+		getLegacyWorkspaceFilePath(workspaceId, REQUIREMENTS_FILENAME),
+	);
 	return parsePersistedStateFile(
 		requirementsPath,
 		REQUIREMENTS_FILENAME,
@@ -354,9 +449,15 @@ async function readWorkspaceRequirements(workspaceId: string): Promise<RuntimeRe
 	);
 }
 
-async function readWorkspaceRequirementVersions(workspaceId: string): Promise<RuntimeRequirementVersionsData> {
-	const versionsPath = getWorkspaceRequirementVersionsPath(workspaceId);
-	const rawVersions = await readJsonFile(versionsPath);
+async function readWorkspaceRequirementVersions(
+	repoPath: string,
+	workspaceId: string,
+): Promise<RuntimeRequirementVersionsData> {
+	const versionsPath = getWorkspaceRequirementVersionsPath(repoPath, workspaceId);
+	const rawVersions = await readJsonFileWithLegacyFallback(
+		versionsPath,
+		getLegacyWorkspaceFilePath(workspaceId, REQUIREMENT_VERSIONS_FILENAME),
+	);
 	return parsePersistedStateFile(
 		versionsPath,
 		REQUIREMENT_VERSIONS_FILENAME,
@@ -368,12 +469,18 @@ async function readWorkspaceRequirementVersions(workspaceId: string): Promise<Ru
 
 export async function loadWorkspaceRequirementVersions(cwd: string): Promise<RuntimeRequirementVersionsData> {
 	const context = await loadWorkspaceContext(cwd);
-	return await readWorkspaceRequirementVersions(context.workspaceId);
+	return await readWorkspaceRequirementVersions(context.repoPath, context.workspaceId);
 }
 
-async function readWorkspaceRequirementTaskLinks(workspaceId: string): Promise<RuntimeRequirementTaskLinksData> {
-	const linksPath = getWorkspaceRequirementTaskLinksPath(workspaceId);
-	const rawLinks = await readJsonFile(linksPath);
+async function readWorkspaceRequirementTaskLinks(
+	repoPath: string,
+	workspaceId: string,
+): Promise<RuntimeRequirementTaskLinksData> {
+	const linksPath = getWorkspaceRequirementTaskLinksPath(repoPath, workspaceId);
+	const rawLinks = await readJsonFileWithLegacyFallback(
+		linksPath,
+		getLegacyWorkspaceFilePath(workspaceId, REQUIREMENT_TASK_LINKS_FILENAME),
+	);
 	return parsePersistedStateFile(
 		linksPath,
 		REQUIREMENT_TASK_LINKS_FILENAME,
@@ -385,12 +492,15 @@ async function readWorkspaceRequirementTaskLinks(workspaceId: string): Promise<R
 
 export async function loadWorkspaceRequirementTaskLinks(cwd: string): Promise<RuntimeRequirementTaskLinksData> {
 	const context = await loadWorkspaceContext(cwd);
-	return await readWorkspaceRequirementTaskLinks(context.workspaceId);
+	return await readWorkspaceRequirementTaskLinks(context.repoPath, context.workspaceId);
 }
 
-async function readWorkspaceMeta(workspaceId: string): Promise<WorkspaceStateMeta> {
-	const metaPath = getWorkspaceMetaPath(workspaceId);
-	const rawMeta = await readJsonFile(metaPath);
+async function readWorkspaceMeta(repoPath: string, workspaceId: string): Promise<WorkspaceStateMeta> {
+	const metaPath = getWorkspaceMetaPath(repoPath, workspaceId);
+	const rawMeta = await readJsonFileWithLegacyFallback(
+		metaPath,
+		getLegacyWorkspaceFilePath(workspaceId, META_FILENAME),
+	);
 	return parsePersistedStateFile(metaPath, META_FILENAME, rawMeta, workspaceStateMetaSchema, {
 		revision: 0,
 		updatedAt: 0,
@@ -500,6 +610,49 @@ function findWorkspaceEntry(index: WorkspaceIndexFile, repoPath: string): Worksp
 		return null;
 	}
 	return entry;
+}
+
+/**
+ * Resolve the repository path for a workspace id via the machine-level index.
+ * Used by callers that only hold an id (e.g. `loadWorkspaceBoardById`) to locate
+ * the repo-rooted data directory. Returns null when the id is not registered.
+ */
+export async function resolveRepoPathForWorkspaceId(workspaceId: string): Promise<string | null> {
+	const index = await readWorkspaceIndex();
+	return index.entries[workspaceId]?.repoPath ?? null;
+}
+
+/**
+ * One-time copy of a workspace's data from the old machine-rooted location
+ * (`~/.kanban/workspaces/<id>`) into the repo-rooted location
+ * (`<repoPath>/.kanban/workspaces/<id>`). The source is never moved or deleted,
+ * so the original `~/.kanban` keeps working and the migration is rollback-safe.
+ * Idempotent: skips when the repo-rooted directory already exists.
+ */
+async function migrateWorkspaceDataFromLegacyHome(repoPath: string, workspaceId: string): Promise<void> {
+	const target = getWorkspaceDirectoryPath(repoPath, workspaceId);
+	if (await pathExists(target)) {
+		return;
+	}
+	const legacy = getLegacyWorkspaceDirectoryPath(workspaceId);
+	if (!(await pathExists(legacy))) {
+		return;
+	}
+	await cp(legacy, target, { recursive: true, force: false, errorOnExist: false });
+}
+
+/**
+ * Write the `.gitignore` that draws the git boundary for a repo's `.kanban`:
+ * task definitions + requirements are committed; runtime state, worktrees,
+ * locks, and secrets are ignored. Never overwrites a user-edited file.
+ */
+async function ensureRuntimeHomeGitignore(repoPath: string): Promise<void> {
+	const gitignorePath = join(getRuntimeHomePath(repoPath), RUNTIME_HOME_GITIGNORE_FILENAME);
+	if (await pathExists(gitignorePath)) {
+		return;
+	}
+	await mkdir(getRuntimeHomePath(repoPath), { recursive: true });
+	await writeFile(gitignorePath, RUNTIME_HOME_GITIGNORE_CONTENT, "utf8");
 }
 
 function runGitCapture(cwd: string, args: string[]): string | null {
@@ -642,10 +795,11 @@ export async function loadWorkspaceContext(
 		if (!existingEntry) {
 			throw new Error(`Project ${repoPath} is not added to Kanban yet.`);
 		}
+		await prepareRepoRuntimeHome(repoPath, existingEntry.workspaceId);
 		return {
 			repoPath,
 			workspaceId: existingEntry.workspaceId,
-			statePath: getWorkspaceDirectoryPath(existingEntry.workspaceId),
+			statePath: getWorkspaceDirectoryPath(repoPath, existingEntry.workspaceId),
 			git: detectGitRepositoryInfo(repoPath),
 		};
 	}
@@ -661,13 +815,24 @@ export async function loadWorkspaceContext(
 			await writeWorkspaceIndex(index);
 		}
 
+		await prepareRepoRuntimeHome(repoPath, ensured.entry.workspaceId);
 		return {
 			repoPath,
 			workspaceId: ensured.entry.workspaceId,
-			statePath: getWorkspaceDirectoryPath(ensured.entry.workspaceId),
+			statePath: getWorkspaceDirectoryPath(repoPath, ensured.entry.workspaceId),
 			git: detectGitRepositoryInfo(repoPath),
 		};
 	});
+}
+
+/**
+ * Ensure a repo's `.kanban` is ready: copy-migrate any legacy machine-rooted
+ * data once, then ensure the git-boundary `.gitignore` exists. Idempotent and
+ * non-destructive (never touches `~/.kanban`).
+ */
+async function prepareRepoRuntimeHome(repoPath: string, workspaceId: string): Promise<void> {
+	await migrateWorkspaceDataFromLegacyHome(repoPath, workspaceId);
+	await ensureRuntimeHomeGitignore(repoPath);
 }
 
 export async function loadWorkspaceContextById(workspaceId: string): Promise<RuntimeWorkspaceContext | null> {
@@ -707,11 +872,11 @@ export async function removeWorkspaceIndexEntry(workspaceId: string): Promise<bo
 	});
 }
 
-export async function removeWorkspaceStateFiles(workspaceId: string): Promise<void> {
+export async function removeWorkspaceStateFiles(repoPath: string, workspaceId: string): Promise<void> {
 	await lockedFileSystem.withLocks(
-		[getWorkspacesRootLockRequest(), getWorkspaceDirectoryLockRequest(workspaceId)],
+		[getWorkspacesRootLockRequest(repoPath), getWorkspaceDirectoryLockRequest(repoPath, workspaceId)],
 		async () => {
-			await rm(getWorkspaceDirectoryPath(workspaceId), {
+			await rm(getWorkspaceDirectoryPath(repoPath, workspaceId), {
 				recursive: true,
 				force: true,
 			});
@@ -721,11 +886,11 @@ export async function removeWorkspaceStateFiles(workspaceId: string): Promise<vo
 
 export async function loadWorkspaceState(cwd: string): Promise<RuntimeWorkspaceStateResponse> {
 	const context = await loadWorkspaceContext(cwd);
-	const board = await readWorkspaceBoard(context.workspaceId);
-	const sessions = await readWorkspaceSessions(context.workspaceId);
-	const requirements = await readWorkspaceRequirements(context.workspaceId);
-	const requirementTaskLinks = await readWorkspaceRequirementTaskLinks(context.workspaceId);
-	const meta = await readWorkspaceMeta(context.workspaceId);
+	const board = await readWorkspaceBoard(context.repoPath, context.workspaceId);
+	const sessions = await readWorkspaceSessions(context.repoPath, context.workspaceId);
+	const requirements = await readWorkspaceRequirements(context.repoPath, context.workspaceId);
+	const requirementTaskLinks = await readWorkspaceRequirementTaskLinks(context.repoPath, context.workspaceId);
+	const meta = await readWorkspaceMeta(context.repoPath, context.workspaceId);
 	return toWorkspaceStateResponse(context, board, sessions, requirements, requirementTaskLinks, meta.revision);
 }
 
@@ -735,9 +900,10 @@ export async function saveWorkspaceState(
 ): Promise<RuntimeWorkspaceStateResponse> {
 	const parsedPayload = parseWorkspaceStateSavePayload(payload);
 	const context = await loadWorkspaceContext(cwd);
-	return await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(context.workspaceId), async () => {
-		const metaPath = getWorkspaceMetaPath(context.workspaceId);
-		const currentMeta = await readWorkspaceMeta(context.workspaceId);
+	const { repoPath, workspaceId } = context;
+	return await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
+		const metaPath = getWorkspaceMetaPath(repoPath, workspaceId);
+		const currentMeta = await readWorkspaceMeta(repoPath, workspaceId);
 		const expectedRevision = parsedPayload.expectedRevision;
 		if (
 			typeof expectedRevision === "number" &&
@@ -751,15 +917,15 @@ export async function saveWorkspaceState(
 		const sessions = parsedPayload.sessions;
 		// Preserve existing requirements when a (possibly legacy) payload omits them,
 		// so a board-only save never wipes the workspace's requirement items.
-		const previousRequirements = await readWorkspaceRequirements(context.workspaceId);
+		const previousRequirements = await readWorkspaceRequirements(repoPath, workspaceId);
 		const requirements = parsedPayload.requirements ?? previousRequirements;
 		// Likewise preserve requirement<->task links when a payload omits them.
 		const requirementTaskLinks =
-			parsedPayload.requirementTaskLinks ?? (await readWorkspaceRequirementTaskLinks(context.workspaceId));
+			parsedPayload.requirementTaskLinks ?? (await readWorkspaceRequirementTaskLinks(repoPath, workspaceId));
 		// Whole-snapshot saves (the web UI path) don't carry per-operation intent, so diff the
 		// previous and next requirement sets to record create/update/delete versions — keeping the
 		// version history complete regardless of whether edits came from the CLI or the UI.
-		const previousVersions = await readWorkspaceRequirementVersions(context.workspaceId);
+		const previousVersions = await readWorkspaceRequirementVersions(repoPath, workspaceId);
 		const nextVersions = diffRequirementVersions(previousRequirements, requirements, previousVersions, {
 			source: "human",
 		});
@@ -769,23 +935,23 @@ export async function saveWorkspaceState(
 			updatedAt: Date.now(),
 		};
 
-		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceBoardPath(context.workspaceId), board, {
+		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceBoardPath(repoPath, workspaceId), board, {
 			lock: null,
 		});
-		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceSessionsPath(context.workspaceId), sessions, {
+		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceSessionsPath(repoPath, workspaceId), sessions, {
 			lock: null,
 		});
-		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceRequirementsPath(context.workspaceId), requirements, {
+		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceRequirementsPath(repoPath, workspaceId), requirements, {
 			lock: null,
 		});
 		await lockedFileSystem.writeJsonFileAtomic(
-			getWorkspaceRequirementTaskLinksPath(context.workspaceId),
+			getWorkspaceRequirementTaskLinksPath(repoPath, workspaceId),
 			requirementTaskLinks,
 			{ lock: null },
 		);
 		if (nextVersions !== previousVersions) {
 			await lockedFileSystem.writeJsonFileAtomic(
-				getWorkspaceRequirementVersionsPath(context.workspaceId),
+				getWorkspaceRequirementVersionsPath(repoPath, workspaceId),
 				nextVersions,
 				{ lock: null },
 			);
@@ -827,13 +993,14 @@ export async function mutateWorkspaceState<T>(
 	) => RuntimeWorkspaceAtomicMutationResult<T>,
 ): Promise<RuntimeWorkspaceAtomicMutationResponse<T>> {
 	const context = await loadWorkspaceContext(cwd);
-	return await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(context.workspaceId), async () => {
-		const currentBoard = await readWorkspaceBoard(context.workspaceId);
-		const currentSessions = await readWorkspaceSessions(context.workspaceId);
-		const currentRequirements = await readWorkspaceRequirements(context.workspaceId);
-		const currentRequirementTaskLinks = await readWorkspaceRequirementTaskLinks(context.workspaceId);
-		const currentRequirementVersions = await readWorkspaceRequirementVersions(context.workspaceId);
-		const currentMeta = await readWorkspaceMeta(context.workspaceId);
+	const { repoPath, workspaceId } = context;
+	return await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
+		const currentBoard = await readWorkspaceBoard(repoPath, workspaceId);
+		const currentSessions = await readWorkspaceSessions(repoPath, workspaceId);
+		const currentRequirements = await readWorkspaceRequirements(repoPath, workspaceId);
+		const currentRequirementTaskLinks = await readWorkspaceRequirementTaskLinks(repoPath, workspaceId);
+		const currentRequirementVersions = await readWorkspaceRequirementVersions(repoPath, workspaceId);
+		const currentMeta = await readWorkspaceMeta(repoPath, workspaceId);
 		const currentState = toWorkspaceStateResponse(
 			context,
 			currentBoard,
@@ -866,26 +1033,30 @@ export async function mutateWorkspaceState<T>(
 			updatedAt: Date.now(),
 		};
 
-		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceBoardPath(context.workspaceId), nextBoard, {
+		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceBoardPath(repoPath, workspaceId), nextBoard, {
 			lock: null,
 		});
-		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceSessionsPath(context.workspaceId), nextSessions, {
-			lock: null,
-		});
-		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceRequirementsPath(context.workspaceId), nextRequirements, {
+		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceSessionsPath(repoPath, workspaceId), nextSessions, {
 			lock: null,
 		});
 		await lockedFileSystem.writeJsonFileAtomic(
-			getWorkspaceRequirementTaskLinksPath(context.workspaceId),
+			getWorkspaceRequirementsPath(repoPath, workspaceId),
+			nextRequirements,
+			{
+				lock: null,
+			},
+		);
+		await lockedFileSystem.writeJsonFileAtomic(
+			getWorkspaceRequirementTaskLinksPath(repoPath, workspaceId),
 			nextRequirementTaskLinks,
 			{ lock: null },
 		);
 		await lockedFileSystem.writeJsonFileAtomic(
-			getWorkspaceRequirementVersionsPath(context.workspaceId),
+			getWorkspaceRequirementVersionsPath(repoPath, workspaceId),
 			nextRequirementVersions,
 			{ lock: null },
 		);
-		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceMetaPath(context.workspaceId), nextMeta, {
+		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceMetaPath(repoPath, workspaceId), nextMeta, {
 			lock: null,
 		});
 
