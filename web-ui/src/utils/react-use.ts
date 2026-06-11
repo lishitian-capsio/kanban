@@ -1,8 +1,10 @@
+import type React from "react";
 import type { DependencyList, Dispatch, SetStateAction } from "react";
 import { useCallback } from "react";
 import {
 	useCopyToClipboard as useReactUseCopyToClipboard,
 	useDebounce as useReactUseDebounce,
+	useDropArea as useReactUseDropArea,
 	useEvent as useReactUseEvent,
 	useInterval as useReactUseInterval,
 	useLocalStorage as useReactUseLocalStorage,
@@ -118,4 +120,26 @@ export function useUnmount(fn: () => void): void {
 
 export function useMedia(query: string, defaultState?: boolean): boolean {
 	return useReactUseMedia(query, defaultState);
+}
+
+interface DropAreaCallbacks {
+	onFiles?: (files: File[], event?: React.DragEvent | React.ClipboardEvent) => void;
+	onText?: (text: string, event?: React.ClipboardEvent | React.DragEvent) => void;
+	onUri?: (url: string, event?: React.DragEvent) => void;
+}
+
+interface DropAreaBond {
+	onDragOver: React.DragEventHandler;
+	onDragEnter: React.DragEventHandler;
+	onDragLeave: React.DragEventHandler;
+	onDrop: React.DragEventHandler;
+	onPaste: React.ClipboardEventHandler;
+}
+
+interface DropAreaState {
+	over: boolean;
+}
+
+export function useDropArea(callbacks: DropAreaCallbacks = {}): [DropAreaBond, DropAreaState] {
+	return useReactUseDropArea(callbacks) as [DropAreaBond, DropAreaState];
 }

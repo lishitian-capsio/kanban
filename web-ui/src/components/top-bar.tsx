@@ -8,6 +8,7 @@ import {
 	ChevronDown,
 	CircleArrowDown,
 	Command,
+	Files,
 	GitBranch,
 	ListChecks,
 	Menu,
@@ -300,6 +301,8 @@ export function TopBar({
 	isGitHistoryOpen,
 	onToggleRequirements,
 	isRequirementsOpen,
+	onToggleFiles,
+	isFilesOpen,
 	onOpenSettings,
 	showDebugButton,
 	onOpenDebugDialog,
@@ -337,6 +340,8 @@ export function TopBar({
 	isGitHistoryOpen?: boolean;
 	onToggleRequirements?: () => void;
 	isRequirementsOpen?: boolean;
+	onToggleFiles?: () => void;
+	isFilesOpen?: boolean;
 	onOpenSettings?: (section?: SettingsSection) => void;
 	showDebugButton?: boolean;
 	onOpenDebugDialog?: () => void;
@@ -528,6 +533,18 @@ export function TopBar({
 									title="Requirements"
 								>
 									Requirements
+								</Button>
+							) : null}
+							{!hideProjectDependentActions && onToggleFiles ? (
+								<Button
+									variant={isFilesOpen ? "primary" : "default"}
+									size="sm"
+									icon={<Files size={14} />}
+									onClick={onToggleFiles}
+									className={cn("shrink-0", isFilesOpen ? "ring-1 ring-accent" : "kb-navbar-btn")}
+									title="Files"
+								>
+									Files
 								</Button>
 							) : null}
 						</>

@@ -11,6 +11,7 @@ import { CardDetailView } from "@/components/card-detail-view";
 import { ClearTrashDialog } from "@/components/clear-trash-dialog";
 import { DebugDialog } from "@/components/debug-dialog";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
+import { FilesView } from "@/components/files/files-view";
 import { GitHistoryView } from "@/components/git-history-view";
 import { RequirementsView } from "@/components/requirements/requirements-view";
 import { KanbanBoard } from "@/components/kanban-board";
@@ -92,6 +93,7 @@ export default function App(): ReactElement {
 	const [isClearTrashDialogOpen, setIsClearTrashDialogOpen] = useState(false);
 	const [isGitHistoryOpen, setIsGitHistoryOpen] = useState(false);
 	const [isRequirementsOpen, setIsRequirementsOpen] = useState(false);
+	const [isFilesOpen, setIsFilesOpen] = useState(false);
 	const [pendingTaskStartAfterEditId, setPendingTaskStartAfterEditId] = useState<string | null>(null);
 	const taskEditorResetRef = useRef<() => void>(() => {});
 	const lastStreamErrorRef = useRef<string | null>(null);
@@ -99,6 +101,7 @@ export default function App(): ReactElement {
 		setCanPersistWorkspaceState(false);
 		setIsGitHistoryOpen(false);
 		setIsRequirementsOpen(false);
+		setIsFilesOpen(false);
 		setPendingTaskStartAfterEditId(null);
 		taskEditorResetRef.current();
 	}, []);
@@ -557,6 +560,7 @@ export default function App(): ReactElement {
 			return;
 		}
 		setIsRequirementsOpen(false);
+		setIsFilesOpen(false);
 		setIsGitHistoryOpen((current) => !current);
 	}, [hasNoProjects]);
 	const handleCloseGitHistory = useCallback(() => {
@@ -567,7 +571,16 @@ export default function App(): ReactElement {
 			return;
 		}
 		setIsGitHistoryOpen(false);
+		setIsFilesOpen(false);
 		setIsRequirementsOpen((current) => !current);
+	}, [hasNoProjects]);
+	const handleToggleFiles = useCallback(() => {
+		if (hasNoProjects) {
+			return;
+		}
+		setIsGitHistoryOpen(false);
+		setIsRequirementsOpen(false);
+		setIsFilesOpen((current) => !current);
 	}, [hasNoProjects]);
 
 	const {
@@ -897,6 +910,8 @@ export default function App(): ReactElement {
 						isGitHistoryOpen={isGitHistoryOpen}
 						onToggleRequirements={hasNoProjects ? undefined : handleToggleRequirements}
 						isRequirementsOpen={isRequirementsOpen}
+						onToggleFiles={hasNoProjects ? undefined : handleToggleFiles}
+						isFilesOpen={isFilesOpen}
 						hideProjectDependentActions={shouldHideProjectDependentTopBarActions}
 					/>
 					<div className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden">
@@ -930,7 +945,9 @@ export default function App(): ReactElement {
 							) : (
 								<div className="flex flex-1 flex-col min-h-0 min-w-0">
 									<div className="flex flex-1 min-h-0 min-w-0">
-										{isRequirementsOpen ? (
+										{isFilesOpen ? (
+											<FilesView workspaceId={currentProjectId} />
+										) : isRequirementsOpen ? (
 											<RequirementsView
 												workspaceId={currentProjectId}
 												requirements={requirements}
