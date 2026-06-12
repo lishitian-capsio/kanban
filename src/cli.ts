@@ -10,7 +10,7 @@ import { registerFileCommand } from "./commands/file";
 import { registerHooksCommand } from "./commands/hooks";
 import { registerTaskCommand } from "./commands/task";
 import { registerVaultCommand } from "./commands/vault";
-import { installProxyFetch } from "./config/proxy-fetch";
+import { buildSubprocessProxyEnv, installProxyFetch } from "./config/proxy-fetch";
 import { loadGlobalRuntimeConfig, loadRuntimeConfig } from "./config/runtime-config";
 import type { RuntimeCommandRunResponse } from "./core/api-contract";
 import { createGitProcessEnv } from "./core/git-process-env";
@@ -322,7 +322,10 @@ async function runScopedCommand(command: string, cwd: string): Promise<RuntimeCo
 		const child = spawn(command, {
 			cwd,
 			shell: true,
-			env: process.env,
+			// process.env no longer carries proxy vars (they latch Bun's in-process
+			// fetch); merge the configured proxy so shortcut commands keep routing
+			// through it.
+			env: { ...process.env, ...buildSubprocessProxyEnv() },
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 
@@ -380,10 +383,17 @@ async function startServer(): Promise<{
 }> {
 	// Install the live-proxy fetch interceptor before any provider SDK module is
 	// loaded, so every in-process outbound request reads the current proxy holder
-	// at call time (see config/proxy-fetch.ts). The holder is seeded from config
-	// during workspace-registry init and updated on every settings save.
-	installProxyFetch();
+	// at call time (see config/proxy-fetch.ts). This also strips any inherited
+	// proxy URL env so Bun latches "direct" and the holder stays authoritative;
+	// the holder is seeded from config during workspace-registry init and updated
+	// on every settings save.
+	const strippedProxy = installProxyFetch();
 	console.log("[proxy-fetch] installed global fetch proxy interceptor");
+	if (strippedProxy.https || strippedProxy.http) {
+		console.log(
+			`[proxy-fetch] cleared inherited proxy env (${strippedProxy.https ?? strippedProxy.http}); in-process routing now follows Kanban proxy settings`,
+		);
+	}
 	/*
 		Server-only modules are loaded lazily because task-oriented subcommands like
 		`kanban task create` and `kanban hooks ingest` do not need the runtime server.

@@ -13,7 +13,6 @@ import { type PiLaunchProfile, resolvePiApiKey, resolvePiLaunchConfig } from "..
 import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
 import { createProviderService } from "../agent-sdk/kanban/provider-service";
 import { isKanbanClearSlashCommand } from "../agent-sdk/shared/slash-commands";
-import { applyProxyToProcessEnv } from "../config/proxy-env";
 import { setRuntimeProxyStateFromConfig } from "../config/proxy-fetch";
 import type { RuntimeConfigState } from "../config/runtime-config";
 import { updateGlobalRuntimeConfig, updateRuntimeConfig } from "../config/runtime-config";
@@ -227,15 +226,10 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			if (!workspaceScope) {
 				deps.setActiveRuntimeConfig(nextRuntimeConfig);
 			}
-			applyProxyToProcessEnv(
-				nextRuntimeConfig.proxyEnabled,
-				nextRuntimeConfig.proxyHost,
-				nextRuntimeConfig.proxyPort,
-				nextRuntimeConfig.proxyUsername,
-				nextRuntimeConfig.proxyPassword,
-				nextRuntimeConfig.noProxy,
-				getKanbanRuntimeNoProxyHosts(),
-			);
+			// Update the in-process proxy holder only. We deliberately do NOT write
+			// proxy URLs into process.env: that latches Bun's in-process fetch and
+			// breaks live switching/disable (see config/proxy-fetch.ts). Subprocess
+			// agents get proxy env at spawn time instead.
 			setRuntimeProxyStateFromConfig(
 				nextRuntimeConfig.proxyEnabled,
 				nextRuntimeConfig.proxyHost,

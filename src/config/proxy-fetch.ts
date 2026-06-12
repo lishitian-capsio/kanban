@@ -9,22 +9,40 @@
 // way to cover them uniformly. The codebase already sanctions this pattern via
 // `agent-sdk/shared/hook-fetch.ts`.
 //
-// Changing HTTP_PROXY/HTTPS_PROXY in process.env does NOT work for in-process
-// requests: Bun's global fetch ignores those env vars (only the per-request
-// `{ proxy }` option works) and Node/undici's global fetch ignores them too.
-// So we read a mutable holder at request time and inject the proxy via the
-// engine-native mechanism: Bun -> `{ proxy }`, Node -> `{ dispatcher: ProxyAgent }`.
+// WHY WE CANNOT DRIVE IN-PROCESS ROUTING VIA process.env:
+// Bun 1.3.x's global fetch DOES honor HTTP(S)_PROXY env, but it latches the
+// value on the first outbound fetch and caches it for the process lifetime.
+// After that latch, deleting the env var does NOT undo it, switching it to a
+// different proxy does NOT change routing, and `fetch(url, { proxy: "" })` does
+// NOT force direct (it falls back to the latched value). Node/undici's global
+// fetch ignores the env entirely. So env can never give us live switching.
 //
-// Subprocess agent sessions are unaffected: they still inherit proxy settings
-// through env vars computed at spawn time (see config/proxy-env.ts) and are out
-// of scope here.
+// Therefore the holder is the SINGLE source of truth for the runtime's own
+// outbound requests. Two guarantees keep it authoritative:
+//   1. `stripInheritedProxyEnv()` runs at boot (inside installProxyFetch, before
+//      the first fetch) to clear any shell-inherited proxy URL so Bun latches
+//      "direct". NO_PROXY is left intact.
+//   2. The runtime never writes proxy URLs back into its own process.env.
+// With Bun latched direct, every request is routed purely by the per-request
+// engine-native option we inject: Bun -> `{ proxy }`, Node -> `{ dispatcher }`.
 //
-// The interceptor is transparent when no proxy is enabled (plain passthrough),
-// respects a caller-provided `dispatcher`/`proxy`, and never proxies loopback
-// or NO_PROXY hosts (keeping runtime self-communication direct).
+// Subprocess agent sessions are unaffected: they get proxy settings through env
+// vars built at spawn time. Terminal sessions assemble them from per-session
+// config (config/proxy-env.ts `buildProxyEnvVars`); other runtime-side spawns
+// merge `buildSubprocessProxyEnv()`, which reads this same holder.
+//
+// The interceptor is transparent when no proxy is enabled (plain passthrough,
+// which is now genuinely direct), respects a caller-provided `dispatcher`/
+// `proxy`, and never proxies loopback or NO_PROXY hosts.
 
 import { ProxyAgent } from "undici";
-import { buildProxyUrl, mergeNoProxyEntries, shouldBypassProxy } from "./proxy-env";
+import {
+	buildProxyEnvVarsFromUrl,
+	buildProxyUrl,
+	mergeNoProxyEntries,
+	PROXY_URL_ENV_KEYS,
+	shouldBypassProxy,
+} from "./proxy-env";
 
 export interface RuntimeProxyState {
 	enabled: boolean;
@@ -47,10 +65,43 @@ export function getRuntimeProxyState(): Readonly<RuntimeProxyState> {
 }
 
 /**
- * Updates the in-process proxy holder from the same discrete config fields that
- * `applyProxyToProcessEnv` consumes, so both can be called side-by-side at the
- * save and startup sites. The proxy is treated as disabled whenever the flag is
- * off or the assembled URL is empty.
+ * Builds the proxy environment record for a CHILD process spawn from the current
+ * holder state. Returns `{}` when the proxy is disabled. Runtime-side spawns that
+ * previously relied on inherited `process.env` proxy vars (e.g. self-update,
+ * shortcut commands) merge this into the child's env so they keep routing through
+ * the configured proxy even though the runtime's own process.env stays clean.
+ */
+export function buildSubprocessProxyEnv(): Record<string, string> {
+	if (!state.enabled || !state.proxyUrl) return {};
+	return buildProxyEnvVarsFromUrl(state.proxyUrl, state.noProxy);
+}
+
+/**
+ * Neutralizes inherited proxy-URL env vars (HTTP(S)_PROXY, both cases) on the
+ * runtime's own process.env so Bun's in-process fetch latches "direct" on its
+ * first request, leaving the holder as the sole in-process proxy control.
+ *
+ * Critically, the vars are set to "" rather than deleted: Bun captures the proxy
+ * from the boot environment and `delete` does NOT un-latch it (a no-option fetch
+ * falls back to the boot value), but assigning an empty string IS honored as
+ * "no proxy" and overrides the boot capture. NO_PROXY/no_proxy are left intact
+ * (they don't latch a proxy and are needed for CLI/hook self-communication
+ * bypass). Returns the captured original values for one-time startup logging.
+ */
+export function stripInheritedProxyEnv(): { http?: string; https?: string } {
+	const captured = {
+		http: process.env.HTTP_PROXY ?? process.env.http_proxy,
+		https: process.env.HTTPS_PROXY ?? process.env.https_proxy,
+	};
+	for (const key of PROXY_URL_ENV_KEYS) process.env[key] = "";
+	return captured;
+}
+
+/**
+ * Updates the in-process proxy holder from the discrete config fields. Called at
+ * the save and startup sites; the holder is the single source of truth for the
+ * runtime's own outbound requests. The proxy is treated as disabled whenever the
+ * flag is off or the assembled URL is empty.
  */
 export function setRuntimeProxyStateFromConfig(
 	enabled: boolean,
@@ -110,8 +161,16 @@ function decorateInitWithProxy(init: RequestInit | undefined, proxyUrl: string):
 let installed = false;
 let originalFetch: typeof globalThis.fetch | null = null;
 
-export function installProxyFetch(): void {
-	if (installed) return;
+/**
+ * Installs the interceptor and strips inherited proxy URL env BEFORE the first
+ * fetch (so Bun latches "direct" and the holder becomes the sole in-process
+ * control — see file header). Returns the captured inherited proxy values so the
+ * caller can emit a one-time startup notice. Idempotent; the strip and capture
+ * happen only on the first call.
+ */
+export function installProxyFetch(): { http?: string; https?: string } {
+	if (installed) return {};
+	const captured = stripInheritedProxyEnv();
 	originalFetch = globalThis.fetch;
 	const original = originalFetch;
 	globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
@@ -126,6 +185,7 @@ export function installProxyFetch(): void {
 		return original(input, decorateInitWithProxy(init, state.proxyUrl));
 	}) as typeof globalThis.fetch;
 	installed = true;
+	return captured;
 }
 
 export function uninstallProxyFetch(): void {

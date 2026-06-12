@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
+import { buildSubprocessProxyEnv } from "../config/proxy-fetch";
 
 export enum UpdatePackageManager {
 	NPM = "npm",
@@ -541,7 +542,9 @@ function spawnDetachedUpdate(command: string, args: string[]): void {
 	const child = spawn(resolveUpdateCommandForPlatform(command), args, {
 		detached: true,
 		stdio: "ignore",
-		env: process.env,
+		// process.env no longer carries proxy vars (they latch Bun's in-process
+		// fetch); merge the configured proxy explicitly for the package manager.
+		env: { ...process.env, ...buildSubprocessProxyEnv() },
 		windowsHide: true,
 	});
 	child.unref();
@@ -549,7 +552,7 @@ function spawnDetachedUpdate(command: string, args: string[]): void {
 
 function runUpdateCommandSync(command: string, args: string[]): number {
 	const result = spawnSync(resolveUpdateCommandForPlatform(command), args, {
-		env: process.env,
+		env: { ...process.env, ...buildSubprocessProxyEnv() },
 		stdio: "inherit",
 		windowsHide: true,
 	});

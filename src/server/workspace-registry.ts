@@ -1,4 +1,3 @@
-import { applyProxyToProcessEnv } from "../config/proxy-env";
 import { setRuntimeProxyStateFromConfig } from "../config/proxy-fetch";
 import { type RuntimeConfigState, toGlobalRuntimeConfigState } from "../config/runtime-config";
 import type {
@@ -203,15 +202,9 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 	let activeRuntimeConfig = activeWorkspacePath
 		? await deps.loadRuntimeConfig(activeWorkspacePath)
 		: globalRuntimeConfig;
-	applyProxyToProcessEnv(
-		activeRuntimeConfig.proxyEnabled,
-		activeRuntimeConfig.proxyHost,
-		activeRuntimeConfig.proxyPort,
-		activeRuntimeConfig.proxyUsername,
-		activeRuntimeConfig.proxyPassword,
-		activeRuntimeConfig.noProxy,
-		getKanbanRuntimeNoProxyHosts(),
-	);
+	// Seed the in-process proxy holder from config. We deliberately do NOT write
+	// proxy URLs into process.env (that latches Bun's in-process fetch and breaks
+	// live switching/disable — see config/proxy-fetch.ts).
 	setRuntimeProxyStateFromConfig(
 		activeRuntimeConfig.proxyEnabled,
 		activeRuntimeConfig.proxyHost,

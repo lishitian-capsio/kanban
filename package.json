@@ -64,6 +64,7 @@
     "test": "bun vitest run",
     "test:fast": "vitest run test/runtime test/utilities",
     "test:integration": "vitest run test/integration",
+    "test:proxy-live": "bun scripts/proxy-live-switch-check.ts",
     "test:precommit": "npm run test:fast",
     "test:watch": "vitest",
     "prepare": "husky",

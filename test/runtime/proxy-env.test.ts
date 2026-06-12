@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
-	applyProxyToProcessEnv,
 	buildProxyEnvVars,
+	buildProxyEnvVarsFromUrl,
 	mergeNoProxyEntries,
+	PROXY_URL_ENV_KEYS,
 	shouldBypassProxy,
 } from "../../src/config/proxy-env";
 
@@ -139,30 +140,26 @@ describe("buildProxyEnvVars with extra no-proxy hosts", () => {
 	});
 });
 
-describe("applyProxyToProcessEnv with extra no-proxy hosts", () => {
-	const PROXY_KEYS = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "NO_PROXY", "no_proxy"] as const;
-	const saved: Record<string, string | undefined> = {};
-
-	beforeEach(() => {
-		for (const key of PROXY_KEYS) {
-			saved[key] = process.env[key];
-			delete process.env[key];
-		}
+describe("buildProxyEnvVarsFromUrl", () => {
+	it("sets all four proxy URL keys plus NO_PROXY from a pre-assembled url + list", () => {
+		const vars = buildProxyEnvVarsFromUrl("http://proxy.local:7897", "corp.internal,192.168.50.203");
+		expect(vars.HTTP_PROXY).toBe("http://proxy.local:7897");
+		expect(vars.HTTPS_PROXY).toBe("http://proxy.local:7897");
+		expect(vars.http_proxy).toBe("http://proxy.local:7897");
+		expect(vars.https_proxy).toBe("http://proxy.local:7897");
+		expect(vars.NO_PROXY).toBe("corp.internal,192.168.50.203");
+		expect(vars.no_proxy).toBe("corp.internal,192.168.50.203");
 	});
 
-	afterEach(() => {
-		for (const key of PROXY_KEYS) {
-			if (saved[key] === undefined) {
-				delete process.env[key];
-			} else {
-				process.env[key] = saved[key];
-			}
-		}
+	it("omits NO_PROXY when the list is empty and returns {} for an empty url", () => {
+		expect(buildProxyEnvVarsFromUrl("http://proxy.local:7897", "").NO_PROXY).toBeUndefined();
+		expect(buildProxyEnvVarsFromUrl("", "corp.internal")).toEqual({});
 	});
+});
 
-	it("keeps the runtime self-hosts in NO_PROXY when proxy is enabled", () => {
-		applyProxyToProcessEnv(true, "proxy.local", "7897", "", "", "corp.internal", ["192.168.50.203"]);
-		expect(process.env.NO_PROXY).toBe("corp.internal,192.168.50.203");
-		expect(process.env.HTTP_PROXY).toBe("http://proxy.local:7897");
+describe("PROXY_URL_ENV_KEYS", () => {
+	it("covers both cases of HTTP/HTTPS proxy and excludes NO_PROXY", () => {
+		expect([...PROXY_URL_ENV_KEYS]).toEqual(["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]);
+		expect((PROXY_URL_ENV_KEYS as readonly string[]).includes("NO_PROXY")).toBe(false);
 	});
 });

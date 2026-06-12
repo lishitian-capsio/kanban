@@ -2,10 +2,12 @@ import { ProxyAgent } from "undici";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+	buildSubprocessProxyEnv,
 	getRuntimeProxyState,
 	installProxyFetch,
 	setRuntimeProxyState,
 	setRuntimeProxyStateFromConfig,
+	stripInheritedProxyEnv,
 	uninstallProxyFetch,
 } from "../../src/config/proxy-fetch";
 
@@ -127,5 +129,72 @@ describe("proxy-fetch interceptor", () => {
 		expectProxied(lastInit(fake), PROXY_URL);
 		await globalThis.fetch(new Request("https://api.openai.com/v1/models"));
 		expectProxied(lastInit(fake), PROXY_URL);
+	});
+});
+
+describe("stripInheritedProxyEnv", () => {
+	const URL_KEYS = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"] as const;
+	const NO_PROXY_KEYS = ["NO_PROXY", "no_proxy"] as const;
+	const saved: Record<string, string | undefined> = {};
+
+	beforeEach(() => {
+		for (const key of [...URL_KEYS, ...NO_PROXY_KEYS]) {
+			saved[key] = process.env[key];
+			delete process.env[key];
+		}
+	});
+
+	afterEach(() => {
+		for (const key of [...URL_KEYS, ...NO_PROXY_KEYS]) {
+			if (saved[key] === undefined) delete process.env[key];
+			else process.env[key] = saved[key];
+		}
+	});
+
+	it("neutralizes the four proxy URL keys to empty string, preserves NO_PROXY, and returns the captured value", () => {
+		process.env.HTTP_PROXY = "http://shell:1";
+		process.env.HTTPS_PROXY = "http://shell:2";
+		process.env.http_proxy = "http://shell:1";
+		process.env.https_proxy = "http://shell:2";
+		process.env.NO_PROXY = "localhost,corp.internal";
+		process.env.no_proxy = "localhost,corp.internal";
+
+		const captured = stripInheritedProxyEnv();
+
+		// Set to "" (not deleted): only an empty-string assignment overrides Bun's
+		// boot-captured proxy; `delete` would leave the boot value latched.
+		for (const key of URL_KEYS) expect(process.env[key]).toBe("");
+		expect(process.env.NO_PROXY).toBe("localhost,corp.internal");
+		expect(process.env.no_proxy).toBe("localhost,corp.internal");
+		expect(captured.https).toBe("http://shell:2");
+		expect(captured.http).toBe("http://shell:1");
+	});
+
+	it("returns undefined fields when no proxy env was inherited", () => {
+		const captured = stripInheritedProxyEnv();
+		expect(captured.http).toBeUndefined();
+		expect(captured.https).toBeUndefined();
+	});
+});
+
+describe("buildSubprocessProxyEnv", () => {
+	afterEach(() => {
+		setRuntimeProxyState({ enabled: false, proxyUrl: "", noProxy: "" });
+	});
+
+	it("returns {} when the proxy is disabled (subprocesses go direct)", () => {
+		setRuntimeProxyState({ enabled: false, proxyUrl: "", noProxy: "" });
+		expect(buildSubprocessProxyEnv()).toEqual({});
+	});
+
+	it("returns the full proxy env record from the holder when enabled", () => {
+		setRuntimeProxyState({ enabled: true, proxyUrl: PROXY_URL, noProxy: "localhost,corp.internal" });
+		const env = buildSubprocessProxyEnv();
+		expect(env.HTTP_PROXY).toBe(PROXY_URL);
+		expect(env.HTTPS_PROXY).toBe(PROXY_URL);
+		expect(env.http_proxy).toBe(PROXY_URL);
+		expect(env.https_proxy).toBe(PROXY_URL);
+		expect(env.NO_PROXY).toBe("localhost,corp.internal");
+		expect(env.no_proxy).toBe("localhost,corp.internal");
 	});
 });

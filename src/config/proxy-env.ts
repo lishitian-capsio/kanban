@@ -1,7 +1,13 @@
 // Proxy URL assembly and environment variable injection utilities.
 // Converts split proxy config fields (host, port, username, password) into
-// a complete proxy URL and injects it as standard HTTP_PROXY / HTTPS_PROXY
-// environment variables into agent sessions and the runtime process.
+// a complete proxy URL and a record of standard HTTP_PROXY / HTTPS_PROXY
+// environment variables that callers merge into CHILD process spawns.
+//
+// NOTE: nothing here mutates the runtime's OWN process.env. Writing proxy URLs
+// into the runtime process permanently latches Bun's in-process fetch (see
+// config/proxy-fetch.ts), which is why proxy delivery to subprocesses is done
+// via explicit per-spawn env merges using buildProxyEnvVars / the holder, not
+// by polluting process.env.
 
 export function buildProxyUrl(host: string, port: string, username: string, password: string): string {
 	const trimmedHost = host.trim();
@@ -101,6 +107,34 @@ export function shouldBypassProxy(host: string, noProxyList: string | null | und
 	return false;
 }
 
+// The four proxy-URL environment variable keys (both cases). Deliberately
+// excludes NO_PROXY/no_proxy: only a proxy URL latches Bun's in-process fetch,
+// so the runtime strips exactly these at boot (see config/proxy-fetch.ts) while
+// preserving any inherited NO_PROXY.
+export const PROXY_URL_ENV_KEYS = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"] as const;
+
+/**
+ * Builds the proxy environment record from an already-assembled proxy URL and an
+ * already-merged NO_PROXY list. Returns `{}` when the URL is empty. This is the
+ * shared core used both by `buildProxyEnvVars` (discrete config fields) and by
+ * the proxy holder's subprocess-env builder, so there is a single source of the
+ * env-var shape.
+ */
+export function buildProxyEnvVarsFromUrl(proxyUrl: string, noProxy: string): Record<string, string> {
+	if (!proxyUrl) return {};
+	const vars: Record<string, string> = {
+		HTTP_PROXY: proxyUrl,
+		HTTPS_PROXY: proxyUrl,
+		http_proxy: proxyUrl,
+		https_proxy: proxyUrl,
+	};
+	if (noProxy) {
+		vars.NO_PROXY = noProxy;
+		vars.no_proxy = noProxy;
+	}
+	return vars;
+}
+
 export function buildProxyEnvVars(
 	enabled: boolean,
 	host: string,
@@ -113,50 +147,5 @@ export function buildProxyEnvVars(
 	if (!enabled) return {};
 	const url = buildProxyUrl(host, port, username, password);
 	if (!url) return {};
-	const vars: Record<string, string> = {
-		HTTP_PROXY: url,
-		HTTPS_PROXY: url,
-		http_proxy: url,
-		https_proxy: url,
-	};
-	const mergedNoProxy = mergeNoProxyEntries(noProxy, extraNoProxyHosts);
-	if (mergedNoProxy) {
-		vars.NO_PROXY = mergedNoProxy;
-		vars.no_proxy = mergedNoProxy;
-	}
-	return vars;
-}
-
-const PROXY_ENV_KEYS = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "NO_PROXY", "no_proxy"];
-
-export function applyProxyToProcessEnv(
-	enabled: boolean,
-	host: string,
-	port: string,
-	username: string,
-	password: string,
-	noProxy: string,
-	extraNoProxyHosts: readonly string[] = [],
-): void {
-	if (!enabled) {
-		for (const key of PROXY_ENV_KEYS) delete process.env[key];
-		return;
-	}
-	const url = buildProxyUrl(host, port, username, password);
-	if (!url) {
-		for (const key of PROXY_ENV_KEYS) delete process.env[key];
-		return;
-	}
-	process.env.HTTP_PROXY = url;
-	process.env.HTTPS_PROXY = url;
-	process.env.http_proxy = url;
-	process.env.https_proxy = url;
-	const mergedNoProxy = mergeNoProxyEntries(noProxy, extraNoProxyHosts);
-	if (mergedNoProxy) {
-		process.env.NO_PROXY = mergedNoProxy;
-		process.env.no_proxy = mergedNoProxy;
-	} else {
-		delete process.env.NO_PROXY;
-		delete process.env.no_proxy;
-	}
+	return buildProxyEnvVarsFromUrl(url, mergeNoProxyEntries(noProxy, extraNoProxyHosts));
 }
