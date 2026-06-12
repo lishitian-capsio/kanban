@@ -153,6 +153,8 @@ export function useHomeSidebarAgentPanel({
 				showComposerModeToggle={false}
 				workspaceId={currentProjectId}
 				runtimeConfig={runtimeProjectConfig}
+				agentProfilesEnabled
+				profileAgentId={activeAgentId}
 				onSendMessage={handleSendHomeKanbanChatMessage}
 				onCancelTurn={handleCancelHomeKanbanChatTurn}
 				onLoadMessages={handleLoadHomeKanbanChatMessages}

@@ -70,6 +70,7 @@ export function KanbanChatComposer({
 	warningMessage = null,
 	attachmentWarningMessage = null,
 	workspaceId = null,
+	modelControlSlot = null,
 }: {
 	taskId: string;
 	draft: string;
@@ -100,6 +101,10 @@ export function KanbanChatComposer({
 	warningMessage?: string | null;
 	attachmentWarningMessage?: string | null;
 	workspaceId?: string | null;
+	// When provided, replaces the default model selector with a richer control
+	// (e.g. the per-agent profile switcher). The model selector props are then
+	// owned by the slot's renderer.
+	modelControlSlot?: ReactElement | null;
 }): ReactElement {
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 	const mentionSearchRequestIdRef = useRef(0);
@@ -492,22 +497,24 @@ export function KanbanChatComposer({
 				<TaskImageStrip images={images} onRemoveImage={handleRemoveImage} className="mt-2" />
 			) : null}
 			<div className="mt-2 flex min-w-0 items-center gap-2">
-				<div className="min-w-0 shrink overflow-hidden">
-					<KanbanChatModelSelector
-						modelOptions={modelOptions}
-						recommendedModelIds={recommendedModelIds}
-						pinSelectedModelToTop={pinSelectedModelToTop}
-						selectedModelId={selectedModelId}
-						selectedModelButtonText={selectedModelButtonText}
-						onSelectModel={onSelectModel}
-						reasoningEnabledModelIds={reasoningEnabledModelIds}
-						selectedReasoningEffort={selectedReasoningEffort}
-						onSelectReasoningEffort={onSelectReasoningEffort}
-						disabled={modelPickerDisabled}
-						isModelLoading={isModelLoading}
-						isModelSaving={isModelSaving}
-					/>
-				</div>
+				{modelControlSlot ?? (
+					<div className="min-w-0 shrink overflow-hidden">
+						<KanbanChatModelSelector
+							modelOptions={modelOptions}
+							recommendedModelIds={recommendedModelIds}
+							pinSelectedModelToTop={pinSelectedModelToTop}
+							selectedModelId={selectedModelId}
+							selectedModelButtonText={selectedModelButtonText}
+							onSelectModel={onSelectModel}
+							reasoningEnabledModelIds={reasoningEnabledModelIds}
+							selectedReasoningEffort={selectedReasoningEffort}
+							onSelectReasoningEffort={onSelectReasoningEffort}
+							disabled={modelPickerDisabled}
+							isModelLoading={isModelLoading}
+							isModelSaving={isModelSaving}
+						/>
+					</div>
+				)}
 				<div className="ml-auto flex shrink-0 items-center gap-2">
 					{showModeToggle ? (
 						<Tooltip

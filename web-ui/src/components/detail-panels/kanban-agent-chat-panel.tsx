@@ -14,6 +14,7 @@ import React, {
 	useState,
 } from "react";
 
+import { AgentProfileControl } from "@/components/agent-profiles/agent-profile-control";
 import { KanbanChatComposer } from "@/components/detail-panels/kanban-chat-composer";
 import { KanbanChatMessageItem } from "@/components/detail-panels/kanban-chat-message-item";
 import {
@@ -30,6 +31,7 @@ import type { KanbanChatActionResult } from "@/hooks/use-kanban-chat-runtime-act
 import type { KanbanChatMessage } from "@/hooks/use-kanban-chat-session";
 import { useRuntimeSettingsKanbanController } from "@/hooks/use-runtime-settings-kanban-controller";
 import type {
+	RuntimeAgentId,
 	RuntimeReasoningEffort,
 	RuntimeConfigResponse,
 	RuntimeTaskAgentSettings,
@@ -70,6 +72,11 @@ export interface KanbanAgentChatPanelProps {
 	showComposerModeToggle?: boolean;
 	workspaceId?: string | null;
 	runtimeConfig?: RuntimeConfigResponse | null;
+	// When set, the composer shows the per-agent config profile control (switch /
+	// edit / new / duplicate / rename / delete) scoped to `profileAgentId`,
+	// replacing the bare model selector. Used by the home sidebar chat.
+	agentProfilesEnabled?: boolean;
+	profileAgentId?: RuntimeAgentId | null;
 	taskKanbanSettings?: RuntimeTaskAgentSettings;
 	taskHasExplicitKanbanSettings?: boolean;
 	onKanbanSettingsSaved?: () => void;
@@ -109,6 +116,8 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 			showComposerModeToggle = true,
 			workspaceId = null,
 			runtimeConfig = null,
+			agentProfilesEnabled = false,
+			profileAgentId = null,
 			taskKanbanSettings,
 			taskHasExplicitKanbanSettings = false,
 			onKanbanSettingsSaved,
@@ -459,6 +468,15 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 						warningMessage={summary?.warningMessage ?? null}
 						attachmentWarningMessage={attachmentWarningMessage}
 						workspaceId={workspaceId}
+						modelControlSlot={
+							agentProfilesEnabled && profileAgentId ? (
+								<AgentProfileControl
+									workspaceId={workspaceId}
+									agentId={profileAgentId}
+									disabled={isSavingModel}
+								/>
+							) : null
+						}
 					/>
 				</div>
 				{showActionFooter ? (
