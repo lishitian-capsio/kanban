@@ -110,6 +110,8 @@ import type {
 	RuntimeVaultDocumentDeleteResponse,
 	RuntimeVaultDocumentGetRequest,
 	RuntimeVaultDocumentGetResponse,
+	RuntimeVaultDocumentLinksGetRequest,
+	RuntimeVaultDocumentLinksGetResponse,
 	RuntimeVaultDocumentsListRequest,
 	RuntimeVaultDocumentsListResponse,
 	RuntimeVaultDocumentUpdateRequest,
@@ -231,6 +233,8 @@ import {
 	runtimeVaultDocumentDeleteResponseSchema,
 	runtimeVaultDocumentGetRequestSchema,
 	runtimeVaultDocumentGetResponseSchema,
+	runtimeVaultDocumentLinksGetRequestSchema,
+	runtimeVaultDocumentLinksGetResponseSchema,
 	runtimeVaultDocumentsListRequestSchema,
 	runtimeVaultDocumentsListResponseSchema,
 	runtimeVaultDocumentUpdateRequestSchema,
@@ -441,6 +445,10 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeVaultDocumentGetRequest,
 		) => Promise<RuntimeVaultDocumentGetResponse>;
+		getDocumentLinks: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultDocumentLinksGetRequest,
+		) => Promise<RuntimeVaultDocumentLinksGetResponse>;
 		createDocument: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeVaultDocumentCreateRequest,
@@ -854,6 +862,12 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeVaultDocumentGetResponseSchema)
 			.query(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.getDocument(ctx.workspaceScope, input);
+			}),
+		getDocumentLinks: workspaceProcedure
+			.input(runtimeVaultDocumentLinksGetRequestSchema)
+			.output(runtimeVaultDocumentLinksGetResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.getDocumentLinks(ctx.workspaceScope, input);
 			}),
 		createDocument: workspaceProcedure
 			.input(runtimeVaultDocumentCreateRequestSchema)

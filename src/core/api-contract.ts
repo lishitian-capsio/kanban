@@ -439,6 +439,48 @@ export const runtimeVaultCrystallizeResponseSchema = z.object({
 });
 export type RuntimeVaultCrystallizeResponse = z.infer<typeof runtimeVaultCrystallizeResponseSchema>;
 
+// Where a `[[wikilink]]` was found in a document: in a named frontmatter field
+// (the field is the relationship type, e.g. `customer`) or in the markdown body.
+export const runtimeVaultLinkSourceSchema = z.discriminatedUnion("kind", [
+	z.object({ kind: z.literal("frontmatter"), field: z.string() }),
+	z.object({ kind: z.literal("body") }),
+]);
+export type RuntimeVaultLinkSource = z.infer<typeof runtimeVaultLinkSourceSchema>;
+
+// A link going *out* of a document, with its resolution status. `resolved*` is
+// null when the target matches no document by title, alias, or slug.
+export const runtimeVaultOutgoingLinkSchema = z.object({
+	target: z.string(),
+	label: z.string().optional(),
+	source: runtimeVaultLinkSourceSchema,
+	resolvedId: z.string().nullable(),
+	resolvedType: z.string().nullable(),
+	resolvedTitle: z.string().nullable(),
+});
+export type RuntimeVaultOutgoingLink = z.infer<typeof runtimeVaultOutgoingLinkSchema>;
+
+// A link coming *into* a document (who links to me), identifying the source doc
+// and the field/body it linked from so a panel can group by relationship.
+export const runtimeVaultBacklinkSchema = z.object({
+	sourceId: z.string(),
+	sourceType: z.string(),
+	sourceTitle: z.string(),
+	source: runtimeVaultLinkSourceSchema,
+	label: z.string().optional(),
+});
+export type RuntimeVaultBacklink = z.infer<typeof runtimeVaultBacklinkSchema>;
+
+export const runtimeVaultDocumentLinksGetRequestSchema = z.object({
+	id: z.string(),
+});
+export type RuntimeVaultDocumentLinksGetRequest = z.infer<typeof runtimeVaultDocumentLinksGetRequestSchema>;
+
+export const runtimeVaultDocumentLinksGetResponseSchema = z.object({
+	outgoing: z.array(runtimeVaultOutgoingLinkSchema),
+	backlinks: z.array(runtimeVaultBacklinkSchema),
+});
+export type RuntimeVaultDocumentLinksGetResponse = z.infer<typeof runtimeVaultDocumentLinksGetResponseSchema>;
+
 export const runtimeGitRepositoryInfoSchema = z.object({
 	currentBranch: z.string().nullable(),
 	defaultBranch: z.string().nullable(),

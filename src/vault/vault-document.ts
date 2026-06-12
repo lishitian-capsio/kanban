@@ -26,7 +26,15 @@ export interface VaultDocument {
 
 export class VaultDocumentParseError extends Error {}
 
-const WIKILINK_PATTERN = /\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g;
+const WIKILINK_PATTERN = /\[\[([^\]|]+)(?:\|([^\]]*))?\]\]/g;
+
+/** A single `[[target]]` / `[[target|label]]` reference, as written in the source text. */
+export interface WikilinkRef {
+	/** The link target inside the brackets, trimmed. */
+	target: string;
+	/** The display label after a `|`, trimmed; omitted when absent or blank. */
+	label?: string;
+}
 
 export function parseVaultDocument(raw: string): VaultDocument {
 	const parsed = matter(raw);
@@ -62,7 +70,26 @@ export function serializeVaultDocument(doc: VaultDocument): string {
 	return matter.stringify(stripTrailingNewlines(doc.body), ordered);
 }
 
-/** Collect `[[target]]` (and `[[target|label]]`) references, de-duped, first-seen order. */
+/**
+ * Parse every `[[target]]` / `[[target|label]]` reference out of a single string,
+ * in document order, preserving repeats. This is the low-level primitive the link
+ * engine builds on; callers that need de-duplication or source attribution layer
+ * it on top (see {@link extractWikilinks} and the vault link index).
+ */
+export function extractWikilinkRefs(text: string): WikilinkRef[] {
+	const refs: WikilinkRef[] = [];
+	for (const match of text.matchAll(WIKILINK_PATTERN)) {
+		const target = match[1].trim();
+		if (target.length === 0) {
+			continue;
+		}
+		const label = match[2]?.trim();
+		refs.push(label ? { target, label } : { target });
+	}
+	return refs;
+}
+
+/** Collect `[[target]]` (and `[[target|label]]`) targets from a frontmatter value, de-duped, first-seen order. */
 export function extractWikilinks(value: VaultFrontmatterValue): string[] {
 	const texts: string[] = [];
 	if (typeof value === "string") {
@@ -78,9 +105,8 @@ export function extractWikilinks(value: VaultFrontmatterValue): string[] {
 	const seen = new Set<string>();
 	const targets: string[] = [];
 	for (const text of texts) {
-		for (const match of text.matchAll(WIKILINK_PATTERN)) {
-			const target = match[1].trim();
-			if (target.length > 0 && !seen.has(target)) {
+		for (const { target } of extractWikilinkRefs(text)) {
+			if (!seen.has(target)) {
 				seen.add(target);
 				targets.push(target);
 			}

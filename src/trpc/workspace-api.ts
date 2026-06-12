@@ -22,6 +22,7 @@ import { saveWorkspaceState, WorkspaceStateConflictError } from "../state/worksp
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { renderTranscriptToMarkdown, selectTranscriptMessages } from "../vault/crystallize";
 import { VaultDocumentStore } from "../vault/vault-document-store";
+import { buildVaultLinkIndex } from "../vault/vault-link-index";
 import {
 	createEmptyWorkspaceChangesResponse,
 	getWorkspaceChanges,
@@ -440,6 +441,11 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 		getDocument: async (workspaceScope, input) => {
 			const document = await new VaultDocumentStore(workspaceScope.workspacePath).get(input.id);
 			return { document };
+		},
+		getDocumentLinks: async (workspaceScope, input) => {
+			const documents = await new VaultDocumentStore(workspaceScope.workspacePath).list();
+			const index = buildVaultLinkIndex(documents);
+			return { outgoing: index.outgoing(input.id), backlinks: index.backlinks(input.id) };
 		},
 		createDocument: async (workspaceScope, input) => {
 			const document = await new VaultDocumentStore(workspaceScope.workspacePath).create({

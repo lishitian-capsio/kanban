@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	extractWikilinkRefs,
 	extractWikilinks,
 	parseVaultDocument,
 	serializeVaultDocument,
@@ -109,6 +110,31 @@ describe("extractWikilinks", () => {
 	it("returns an empty array for non-string values", () => {
 		expect(extractWikilinks(42)).toEqual([]);
 		expect(extractWikilinks(null)).toEqual([]);
+	});
+});
+
+describe("extractWikilinkRefs", () => {
+	it("captures the target and the optional display label, in document order", () => {
+		expect(extractWikilinkRefs("see [[acme-corp]] and [[bob|Bob Smith]]")).toEqual([
+			{ target: "acme-corp" },
+			{ target: "bob", label: "Bob Smith" },
+		]);
+	});
+
+	it("trims whitespace around target and label", () => {
+		expect(extractWikilinkRefs("[[  acme  |  Acme Corp  ]]")).toEqual([{ target: "acme", label: "Acme Corp" }]);
+	});
+
+	it("omits a blank label rather than emitting an empty string", () => {
+		expect(extractWikilinkRefs("[[acme|]]")).toEqual([{ target: "acme" }]);
+	});
+
+	it("preserves repeats (does not de-duplicate)", () => {
+		expect(extractWikilinkRefs("[[a]] [[b]] [[a]]")).toEqual([{ target: "a" }, { target: "b" }, { target: "a" }]);
+	});
+
+	it("returns an empty array when there are no wikilinks", () => {
+		expect(extractWikilinkRefs("plain text, no links")).toEqual([]);
 	});
 });
 
