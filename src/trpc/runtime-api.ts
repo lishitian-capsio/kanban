@@ -22,7 +22,6 @@ import type {
 	RuntimeRunUpdateResponse,
 	RuntimeUpdateStatusResponse,
 } from "../core/api-contract";
-import { runtimeAgentIdSchema } from "../core/api-contract";
 import {
 	parseCommandRunRequest,
 	parseHomeChatThreadCloseRequest,
@@ -48,7 +47,7 @@ import {
 	parseTaskSessionStartRequest,
 	parseTaskSessionStopRequest,
 } from "../core/api-validation";
-import { isHomeAgentSessionId, parseHomeAgentSessionId } from "../core/home-agent-session";
+import { isHomeAgentSessionId, resolveHomeAgentId } from "../core/home-agent-session";
 import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
 import { resolveTaskTitle } from "../core/task-title.js";
 import { openInBrowser } from "../server/browser";
@@ -236,9 +235,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				// task id (`__home_agent__:<ws>:<agent>[:<thread>]`). Each home chat thread
 				// can run a different agent than the workspace-global selection, so resolve
 				// the agent from the id rather than the workspace default.
-				const homeThreadAgentId = isHomeAgentSessionId(body.taskId)
-					? (runtimeAgentIdSchema.safeParse(parseHomeAgentSessionId(body.taskId)?.agentId).data ?? null)
-					: null;
+				const homeThreadAgentId = resolveHomeAgentId(body.taskId);
 				const effectiveAgentId =
 					previousTerminalAgentId ?? homeThreadAgentId ?? body.agentId ?? scopedRuntimeConfig.selectedAgentId;
 				const usePiPath = effectiveAgentId === "pi";
@@ -468,9 +465,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				// threads (claude/codex/...) never trigger this path (they use the
 				// terminal panel), but guard on the thread's agent id so a non-pi home
 				// session can't be accidentally restarted as pi.
-				const reloadHomeAgentId = isHomeAgentSessionId(body.taskId)
-					? (parseHomeAgentSessionId(body.taskId)?.agentId ?? null)
-					: null;
+				const reloadHomeAgentId = resolveHomeAgentId(body.taskId);
 				if (!summary && reloadHomeAgentId === "pi") {
 					const piLaunchConfig = resolvePiLaunchConfig({});
 					summary = await piService.startTaskSession({

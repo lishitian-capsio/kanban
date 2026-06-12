@@ -148,7 +148,7 @@ function buildOpenCodePluginContent(
   if (globalThis.__kanbanOpencodePluginV3) return {};
   globalThis.__kanbanOpencodePluginV3 = true;
 
-  if (!process?.env?.KANBAN_HOOK_TASK_ID) return {};
+  if (!process?.env?.KANBAN_SESSION_TASK_ID) return {};
 
   let currentState = "idle";
   let rootSessionID = null;

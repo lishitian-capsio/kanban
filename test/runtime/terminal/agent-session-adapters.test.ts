@@ -93,8 +93,8 @@ describe("prepareAgentLaunch hook strategies", () => {
 			workspaceId: "workspace-1",
 		});
 
-		expect(launch.env.KANBAN_HOOK_TASK_ID).toBe("task-1");
-		expect(launch.env.KANBAN_HOOK_WORKSPACE_ID).toBe("workspace-1");
+		expect(launch.env.KANBAN_SESSION_TASK_ID).toBe("task-1");
+		expect(launch.env.KANBAN_SESSION_WORKSPACE_ID).toBe("workspace-1");
 
 		const launchCommand = [launch.binary ?? "", ...launch.args].join(" ");
 		expect(launchCommand).toContain("codex");
@@ -321,8 +321,8 @@ describe("prepareAgentLaunch hook strategies", () => {
 			workspaceId: "workspace-1",
 		});
 
-		expect(launch.env.KANBAN_HOOK_TASK_ID).toBe("task-1");
-		expect(launch.env.KANBAN_HOOK_WORKSPACE_ID).toBe("workspace-1");
+		expect(launch.env.KANBAN_SESSION_TASK_ID).toBe("task-1");
+		expect(launch.env.KANBAN_SESSION_WORKSPACE_ID).toBe("workspace-1");
 
 		const settingsArgIndex = launch.args.indexOf("--settings");
 		expect(settingsArgIndex).toBeGreaterThanOrEqual(0);
@@ -366,8 +366,8 @@ describe("prepareAgentLaunch hook strategies", () => {
 			workspaceId: "workspace-1",
 		});
 
-		expect(launch.env.KANBAN_HOOK_TASK_ID).toBe("task-kiro-1");
-		expect(launch.env.KANBAN_HOOK_WORKSPACE_ID).toBe("workspace-1");
+		expect(launch.env.KANBAN_SESSION_TASK_ID).toBe("task-kiro-1");
+		expect(launch.env.KANBAN_SESSION_WORKSPACE_ID).toBe("workspace-1");
 		expect(launch.args).toContain("--agent");
 		expect(launch.args[launch.args.indexOf("--agent") + 1]).toBe("kanban");
 		expect(launch.args).toContain("--trust-all-tools");

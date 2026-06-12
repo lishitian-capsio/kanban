@@ -6,6 +6,7 @@ import {
 	isHomeAgentSessionId,
 	isHomeAgentSessionIdForWorkspace,
 	parseHomeAgentSessionId,
+	resolveHomeAgentId,
 } from "../../../src/core/home-agent-session";
 
 describe("home agent session id", () => {
@@ -81,6 +82,28 @@ describe("home agent session id", () => {
 
 		it("does not match a different workspace", () => {
 			expect(isHomeAgentSessionIdForWorkspace("__home_agent__:workspace-2:pi", "workspace-1")).toBe(false);
+		});
+	});
+
+	describe("resolveHomeAgentId", () => {
+		it("returns the agent encoded in a legacy three-segment id", () => {
+			expect(resolveHomeAgentId("__home_agent__:workspace-1:claude")).toBe("claude");
+		});
+
+		it("returns the agent (not the thread) for a four-segment threaded id", () => {
+			expect(resolveHomeAgentId("__home_agent__:workspace-1:claude:thread-2")).toBe("claude");
+		});
+
+		it("returns null for a non-home session id", () => {
+			expect(resolveHomeAgentId("4f1c2d3e-task-uuid")).toBeNull();
+		});
+
+		it("returns null when the encoded agent is not a known runtime agent", () => {
+			expect(resolveHomeAgentId("__home_agent__:workspace-1:not-a-real-agent")).toBeNull();
+		});
+
+		it("returns null when the id has no agent segment", () => {
+			expect(resolveHomeAgentId("__home_agent__:workspace-1")).toBeNull();
 		});
 	});
 });

@@ -101,8 +101,8 @@ Generated hook files are written through idempotent text writes. Files only upda
 
 When hook context is available, launch wiring injects:
 
-1. `KANBAN_HOOK_TASK_ID`
-2. `KANBAN_HOOK_WORKSPACE_ID`
+1. `KANBAN_SESSION_TASK_ID` (purpose-neutral: the session/task id the process belongs to; also consumed by the task-creation path to derive a new task's default agent)
+2. `KANBAN_SESSION_WORKSPACE_ID`
 3. `KANBAN_HOOK_PORT`
 
 These are required by `kanban hooks ingest` to route a hook event to the correct session and runtime process.

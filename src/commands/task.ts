@@ -10,6 +10,7 @@ import type {
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
 import { runtimeAgentIdSchema, runtimeReasoningEffortSchema } from "../core/api-contract";
+import { resolveCreateTaskAgentId } from "../core/default-task-agent";
 import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import {
 	addTaskDependency,
@@ -23,6 +24,7 @@ import {
 	updateTask,
 } from "../core/task-board-mutations";
 import { mutateWorkspaceState } from "../state/workspace-state";
+import { KANBAN_SESSION_TASK_ID_ENV } from "../terminal/hook-runtime-context";
 import {
 	createRuntimeTrpcClient,
 	ensureRuntimeWorkspace,
@@ -1069,6 +1071,17 @@ export function registerTaskCommand(program: Command): void {
 				model?: string;
 				reasoningEffort?: string;
 			}) => {
+				// Resolve the new task's default agent at the CLI boundary so `createTask`
+				// stays env-free. When no explicit `--agent-id` is given, fall back to the
+				// agent of the calling session: Kanban injects KANBAN_SESSION_TASK_ID into
+				// every agent subprocess, so a task created by an agent chatting in a home
+				// thread defaults to that same agent. See resolveCreateTaskAgentId for the
+				// precedence (explicit > calling home agent > workspace default at start).
+				const callerSessionId = process.env[KANBAN_SESSION_TASK_ID_ENV]?.trim() || undefined;
+				const resolvedAgentId = resolveCreateTaskAgentId({
+					explicitAgentId: parseAgentId(options.agentId),
+					callerSessionId,
+				});
 				await runTaskCommand(
 					async () =>
 						await createTask({
@@ -1080,7 +1093,7 @@ export function registerTaskCommand(program: Command): void {
 							startInPlanMode: parseOptionalBooleanOption(options.startInPlanMode, "--start-in-plan-mode"),
 							autoReviewEnabled: parseOptionalBooleanOption(options.autoReviewEnabled, "--auto-review-enabled"),
 							autoReviewMode: options.autoReviewMode,
-							agentId: parseAgentId(options.agentId) ?? undefined,
+							agentId: resolvedAgentId,
 							agentSettings: buildTaskAgentSettingsForCreate({
 								providerId: parseOptionalStringOrDefault(options.provider) ?? undefined,
 								modelId: parseOptionalStringOrDefault(options.model) ?? undefined,

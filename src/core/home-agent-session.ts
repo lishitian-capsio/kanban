@@ -1,4 +1,4 @@
-import type { RuntimeAgentId } from "./api-contract";
+import { type RuntimeAgentId, runtimeAgentIdSchema } from "./api-contract";
 
 // The home sidebar agent panel is not backed by a real task card.
 // We mint a synthetic home agent session id so the existing task-scoped
@@ -72,4 +72,21 @@ export function parseHomeAgentSessionId(sessionId: string): HomeAgentSessionPart
 		agentId,
 		threadId: threadId || DEFAULT_HOME_THREAD_ID,
 	};
+}
+
+/**
+ * Resolve the runtime agent bound to a home agent session id, or `null` when the
+ * id is not a home session id or its encoded agent is not a known runtime agent.
+ *
+ * Shared by the session-start path (which agent runtime to launch) and the
+ * task-creation path (a task created from a home chat should default to that
+ * chat's agent). Both reuse the positional {@link parseHomeAgentSessionId}
+ * parser rather than re-deriving the agent segment.
+ */
+export function resolveHomeAgentId(sessionId: string): RuntimeAgentId | null {
+	const parsed = parseHomeAgentSessionId(sessionId);
+	if (!parsed) {
+		return null;
+	}
+	return runtimeAgentIdSchema.safeParse(parsed.agentId).data ?? null;
 }
