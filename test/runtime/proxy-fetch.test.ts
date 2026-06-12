@@ -65,6 +65,21 @@ describe("proxy-fetch interceptor", () => {
 		expectDirect(lastInit(fake));
 	});
 
+	it("connects directly to a host matched by a re: NO_PROXY regex (mainland MaaS endpoint)", async () => {
+		// Regression: mainland provider endpoints were forced through an overseas
+		// proxy that can't reach them, making /models discovery fail and retry-flood.
+		setRuntimeProxyState({
+			enabled: true,
+			proxyUrl: PROXY_URL,
+			noProxy: "localhost,127.0.0.1,re:\\.aliyuncs\\.com$",
+		});
+		await globalThis.fetch("https://token-plan.cn-beijing.maas.aliyuncs.com/v1/models");
+		expectDirect(lastInit(fake));
+		// A non-matching external host still goes through the proxy.
+		await globalThis.fetch("https://api.openai.com/v1/models");
+		expectProxied(lastInit(fake), PROXY_URL);
+	});
+
 	it("never proxies loopback self-communication", async () => {
 		setRuntimeProxyState({ enabled: true, proxyUrl: PROXY_URL, noProxy: "" });
 		await globalThis.fetch("http://127.0.0.1:3484/trpc/health");

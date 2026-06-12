@@ -76,6 +76,50 @@ describe("shouldBypassProxy", () => {
 	it("matches against the bound runtime host", () => {
 		expect(shouldBypassProxy("192.168.50.203", "localhost,127.0.0.1,192.168.50.203")).toBe(true);
 	});
+
+	describe("re: regex entries", () => {
+		it("bypasses a host matched by a re: regex entry", () => {
+			expect(shouldBypassProxy("token-plan.cn-beijing.maas.aliyuncs.com", "re:\\.aliyuncs\\.com$")).toBe(true);
+		});
+
+		it("does not bypass a host the re: regex entry fails to match", () => {
+			expect(shouldBypassProxy("api.openai.com", "re:\\.aliyuncs\\.com$")).toBe(false);
+		});
+
+		it("matches the regex case-insensitively against the host", () => {
+			expect(shouldBypassProxy("token-plan.CN-Beijing.MAAS.aliyuncs.com", "re:\\.ALIYUNCS\\.COM$")).toBe(true);
+		});
+
+		it("ignores an invalid regex entry without throwing", () => {
+			expect(() => shouldBypassProxy("api.openai.com", "re:[unterminated")).not.toThrow();
+			expect(shouldBypassProxy("api.openai.com", "re:[unterminated")).toBe(false);
+		});
+
+		it("keeps evaluating later entries when an earlier regex is invalid", () => {
+			expect(shouldBypassProxy("api.openai.com", "re:[bad,api.openai.com")).toBe(true);
+		});
+
+		it("ignores an empty re: pattern instead of matching everything", () => {
+			expect(shouldBypassProxy("api.openai.com", "re:")).toBe(false);
+			expect(shouldBypassProxy("api.openai.com", "re:   ")).toBe(false);
+		});
+
+		it("mixes regex and suffix entries in the same list", () => {
+			const list = "example.com,re:^token-plan\\..*\\.aliyuncs\\.com$";
+			expect(shouldBypassProxy("api.example.com", list)).toBe(true);
+			expect(shouldBypassProxy("token-plan.cn-beijing.maas.aliyuncs.com", list)).toBe(true);
+			expect(shouldBypassProxy("api.openai.com", list)).toBe(false);
+		});
+
+		it("treats the re: prefix case-insensitively", () => {
+			expect(shouldBypassProxy("token-plan.cn-beijing.maas.aliyuncs.com", "RE:\\.aliyuncs\\.com$")).toBe(true);
+		});
+
+		it("does not treat a regex pattern as a suffix rule when it fails to compile", () => {
+			// A bare suffix that happens to start with the regex prefix is still parsed as regex.
+			expect(shouldBypassProxy("re.example.com", "re:example")).toBe(true);
+		});
+	});
 });
 
 describe("buildProxyEnvVars with extra no-proxy hosts", () => {

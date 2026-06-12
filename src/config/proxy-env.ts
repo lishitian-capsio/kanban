@@ -44,11 +44,30 @@ export function mergeNoProxyEntries(existing: string | null | undefined, additio
 	return result.join(",");
 }
 
+// Prefix marking a no-proxy entry as a JavaScript regular expression rather than
+// an equality/subdomain-suffix host rule. Matched case-insensitively.
+const REGEX_NO_PROXY_PREFIX = "re:";
+
+/**
+ * If `entry` is a `re:`-prefixed regex rule, returns its (trimmed) pattern body
+ * — possibly empty. Returns `null` for ordinary equality/suffix entries. The
+ * prefix is recognized case-insensitively; the pattern body keeps its original
+ * case so character classes like `\d` vs `\D` are not corrupted.
+ */
+function parseRegexNoProxyEntry(trimmedEntry: string): string | null {
+	if (trimmedEntry.length < REGEX_NO_PROXY_PREFIX.length) return null;
+	const prefix = trimmedEntry.slice(0, REGEX_NO_PROXY_PREFIX.length).toLowerCase();
+	if (prefix !== REGEX_NO_PROXY_PREFIX) return null;
+	return trimmedEntry.slice(REGEX_NO_PROXY_PREFIX.length).trim();
+}
+
 /**
  * Decides whether a request to `host` should bypass the outbound proxy,
  * following NO_PROXY conventions. Loopback hosts always bypass. A `*` entry
- * bypasses everything. Otherwise an entry matches when the host equals it or
- * is a subdomain of it (boundary-aware, leading dot tolerated), all
+ * bypasses everything. A `re:<pattern>` entry bypasses when the case-insensitive
+ * regex matches the host (an invalid or empty pattern is skipped safely, never
+ * throwing and never matching). Any other entry matches when the host equals it
+ * or is a subdomain of it (boundary-aware, leading dot tolerated), all
  * case-insensitively. `host` may carry IPv6 brackets (as URL.hostname does).
  */
 export function shouldBypassProxy(host: string, noProxyList: string | null | undefined): boolean {
@@ -59,8 +78,21 @@ export function shouldBypassProxy(host: string, noProxyList: string | null | und
 	if (!normalizedHost) return true;
 	if ((LOOPBACK_NO_PROXY_HOSTS as readonly string[]).includes(normalizedHost)) return true;
 	for (const rawEntry of (noProxyList ?? "").split(",")) {
-		const entry = rawEntry.trim().toLowerCase();
-		if (!entry) continue;
+		const trimmed = rawEntry.trim();
+		if (!trimmed) continue;
+		const regexPattern = parseRegexNoProxyEntry(trimmed);
+		if (regexPattern !== null) {
+			if (!regexPattern) continue;
+			let regex: RegExp | null = null;
+			try {
+				regex = new RegExp(regexPattern, "i");
+			} catch {
+				regex = null;
+			}
+			if (regex?.test(normalizedHost)) return true;
+			continue;
+		}
+		const entry = trimmed.toLowerCase();
 		if (entry === "*") return true;
 		const suffix = entry.replace(/^\./, "").replace(/^\[|\]$/g, "");
 		if (!suffix) continue;

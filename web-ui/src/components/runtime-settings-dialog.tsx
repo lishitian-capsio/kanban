@@ -46,8 +46,8 @@ import { useLayoutCustomizations } from "@/resize/layout-customizations";
 import { openFileOnHost } from "@/runtime/runtime-config-query";
 import type {
 	RuntimeAgentId,
-	RuntimeKanbanMcpServerAuthStatus,
 	RuntimeConfigResponse,
+	RuntimeKanbanMcpServerAuthStatus,
 	RuntimeProjectShortcut,
 } from "@/runtime/types";
 import { useRuntimeConfig } from "@/runtime/use-runtime-config";
@@ -961,17 +961,28 @@ export function RuntimeSettingsDialog({
 								</div>
 							</div>
 							<div>
-								<label className="block text-[12px] text-text-secondary mb-1">No Proxy (optional, comma-separated)</label>
+								<label className="block text-[12px] text-text-secondary mb-1">
+									No Proxy (optional, comma-separated)
+								</label>
 								<input
 									value={noProxy}
 									onChange={(event) => setNoProxy(event.target.value)}
-									placeholder="localhost,127.0.0.1"
+									placeholder="localhost,127.0.0.1,re:\.aliyuncs\.com$"
 									disabled={controlsDisabled}
 									className="h-8 w-full rounded-md border border-border bg-surface-2 px-2.5 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none disabled:opacity-40"
 								/>
+								<p className="text-text-tertiary text-[12px] mt-1 mb-0">
+									Hosts that bypass the proxy and connect directly. Each entry is an exact host, a domain
+									suffix (<code className="text-text-secondary">example.com</code> also matches its
+									subdomains), or a regex prefixed with <code className="text-text-secondary">re:</code>{" "}
+									matched against the host (e.g.{" "}
+									<code className="text-text-secondary">{"re:\\.aliyuncs\\.com$"}</code> for mainland
+									endpoints).
+								</p>
 							</div>
 							<p className="text-text-tertiary text-[12px] m-0">
-								Changes apply to newly started agent sessions.
+								Proxy and direct-connect changes apply immediately to in-app requests and to newly started agent
+								sessions.
 							</p>
 						</div>
 					</div>
