@@ -116,7 +116,7 @@ describe("prepareAgentLaunch hook strategies", () => {
 		expect(launchCommand).not.toContain("codex-wrapper");
 		expect(launchCommand).not.toContain("notify=");
 
-		const wrapperPath = join(homedir(), ".cline", "kanban", "hooks", "codex", "codex-wrapper.mjs");
+		const wrapperPath = join(homedir(), ".kanban", "hooks", "codex", "codex-wrapper.mjs");
 		expect(existsSync(wrapperPath)).toBe(false);
 	});
 
@@ -199,7 +199,7 @@ describe("prepareAgentLaunch hook strategies", () => {
 			workspaceId: "workspace-1",
 		});
 
-		const settingsPath = join(homedir(), ".cline", "kanban", "hooks", "claude", "settings.json");
+		const settingsPath = join(homedir(), ".kanban", "hooks", "claude", "settings.json");
 		const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
 			hooks?: Record<string, unknown>;
 		};
@@ -221,15 +221,73 @@ describe("prepareAgentLaunch hook strategies", () => {
 			workspaceId: "workspace-1",
 		});
 
-		const settingsPath = join(homedir(), ".cline", "kanban", "hooks", "gemini", "settings.json");
+		const settingsPath = join(homedir(), ".kanban", "hooks", "gemini", "settings.json");
 		const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
 			hooks?: Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
 		};
 		const afterToolCommand = settings.hooks?.AfterTool?.[0]?.hooks?.[0]?.command;
 		expect(afterToolCommand).toContain("hooks");
 		expect(afterToolCommand).toContain("gemini-hook");
-		const hookScriptPath = join(homedir(), ".cline", "kanban", "hooks", "gemini", "gemini-hook.mjs");
+		const hookScriptPath = join(homedir(), ".kanban", "hooks", "gemini", "gemini-hook.mjs");
 		expect(existsSync(hookScriptPath)).toBe(false);
+	});
+
+	it("writes Qwen settings with Stop mapped to to_review and injects the system-settings env var", async () => {
+		setupTempHome();
+		const launch = await prepareAgentLaunch({
+			taskId: "task-1",
+			agentId: "qwen",
+			binary: "qwen",
+			args: [],
+			cwd: "/tmp",
+			prompt: "",
+			workspaceId: "workspace-1",
+		});
+
+		const settingsPath = join(homedir(), ".kanban", "hooks", "qwen", "settings.json");
+		expect(launch.env.QWEN_CODE_SYSTEM_SETTINGS_PATH).toBe(settingsPath);
+		const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+			hooks?: Record<string, Array<{ matcher?: string; hooks?: Array<{ command?: string }> }>>;
+		};
+		const stopCommand = settings.hooks?.Stop?.[0]?.hooks?.[0]?.command;
+		expect(stopCommand).toContain("hooks");
+		expect(stopCommand).toContain("to_review");
+		expect(stopCommand).toContain("qwen");
+		expect(settings.hooks?.PreToolUse).toBeDefined();
+		expect(settings.hooks?.PostToolUse).toBeDefined();
+		expect(settings.hooks?.PostToolUseFailure).toBeDefined();
+		expect(settings.hooks?.PermissionRequest).toBeDefined();
+		const postToolCommand = settings.hooks?.PostToolUse?.[0]?.hooks?.[0]?.command;
+		expect(postToolCommand).toContain("to_in_progress");
+	});
+
+	it("seeds the Qwen prompt with the interactive `-i` flag", async () => {
+		setupTempHome();
+		const launch = await prepareAgentLaunch({
+			taskId: "task-qwen-prompt",
+			agentId: "qwen",
+			binary: "qwen",
+			args: [],
+			cwd: "/tmp",
+			prompt: "do the thing",
+		});
+		const promptIndex = launch.args.indexOf("-i");
+		expect(promptIndex).toBeGreaterThan(-1);
+		expect(launch.args[promptIndex + 1]).toBe("do the thing");
+	});
+
+	it("enables Qwen plan mode with --approval-mode=plan", async () => {
+		setupTempHome();
+		const launch = await prepareAgentLaunch({
+			taskId: "task-qwen-plan",
+			agentId: "qwen",
+			binary: "qwen",
+			args: [],
+			cwd: "/tmp",
+			prompt: "",
+			startInPlanMode: true,
+		});
+		expect(launch.args).toContain("--approval-mode=plan");
 	});
 
 	it("writes OpenCode plugin with root-session filtering and permission hooks", async () => {
@@ -244,7 +302,7 @@ describe("prepareAgentLaunch hook strategies", () => {
 			workspaceId: "workspace-1",
 		});
 
-		const pluginPath = join(homedir(), ".cline", "kanban", "hooks", "opencode", "kanban.js");
+		const pluginPath = join(homedir(), ".kanban", "hooks", "opencode", "kanban.js");
 		const plugin = readFileSync(pluginPath, "utf8");
 		expect(plugin).toContain("parentID");
 		expect(plugin).toContain('"permission.ask"');
@@ -494,6 +552,17 @@ describe("prepareAgentLaunch hook strategies", () => {
 		});
 		expect(geminiLaunch.args).toEqual(expect.arrayContaining(["--resume", "latest"]));
 
+		const qwenLaunch = await prepareAgentLaunch({
+			taskId: "task-qwen",
+			agentId: "qwen",
+			binary: "qwen",
+			args: [],
+			cwd: "/tmp",
+			prompt: "",
+			resumeFromTrash: true,
+		});
+		expect(qwenLaunch.args).toEqual(expect.arrayContaining(["--resume", "latest"]));
+
 		const opencodeLaunch = await prepareAgentLaunch({
 			taskId: "task-opencode",
 			agentId: "opencode",
@@ -674,6 +743,17 @@ describe("prepareAgentLaunch hook strategies", () => {
 			prompt: "",
 		});
 		expect(geminiLaunch.args).toContain("--yolo");
+
+		const qwenLaunch = await prepareAgentLaunch({
+			taskId: "task-qwen-auto",
+			agentId: "qwen",
+			binary: "qwen",
+			args: [],
+			autonomousModeEnabled: true,
+			cwd: "/tmp",
+			prompt: "",
+		});
+		expect(qwenLaunch.args).toContain("--yolo");
 
 		const kiroLaunch = await prepareAgentLaunch({
 			taskId: "task-kiro-auto",

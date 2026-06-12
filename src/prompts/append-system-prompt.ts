@@ -24,7 +24,15 @@ export interface RenderAppendSystemPromptOptions {
 	agentId?: RuntimeAgentId | null;
 }
 
-const APPEND_PROMPT_AGENT_IDS: readonly RuntimeAgentId[] = ["claude", "codex", "droid", "kiro", "gemini", "opencode"];
+const APPEND_PROMPT_AGENT_IDS: readonly RuntimeAgentId[] = [
+	"claude",
+	"codex",
+	"droid",
+	"kiro",
+	"gemini",
+	"qwen",
+	"opencode",
+];
 
 function isRuntimeAgentId(value: string): value is RuntimeAgentId {
 	return APPEND_PROMPT_AGENT_IDS.includes(value as RuntimeAgentId);
@@ -46,6 +54,8 @@ function renderLinearSetupGuidanceForAgent(agentId: RuntimeAgentId | null): stri
 			return "- If Linear MCP is not available in the current agent (OpenAI Codex), suggest running: `codex mcp add linear --url https://mcp.linear.app/mcp`";
 		case "gemini":
 			return "- If Linear MCP is not available in the current agent (Gemini CLI), suggest running: `gemini mcp add linear https://mcp.linear.app/mcp --transport http --scope user`";
+		case "qwen":
+			return "- If Linear MCP is not available in the current agent (Qwen Code), suggest running: `qwen mcp add linear https://mcp.linear.app/mcp --transport http --scope user`";
 		case "opencode":
 			return "- If Linear MCP is not available in the current agent (OpenCode), suggest running `opencode mcp add`, then use name `linear` and URL `https://mcp.linear.app/mcp`.";
 		case "droid":

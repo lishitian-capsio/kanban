@@ -784,6 +784,99 @@ const geminiAdapter: AgentSessionAdapter = {
 	},
 };
 
+// Qwen Code is a Gemini-CLI fork, so it shares Gemini's launch flags (`-i` to seed an
+// interactive prompt, `--yolo` for autonomous mode, `--resume latest`, `--approval-mode=plan`).
+// Its hook system, however, follows the Claude-Code convention (event names `Stop`,
+// `PreToolUse`, `PostToolUse`, `Notification`, ...) rather than Gemini's `BeforeTool`/
+// `AfterAgent` scheme, so the hook settings mirror the Claude adapter. The settings file is
+// injected via Qwen's `QWEN_CODE_SYSTEM_SETTINGS_PATH` system-settings env var (the fork's
+// analogue of `GEMINI_CLI_SYSTEM_SETTINGS_PATH`). The `Stop` hook firing `to_review` is the
+// turn boundary the session state machine uses to fold committed output into a transcript turn.
+const qwenAdapter: AgentSessionAdapter = {
+	async prepare(input) {
+		const args = [...input.args];
+		const env: Record<string, string | undefined> = {};
+
+		if (input.autonomousModeEnabled && !hasCliOption(args, "--yolo")) {
+			args.push("--yolo");
+		}
+
+		if (input.resumeFromTrash && !hasCliOption(args, "--resume")) {
+			args.push("--resume", "latest");
+		}
+
+		if (input.startInPlanMode) {
+			args.push("--approval-mode=plan");
+		}
+
+		const hooks = resolveHookContext(input);
+		if (hooks) {
+			const settingsPath = join(getHookAgentDirectory("qwen"), "settings.json");
+			const hooksSettings = {
+				hooks: {
+					Stop: [{ hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "qwen" }) }] }],
+					SubagentStop: [
+						{ hooks: [{ type: "command", command: buildHookCommand("activity", { source: "qwen" }) }] },
+					],
+					PreToolUse: [
+						{
+							matcher: "*",
+							hooks: [{ type: "command", command: buildHookCommand("activity", { source: "qwen" }) }],
+						},
+					],
+					PermissionRequest: [
+						{
+							matcher: "*",
+							hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "qwen" }) }],
+						},
+					],
+					PostToolUse: [
+						{
+							matcher: "*",
+							hooks: [{ type: "command", command: buildHookCommand("to_in_progress", { source: "qwen" }) }],
+						},
+					],
+					PostToolUseFailure: [
+						{
+							matcher: "*",
+							hooks: [{ type: "command", command: buildHookCommand("to_in_progress", { source: "qwen" }) }],
+						},
+					],
+					Notification: [
+						{
+							matcher: "permission_prompt",
+							hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "qwen" }) }],
+						},
+						{
+							matcher: "*",
+							hooks: [{ type: "command", command: buildHookCommand("activity", { source: "qwen" }) }],
+						},
+					],
+				},
+			};
+			await ensureTextFile(settingsPath, JSON.stringify(hooksSettings, null, 2));
+			Object.assign(
+				env,
+				createHookRuntimeEnv({
+					taskId: hooks.taskId,
+					workspaceId: hooks.workspaceId,
+				}),
+			);
+			env.QWEN_CODE_SYSTEM_SETTINGS_PATH = settingsPath;
+		}
+
+		const trimmed = input.prompt.trim();
+		if (trimmed) {
+			args.push("-i", trimmed);
+		}
+
+		return {
+			args,
+			env,
+		};
+	},
+};
+
 async function resolveOpenCodeBaseConfigPath(explicitPath: string | undefined): Promise<string | null> {
 	const candidates = getOpenCodeConfigPathCandidates({ explicitPath });
 	for (const candidate of candidates) {
@@ -1278,6 +1371,7 @@ const ADAPTERS: Record<RuntimeAgentId, AgentSessionAdapter> = {
 	claude: claudeAdapter,
 	codex: codexAdapter,
 	gemini: geminiAdapter,
+	qwen: qwenAdapter,
 	opencode: opencodeAdapter,
 	droid: droidAdapter,
 	kiro: kiroAdapter,
