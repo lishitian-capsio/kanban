@@ -32,6 +32,17 @@ export interface UpdateVaultDocumentInput {
 	frontmatter?: Record<string, RuntimeVaultFrontmatterValue>;
 }
 
+export interface ImportVaultDocumentInput {
+	/** Caller-supplied id to preserve (no new id is minted). */
+	id: string;
+	type: string;
+	title: string;
+	body?: string;
+	frontmatter?: Record<string, RuntimeVaultFrontmatterValue>;
+	createdAt: number;
+	updatedAt: number;
+}
+
 interface ScannedDocument {
 	doc: VaultDocument;
 	absolutePath: string;
@@ -90,6 +101,28 @@ export class VaultDocumentStore {
 				[UPDATED_FIELD]: timestamp,
 			};
 			const doc: VaultDocument = { id, type: input.type, frontmatter, body: input.body ?? "" };
+			const relativePath = await this.writeDocument(doc);
+			return toRuntimeDocument(doc, relativePath);
+		});
+	}
+
+	/**
+	 * Write a document with a caller-supplied id and timestamps rather than minting
+	 * new ones — used by migrations that must preserve a record's original identity
+	 * and creation time. Serializes deterministically and slugs the filename like
+	 * {@link create}; overwrites any existing file for the same slug+id.
+	 */
+	async importDocument(input: ImportVaultDocumentInput): Promise<RuntimeVaultDocument> {
+		return await this.withLock(async () => {
+			const definition = getVaultTypeDefinition(input.type);
+			const frontmatter: Record<string, RuntimeVaultFrontmatterValue> = {
+				...definition?.defaultFrontmatter,
+				...input.frontmatter,
+				[TITLE_FIELD]: input.title,
+				[CREATED_FIELD]: input.createdAt,
+				[UPDATED_FIELD]: input.updatedAt,
+			};
+			const doc: VaultDocument = { id: input.id, type: input.type, frontmatter, body: input.body ?? "" };
 			const relativePath = await this.writeDocument(doc);
 			return toRuntimeDocument(doc, relativePath);
 		});

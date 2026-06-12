@@ -9,10 +9,12 @@ import {
 	type RuntimeBoardData,
 	type RuntimeGitRepositoryInfo,
 	type RuntimeHomeChatThreadsData,
+	type RuntimeRequirementItem,
 	type RuntimeRequirementsData,
 	type RuntimeRequirementTaskLinksData,
 	type RuntimeRequirementVersionsData,
 	type RuntimeTaskSessionSummary,
+	type RuntimeVaultDocument,
 	type RuntimeWorkspaceStateResponse,
 	type RuntimeWorkspaceStateSaveRequest,
 	runtimeHomeChatThreadsDataSchema,
@@ -26,6 +28,7 @@ import { createGitProcessEnv } from "../core/git-process-env";
 import { diffRequirementVersions } from "../core/requirement-versions";
 import { updateTaskDependencies } from "../core/task-board-mutations";
 import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
+import { VaultDocumentStore } from "../vault/vault-document-store";
 import {
 	readRequirementsSharded,
 	readRequirementTaskLinksSharded,
@@ -34,6 +37,12 @@ import {
 	writeRequirementTaskLinksSharded,
 	writeRequirementVersionsSharded,
 } from "./requirement-store";
+import {
+	collectRelatedTasks,
+	REQUIREMENT_DOC_TYPE,
+	requirementItemToVaultImport,
+	vaultDocumentToRequirementItem,
+} from "./requirement-vault-projection";
 import { boardNeedsSharding, convertBoardToShards, loadShardedBoard, saveShardedBoard } from "./task-shard-store";
 
 const RUNTIME_HOME_DIR = ".kanban";
@@ -51,6 +60,11 @@ const REQUIREMENT_TASK_LINKS_FILENAME = "requirement-task-links.json";
 const REQUIREMENTS_SHARD_DIRNAME = "requirements";
 const REQUIREMENT_VERSIONS_SHARD_DIRNAME = "requirement-versions";
 const REQUIREMENT_TASK_LINKS_SHARD_DIRNAME = "requirement-task-links";
+// The vault's readable-document channel: `<repo>/.kanban/files/docs/`. Requirements
+// migrate into `docs/<REQUIREMENT_DOC_TYPE>/` (repo-scoped, like the file library),
+// not the per-workspace requirement shards above.
+const FILES_DIRNAME = "files";
+const DOCS_DIRNAME = "docs";
 const HOME_THREADS_FILENAME = "threads.json";
 const META_FILENAME = "meta.json";
 const RUNTIME_HOME_GITIGNORE_FILENAME = ".gitignore";
@@ -276,6 +290,11 @@ function getWorkspaceRequirementTaskLinksShardDir(repoPath: string, workspaceId:
 	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_TASK_LINKS_SHARD_DIRNAME);
 }
 
+/** Repo-scoped vault directory holding migrated requirement documents (`.md`). */
+function getRequirementDocsDir(repoPath: string): string {
+	return join(getRuntimeHomePath(repoPath), FILES_DIRNAME, DOCS_DIRNAME, REQUIREMENT_DOC_TYPE);
+}
+
 function getWorkspaceHomeThreadsPath(repoPath: string, workspaceId: string): string {
 	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), HOME_THREADS_FILENAME);
 }
@@ -447,7 +466,8 @@ async function readWorkspaceSessions(
 	return parsePersistedStateFile(sessionsPath, SESSIONS_FILENAME, rawSessions, workspaceSessionsSchema, {});
 }
 
-async function readWorkspaceRequirements(repoPath: string, workspaceId: string): Promise<RuntimeRequirementsData> {
+/** Read requirements from the shard channel (or pre-shard single-file fallback). */
+async function readRequirementShardsOrFiles(repoPath: string, workspaceId: string): Promise<RuntimeRequirementsData> {
 	const shardDir = getWorkspaceRequirementsShardDir(repoPath, workspaceId);
 	if (await pathExists(shardDir)) {
 		return await readRequirementsSharded(shardDir);
@@ -466,6 +486,54 @@ async function readWorkspaceRequirements(repoPath: string, workspaceId: string):
 			items: [],
 		},
 	);
+}
+
+/**
+ * Read the requirement vault documents (`docs/requirement/*.md`), projected back
+ * onto the legacy `RuntimeRequirementItem` contract. Empty until the requirements
+ * have been migrated (see {@link migrateRequirementsToVaultDocs}).
+ */
+async function readRequirementVaultDocuments(repoPath: string): Promise<RuntimeVaultDocument[]> {
+	if (!(await pathExists(getRequirementDocsDir(repoPath)))) {
+		return [];
+	}
+	return await new VaultDocumentStore(repoPath).list(REQUIREMENT_DOC_TYPE);
+}
+
+/**
+ * Requirements for the legacy read contract, unioning the migrated vault documents
+ * with any shard/single-file requirements still written by the not-yet-retired
+ * write path. A **live shard edit wins** over its frozen migrated document on id
+ * collision (so an edit through the old path stays visible, and `saveWorkspaceState`
+ * diffs against fresh state rather than a stale doc); migrated documents fill in
+ * every requirement the shard channel no longer carries, so nothing is dropped.
+ */
+async function readWorkspaceRequirements(repoPath: string, workspaceId: string): Promise<RuntimeRequirementsData> {
+	const baseline = await readRequirementShardsOrFiles(repoPath, workspaceId);
+	const docs = await readRequirementVaultDocuments(repoPath);
+	if (docs.length === 0) {
+		return baseline;
+	}
+	const ordered = [...docs].sort(
+		(left, right) => left.createdAt - right.createdAt || compareStrings(left.id, right.id),
+	);
+	const items = new Map<string, RuntimeRequirementItem>();
+	for (const [index, doc] of ordered.entries()) {
+		items.set(doc.id, vaultDocumentToRequirementItem(doc, index));
+	}
+	let appendOrder = ordered.length;
+	for (const shardItem of baseline.items) {
+		const existing = items.get(shardItem.id);
+		items.set(shardItem.id, { ...shardItem, order: existing ? existing.order : appendOrder++ });
+	}
+	const merged = [...items.values()].sort(
+		(left, right) => left.order - right.order || compareStrings(left.id, right.id),
+	);
+	return { items: merged };
+}
+
+function compareStrings(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
 }
 
 async function readWorkspaceHomeThreads(repoPath: string, workspaceId: string): Promise<RuntimeHomeChatThreadsData> {
@@ -537,7 +605,13 @@ export async function loadWorkspaceRequirementVersions(cwd: string): Promise<Run
 	return await readWorkspaceRequirementVersions(context.repoPath, context.workspaceId);
 }
 
-async function readWorkspaceRequirementTaskLinks(
+/**
+ * Read task links from the shard channel (or pre-shard single-file fallback). The
+ * task-link shard survives the vault migration (retired in B6), so this stays the
+ * source of truth for the link aggregate during the transition — the migrated
+ * documents only mirror the associations into each requirement's `related_tasks`.
+ */
+async function readRequirementTaskLinkShardsOrFiles(
 	repoPath: string,
 	workspaceId: string,
 ): Promise<RuntimeRequirementTaskLinksData> {
@@ -557,6 +631,13 @@ async function readWorkspaceRequirementTaskLinks(
 		runtimeRequirementTaskLinksDataSchema,
 		{ links: [] },
 	);
+}
+
+async function readWorkspaceRequirementTaskLinks(
+	repoPath: string,
+	workspaceId: string,
+): Promise<RuntimeRequirementTaskLinksData> {
+	return await readRequirementTaskLinkShardsOrFiles(repoPath, workspaceId);
 }
 
 export async function loadWorkspaceRequirementTaskLinks(cwd: string): Promise<RuntimeRequirementTaskLinksData> {
@@ -783,6 +864,52 @@ async function migrateRequirementsToShards(repoPath: string, workspaceId: string
 }
 
 /**
+ * One-time, idempotent conversion of a workspace's requirement shards (or their
+ * pre-shard single-file / legacy-home fallback sources) into vault documents at
+ * `<repo>/.kanban/files/docs/requirement/<slug>-<id>.md`. Runs after
+ * {@link migrateRequirementsToShards}, so single files are already sharded by the
+ * time we read. Each requirement becomes one markdown doc — description → body,
+ * delivery status → PROBLEM state, links → `related_tasks` — preserving the
+ * original id and timestamps. Only the `requirements/` shard directory is deleted
+ * here — the requirement content now lives in the vault. The `requirement-versions/`
+ * and `requirement-task-links/` shards are left untouched (still served by the
+ * not-yet-retired version/link subsystems); they are removed in the B6 retirement
+ * alongside that code. The `docs/requirement/` guard makes re-runs a no-op.
+ */
+async function migrateRequirementsToVaultDocs(repoPath: string, workspaceId: string): Promise<void> {
+	if (await pathExists(getRequirementDocsDir(repoPath))) {
+		return;
+	}
+	// Cheap source-presence precheck: skip the lock when there is nothing to migrate.
+	const sourcePaths = [
+		getWorkspaceRequirementsShardDir(repoPath, workspaceId),
+		getWorkspaceRequirementsPath(repoPath, workspaceId),
+		getLegacyWorkspaceFilePath(workspaceId, REQUIREMENTS_FILENAME),
+	];
+	const present = await Promise.all(sourcePaths.map((path) => pathExists(path)));
+	if (!present.some(Boolean)) {
+		return;
+	}
+	await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
+		if (await pathExists(getRequirementDocsDir(repoPath))) {
+			return;
+		}
+		const requirements = await readRequirementShardsOrFiles(repoPath, workspaceId);
+		if (requirements.items.length === 0) {
+			return;
+		}
+		const links = (await readRequirementTaskLinkShardsOrFiles(repoPath, workspaceId)).links;
+		const store = new VaultDocumentStore(repoPath);
+		for (const item of requirements.items) {
+			await store.importDocument(requirementItemToVaultImport(item, collectRelatedTasks(item, links)));
+		}
+		// The requirement content now lives as vault documents; drop only the
+		// requirements shard dir. Version + task-link shards are retired in B6.
+		await rm(getWorkspaceRequirementsShardDir(repoPath, workspaceId), { recursive: true, force: true });
+	});
+}
+
+/**
  * Write the `.gitignore` that draws the git boundary for a repo's `.kanban`:
  * task definitions + requirements are committed; runtime state, worktrees,
  * locks, and secrets are ignored. Never overwrites a user-edited file.
@@ -975,6 +1102,7 @@ async function prepareRepoRuntimeHome(repoPath: string, workspaceId: string): Pr
 	await migrateWorkspaceDataFromLegacyHome(repoPath, workspaceId);
 	await ensureRuntimeHomeGitignore(repoPath);
 	await migrateRequirementsToShards(repoPath, workspaceId);
+	await migrateRequirementsToVaultDocs(repoPath, workspaceId);
 	await migrateWorkspaceBoardToShards(repoPath, workspaceId);
 }
 

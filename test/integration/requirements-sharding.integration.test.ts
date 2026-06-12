@@ -134,8 +134,13 @@ describe.sequential("requirements sharding", () => {
 			const state = await loadWorkspaceState(repoPath);
 
 			expect(state.requirements.items.map((item) => item.id)).toEqual(["old"]);
-			expect(existsSync(join(workspaceDir, "requirements", "old.json"))).toBe(true);
+			// The single file is sharded, then the shard is consumed by the vault migration
+			// (prepareRepoRuntimeHome runs both): the requirement ends up as a vault doc and
+			// the single file is gone.
 			expect(existsSync(join(workspaceDir, "requirements.json"))).toBe(false);
+			expect(existsSync(join(repoPath, ".kanban", "files", "docs", "requirement", "requirement-old-old.md"))).toBe(
+				true,
+			);
 		});
 	});
 
@@ -152,8 +157,10 @@ describe.sequential("requirements sharding", () => {
 			const state = await loadWorkspaceState(repoPath);
 
 			expect(state.requirements.items.map((item) => item.id)).toEqual(["leg"]);
-			const workspaceDir = getWorkspaceDirectoryPath(repoPath, WORKSPACE_ID);
-			expect(existsSync(join(workspaceDir, "requirements", "leg.json"))).toBe(true);
+			// Copy-migrated to the repo, sharded, then crystallized into a vault doc.
+			expect(existsSync(join(repoPath, ".kanban", "files", "docs", "requirement", "requirement-leg-leg.md"))).toBe(
+				true,
+			);
 			// Legacy machine-home original is never moved or deleted.
 			expect(existsSync(join(legacyDir, "requirements.json"))).toBe(true);
 		});
