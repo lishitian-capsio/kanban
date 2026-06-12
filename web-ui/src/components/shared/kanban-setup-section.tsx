@@ -1,6 +1,6 @@
 import * as RadixCheckbox from "@radix-ui/react-checkbox";
-import { Check, Copy, ExternalLink, Pencil, Plus, RefreshCw, X } from "lucide-react";
-import { type ReactElement, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ExternalLink, Pencil, Plus, RefreshCw, X } from "lucide-react";
+import { type ReactElement, useMemo, useState } from "react";
 
 import {
 	buildKanbanAgentModelPickerOptions,
@@ -12,6 +12,7 @@ import {
 	type KanbanProviderDialogInitialValues,
 	type KanbanProviderDialogMode,
 } from "@/components/shared/kanban-add-provider-dialog";
+import { KanbanOauthSignInPanel } from "@/components/shared/kanban-oauth-signin-panel";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -24,30 +25,6 @@ import type { UseRuntimeSettingsKanbanMcpControllerResult } from "@/hooks/use-ru
 import { openFileOnHost } from "@/runtime/runtime-config-query";
 import type { RuntimeKanbanMcpServer, RuntimeReasoningEffort } from "@/runtime/types";
 import { formatPathForDisplay } from "@/utils/path-display";
-import { useCopyToClipboard } from "@/utils/react-use";
-
-function formatExpiry(value: string): string {
-	const trimmed = value.trim();
-	if (trimmed.length === 0) {
-		return trimmed;
-	}
-
-	if (!Number.isNaN(Number(value))) {
-		const ms = Number(trimmed) * 1000;
-		const date = new Date(ms);
-		if (!Number.isNaN(date.getTime())) {
-			return date.toLocaleString();
-		}
-		return trimmed;
-	}
-
-	const parsed = new Date(trimmed);
-	if (!Number.isNaN(parsed.getTime())) {
-		return parsed.toLocaleString();
-	}
-
-	return trimmed;
-}
 
 export function KanbanSetupSection({
 	controller,
@@ -55,7 +32,6 @@ export function KanbanSetupSection({
 	controlsDisabled,
 	workspaceId = null,
 	showMcpSettings = true,
-	accountSection = null,
 	onError,
 	onSaved,
 }: {
@@ -64,49 +40,12 @@ export function KanbanSetupSection({
 	controlsDisabled: boolean;
 	workspaceId?: string | null;
 	showMcpSettings?: boolean;
-	accountSection?: ReactNode;
 	onError?: (message: string | null) => void;
 	onSaved?: () => void;
 }): ReactElement {
 	const mcpControlsDisabled = controlsDisabled || (mcpController?.isSavingMcpSettings ?? false);
 	const [isAddProviderDialogOpen, setIsAddProviderDialogOpen] = useState(false);
 	const [providerDialogMode, setProviderDialogMode] = useState<KanbanProviderDialogMode>("add");
-	const [isDeviceCodeCopied, setIsDeviceCodeCopied] = useState(false);
-	const deviceCodeCopiedResetTimerRef = useRef<number | null>(null);
-	const [copiedDeviceCodeState, copyDeviceCode] = useCopyToClipboard();
-
-	useEffect(() => {
-		return () => {
-			if (deviceCodeCopiedResetTimerRef.current !== null) {
-				window.clearTimeout(deviceCodeCopiedResetTimerRef.current);
-				deviceCodeCopiedResetTimerRef.current = null;
-			}
-		};
-	}, []);
-
-	useEffect(() => {
-		setIsDeviceCodeCopied(false);
-	}, [controller.deviceAuthInfo?.userCode]);
-
-	useEffect(() => {
-		if (!copiedDeviceCodeState.value || copiedDeviceCodeState.value !== controller.deviceAuthInfo?.userCode) {
-			return;
-		}
-		if (copiedDeviceCodeState.error) {
-			onError?.("Could not copy code automatically. Please copy it manually.");
-			setIsDeviceCodeCopied(false);
-			return;
-		}
-		onError?.(null);
-		setIsDeviceCodeCopied(true);
-		if (deviceCodeCopiedResetTimerRef.current !== null) {
-			window.clearTimeout(deviceCodeCopiedResetTimerRef.current);
-		}
-		deviceCodeCopiedResetTimerRef.current = window.setTimeout(() => {
-			setIsDeviceCodeCopied(false);
-			deviceCodeCopiedResetTimerRef.current = null;
-		}, 2000);
-	}, [copiedDeviceCodeState, controller.deviceAuthInfo?.userCode, onError]);
 
 	const kanbanProviderOptions = useMemo((): SearchSelectOption[] => {
 		const items: SearchSelectOption[] = controller.providerCatalog.map((provider) => ({
@@ -209,18 +148,6 @@ export function KanbanSetupSection({
 		mcpController.setMcpServers((current) => current.filter((_, index) => index !== serverIndex));
 	};
 
-	const handleOauthLogin = () => {
-		void (async () => {
-			onError?.(null);
-			const result = await controller.runOauthLogin();
-			if (!result.ok) {
-				onError?.(result.message ?? "OAuth login failed.");
-				return;
-			}
-			onSaved?.();
-		})();
-	};
-
 	const handleMcpServerOauth = (serverName: string) => {
 		void (async () => {
 			if (!mcpController) {
@@ -257,12 +184,6 @@ export function KanbanSetupSection({
 			const message = error instanceof Error ? error.message : String(error);
 			onError?.(`Could not open file on host: ${message}`);
 		});
-	};
-
-	const handleCopyDeviceCode = (code: string) => {
-		setIsDeviceCodeCopied(false);
-		onError?.(null);
-		copyDeviceCode(code);
 	};
 
 	const handleRefreshProviderModels = () => {
@@ -484,82 +405,13 @@ export function KanbanSetupSection({
 						</div>
 					</div>
 				) : null}
-				{controller.isOauthProviderSelected ? (
-					<>
-						<p className="text-text-secondary text-[12px] mt-1 mb-0">
-							Status: {controller.oauthConfigured ? "Signed in" : "Not signed in"}
-						</p>
-						{controller.oauthAccountId ? (
-							<p className="text-text-secondary text-[12px] mt-1 mb-0">
-								Account ID: <span className="text-text-primary">{controller.oauthAccountId}</span>
-							</p>
-						) : null}
-						{controller.oauthExpiresAt ? (
-							<p className="text-text-secondary text-[12px] mt-1 mb-0">
-								Expiry: <span className="text-text-primary">{formatExpiry(controller.oauthExpiresAt)}</span>
-							</p>
-						) : null}
-						{controller.isRunningOauthLogin && controller.deviceAuthInfo ? (
-							<div className="mt-2 rounded-md border border-border bg-surface-2 p-3">
-								<p className="text-text-secondary text-[13px] font-medium mt-0 mb-2">Sign in to Kanban</p>
-								<ol className="list-decimal pl-4 text-[12px] text-text-primary m-0">
-									<li>
-										Go to this URL:{" "}
-										<a
-											href={controller.deviceAuthInfo.verificationUrl}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="break-all text-accent underline"
-										>
-											{controller.deviceAuthInfo.verificationUrl}
-										</a>
-									</li>
-									<li className="mt-2">
-										Enter this code:
-										<div className="mt-1 flex items-center gap-2">
-											<p className="text-text-primary text-[18px] font-mono font-bold tracking-wider m-0">
-												{controller.deviceAuthInfo.userCode}
-											</p>
-											<Button
-												variant="ghost"
-												size="sm"
-												icon={isDeviceCodeCopied ? <Check size={14} /> : <Copy size={14} />}
-												onClick={() => {
-													const userCode = controller.deviceAuthInfo?.userCode;
-													if (!userCode) {
-														return;
-													}
-													handleCopyDeviceCode(userCode);
-												}}
-												disabled={controlsDisabled || !controller.deviceAuthInfo}
-											>
-												{isDeviceCodeCopied ? "Copied" : "Copy"}
-											</Button>
-										</div>
-									</li>
-								</ol>
-							</div>
-						) : null}
-						<div className="mt-2">
-							<Button
-								variant="default"
-								size="sm"
-								disabled={controlsDisabled || controller.isRunningOauthLogin}
-								onClick={handleOauthLogin}
-							>
-								{controller.isRunningOauthLogin
-									? controller.deviceAuthInfo
-										? "Waiting for confirmation..."
-										: "Signing in..."
-									: controller.oauthConfigured
-										? `Sign in again with ${controller.managedOauthProvider ?? "OAuth"}`
-										: `Sign in with ${controller.managedOauthProvider ?? "OAuth"}`}
-							</Button>
-						</div>
-					</>
-				) : null}
+				<KanbanOauthSignInPanel
+					controller={controller}
+					controlsDisabled={controlsDisabled}
+					onError={onError}
+					onSaved={onSaved}
+				/>
 			</div>
-			{accountSection ? <div className="mt-4">{accountSection}</div> : null}
 
 			<div className="mt-4">
 				<p className="text-text-primary font-semibold text-[12px] mt-0 mb-2">Model</p>

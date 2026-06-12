@@ -9,11 +9,11 @@ import { getRuntimeAgentCatalogEntry, getRuntimeLaunchSupportedAgentCatalog } fr
 import { areRuntimeProjectShortcutsEqual } from "@runtime-shortcuts";
 import {
 	Bell,
-	Bot,
 	Check,
 	ChevronDown,
 	Circle,
 	CircleDot,
+	CircleUser,
 	ExternalLink,
 	FolderOpen,
 	GitCommit,
@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccountOrganizationSection } from "@/components/shared/account-organization-section";
-import { KanbanSetupSection } from "@/components/shared/kanban-setup-section";
+import { KanbanOauthSignInPanel } from "@/components/shared/kanban-oauth-signin-panel";
 import {
 	getRuntimeShortcutIconComponent,
 	getRuntimeShortcutPickerOption,
@@ -40,16 +40,10 @@ import { Dialog, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { TASK_GIT_BASE_REF_PROMPT_VARIABLE, type TaskGitAction } from "@/git-actions/build-task-git-action-prompt";
 import { useRuntimeSettingsKanbanController } from "@/hooks/use-runtime-settings-kanban-controller";
-import { useRuntimeSettingsKanbanMcpController } from "@/hooks/use-runtime-settings-kanban-mcp-controller";
 import { previewThemeId, readStoredThemeId, saveThemeId, THEME_GROUPS, THEMES, type ThemeId } from "@/hooks/use-theme";
 import { useLayoutCustomizations } from "@/resize/layout-customizations";
 import { openFileOnHost } from "@/runtime/runtime-config-query";
-import type {
-	RuntimeAgentId,
-	RuntimeConfigResponse,
-	RuntimeKanbanMcpServerAuthStatus,
-	RuntimeProjectShortcut,
-} from "@/runtime/types";
+import type { RuntimeAgentId, RuntimeConfigResponse, RuntimeProjectShortcut } from "@/runtime/types";
 import { useRuntimeConfig } from "@/runtime/use-runtime-config";
 import {
 	type BrowserNotificationPermission,
@@ -95,16 +89,16 @@ export type RuntimeSettingsSection = "shortcuts";
 
 const SETTINGS_AGENT_ORDER: readonly RuntimeAgentId[] = ["pi", "claude", "codex", "droid", "kiro", "qwen"];
 
-type SettingsNavId = "general" | "pi" | "proxy" | "git-prompts" | "notifications" | "appearance" | "project";
+type SettingsNavId = "general" | "account" | "proxy" | "git-prompts" | "notifications" | "appearance" | "project";
 
 const SETTINGS_NAV_ITEMS: ReadonlyArray<{
 	id: SettingsNavId;
 	label: string;
 	icon: React.ReactNode;
-	kanbanOnly?: boolean;
+	accountOnly?: boolean;
 }> = [
 	{ id: "general", label: "General", icon: <SlidersHorizontal size={16} /> },
-	{ id: "pi", label: "Pi", icon: <Bot size={16} />, kanbanOnly: true },
+	{ id: "account", label: "Account", icon: <CircleUser size={16} />, accountOnly: true },
 	{ id: "proxy", label: "Network Proxy", icon: <Globe size={16} /> },
 	{ id: "git-prompts", label: "Git Prompts", icon: <GitCommit size={16} /> },
 	{ id: "notifications", label: "Notifications", icon: <Bell size={16} /> },
@@ -351,7 +345,6 @@ export function RuntimeSettingsDialog({
 	open,
 	workspaceId,
 	initialConfig = null,
-	liveMcpAuthStatuses = null,
 	onOpenChange,
 	onSaved,
 	onAccountSwitched,
@@ -360,7 +353,6 @@ export function RuntimeSettingsDialog({
 	open: boolean;
 	workspaceId: string | null;
 	initialConfig?: RuntimeConfigResponse | null;
-	liveMcpAuthStatuses?: RuntimeKanbanMcpServerAuthStatus[] | null;
 	onOpenChange: (open: boolean) => void;
 	onSaved?: () => void;
 	onAccountSwitched?: () => void;
@@ -440,9 +432,19 @@ export function RuntimeSettingsDialog({
 		}));
 	}, [agentAutonomousModeEnabled, config?.agents]);
 	const displayedAgents = useMemo(() => supportedAgents, [supportedAgents]);
+	const agentSettings = useRuntimeSettingsKanbanController({
+		open,
+		workspaceId,
+		selectedAgentId,
+		config,
+	});
+	// The slim Account section only manages managed-provider OAuth + account/org/credits;
+	// per-agent provider/model/MCP config now lives inline in the home chat composer.
+	const showAccountSection = selectedAgentId === "pi" && agentSettings.isOauthProviderSelected;
+	const showClineAccountControls = showAccountSection && agentSettings.providerId.trim() === "cline";
 	const navItems = useMemo(
-		() => SETTINGS_NAV_ITEMS.filter((item) => !item.kanbanOnly || selectedAgentId === "pi"),
-		[selectedAgentId],
+		() => SETTINGS_NAV_ITEMS.filter((item) => !item.accountOnly || showAccountSection),
+		[showAccountSection],
 	);
 	const configuredAgentId = config?.selectedAgentId ?? null;
 	const firstInstalledAgentId = displayedAgents.find((agent) => agent.installed)?.id;
@@ -459,18 +461,6 @@ export function RuntimeSettingsDialog({
 	const initialProxyUsername = config?.proxyUsername ?? "";
 	const initialProxyPassword = config?.proxyPassword ?? "";
 	const initialNoProxy = config?.noProxy ?? "";
-	const agentSettings = useRuntimeSettingsKanbanController({
-		open,
-		workspaceId,
-		selectedAgentId,
-		config,
-	});
-	const kanbanMcpSettings = useRuntimeSettingsKanbanMcpController({
-		open,
-		workspaceId,
-		selectedAgentId,
-		liveAuthStatuses: liveMcpAuthStatuses,
-	});
 	const hasUnsavedChanges = useMemo(() => {
 		if (!config) {
 			return false;
@@ -482,12 +472,6 @@ export function RuntimeSettingsDialog({
 			return true;
 		}
 		if (readyForReviewNotificationsEnabled !== initialReadyForReviewNotificationsEnabled) {
-			return true;
-		}
-		if (agentSettings.hasUnsavedChanges) {
-			return true;
-		}
-		if (kanbanMcpSettings.hasUnsavedChanges) {
 			return true;
 		}
 		if (draftThemeId !== initialThemeId) {
@@ -514,8 +498,6 @@ export function RuntimeSettingsDialog({
 		);
 	}, [
 		agentAutonomousModeEnabled,
-		kanbanMcpSettings.hasUnsavedChanges,
-		agentSettings.hasUnsavedChanges,
 		commitPromptTemplate,
 		config,
 		draftThemeId,
@@ -633,10 +615,10 @@ export function RuntimeSettingsDialog({
 	});
 
 	useEffect(() => {
-		if (activeSection === "pi" && selectedAgentId !== "pi") {
+		if (activeSection === "account" && !showAccountSection) {
 			setActiveSection("general");
 		}
-	}, [activeSection, selectedAgentId]);
+	}, [activeSection, showAccountSection]);
 
 	const handleBodyScroll = useCallback(() => {
 		if (isScrollingProgrammatically.current) return;
@@ -725,22 +707,6 @@ export function RuntimeSettingsDialog({
 			const nextPermission = await requestBrowserNotificationPermission();
 			setNotificationPermission(nextPermission);
 		}
-		if (selectedAgentId === "pi" && agentSettings.providerId.trim().length === 0) {
-			setSaveError("Choose a provider before saving.");
-			return;
-		}
-		if (selectedAgentId === "pi") {
-			const kanbanProviderSaveResult = await agentSettings.saveProviderSettings();
-			if (!kanbanProviderSaveResult.ok) {
-				setSaveError(kanbanProviderSaveResult.message ?? "Could not save provider settings.");
-				return;
-			}
-			const kanbanMcpSaveResult = await kanbanMcpSettings.saveMcpSettings();
-			if (!kanbanMcpSaveResult.ok) {
-				setSaveError(kanbanMcpSaveResult.message ?? "Could not save MCP settings.");
-				return;
-			}
-		}
 		const saved = await save({
 			selectedAgentId,
 			agentAutonomousModeEnabled,
@@ -785,7 +751,7 @@ export function RuntimeSettingsDialog({
 		[workspaceId],
 	);
 
-	const handleKanbanSetupSaved = useCallback(() => {
+	const handleAccountSaved = useCallback(() => {
 		refresh();
 		onSaved?.();
 	}, [onSaved, refresh]);
@@ -864,34 +830,36 @@ export function RuntimeSettingsDialog({
 						</p>
 					</div>
 
-					{/* ---- Kanban ---- */}
-					{selectedAgentId === "pi" ? (
+					{/* ---- Account ---- */}
+					{showAccountSection ? (
 						<>
-							<div data-settings-section="pi" />
+							<div data-settings-section="account" />
 							<div className="sticky top-0 -mx-5 px-5 pt-4 pb-2 bg-surface-1 z-10">
 								<h2 className="flex items-center gap-2 text-base font-semibold text-text-primary m-0">
-									<Bot size={16} className="text-text-secondary" />
-									Pi
+									<CircleUser size={16} className="text-text-secondary" />
+									Account
 								</h2>
 							</div>
 							<div className="rounded-lg border border-border bg-surface-0 px-4 py-3 mb-4">
-								<KanbanSetupSection
+								<p className="text-text-secondary text-[13px] mt-0 mb-2">
+									Sign in to the managed provider your agents use. Provider, model, and other per-agent
+									settings are configured inline in the chat composer.
+								</p>
+								<KanbanOauthSignInPanel
 									controller={agentSettings}
-									mcpController={kanbanMcpSettings}
 									controlsDisabled={controlsDisabled}
-									workspaceId={workspaceId}
-									accountSection={
-										agentSettings.providerId.trim() === "cline" ? (
-											<AccountOrganizationSection
-												workspaceId={workspaceId}
-												open={open}
-												onAccountSwitched={onAccountSwitched}
-											/>
-										) : null
-									}
 									onError={setSaveError}
-									onSaved={handleKanbanSetupSaved}
+									onSaved={handleAccountSaved}
 								/>
+								{showClineAccountControls ? (
+									<div className="mt-4">
+										<AccountOrganizationSection
+											workspaceId={workspaceId}
+											open={open}
+											onAccountSwitched={onAccountSwitched}
+										/>
+									</div>
+								) : null}
 							</div>
 						</>
 					) : null}

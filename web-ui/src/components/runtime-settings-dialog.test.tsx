@@ -75,7 +75,7 @@ vi.mock("@radix-ui/react-select", () => ({
 }));
 
 const resetLayoutCustomizationsMock = vi.hoisted(() => vi.fn());
-const clineSetupSectionOnSavedRef = vi.hoisted(() => ({
+const oauthSignInOnSavedRef = vi.hoisted(() => ({
 	onSaved: null as null | (() => void),
 }));
 
@@ -95,37 +95,35 @@ vi.mock("@runtime-shortcuts", () => ({
 	areRuntimeProjectShortcutsEqual: vi.fn(() => true),
 }));
 
-vi.mock("@/components/shared/kanban-setup-section", () => ({
-	KanbanSetupSection: ({ onSaved }: { onSaved?: () => void }) => {
-		clineSetupSectionOnSavedRef.onSaved = onSaved ?? null;
+vi.mock("@/components/shared/kanban-oauth-signin-panel", () => ({
+	KanbanOauthSignInPanel: ({ onSaved }: { onSaved?: () => void }) => {
+		oauthSignInOnSavedRef.onSaved = onSaved ?? null;
 		return null;
 	},
+}));
+
+vi.mock("@/components/shared/account-organization-section", () => ({
+	AccountOrganizationSection: () => null,
 }));
 
 vi.mock("@/hooks/use-runtime-settings-kanban-controller", () => ({
 	useRuntimeSettingsKanbanController: () => ({
 		currentProviderSettings: {
-			providerId: "anthropic",
-			modelId: "claude-3-7-sonnet",
+			providerId: "cline",
+			modelId: "cline-sonnet",
 			baseUrl: null,
 			reasoningEffort: null,
-			apiKeyConfigured: true,
-			oauthProvider: null,
-			oauthAccessTokenConfigured: false,
-			oauthRefreshTokenConfigured: false,
-			oauthAccountId: null,
+			apiKeyConfigured: false,
+			oauthProvider: "cline",
+			oauthAccessTokenConfigured: true,
+			oauthRefreshTokenConfigured: true,
+			oauthAccountId: "acc-1",
 			oauthExpiresAt: null,
 		},
 		hasUnsavedChanges: false,
-		providerId: "anthropic",
+		providerId: "cline",
+		isOauthProviderSelected: true,
 		saveProviderSettings: vi.fn(async () => ({ ok: true })),
-	}),
-}));
-
-vi.mock("@/hooks/use-runtime-settings-kanban-mcp-controller", () => ({
-	useRuntimeSettingsKanbanMcpController: () => ({
-		hasUnsavedChanges: false,
-		saveMcpSettings: vi.fn(async () => ({ ok: true })),
 	}),
 }));
 
@@ -217,7 +215,7 @@ describe("RuntimeSettingsDialog", () => {
 
 	beforeEach(() => {
 		resetLayoutCustomizationsMock.mockReset();
-		clineSetupSectionOnSavedRef.onSaved = null;
+		oauthSignInOnSavedRef.onSaved = null;
 		window.localStorage.clear();
 		document.documentElement.removeAttribute("data-theme");
 		previousActEnvironment = (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
@@ -366,7 +364,7 @@ describe("RuntimeSettingsDialog", () => {
 		expect(document.documentElement.getAttribute("data-theme")).toBe("graphite");
 	});
 
-	it("forwards cline setup saves to the dialog onSaved callback", async () => {
+	it("forwards account OAuth sign-in saves to the dialog onSaved callback", async () => {
 		const handleSaved = vi.fn();
 		await act(async () => {
 			root.render(
@@ -380,10 +378,10 @@ describe("RuntimeSettingsDialog", () => {
 			);
 		});
 
-		expect(clineSetupSectionOnSavedRef.onSaved).toBeTypeOf("function");
+		expect(oauthSignInOnSavedRef.onSaved).toBeTypeOf("function");
 
 		await act(async () => {
-			clineSetupSectionOnSavedRef.onSaved?.();
+			oauthSignInOnSavedRef.onSaved?.();
 		});
 
 		expect(handleSaved).toHaveBeenCalledTimes(1);

@@ -111,7 +111,6 @@ export default function App(): ReactElement {
 		latestTaskChatMessage,
 		taskChatMessagesByTaskId,
 		latestTaskReadyForReview,
-		latestMcpAuthStatuses,
 		kanbanSessionContextVersion,
 		streamError,
 		isRuntimeDisconnected,
@@ -1118,7 +1117,6 @@ export default function App(): ReactElement {
 					open={isSettingsOpen}
 					workspaceId={settingsWorkspaceId}
 					initialConfig={settingsRuntimeProjectConfig}
-					liveMcpAuthStatuses={latestMcpAuthStatuses}
 					initialSection={settingsInitialSection}
 					onOpenChange={(nextOpen) => {
 						setIsSettingsOpen(nextOpen);
