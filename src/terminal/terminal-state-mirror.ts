@@ -20,6 +20,12 @@ export class TerminalStateMirror {
 	private readonly terminal: InstanceType<typeof Terminal>;
 	private readonly serializeAddon = new SerializeAddon();
 	private operationQueue: Promise<void> = Promise.resolve();
+	// Set once dispose() has torn down the xterm terminal. Reads/writes that lose the
+	// race against teardown (e.g. a queued turn-boundary transcript capture firing after
+	// the session is closed via Ctrl+C / /exit) must not touch the disposed terminal:
+	// the lazy `Terminal.buffer` getter would register on an already-disposed
+	// DisposableStore and log "Trying to add a disposable ... already been disposed of".
+	private disposed = false;
 
 	constructor(cols: number, rows: number, options: TerminalStateMirrorOptions = {}) {
 		this.terminal = new Terminal({
@@ -35,6 +41,9 @@ export class TerminalStateMirror {
 	}
 
 	applyOutput(chunk: Buffer): void {
+		if (this.disposed) {
+			return;
+		}
 		const chunkCopy = new Uint8Array(chunk);
 		this.enqueueOperation(
 			() =>
@@ -47,6 +56,9 @@ export class TerminalStateMirror {
 	}
 
 	resize(cols: number, rows: number): void {
+		if (this.disposed) {
+			return;
+		}
 		if (cols === this.terminal.cols && rows === this.terminal.rows) {
 			return;
 		}
@@ -57,6 +69,9 @@ export class TerminalStateMirror {
 
 	async getSnapshot(): Promise<TerminalRestoreSnapshot> {
 		await this.operationQueue;
+		if (this.disposed) {
+			return { snapshot: "", cols: this.terminal.cols, rows: this.terminal.rows };
+		}
 		return {
 			snapshot: this.serializeAddon.serialize(),
 			cols: this.terminal.cols,
@@ -74,6 +89,12 @@ export class TerminalStateMirror {
 	 */
 	async getCommittedLines(): Promise<string[]> {
 		await this.operationQueue;
+		// Re-check after the await: dispose() can win the race while we yield (the
+		// session closing mid-capture), and touching `terminal.buffer` afterwards
+		// would register on a disposed DisposableStore.
+		if (this.disposed) {
+			return [];
+		}
 		const buffer = this.terminal.buffer.active;
 		if (buffer.type !== "normal") {
 			return [];
@@ -95,6 +116,10 @@ export class TerminalStateMirror {
 	}
 
 	dispose(): void {
+		if (this.disposed) {
+			return;
+		}
+		this.disposed = true;
 		this.terminal.dispose();
 	}
 
