@@ -1,6 +1,19 @@
 import { z } from "zod";
 
 import {
+	type RuntimeAgentProfileCreateRequest,
+	type RuntimeAgentProfileDeleteRequest,
+	type RuntimeAgentProfileListRequest,
+	type RuntimeAgentProfileSelectRequest,
+	type RuntimeAgentProfileUpdateRequest,
+	type RuntimeCommandRunRequest,
+	type RuntimeConfigSaveRequest,
+	type RuntimeDirectoryListRequest,
+	type RuntimeGitCheckoutRequest,
+	type RuntimeHomeChatThreadCloseRequest,
+	type RuntimeHomeChatThreadCreateRequest,
+	type RuntimeHomeChatThreadRenameRequest,
+	type RuntimeHookIngestRequest,
 	type RuntimeKanbanAccountSwitchRequest,
 	type RuntimeKanbanAddProviderRequest,
 	type RuntimeKanbanDeviceAuthCompleteRequest,
@@ -10,14 +23,6 @@ import {
 	type RuntimeKanbanProviderModelsRequest,
 	type RuntimeKanbanProviderSettingsSaveRequest,
 	type RuntimeKanbanUpdateProviderRequest,
-	type RuntimeCommandRunRequest,
-	type RuntimeConfigSaveRequest,
-	type RuntimeDirectoryListRequest,
-	type RuntimeGitCheckoutRequest,
-	type RuntimeHomeChatThreadCloseRequest,
-	type RuntimeHomeChatThreadCreateRequest,
-	type RuntimeHomeChatThreadRenameRequest,
-	type RuntimeHookIngestRequest,
 	type RuntimeProjectAddRequest,
 	type RuntimeProjectRemoveRequest,
 	type RuntimeShellSessionStartRequest,
@@ -36,6 +41,19 @@ import {
 	type RuntimeWorkspaceStateSaveRequest,
 	type RuntimeWorktreeDeleteRequest,
 	type RuntimeWorktreeEnsureRequest,
+	runtimeAgentProfileCreateRequestSchema,
+	runtimeAgentProfileDeleteRequestSchema,
+	runtimeAgentProfileListRequestSchema,
+	runtimeAgentProfileSelectRequestSchema,
+	runtimeAgentProfileUpdateRequestSchema,
+	runtimeCommandRunRequestSchema,
+	runtimeConfigSaveRequestSchema,
+	runtimeDirectoryListRequestSchema,
+	runtimeGitCheckoutRequestSchema,
+	runtimeHomeChatThreadCloseRequestSchema,
+	runtimeHomeChatThreadCreateRequestSchema,
+	runtimeHomeChatThreadRenameRequestSchema,
+	runtimeHookIngestRequestSchema,
 	runtimeKanbanAccountSwitchRequestSchema,
 	runtimeKanbanAddProviderRequestSchema,
 	runtimeKanbanDeviceAuthCompleteRequestSchema,
@@ -45,14 +63,6 @@ import {
 	runtimeKanbanProviderModelsRequestSchema,
 	runtimeKanbanProviderSettingsSaveRequestSchema,
 	runtimeKanbanUpdateProviderRequestSchema,
-	runtimeCommandRunRequestSchema,
-	runtimeConfigSaveRequestSchema,
-	runtimeDirectoryListRequestSchema,
-	runtimeGitCheckoutRequestSchema,
-	runtimeHomeChatThreadCloseRequestSchema,
-	runtimeHomeChatThreadCreateRequestSchema,
-	runtimeHomeChatThreadRenameRequestSchema,
-	runtimeHookIngestRequestSchema,
 	runtimeProjectAddRequestSchema,
 	runtimeProjectRemoveRequestSchema,
 	runtimeShellSessionStartRequestSchema,
@@ -330,6 +340,53 @@ export function parseHomeChatThreadCloseRequest(value: unknown): RuntimeHomeChat
 	return {
 		id,
 	};
+}
+
+export function parseAgentProfileListRequest(value: unknown): RuntimeAgentProfileListRequest {
+	return parseWithSchema(runtimeAgentProfileListRequestSchema, value);
+}
+
+export function parseAgentProfileCreateRequest(value: unknown): RuntimeAgentProfileCreateRequest {
+	const parsed = parseWithSchema(runtimeAgentProfileCreateRequestSchema, value);
+	const name = parsed.name.trim();
+	if (!name) {
+		throw new Error("Agent profile name cannot be empty.");
+	}
+	return { ...parsed, name };
+}
+
+export function parseAgentProfileUpdateRequest(value: unknown): RuntimeAgentProfileUpdateRequest {
+	const parsed = parseWithSchema(runtimeAgentProfileUpdateRequestSchema, value);
+	const id = parsed.id.trim();
+	if (!id) {
+		throw new Error("Agent profile id cannot be empty.");
+	}
+	if (parsed.name !== undefined) {
+		const name = parsed.name.trim();
+		if (!name) {
+			throw new Error("Agent profile name cannot be empty.");
+		}
+		return { ...parsed, id, name };
+	}
+	return { ...parsed, id };
+}
+
+export function parseAgentProfileDeleteRequest(value: unknown): RuntimeAgentProfileDeleteRequest {
+	const parsed = parseWithSchema(runtimeAgentProfileDeleteRequestSchema, value);
+	const id = parsed.id.trim();
+	if (!id) {
+		throw new Error("Agent profile id cannot be empty.");
+	}
+	return { id };
+}
+
+export function parseAgentProfileSelectRequest(value: unknown): RuntimeAgentProfileSelectRequest {
+	const parsed = parseWithSchema(runtimeAgentProfileSelectRequestSchema, value);
+	const profileId = parsed.profileId === null ? null : parsed.profileId.trim();
+	if (profileId === "") {
+		throw new Error("Agent profile id cannot be empty.");
+	}
+	return { agentId: parsed.agentId, profileId };
 }
 
 export function parseTaskChatAbortRequest(value: unknown): RuntimeTaskChatAbortRequest {

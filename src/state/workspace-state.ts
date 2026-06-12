@@ -5,7 +5,9 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { z } from "zod";
 
+import { getLastUsedProviderSettings } from "../agent-sdk/kanban/provider-settings-store";
 import {
+	type RuntimeAgentProfilesData,
 	type RuntimeBoardData,
 	type RuntimeGitRepositoryInfo,
 	type RuntimeHomeChatThreadsData,
@@ -20,6 +22,11 @@ import { createGitProcessEnv } from "../core/git-process-env";
 import { updateTaskDependencies } from "../core/task-board-mutations";
 import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
 import { VaultDocumentStore } from "../vault/vault-document-store";
+import {
+	buildDefaultProfileFromProviderSettings,
+	readAgentProfilesData,
+	writeAgentProfilesData,
+} from "./agent-profile-store";
 import {
 	collectRelatedTasks,
 	type LegacyRequirementsData,
@@ -55,6 +62,12 @@ const REQUIREMENT_TASK_LINKS_SHARD_DIRNAME = "requirement-task-links";
 const FILES_DIRNAME = "files";
 const DOCS_DIRNAME = "docs";
 const HOME_THREADS_FILENAME = "threads.json";
+// Per-agent named configuration profiles. Sharded by profile id (one `<id>.json`
+// per profile) so cross-branch profile edits never collide; the small selection
+// map (each agent's currently selected profile) lives in a sibling file. Both are
+// committed (non-secret config only — secrets stay in machine-home settings).
+const AGENT_PROFILES_SHARD_DIRNAME = "agent-profiles";
+const AGENT_PROFILE_SELECTION_FILENAME = "agent-profile-selection.json";
 const META_FILENAME = "meta.json";
 const RUNTIME_HOME_GITIGNORE_FILENAME = ".gitignore";
 // Boundary between committed content and machine-local runtime/secrets inside a
@@ -285,6 +298,14 @@ function getRequirementDocsDir(repoPath: string): string {
 
 function getWorkspaceHomeThreadsPath(repoPath: string, workspaceId: string): string {
 	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), HOME_THREADS_FILENAME);
+}
+
+function getWorkspaceAgentProfilesShardDir(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), AGENT_PROFILES_SHARD_DIRNAME);
+}
+
+function getWorkspaceAgentProfileSelectionPath(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), AGENT_PROFILE_SELECTION_FILENAME);
 }
 
 function getWorkspaceMetaPath(repoPath: string, workspaceId: string): string {
@@ -550,6 +571,41 @@ export async function mutateWorkspaceHomeThreads(
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceHomeThreadsPath(repoPath, workspaceId), next, {
 			lock: null,
 		});
+		return next;
+	});
+}
+
+/** Read the persisted agent-profile registry (sharded profiles + selection) for a workspace. */
+export async function loadWorkspaceAgentProfiles(workspaceId: string): Promise<RuntimeAgentProfilesData> {
+	const repoPath = await resolveRepoPathForWorkspaceId(workspaceId);
+	if (!repoPath) {
+		throw new Error(`Unknown workspace "${workspaceId}"; cannot resolve its repository path.`);
+	}
+	return await readAgentProfilesData(
+		getWorkspaceAgentProfilesShardDir(repoPath, workspaceId),
+		getWorkspaceAgentProfileSelectionPath(repoPath, workspaceId),
+	);
+}
+
+/**
+ * Atomically read → transform → write the agent-profile registry under the workspace
+ * directory lock. The `mutate` callback is pure (see `agent-profile-registry.ts`);
+ * persistence and locking are owned here. Returns the persisted data.
+ */
+export async function mutateWorkspaceAgentProfiles(
+	workspaceId: string,
+	mutate: (current: RuntimeAgentProfilesData) => RuntimeAgentProfilesData,
+): Promise<RuntimeAgentProfilesData> {
+	const repoPath = await resolveRepoPathForWorkspaceId(workspaceId);
+	if (!repoPath) {
+		throw new Error(`Unknown workspace "${workspaceId}"; cannot resolve its repository path.`);
+	}
+	const profilesDir = getWorkspaceAgentProfilesShardDir(repoPath, workspaceId);
+	const selectionPath = getWorkspaceAgentProfileSelectionPath(repoPath, workspaceId);
+	return await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
+		const current = await readAgentProfilesData(profilesDir, selectionPath);
+		const next = mutate(current);
+		await writeAgentProfilesData(profilesDir, selectionPath, next);
 		return next;
 	});
 }
@@ -961,6 +1017,40 @@ async function prepareRepoRuntimeHome(repoPath: string, workspaceId: string): Pr
 	await migrateRequirementsToVaultDocs(repoPath, workspaceId);
 	await dropRetiredRequirementData(repoPath, workspaceId);
 	await migrateWorkspaceBoardToShards(repoPath, workspaceId);
+	await migrateProviderSettingsToAgentProfile(repoPath, workspaceId);
+}
+
+/**
+ * One-time, idempotent conversion of the user's existing machine-home provider
+ * settings into a single default `pi` agent profile, selected for that agent. This
+ * makes the new profile the workspace layer of the launch-config resolution chain
+ * while preserving the user's prior provider/model choice. Secrets are NOT copied —
+ * only non-secret config (the API key stays in the machine-home store and is resolved
+ * by providerId at launch). Gated on the absence of the `agent-profiles/` directory so
+ * re-runs are a cheap no-op; skipped entirely when no provider settings exist yet.
+ */
+async function migrateProviderSettingsToAgentProfile(repoPath: string, workspaceId: string): Promise<void> {
+	const profilesDir = getWorkspaceAgentProfilesShardDir(repoPath, workspaceId);
+	if (await pathExists(profilesDir)) {
+		return;
+	}
+	const profile = buildDefaultProfileFromProviderSettings(getLastUsedProviderSettings(), {
+		id: "default",
+		name: "Default",
+		agentId: "pi",
+	});
+	if (!profile) {
+		return;
+	}
+	await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
+		if (await pathExists(profilesDir)) {
+			return;
+		}
+		await writeAgentProfilesData(profilesDir, getWorkspaceAgentProfileSelectionPath(repoPath, workspaceId), {
+			profiles: [profile],
+			selectedByAgent: { [profile.agentId]: profile.id },
+		});
+	});
 }
 
 /**

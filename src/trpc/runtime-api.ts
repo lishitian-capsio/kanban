@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { TRPCError } from "@trpc/server";
 import { createMcpRuntimeService, type McpRuntimeService } from "../agent-sdk/kanban/mcp-runtime-service";
 import { createKanbanMcpSettingsService } from "../agent-sdk/kanban/mcp-settings-service";
-import { resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
+import { type PiLaunchProfile, resolvePiApiKey, resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
 import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
 import { createProviderService } from "../agent-sdk/kanban/provider-service";
 import { isKanbanClearSlashCommand } from "../agent-sdk/shared/slash-commands";
@@ -18,11 +18,21 @@ import { setRuntimeProxyStateFromConfig } from "../config/proxy-fetch";
 import type { RuntimeConfigState } from "../config/runtime-config";
 import { updateGlobalRuntimeConfig, updateRuntimeConfig } from "../config/runtime-config";
 import type {
+	RuntimeAgentProfile,
+	RuntimeAgentProfileListResponse,
+	RuntimeAgentProfileMutationResponse,
+	RuntimeAgentProfileRecord,
+	RuntimeAgentProfilesData,
 	RuntimeCommandRunResponse,
 	RuntimeRunUpdateResponse,
 	RuntimeUpdateStatusResponse,
 } from "../core/api-contract";
 import {
+	parseAgentProfileCreateRequest,
+	parseAgentProfileDeleteRequest,
+	parseAgentProfileListRequest,
+	parseAgentProfileSelectRequest,
+	parseAgentProfileUpdateRequest,
 	parseCommandRunRequest,
 	parseHomeChatThreadCloseRequest,
 	parseHomeChatThreadCreateRequest,
@@ -52,6 +62,16 @@ import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
 import { resolveTaskTitle } from "../core/task-title.js";
 import { openInBrowser } from "../server/browser";
 import type { HomeThreadStore } from "../session/home-thread-store";
+import {
+	type AgentProfilePatch,
+	createAgentProfile,
+	deleteAgentProfile,
+	getSelectedAgentProfile,
+	listAgentProfiles,
+	selectAgentProfile,
+	updateAgentProfile,
+} from "../state/agent-profile-registry";
+import { loadWorkspaceAgentProfiles, mutateWorkspaceAgentProfiles } from "../state/workspace-state";
 import { buildRuntimeConfigResponse, resolveAgentCommand } from "../terminal/agent-registry";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { resolveTaskCwd } from "../workspace/task-worktree";
@@ -98,6 +118,54 @@ async function resolveExistingTaskCwdOrEnsure(options: {
 			baseRef: options.baseRef,
 			ensure: true,
 		});
+	}
+}
+
+function createAgentProfileId(): string {
+	return crypto.randomUUID().replaceAll("-", "").slice(0, 8);
+}
+
+/**
+ * Project a committed (secret-free) profile record onto the wire summary, deriving
+ * `apiKeyConfigured` from the machine-home secret store (env or saved settings by
+ * providerId) — never from the committed record itself.
+ */
+function toAgentProfileSummary(record: RuntimeAgentProfileRecord): RuntimeAgentProfile {
+	const apiKeyConfigured = record.providerId ? resolvePiApiKey(record.providerId) !== null : false;
+	return { ...record, apiKeyConfigured };
+}
+
+function buildAgentProfileMutationResponse(
+	data: RuntimeAgentProfilesData,
+	affected: RuntimeAgentProfileRecord | null,
+): RuntimeAgentProfileMutationResponse {
+	return {
+		profiles: data.profiles.map(toAgentProfileSummary),
+		selectedByAgent: data.selectedByAgent,
+		profile: affected ? toAgentProfileSummary(affected) : null,
+	};
+}
+
+/**
+ * Resolve the workspace's selected `pi` profile as the non-secret launch-config layer
+ * fed into {@link resolvePiLaunchConfig}. Returns null (so resolution falls back to the
+ * machine-home settings / defaults) when nothing is selected or the lookup fails.
+ */
+async function loadSelectedPiLaunchProfile(scope: RuntimeTrpcWorkspaceScope): Promise<PiLaunchProfile | null> {
+	try {
+		const data = await loadWorkspaceAgentProfiles(scope.workspaceId);
+		const selected = getSelectedAgentProfile(data, "pi");
+		if (!selected) {
+			return null;
+		}
+		return {
+			providerId: selected.providerId,
+			modelId: selected.modelId,
+			baseUrl: selected.baseUrl,
+			reasoningEffort: selected.reasoningEffort,
+		};
+	} catch {
+		return null;
 	}
 }
 
@@ -245,6 +313,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 						providerIdOverride: body.agentSettings?.providerId ?? undefined,
 						modelIdOverride: body.agentSettings?.modelId ?? undefined,
 						reasoningEffortOverride: body.agentSettings?.reasoningEffort ?? undefined,
+						workspaceProfile: await loadSelectedPiLaunchProfile(workspaceScope),
 					});
 					const piTaskSessionService = await deps.getScopedPiTaskSessionService(workspaceScope);
 					const resolvedPiTitle = resolveTaskTitle(body.taskTitle?.trim(), body.prompt);
@@ -467,7 +536,9 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				// session can't be accidentally restarted as pi.
 				const reloadHomeAgentId = resolveHomeAgentId(body.taskId);
 				if (!summary && reloadHomeAgentId === "pi") {
-					const piLaunchConfig = resolvePiLaunchConfig({});
+					const piLaunchConfig = resolvePiLaunchConfig({
+						workspaceProfile: await loadSelectedPiLaunchProfile(workspaceScope),
+					});
 					summary = await piService.startTaskSession({
 						taskId: body.taskId,
 						cwd: workspaceScope.workspacePath,
@@ -597,6 +668,112 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				return { ok: false, thread: null, error: message };
 			}
 		},
+		listAgentProfiles: async (workspaceScope, input): Promise<RuntimeAgentProfileListResponse> => {
+			const body = parseAgentProfileListRequest(input);
+			const data = await loadWorkspaceAgentProfiles(workspaceScope.workspaceId);
+			return {
+				profiles: listAgentProfiles(data, body.agentId).map(toAgentProfileSummary),
+				selectedByAgent: data.selectedByAgent,
+			};
+		},
+		createAgentProfile: async (workspaceScope, input): Promise<RuntimeAgentProfileMutationResponse> => {
+			const body = parseAgentProfileCreateRequest(input);
+			const providerId = body.providerId?.trim() || null;
+			// Secrets (API key) + the coherent provider config go to the machine-home store
+			// the existing secure way — never into the committed profile record.
+			if (providerId) {
+				providerService.saveProviderSettings({
+					providerId,
+					modelId: body.modelId ?? undefined,
+					apiKey: body.apiKey ?? undefined,
+					baseUrl: body.baseUrl ?? undefined,
+					reasoningEffort: body.reasoningEffort ?? undefined,
+					region: body.region ?? undefined,
+					gcp:
+						body.gcpProjectId !== undefined || body.gcpRegion !== undefined
+							? { projectId: body.gcpProjectId ?? null, region: body.gcpRegion ?? null }
+							: undefined,
+				});
+			}
+			const id = createAgentProfileId();
+			const record: RuntimeAgentProfileRecord = {
+				id,
+				name: body.name,
+				agentId: body.agentId,
+				providerId,
+				modelId: body.modelId?.trim() || null,
+				baseUrl: body.baseUrl?.trim() || null,
+				reasoningEffort: body.reasoningEffort ?? null,
+				region: body.region?.trim() || null,
+				gcpProjectId: body.gcpProjectId?.trim() || null,
+				gcpRegion: body.gcpRegion?.trim() || null,
+			};
+			const data = await mutateWorkspaceAgentProfiles(workspaceScope.workspaceId, (current) => {
+				const created = createAgentProfile(current, record);
+				return body.select ? selectAgentProfile(created, body.agentId, id) : created;
+			});
+			deps.bumpKanbanSessionContextVersion?.();
+			return buildAgentProfileMutationResponse(data, data.profiles.find((profile) => profile.id === id) ?? record);
+		},
+		updateAgentProfile: async (workspaceScope, input): Promise<RuntimeAgentProfileMutationResponse> => {
+			const body = parseAgentProfileUpdateRequest(input);
+			const current = await loadWorkspaceAgentProfiles(workspaceScope.workspaceId);
+			const existing = current.profiles.find((profile) => profile.id === body.id);
+			if (!existing) {
+				throw new TRPCError({ code: "NOT_FOUND", message: `Agent profile "${body.id}" not found.` });
+			}
+			const effectiveProviderId =
+				body.providerId !== undefined ? body.providerId?.trim() || null : existing.providerId;
+			if (effectiveProviderId) {
+				providerService.saveProviderSettings({
+					providerId: effectiveProviderId,
+					...(body.modelId !== undefined ? { modelId: body.modelId } : {}),
+					...(body.apiKey !== undefined ? { apiKey: body.apiKey } : {}),
+					...(body.baseUrl !== undefined ? { baseUrl: body.baseUrl } : {}),
+					...(body.reasoningEffort !== undefined ? { reasoningEffort: body.reasoningEffort } : {}),
+					...(body.region !== undefined ? { region: body.region } : {}),
+					...(body.gcpProjectId !== undefined || body.gcpRegion !== undefined
+						? { gcp: { projectId: body.gcpProjectId ?? null, region: body.gcpRegion ?? null } }
+						: {}),
+				});
+			}
+			const patch: AgentProfilePatch = {};
+			if (body.name !== undefined) patch.name = body.name;
+			if (body.providerId !== undefined) patch.providerId = body.providerId?.trim() || null;
+			if (body.modelId !== undefined) patch.modelId = body.modelId?.trim() || null;
+			if (body.baseUrl !== undefined) patch.baseUrl = body.baseUrl?.trim() || null;
+			if (body.reasoningEffort !== undefined) patch.reasoningEffort = body.reasoningEffort;
+			if (body.region !== undefined) patch.region = body.region?.trim() || null;
+			if (body.gcpProjectId !== undefined) patch.gcpProjectId = body.gcpProjectId?.trim() || null;
+			if (body.gcpRegion !== undefined) patch.gcpRegion = body.gcpRegion?.trim() || null;
+			const data = await mutateWorkspaceAgentProfiles(workspaceScope.workspaceId, (cur) =>
+				updateAgentProfile(cur, body.id, patch),
+			);
+			deps.bumpKanbanSessionContextVersion?.();
+			return buildAgentProfileMutationResponse(
+				data,
+				data.profiles.find((profile) => profile.id === body.id) ?? null,
+			);
+		},
+		deleteAgentProfile: async (workspaceScope, input): Promise<RuntimeAgentProfileMutationResponse> => {
+			const body = parseAgentProfileDeleteRequest(input);
+			let removed: RuntimeAgentProfileRecord | null = null;
+			const data = await mutateWorkspaceAgentProfiles(workspaceScope.workspaceId, (cur) => {
+				const result = deleteAgentProfile(cur, body.id);
+				removed = result.removed;
+				return result.next;
+			});
+			deps.bumpKanbanSessionContextVersion?.();
+			return buildAgentProfileMutationResponse(data, removed);
+		},
+		selectAgentProfile: async (workspaceScope, input): Promise<RuntimeAgentProfileMutationResponse> => {
+			const body = parseAgentProfileSelectRequest(input);
+			const data = await mutateWorkspaceAgentProfiles(workspaceScope.workspaceId, (cur) =>
+				selectAgentProfile(cur, body.agentId, body.profileId),
+			);
+			deps.bumpKanbanSessionContextVersion?.();
+			return buildAgentProfileMutationResponse(data, getSelectedAgentProfile(data, body.agentId));
+		},
 		getKanbanProviderCatalog: async (_workspaceScope) => {
 			return await providerService.getProviderCatalog();
 		},
@@ -702,7 +879,9 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 							};
 						}
 					} else {
-						const piLaunchConfig = resolvePiLaunchConfig({});
+						const piLaunchConfig = resolvePiLaunchConfig({
+							workspaceProfile: await loadSelectedPiLaunchProfile(workspaceScope),
+						});
 						summary = await piService.startTaskSession({
 							taskId: body.taskId,
 							cwd: workspaceScope.workspacePath,

@@ -6,6 +6,13 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import type {
+	RuntimeAgentProfileCreateRequest,
+	RuntimeAgentProfileDeleteRequest,
+	RuntimeAgentProfileListRequest,
+	RuntimeAgentProfileListResponse,
+	RuntimeAgentProfileMutationResponse,
+	RuntimeAgentProfileSelectRequest,
+	RuntimeAgentProfileUpdateRequest,
 	RuntimeCommandRunRequest,
 	RuntimeCommandRunResponse,
 	RuntimeConfigResponse,
@@ -129,6 +136,13 @@ import type {
 	RuntimeWorktreeEnsureResponse,
 } from "../core/api-contract";
 import {
+	runtimeAgentProfileCreateRequestSchema,
+	runtimeAgentProfileDeleteRequestSchema,
+	runtimeAgentProfileListRequestSchema,
+	runtimeAgentProfileListResponseSchema,
+	runtimeAgentProfileMutationResponseSchema,
+	runtimeAgentProfileSelectRequestSchema,
+	runtimeAgentProfileUpdateRequestSchema,
 	runtimeCommandRunRequestSchema,
 	runtimeCommandRunResponseSchema,
 	runtimeConfigResponseSchema,
@@ -324,6 +338,26 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatThreadCloseRequest,
 		) => Promise<RuntimeHomeChatThreadMutationResponse>;
+		listAgentProfiles: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeAgentProfileListRequest,
+		) => Promise<RuntimeAgentProfileListResponse>;
+		createAgentProfile: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeAgentProfileCreateRequest,
+		) => Promise<RuntimeAgentProfileMutationResponse>;
+		updateAgentProfile: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeAgentProfileUpdateRequest,
+		) => Promise<RuntimeAgentProfileMutationResponse>;
+		deleteAgentProfile: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeAgentProfileDeleteRequest,
+		) => Promise<RuntimeAgentProfileMutationResponse>;
+		selectAgentProfile: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeAgentProfileSelectRequest,
+		) => Promise<RuntimeAgentProfileMutationResponse>;
 		getKanbanProviderCatalog: (
 			scope: RuntimeTrpcWorkspaceScope | null,
 		) => Promise<RuntimeKanbanProviderCatalogResponse>;
@@ -656,6 +690,36 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeHomeChatThreadMutationResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.closeHomeThread(ctx.workspaceScope, input);
+			}),
+		listAgentProfiles: workspaceProcedure
+			.input(runtimeAgentProfileListRequestSchema)
+			.output(runtimeAgentProfileListResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.listAgentProfiles(ctx.workspaceScope, input);
+			}),
+		createAgentProfile: workspaceProcedure
+			.input(runtimeAgentProfileCreateRequestSchema)
+			.output(runtimeAgentProfileMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.createAgentProfile(ctx.workspaceScope, input);
+			}),
+		updateAgentProfile: workspaceProcedure
+			.input(runtimeAgentProfileUpdateRequestSchema)
+			.output(runtimeAgentProfileMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.updateAgentProfile(ctx.workspaceScope, input);
+			}),
+		deleteAgentProfile: workspaceProcedure
+			.input(runtimeAgentProfileDeleteRequestSchema)
+			.output(runtimeAgentProfileMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.deleteAgentProfile(ctx.workspaceScope, input);
+			}),
+		selectAgentProfile: workspaceProcedure
+			.input(runtimeAgentProfileSelectRequestSchema)
+			.output(runtimeAgentProfileMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.selectAgentProfile(ctx.workspaceScope, input);
 			}),
 		getKanbanProviderCatalog: t.procedure
 			.output(runtimeKanbanProviderCatalogResponseSchema)

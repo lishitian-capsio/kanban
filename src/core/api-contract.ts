@@ -215,6 +215,111 @@ export const runtimeHomeChatThreadMutationResponseSchema = z.object({
 });
 export type RuntimeHomeChatThreadMutationResponse = z.infer<typeof runtimeHomeChatThreadMutationResponseSchema>;
 
+// ---------------------------------------------------------------- agent profiles
+//
+// A named configuration "profile" is a first-class, per-agent config bundle. Each
+// agent (currently only `pi` consumes it for launch) owns a library of named
+// profiles plus one "currently selected" profile that drives session launches.
+//
+// SECURITY: profile records are committed to the repo (`<repo>/.kanban`), so they
+// hold only NON-SECRET launch config (provider/model/baseUrl/reasoning/region/gcp).
+// Secrets (apiKey, OAuth tokens, AWS keys) continue to live in the machine-home
+// provider settings store keyed by providerId — never in a profile record. The
+// `apiKeyConfigured` flag on the wire summary is derived from that secret store.
+export const runtimeAgentProfileRecordSchema = z.object({
+	id: z.string().min(1),
+	name: z.string().min(1),
+	agentId: runtimeAgentIdSchema,
+	providerId: z.string().nullable(),
+	modelId: z.string().nullable(),
+	baseUrl: z.string().nullable(),
+	reasoningEffort: runtimeReasoningEffortSchema.nullable(),
+	region: z.string().nullable(),
+	gcpProjectId: z.string().nullable(),
+	gcpRegion: z.string().nullable(),
+});
+export type RuntimeAgentProfileRecord = z.infer<typeof runtimeAgentProfileRecordSchema>;
+
+// In-memory aggregate (assembled from per-id shards + the selection file on disk).
+export const runtimeAgentProfilesDataSchema = z.object({
+	profiles: z.array(runtimeAgentProfileRecordSchema).default([]),
+	selectedByAgent: z.record(z.string(), z.string()).default({}),
+});
+export type RuntimeAgentProfilesData = z.infer<typeof runtimeAgentProfilesDataSchema>;
+
+// On-disk selection file shape (sibling to the sharded `agent-profiles/` dir).
+export const runtimeAgentProfileSelectionSchema = z.object({
+	selectedByAgent: z.record(z.string(), z.string()).default({}),
+});
+export type RuntimeAgentProfileSelection = z.infer<typeof runtimeAgentProfileSelectionSchema>;
+
+// Wire summary: a record plus whether a secret API key is configured for it.
+export const runtimeAgentProfileSchema = runtimeAgentProfileRecordSchema.extend({
+	apiKeyConfigured: z.boolean(),
+});
+export type RuntimeAgentProfile = z.infer<typeof runtimeAgentProfileSchema>;
+
+export const runtimeAgentProfileListRequestSchema = z.object({
+	agentId: runtimeAgentIdSchema.optional(),
+});
+export type RuntimeAgentProfileListRequest = z.infer<typeof runtimeAgentProfileListRequestSchema>;
+
+export const runtimeAgentProfileListResponseSchema = z.object({
+	profiles: z.array(runtimeAgentProfileSchema),
+	selectedByAgent: z.record(z.string(), z.string()),
+});
+export type RuntimeAgentProfileListResponse = z.infer<typeof runtimeAgentProfileListResponseSchema>;
+
+export const runtimeAgentProfileCreateRequestSchema = z.object({
+	agentId: runtimeAgentIdSchema,
+	name: z.string().min(1),
+	providerId: z.string().nullable().optional(),
+	modelId: z.string().nullable().optional(),
+	apiKey: z.string().nullable().optional(),
+	baseUrl: z.string().nullable().optional(),
+	reasoningEffort: runtimeReasoningEffortSchema.nullable().optional(),
+	region: z.string().nullable().optional(),
+	gcpProjectId: z.string().nullable().optional(),
+	gcpRegion: z.string().nullable().optional(),
+	// When true, also mark the created profile as the agent's selected profile.
+	select: z.boolean().optional(),
+});
+export type RuntimeAgentProfileCreateRequest = z.infer<typeof runtimeAgentProfileCreateRequestSchema>;
+
+export const runtimeAgentProfileUpdateRequestSchema = z.object({
+	id: z.string().min(1),
+	name: z.string().min(1).optional(),
+	providerId: z.string().nullable().optional(),
+	modelId: z.string().nullable().optional(),
+	apiKey: z.string().nullable().optional(),
+	baseUrl: z.string().nullable().optional(),
+	reasoningEffort: runtimeReasoningEffortSchema.nullable().optional(),
+	region: z.string().nullable().optional(),
+	gcpProjectId: z.string().nullable().optional(),
+	gcpRegion: z.string().nullable().optional(),
+});
+export type RuntimeAgentProfileUpdateRequest = z.infer<typeof runtimeAgentProfileUpdateRequestSchema>;
+
+export const runtimeAgentProfileDeleteRequestSchema = z.object({
+	id: z.string().min(1),
+});
+export type RuntimeAgentProfileDeleteRequest = z.infer<typeof runtimeAgentProfileDeleteRequestSchema>;
+
+export const runtimeAgentProfileSelectRequestSchema = z.object({
+	agentId: runtimeAgentIdSchema,
+	profileId: z.string().nullable(),
+});
+export type RuntimeAgentProfileSelectRequest = z.infer<typeof runtimeAgentProfileSelectRequestSchema>;
+
+// Shared by create/update/delete/select — returns the full post-mutation snapshot
+// plus the affected profile (delete → the removed profile; select → the selected one).
+export const runtimeAgentProfileMutationResponseSchema = z.object({
+	profiles: z.array(runtimeAgentProfileSchema),
+	selectedByAgent: z.record(z.string(), z.string()),
+	profile: runtimeAgentProfileSchema.nullable(),
+});
+export type RuntimeAgentProfileMutationResponse = z.infer<typeof runtimeAgentProfileMutationResponseSchema>;
+
 // ---------------------------------------------------------------------------
 // Files library
 //

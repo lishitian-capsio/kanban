@@ -2,10 +2,10 @@
 // Uses the omp built-in model registry (models.json) and the kanban
 // provider settings store.
 import type { RuntimeReasoningEffort } from "../../core/api-contract";
-import { getBundledModel, getBundledModels, getBundledProviders, type GeneratedProvider } from "../ai/models";
-import type { Api, Model } from "../ai/types";
 import { Effort } from "../ai/model-thinking";
-import { getProviderSettings, getLastUsedProviderSettings } from "./provider-settings-store";
+import { type GeneratedProvider, getBundledModel, getBundledModels, getBundledProviders } from "../ai/models";
+import type { Api, Model } from "../ai/types";
+import { getLastUsedProviderSettings, getProviderSettings } from "./provider-settings-store";
 
 export const PI_DEFAULT_PROVIDER_ID = "anthropic";
 export const PI_DEFAULT_MODEL_ID = "claude-sonnet-4-20250514";
@@ -29,7 +29,11 @@ export interface PiLaunchConfig {
  * Falls back to a generic model descriptor if not found.
  * When a custom baseUrl is provided, it overrides the model's baseUrl.
  */
-export function resolvePiModel(providerId?: string | null, modelId?: string | null, baseUrl?: string | null): PiResolvedModel {
+export function resolvePiModel(
+	providerId?: string | null,
+	modelId?: string | null,
+	baseUrl?: string | null,
+): PiResolvedModel {
 	const provider = (providerId?.trim() || PI_DEFAULT_PROVIDER_ID) as GeneratedProvider;
 	const id = modelId?.trim() || PI_DEFAULT_MODEL_ID;
 
@@ -105,21 +109,44 @@ export function resolvePiModel(providerId?: string | null, modelId?: string | nu
 }
 
 /**
+ * Non-secret launch config contributed by the workspace's currently selected agent
+ * profile. This is the new "workspace layer" in the resolution chain; it never carries
+ * secrets (the API key still comes from the machine-home settings store by providerId).
+ */
+export interface PiLaunchProfile {
+	providerId?: string | null;
+	modelId?: string | null;
+	baseUrl?: string | null;
+	reasoningEffort?: RuntimeReasoningEffort | null;
+}
+
+/**
  * Resolve the full launch configuration for a pi agent session.
- * When no explicit overrides are provided, reads providerId and modelId
- * from the user's saved provider settings (via Settings UI).
+ *
+ * Resolution chain (highest priority first):
+ *   1. explicit per-session overrides (`*Override` — the card's agentSettings),
+ *   2. the workspace's selected agent profile (`workspaceProfile`),
+ *   3. the user's saved provider settings (machine-home Settings store),
+ *   4. built-in defaults.
+ *
+ * Secrets are never part of the profile: the API key is resolved separately from the
+ * machine-home store (by providerId), so committed profile records stay secret-free.
  */
 export function resolvePiLaunchConfig(input?: {
 	providerIdOverride?: string | null;
 	modelIdOverride?: string | null;
 	reasoningEffortOverride?: RuntimeReasoningEffort | null;
+	workspaceProfile?: PiLaunchProfile | null;
 }): PiLaunchConfig {
-	let providerId = input?.providerIdOverride?.trim() || null;
-	let modelId = input?.modelIdOverride?.trim() || null;
-	let baseUrl: string | null = null;
+	const profile = input?.workspaceProfile ?? null;
 
-	// Read missing values from saved provider settings
-	if (!providerId || !modelId) {
+	let providerId = input?.providerIdOverride?.trim() || profile?.providerId?.trim() || null;
+	let modelId = input?.modelIdOverride?.trim() || profile?.modelId?.trim() || null;
+	let baseUrl = profile?.baseUrl?.trim() || null;
+	let reasoningEffort = input?.reasoningEffortOverride ?? profile?.reasoningEffort ?? null;
+
+	// Fill any still-missing values from saved provider settings (machine-home layer).
+	if (!providerId || !modelId || !baseUrl) {
 		try {
 			const lastUsed = getLastUsedProviderSettings();
 			const selected = lastUsed?.provider
@@ -128,7 +155,10 @@ export function resolvePiLaunchConfig(input?: {
 			if (selected) {
 				providerId = providerId || selected.provider?.trim() || null;
 				modelId = modelId || selected.model?.trim() || null;
-				baseUrl = selected.baseUrl?.trim() || null;
+				baseUrl = baseUrl || selected.baseUrl?.trim() || null;
+				if (!reasoningEffort) {
+					reasoningEffort = (selected.reasoning?.effort?.trim() as RuntimeReasoningEffort) || null;
+				}
 			}
 		} catch {
 			// Settings layer unavailable
@@ -144,7 +174,7 @@ export function resolvePiLaunchConfig(input?: {
 		modelId: resolvedModelId,
 		apiKey,
 		baseUrl,
-		reasoningEffort: input?.reasoningEffortOverride ?? null,
+		reasoningEffort,
 	};
 }
 
