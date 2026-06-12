@@ -623,6 +623,142 @@ export const runtimeVaultSearchResponseSchema = z.object({
 });
 export type RuntimeVaultSearchResponse = z.infer<typeof runtimeVaultSearchResponseSchema>;
 
+// ---------------------------------------------------------------------------
+// Vault saved views & filter expressions
+//
+// A *view* is a saved way of looking at one document type: an optional filter
+// expression, a sort, a layout, and which properties to show. Views are
+// repo-scoped and committed alongside the docs (`<repo>/.kanban/files/views/
+// <id>.json`), so they travel with the vault and don't cause cross-branch merge
+// conflicts (one file per view, like the task shards). The filter model mirrors
+// tolaria's: a recursive `FilterGroup` of `all` (AND) / `any` (OR) nodes, where a
+// leaf is a `FilterCondition { field, op, value }`.
+// ---------------------------------------------------------------------------
+
+export const runtimeVaultFilterOpSchema = z.enum([
+	"equals",
+	"not_equals",
+	"contains",
+	"not_contains",
+	"any_of",
+	"none_of",
+	"is_empty",
+	"is_not_empty",
+	"before",
+	"after",
+]);
+export type RuntimeVaultFilterOp = z.infer<typeof runtimeVaultFilterOpSchema>;
+
+export const runtimeVaultFilterConditionSchema = z.object({
+	// A doc field: a built-in (`type`/`title`/`updated`/`created`) or a frontmatter key.
+	field: z.string().min(1),
+	op: runtimeVaultFilterOpSchema,
+	// Omitted for the unary `is_empty`/`is_not_empty` ops; an array for `any_of`/`none_of`.
+	value: runtimeVaultFrontmatterValueSchema.optional(),
+});
+export type RuntimeVaultFilterCondition = z.infer<typeof runtimeVaultFilterConditionSchema>;
+
+export type RuntimeVaultFilterNode = RuntimeVaultFilterCondition | RuntimeVaultFilterGroup;
+export type RuntimeVaultFilterGroup = { all: RuntimeVaultFilterNode[] } | { any: RuntimeVaultFilterNode[] };
+
+// Recursive group/node schemas. `z.lazy` defers evaluation so the mutual reference
+// resolves at parse time, not module-init time.
+export const runtimeVaultFilterGroupSchema: z.ZodType<RuntimeVaultFilterGroup> = z.lazy(() =>
+	z.union([
+		z.object({ all: z.array(runtimeVaultFilterNodeSchema) }),
+		z.object({ any: z.array(runtimeVaultFilterNodeSchema) }),
+	]),
+);
+const runtimeVaultFilterNodeSchema: z.ZodType<RuntimeVaultFilterNode> = z.lazy(() =>
+	z.union([runtimeVaultFilterConditionSchema, runtimeVaultFilterGroupSchema]),
+);
+
+export const runtimeVaultSortDirectionSchema = z.enum(["asc", "desc"]);
+export type RuntimeVaultSortDirection = z.infer<typeof runtimeVaultSortDirectionSchema>;
+
+export const runtimeVaultSortSchema = z.object({
+	field: z.string().min(1),
+	direction: runtimeVaultSortDirectionSchema,
+});
+export type RuntimeVaultSort = z.infer<typeof runtimeVaultSortSchema>;
+
+export const runtimeVaultViewLayoutSchema = z.enum(["table", "board"]);
+export type RuntimeVaultViewLayout = z.infer<typeof runtimeVaultViewLayoutSchema>;
+
+export const runtimeVaultViewSchema = z.object({
+	id: z.string(),
+	// The document type this view applies to (e.g. "requirement").
+	type: z.string(),
+	name: z.string(),
+	// A lucide icon name, or null for the type's default icon.
+	icon: z.string().nullable().default(null),
+	// Sidebar/tab ordering (lower first); ties broken by createdAt.
+	order: z.number().default(0),
+	layout: runtimeVaultViewLayoutSchema.default("table"),
+	sort: runtimeVaultSortSchema.nullable().default(null),
+	// Frontmatter keys shown as columns (besides the always-present title).
+	listPropertiesDisplay: z.array(z.string()).default([]),
+	filters: runtimeVaultFilterGroupSchema,
+	createdAt: z.number(),
+	updatedAt: z.number(),
+});
+export type RuntimeVaultView = z.infer<typeof runtimeVaultViewSchema>;
+
+export const runtimeVaultViewsListRequestSchema = z.object({
+	type: z.string().optional(),
+});
+export type RuntimeVaultViewsListRequest = z.infer<typeof runtimeVaultViewsListRequestSchema>;
+
+export const runtimeVaultViewsListResponseSchema = z.object({
+	views: z.array(runtimeVaultViewSchema),
+});
+export type RuntimeVaultViewsListResponse = z.infer<typeof runtimeVaultViewsListResponseSchema>;
+
+export const runtimeVaultViewCreateRequestSchema = z.object({
+	type: z.string(),
+	name: z.string(),
+	icon: z.string().nullable().optional(),
+	order: z.number().optional(),
+	layout: runtimeVaultViewLayoutSchema.optional(),
+	sort: runtimeVaultSortSchema.nullable().optional(),
+	listPropertiesDisplay: z.array(z.string()).optional(),
+	filters: runtimeVaultFilterGroupSchema.optional(),
+});
+export type RuntimeVaultViewCreateRequest = z.infer<typeof runtimeVaultViewCreateRequestSchema>;
+
+export const runtimeVaultViewCreateResponseSchema = z.object({
+	view: runtimeVaultViewSchema,
+});
+export type RuntimeVaultViewCreateResponse = z.infer<typeof runtimeVaultViewCreateResponseSchema>;
+
+export const runtimeVaultViewUpdateRequestSchema = z.object({
+	id: z.string(),
+	// Patch semantics: omitted fields are left unchanged.
+	name: z.string().optional(),
+	icon: z.string().nullable().optional(),
+	order: z.number().optional(),
+	layout: runtimeVaultViewLayoutSchema.optional(),
+	sort: runtimeVaultSortSchema.nullable().optional(),
+	listPropertiesDisplay: z.array(z.string()).optional(),
+	filters: runtimeVaultFilterGroupSchema.optional(),
+});
+export type RuntimeVaultViewUpdateRequest = z.infer<typeof runtimeVaultViewUpdateRequestSchema>;
+
+export const runtimeVaultViewUpdateResponseSchema = z.object({
+	view: runtimeVaultViewSchema,
+});
+export type RuntimeVaultViewUpdateResponse = z.infer<typeof runtimeVaultViewUpdateResponseSchema>;
+
+export const runtimeVaultViewDeleteRequestSchema = z.object({
+	id: z.string(),
+});
+export type RuntimeVaultViewDeleteRequest = z.infer<typeof runtimeVaultViewDeleteRequestSchema>;
+
+export const runtimeVaultViewDeleteResponseSchema = z.object({
+	deleted: z.boolean(),
+});
+export type RuntimeVaultViewDeleteResponse = z.infer<typeof runtimeVaultViewDeleteResponseSchema>;
+
 export const runtimeGitRepositoryInfoSchema = z.object({
 	currentBranch: z.string().nullable(),
 	defaultBranch: z.string().nullable(),

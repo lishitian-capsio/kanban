@@ -1,20 +1,21 @@
-import { LayoutGrid, Plus, Table as TableIcon } from "lucide-react";
+import { Plus } from "lucide-react";
 import type React from "react";
 import { useMemo, useState } from "react";
 
-import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
 import { VaultBoard } from "./board/vault-board";
 import { groupDocsByStatus } from "./board/vault-status-columns";
 import { NewDocDialog } from "./create/new-doc-dialog";
 import type { VaultDocPatch } from "./data/use-vault-docs";
 import { frontmatterString, type VaultDoc } from "./data/vault-doc-model";
+import { applyVaultView } from "./data/vault-filter";
 import type { VaultTypeView } from "./data/vault-type-registry";
 import { VaultDocDetail } from "./detail/vault-doc-detail";
+import { withEffectiveColumns } from "./views/effective-view";
+import { useVaultViewState } from "./views/use-vault-view-state";
 import { PriorityDot, StatusBadge } from "./views/vault-property-controls";
 import { VaultTableView } from "./views/vault-table-view";
-
-type ViewMode = "table" | "board";
+import { VaultViewBar } from "./views/vault-view-bar";
 
 function BoardCardBody({ view, doc }: { view: VaultTypeView; doc: VaultDoc }): React.ReactElement {
 	return (
@@ -28,44 +29,8 @@ function BoardCardBody({ view, doc }: { view: VaultTypeView; doc: VaultDoc }): R
 	);
 }
 
-function ViewModeToggle({
-	mode,
-	onChange,
-}: {
-	mode: ViewMode;
-	onChange: (mode: ViewMode) => void;
-}): React.ReactElement {
-	return (
-		<div className="flex items-center rounded-md border border-border bg-surface-2 p-0.5">
-			<button
-				type="button"
-				aria-label="Table view"
-				onClick={() => onChange("table")}
-				className={cn(
-					"flex h-7 items-center gap-1.5 rounded px-2 text-[12px] text-text-secondary hover:text-text-primary",
-					mode === "table" && "bg-surface-3 text-text-primary",
-				)}
-			>
-				<TableIcon size={14} />
-				Table
-			</button>
-			<button
-				type="button"
-				aria-label="Board view"
-				onClick={() => onChange("board")}
-				className={cn(
-					"flex h-7 items-center gap-1.5 rounded px-2 text-[12px] text-text-secondary hover:text-text-primary",
-					mode === "board" && "bg-surface-3 text-text-primary",
-				)}
-			>
-				<LayoutGrid size={14} />
-				Board
-			</button>
-		</div>
-	);
-}
-
 interface VaultContentProps {
+	workspaceId: string | null;
 	view: VaultTypeView;
 	docs: VaultDoc[];
 	/** `type:customer` docs, for the customer picker on requirement-like detail views. */
@@ -84,6 +49,7 @@ interface VaultContentProps {
 }
 
 export function VaultContent({
+	workspaceId,
 	view,
 	docs,
 	customers,
@@ -100,13 +66,24 @@ export function VaultContent({
 }: VaultContentProps): React.ReactElement {
 	// Only status-bearing types get a board; flat types (Customer, Note) are table-only.
 	const supportsBoard = view.statuses.length > 0;
-	const [mode, setMode] = useState<ViewMode>("table");
+	const viewState = useVaultViewState(workspaceId, view.type);
 	const [isNewOpen, setIsNewOpen] = useState(false);
 	const [isCreating, setIsCreating] = useState(false);
 
-	const grouped = useMemo(() => groupDocsByStatus(view, docs), [view, docs]);
+	const { draft } = viewState;
+	const displayDocs = useMemo(
+		() => applyVaultView(docs, { filters: draft.filters, sort: draft.sort }),
+		[docs, draft.filters, draft.sort],
+	);
+	const tableView = useMemo(
+		() => withEffectiveColumns(view, draft.listPropertiesDisplay),
+		[view, draft.listPropertiesDisplay],
+	);
+	const grouped = useMemo(() => groupDocsByStatus(view, displayDocs), [view, displayDocs]);
+
+	const effectiveLayout = supportsBoard ? draft.layout : "table";
 	const ViewIcon = view.icon;
-	const effectiveMode: ViewMode = supportsBoard ? mode : "table";
+	const isFiltered = displayDocs.length !== docs.length;
 
 	async function handleCreate(title: string): Promise<void> {
 		setIsCreating(true);
@@ -138,11 +115,12 @@ export function VaultContent({
 				<div className="flex items-center gap-2 text-text-primary">
 					<ViewIcon size={16} />
 					<h2 className="text-sm font-semibold">{view.pluralLabel}</h2>
-					<span className="text-[12px] text-text-tertiary">{docs.length}</span>
+					<span className="text-[12px] text-text-tertiary">
+						{isFiltered ? `${displayDocs.length} of ${docs.length}` : docs.length}
+					</span>
 				</div>
 				<div className="ml-auto flex items-center gap-2">
-					{isMutating ? <Spinner size={14} /> : null}
-					{supportsBoard ? <ViewModeToggle mode={mode} onChange={setMode} /> : null}
+					{isMutating || viewState.isMutating ? <Spinner size={14} /> : null}
 					<button
 						type="button"
 						onClick={() => setIsNewOpen(true)}
@@ -154,6 +132,8 @@ export function VaultContent({
 				</div>
 			</div>
 
+			<VaultViewBar view={view} state={viewState} supportsBoard={supportsBoard} />
+
 			<div className="flex flex-1 min-h-0 flex-col">
 				{isLoading && docs.length === 0 ? (
 					<div className="flex flex-1 items-center justify-center">
@@ -163,8 +143,8 @@ export function VaultContent({
 					<div className="flex flex-1 items-center justify-center px-4 py-12 text-center text-[13px] text-status-red">
 						{errorMessage}
 					</div>
-				) : effectiveMode === "table" ? (
-					<VaultTableView view={view} docs={docs} selectedDocId={null} onSelect={onSelectDoc} />
+				) : effectiveLayout === "table" ? (
+					<VaultTableView view={tableView} docs={displayDocs} selectedDocId={null} onSelect={onSelectDoc} />
 				) : (
 					<VaultBoard
 						columns={grouped.columns}

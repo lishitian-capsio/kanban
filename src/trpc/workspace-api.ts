@@ -21,6 +21,7 @@ import type { SessionMessage } from "../session/session-message";
 import { saveWorkspaceState, WorkspaceStateConflictError } from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { renderTranscriptToMarkdown, selectTranscriptMessages } from "../vault/crystallize";
+import { SavedViewStore } from "../vault/saved-view-store";
 import { VaultDocumentStore } from "../vault/vault-document-store";
 import { buildVaultLinkIndex } from "../vault/vault-link-index";
 import { searchVaultDocuments } from "../vault/vault-search";
@@ -491,6 +492,29 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 			});
 			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
 			return { document };
+		},
+		listViews: async (workspaceScope, input) => {
+			const type = input.type?.trim() ? input.type.trim() : undefined;
+			const views = await new SavedViewStore(workspaceScope.workspacePath).list(type);
+			return { views };
+		},
+		createView: async (workspaceScope, input) => {
+			const view = await new SavedViewStore(workspaceScope.workspacePath).create(input);
+			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
+			return { view };
+		},
+		updateView: async (workspaceScope, input) => {
+			const { id, ...patch } = input;
+			const view = await new SavedViewStore(workspaceScope.workspacePath).update(id, patch);
+			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
+			return { view };
+		},
+		deleteView: async (workspaceScope, input) => {
+			const deleted = await new SavedViewStore(workspaceScope.workspacePath).remove(input.id);
+			if (deleted) {
+				void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
+			}
+			return { deleted };
 		},
 		saveState: async (workspaceScope, input) => {
 			try {

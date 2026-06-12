@@ -182,6 +182,7 @@ export function VaultView({
 				<FilesView workspaceId={workspaceId} />
 			) : view ? (
 				<VaultContent
+					workspaceId={workspaceId}
 					view={view}
 					docs={docs}
 					customers={customerDocs.docs}

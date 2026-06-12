@@ -125,6 +125,14 @@ import type {
 	RuntimeVaultDocumentUpdateResponse,
 	RuntimeVaultSearchRequest,
 	RuntimeVaultSearchResponse,
+	RuntimeVaultViewCreateRequest,
+	RuntimeVaultViewCreateResponse,
+	RuntimeVaultViewDeleteRequest,
+	RuntimeVaultViewDeleteResponse,
+	RuntimeVaultViewsListRequest,
+	RuntimeVaultViewsListResponse,
+	RuntimeVaultViewUpdateRequest,
+	RuntimeVaultViewUpdateResponse,
 	RuntimeWorkspaceChangesRequest,
 	RuntimeWorkspaceChangesResponse,
 	RuntimeWorkspaceFileSearchRequest,
@@ -257,6 +265,14 @@ import {
 	runtimeVaultDocumentUpdateResponseSchema,
 	runtimeVaultSearchRequestSchema,
 	runtimeVaultSearchResponseSchema,
+	runtimeVaultViewCreateRequestSchema,
+	runtimeVaultViewCreateResponseSchema,
+	runtimeVaultViewDeleteRequestSchema,
+	runtimeVaultViewDeleteResponseSchema,
+	runtimeVaultViewsListRequestSchema,
+	runtimeVaultViewsListResponseSchema,
+	runtimeVaultViewUpdateRequestSchema,
+	runtimeVaultViewUpdateResponseSchema,
 	runtimeWorkspaceChangesRequestSchema,
 	runtimeWorkspaceChangesResponseSchema,
 	runtimeWorkspaceFileSearchRequestSchema,
@@ -507,6 +523,22 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeVaultCrystallizeRequest,
 		) => Promise<RuntimeVaultCrystallizeResponse>;
+		listViews: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultViewsListRequest,
+		) => Promise<RuntimeVaultViewsListResponse>;
+		createView: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultViewCreateRequest,
+		) => Promise<RuntimeVaultViewCreateResponse>;
+		updateView: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultViewUpdateRequest,
+		) => Promise<RuntimeVaultViewUpdateResponse>;
+		deleteView: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultViewDeleteRequest,
+		) => Promise<RuntimeVaultViewDeleteResponse>;
 		notifyStateUpdated: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeWorkspaceStateNotifyResponse>;
 		saveState: (
 			scope: RuntimeTrpcWorkspaceScope,
@@ -970,6 +1002,30 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeVaultCrystallizeResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.crystallizeChatToDoc(ctx.workspaceScope, input);
+			}),
+		listViews: workspaceProcedure
+			.input(runtimeVaultViewsListRequestSchema)
+			.output(runtimeVaultViewsListResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.listViews(ctx.workspaceScope, input);
+			}),
+		createView: workspaceProcedure
+			.input(runtimeVaultViewCreateRequestSchema)
+			.output(runtimeVaultViewCreateResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.createView(ctx.workspaceScope, input);
+			}),
+		updateView: workspaceProcedure
+			.input(runtimeVaultViewUpdateRequestSchema)
+			.output(runtimeVaultViewUpdateResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.updateView(ctx.workspaceScope, input);
+			}),
+		deleteView: workspaceProcedure
+			.input(runtimeVaultViewDeleteRequestSchema)
+			.output(runtimeVaultViewDeleteResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.deleteView(ctx.workspaceScope, input);
 			}),
 		notifyStateUpdated: workspaceProcedure
 			.output(runtimeWorkspaceStateNotifyResponseSchema)
