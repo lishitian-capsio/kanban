@@ -9,6 +9,8 @@ import { CustomerAnchorPanel } from "./customer/customer-anchor-panel";
 import { type UseVaultDocsResult, useVaultDocs, type VaultDocPatch } from "./data/use-vault-docs";
 import type { VaultDoc } from "./data/vault-doc-model";
 import { getVaultTypeView, listVaultTypeViews } from "./data/vault-type-registry";
+import { useVaultWikilinks } from "./links/use-vault-wikilinks";
+import type { VaultWikilinkBinding } from "./links/vault-wikilink-binding";
 import { QuickOpenPalette } from "./search/quick-open-palette";
 import { VaultSearchPanel } from "./search/vault-search-panel";
 import { VaultContent } from "./vault-content";
@@ -140,6 +142,41 @@ export function VaultView({
 		[view, updateDoc],
 	);
 
+	// Body `[[wikilink]]` support for the open document: candidate pool (all docs)
+	// + resolution from the B1 backend engine, re-pulled when the doc is saved.
+	const { candidates, resolve } = useVaultWikilinks(workspaceId, selectedDoc?.id ?? null, selectedDoc?.updatedAt ?? 0);
+
+	// A dangling `[[link]]` materializes as a free-form Note (the lifecycle-free
+	// type), then opens it so the user can flesh it out immediately.
+	const handleCreateWikilink = useCallback(
+		async (target: string) => {
+			const noteView = getVaultTypeView("note");
+			if (!noteView) {
+				return;
+			}
+			const created = await createDoc(buildDocFromTemplate(noteView, target));
+			if (created) {
+				handleOpenDoc(created.type, created.id);
+			}
+		},
+		[createDoc, handleOpenDoc],
+	);
+
+	const wikilinkBinding: VaultWikilinkBinding | undefined = useMemo(() => {
+		if (!selectedDoc) {
+			return undefined;
+		}
+		return {
+			candidates,
+			currentDocId: selectedDoc.id,
+			rendering: {
+				resolve,
+				onOpen: (resolution) => handleOpenDoc(resolution.type, resolution.id),
+				onCreate: handleCreateWikilink,
+			},
+		};
+	}, [selectedDoc, candidates, resolve, handleOpenDoc, handleCreateWikilink]);
+
 	const renderDetailExtras = useCallback(
 		(doc: VaultDoc): React.ReactNode => {
 			if (doc.type !== "customer") {
@@ -196,6 +233,7 @@ export function VaultView({
 					onDelete={handleDelete}
 					onCardMove={handleCardMove}
 					renderDetailExtras={renderDetailExtras}
+					wikilinks={wikilinkBinding}
 				/>
 			) : (
 				<div className="flex flex-1 items-center justify-center bg-surface-0 text-[13px] text-text-tertiary">

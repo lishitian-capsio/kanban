@@ -11,6 +11,7 @@ import { frontmatterString, type VaultDoc } from "./data/vault-doc-model";
 import { applyVaultView } from "./data/vault-filter";
 import type { VaultTypeView } from "./data/vault-type-registry";
 import { VaultDocDetail } from "./detail/vault-doc-detail";
+import type { VaultWikilinkBinding } from "./links/vault-wikilink-binding";
 import { withEffectiveColumns } from "./views/effective-view";
 import { useVaultViewState } from "./views/use-vault-view-state";
 import { PriorityDot, StatusBadge } from "./views/vault-property-controls";
@@ -46,6 +47,8 @@ interface VaultContentProps {
 	onCardMove: (docId: string, toColumnId: string) => void;
 	/** Type-specific detail sections (e.g. the customer anchor panel). */
 	renderDetailExtras?: (doc: VaultDoc) => React.ReactNode;
+	/** Body `[[wikilink]]` binding for the open document's editor. */
+	wikilinks?: VaultWikilinkBinding;
 }
 
 export function VaultContent({
@@ -63,6 +66,7 @@ export function VaultContent({
 	onDelete,
 	onCardMove,
 	renderDetailExtras,
+	wikilinks,
 }: VaultContentProps): React.ReactElement {
 	// Only status-bearing types get a board; flat types (Customer, Note) are table-only.
 	const supportsBoard = view.statuses.length > 0;
@@ -102,6 +106,7 @@ export function VaultContent({
 				doc={selectedDoc}
 				customers={customers}
 				extras={renderDetailExtras?.(selectedDoc)}
+				wikilinks={wikilinks}
 				onPatch={onPatch}
 				onDelete={onDelete}
 				onBack={() => onSelectDoc(null)}

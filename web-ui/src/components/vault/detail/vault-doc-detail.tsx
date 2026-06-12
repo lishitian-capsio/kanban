@@ -18,6 +18,7 @@ import type { VaultDocPatch } from "../data/use-vault-docs";
 import type { VaultDoc } from "../data/vault-doc-model";
 import type { VaultTypeView } from "../data/vault-type-registry";
 import { DocEditor } from "../editor/doc-editor";
+import type { VaultWikilinkBinding } from "../links/vault-wikilink-binding";
 import { VaultPropertiesPanel } from "./vault-properties-panel";
 
 interface VaultDocDetailProps {
@@ -27,6 +28,8 @@ interface VaultDocDetailProps {
 	customers: VaultDoc[];
 	/** Type-specific sections rendered between the properties panel and the editor. */
 	extras?: React.ReactNode;
+	/** Body `[[wikilink]]` autocomplete + render binding (omitted ⇒ plain markdown). */
+	wikilinks?: VaultWikilinkBinding;
 	onPatch: (id: string, patch: VaultDocPatch) => void;
 	onDelete: (id: string) => void;
 	onBack: () => void;
@@ -43,6 +46,7 @@ export function VaultDocDetail({
 	doc,
 	customers,
 	extras,
+	wikilinks,
 	onPatch,
 	onDelete,
 	onBack,
@@ -112,7 +116,7 @@ export function VaultDocDetail({
 
 			{extras}
 
-			<DocEditor value={body} onChange={setBody} onBlur={commitBody} />
+			<DocEditor value={body} onChange={setBody} onBlur={commitBody} wikilinks={wikilinks} />
 
 			<AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
 				<AlertDialogHeader>

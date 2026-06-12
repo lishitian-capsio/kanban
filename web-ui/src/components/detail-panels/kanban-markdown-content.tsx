@@ -23,11 +23,15 @@ import "prismjs/components/prism-swift";
 import "prismjs/components/prism-tsx";
 import "prismjs/components/prism-typescript";
 import "prismjs/components/prism-yaml";
+import { useMemo } from "react";
 import type { Components } from "react-markdown";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { cn } from "@/components/ui/cn";
+import { parseWikilinkHref, remarkWikilink, WIKILINK_SCHEME } from "@/components/vault/links/remark-wikilink";
+import { WikilinkChip } from "@/components/vault/links/wikilink-chip";
+import type { WikilinkResolver, WikilinkResolution } from "@/components/vault/links/wikilink-resolution";
 
 const PRISM_LANGUAGE_ALIASES: Record<string, string> = {
 	bash: "bash",
@@ -77,7 +81,7 @@ function toCodeString(children: ReactNode): string {
 	return value.endsWith("\n") ? value.slice(0, -1) : value;
 }
 
-const markdownComponents: Components = {
+const baseMarkdownComponents: Components = {
 	h1: ({ className, ...props }) => (
 		<h1 className={cn("mt-3 text-base font-semibold text-text-primary", className)} {...props} />
 	),
@@ -146,13 +150,66 @@ const markdownComponents: Components = {
 	},
 };
 
-export function KanbanMarkdownContent({ content }: { content: string }): ReactElement {
+/** Opt-in hooks that turn body `[[wikilinks]]` into interactive chips. */
+export interface KanbanMarkdownWikilinks {
+	/** Resolve a target to its document (backed by the B1 `getDocumentLinks` engine). */
+	resolve: WikilinkResolver;
+	/** Open a resolved target's document. */
+	onOpen?: (resolution: WikilinkResolution) => void;
+	/** Create the document behind an unresolved target. */
+	onCreate?: (target: string) => void;
+}
+
+// react-markdown sanitizes unknown URL schemes to "" by default; preserve our
+// internal `wikilink:` scheme so the `a` override can detect and replace it.
+function transformUrl(url: string): string {
+	return url.startsWith(WIKILINK_SCHEME) ? url : defaultUrlTransform(url);
+}
+
+function buildMarkdownComponents(wikilinks: KanbanMarkdownWikilinks | undefined): Components {
+	if (!wikilinks) {
+		return baseMarkdownComponents;
+	}
+	return {
+		...baseMarkdownComponents,
+		a: ({ className, href, children, node: _node, ...props }) => {
+			const target = parseWikilinkHref(href);
+			if (target !== null) {
+				return (
+					<WikilinkChip
+						target={target}
+						resolution={wikilinks.resolve(target)}
+						onOpen={wikilinks.onOpen}
+						onCreate={wikilinks.onCreate}
+					>
+						{children}
+					</WikilinkChip>
+				);
+			}
+			return (
+				<a className={cn("text-accent-2 underline", className)} href={href} target="_blank" rel="noreferrer" {...props}>
+					{children}
+				</a>
+			);
+		},
+	};
+}
+
+export function KanbanMarkdownContent({
+	content,
+	wikilinks,
+}: {
+	content: string;
+	wikilinks?: KanbanMarkdownWikilinks;
+}): ReactElement {
+	const components = useMemo(() => buildMarkdownComponents(wikilinks), [wikilinks]);
+	const remarkPlugins = useMemo(() => (wikilinks ? [remarkGfm, remarkWikilink] : [remarkGfm]), [wikilinks]);
 	if (!content.trim()) {
 		return <span className="text-text-secondary" />;
 	}
 	return (
 		<div className="kb-markdown min-w-0">
-			<ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+			<ReactMarkdown remarkPlugins={remarkPlugins} urlTransform={transformUrl} components={components}>
 				{content}
 			</ReactMarkdown>
 		</div>
