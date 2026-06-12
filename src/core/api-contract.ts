@@ -157,6 +157,15 @@ export type RuntimeRequirementPriority = z.infer<typeof runtimeRequirementPriori
 export const runtimeRequirementStatusSchema = z.enum(["draft", "active", "done", "archived"]);
 export type RuntimeRequirementStatus = z.infer<typeof runtimeRequirementStatusSchema>;
 
+// The vault-era "problem state" of a requirement, replacing the delivery-flavored
+// status above as requirements become customer-facing problem statements rather
+// than delivery items: proposed (在提) | clarified (已澄清) | parked (搁置) |
+// invalid (失效). Added alongside the legacy status during the additive contract
+// phase (B2); the migration map (draft→proposed, active/done→clarified,
+// archived→parked) lands with the vault document store.
+export const runtimeRequirementProblemStatusSchema = z.enum(["proposed", "clarified", "parked", "invalid"]);
+export type RuntimeRequirementProblemStatus = z.infer<typeof runtimeRequirementProblemStatusSchema>;
+
 export const runtimeRequirementItemSchema = z.object({
 	id: z.string(),
 	title: z.string(),
@@ -382,6 +391,105 @@ export const runtimeFilePathResponseSchema = z.object({
 	relativePath: z.string().nullable(),
 });
 export type RuntimeFilePathResponse = z.infer<typeof runtimeFilePathResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// Vault documents
+//
+// The readable (markdown + YAML frontmatter) channel of the vault, sibling to
+// the binary file library above. A document is a plain `.md` file under
+// `<repo>/.kanban/files/docs/<type>/<slug>-<id>.md`; frontmatter (`_id`/`type`)
+// is the source of truth, so documents are scanned rather than manifested. This
+// wire contract mirrors the engine model in `src/vault/vault-document.ts`,
+// promoting `title` out of frontmatter and attaching store-supplied location +
+// timestamps. The family is additive (B2): the binary `RuntimeFileItem` path and
+// the legacy `RuntimeRequirement*` types are untouched.
+// ---------------------------------------------------------------------------
+
+// A frontmatter value round-tripped faithfully: a scalar, null, or an array of
+// scalars. Nested maps are outside the model (the engine coerces richer values
+// to strings), matching `VaultFrontmatterValue`.
+export const runtimeVaultFrontmatterValueSchema = z.union([
+	z.string(),
+	z.number(),
+	z.boolean(),
+	z.null(),
+	z.array(z.union([z.string(), z.number(), z.boolean()])),
+]);
+export type RuntimeVaultFrontmatterValue = z.infer<typeof runtimeVaultFrontmatterValueSchema>;
+
+export const runtimeVaultDocumentSchema = z.object({
+	id: z.string(),
+	type: z.string(),
+	title: z.string(),
+	// Markdown body (the document content), excludes frontmatter.
+	body: z.string(),
+	// Every frontmatter key except the promoted `_id`/`type` identity fields.
+	frontmatter: z.record(z.string(), runtimeVaultFrontmatterValueSchema),
+	// Path relative to the repo root, stable across every worktree checkout.
+	relativePath: z.string(),
+	createdAt: z.number(),
+	updatedAt: z.number(),
+});
+export type RuntimeVaultDocument = z.infer<typeof runtimeVaultDocumentSchema>;
+
+export const runtimeVaultDocumentsListRequestSchema = z.object({
+	// Optional type filter (e.g. "requirement"); omitted lists every type.
+	type: z.string().optional(),
+});
+export type RuntimeVaultDocumentsListRequest = z.infer<typeof runtimeVaultDocumentsListRequestSchema>;
+
+export const runtimeVaultDocumentsListResponseSchema = z.object({
+	documents: z.array(runtimeVaultDocumentSchema),
+});
+export type RuntimeVaultDocumentsListResponse = z.infer<typeof runtimeVaultDocumentsListResponseSchema>;
+
+export const runtimeVaultDocumentGetRequestSchema = z.object({
+	id: z.string(),
+});
+export type RuntimeVaultDocumentGetRequest = z.infer<typeof runtimeVaultDocumentGetRequestSchema>;
+
+export const runtimeVaultDocumentGetResponseSchema = z.object({
+	document: runtimeVaultDocumentSchema.nullable(),
+});
+export type RuntimeVaultDocumentGetResponse = z.infer<typeof runtimeVaultDocumentGetResponseSchema>;
+
+export const runtimeVaultDocumentCreateRequestSchema = z.object({
+	type: z.string(),
+	title: z.string(),
+	body: z.string().optional(),
+	frontmatter: z.record(z.string(), runtimeVaultFrontmatterValueSchema).optional(),
+});
+export type RuntimeVaultDocumentCreateRequest = z.infer<typeof runtimeVaultDocumentCreateRequestSchema>;
+
+export const runtimeVaultDocumentCreateResponseSchema = z.object({
+	document: runtimeVaultDocumentSchema,
+});
+export type RuntimeVaultDocumentCreateResponse = z.infer<typeof runtimeVaultDocumentCreateResponseSchema>;
+
+export const runtimeVaultDocumentUpdateRequestSchema = z.object({
+	id: z.string(),
+	// Patch semantics: omitted fields are left unchanged. `frontmatter` is merged
+	// key-wise by the store (title re-slug + git-rename happen there).
+	title: z.string().optional(),
+	body: z.string().optional(),
+	frontmatter: z.record(z.string(), runtimeVaultFrontmatterValueSchema).optional(),
+});
+export type RuntimeVaultDocumentUpdateRequest = z.infer<typeof runtimeVaultDocumentUpdateRequestSchema>;
+
+export const runtimeVaultDocumentUpdateResponseSchema = z.object({
+	document: runtimeVaultDocumentSchema,
+});
+export type RuntimeVaultDocumentUpdateResponse = z.infer<typeof runtimeVaultDocumentUpdateResponseSchema>;
+
+export const runtimeVaultDocumentDeleteRequestSchema = z.object({
+	id: z.string(),
+});
+export type RuntimeVaultDocumentDeleteRequest = z.infer<typeof runtimeVaultDocumentDeleteRequestSchema>;
+
+export const runtimeVaultDocumentDeleteResponseSchema = z.object({
+	deleted: z.boolean(),
+});
+export type RuntimeVaultDocumentDeleteResponse = z.infer<typeof runtimeVaultDocumentDeleteResponseSchema>;
 
 export const runtimeGitRepositoryInfoSchema = z.object({
 	currentBranch: z.string().nullable(),
