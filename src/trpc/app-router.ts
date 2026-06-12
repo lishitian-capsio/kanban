@@ -104,6 +104,18 @@ import type {
 	RuntimeTaskWorkspaceInfoRequest,
 	RuntimeTaskWorkspaceInfoResponse,
 	RuntimeUpdateStatusResponse,
+	RuntimeVaultCrystallizeRequest,
+	RuntimeVaultCrystallizeResponse,
+	RuntimeVaultDocumentCreateRequest,
+	RuntimeVaultDocumentCreateResponse,
+	RuntimeVaultDocumentDeleteRequest,
+	RuntimeVaultDocumentDeleteResponse,
+	RuntimeVaultDocumentGetRequest,
+	RuntimeVaultDocumentGetResponse,
+	RuntimeVaultDocumentsListRequest,
+	RuntimeVaultDocumentsListResponse,
+	RuntimeVaultDocumentUpdateRequest,
+	RuntimeVaultDocumentUpdateResponse,
 	RuntimeWorkspaceChangesRequest,
 	RuntimeWorkspaceChangesResponse,
 	RuntimeWorkspaceFileSearchRequest,
@@ -215,6 +227,18 @@ import {
 	runtimeTaskWorkspaceInfoRequestSchema,
 	runtimeTaskWorkspaceInfoResponseSchema,
 	runtimeUpdateStatusResponseSchema,
+	runtimeVaultCrystallizeRequestSchema,
+	runtimeVaultCrystallizeResponseSchema,
+	runtimeVaultDocumentCreateRequestSchema,
+	runtimeVaultDocumentCreateResponseSchema,
+	runtimeVaultDocumentDeleteRequestSchema,
+	runtimeVaultDocumentDeleteResponseSchema,
+	runtimeVaultDocumentGetRequestSchema,
+	runtimeVaultDocumentGetResponseSchema,
+	runtimeVaultDocumentsListRequestSchema,
+	runtimeVaultDocumentsListResponseSchema,
+	runtimeVaultDocumentUpdateRequestSchema,
+	runtimeVaultDocumentUpdateResponseSchema,
 	runtimeWorkspaceChangesRequestSchema,
 	runtimeWorkspaceChangesResponseSchema,
 	runtimeWorkspaceFileSearchRequestSchema,
@@ -417,6 +441,30 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeFilePathRequest,
 		) => Promise<RuntimeFilePathResponse>;
+		listDocuments: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultDocumentsListRequest,
+		) => Promise<RuntimeVaultDocumentsListResponse>;
+		getDocument: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultDocumentGetRequest,
+		) => Promise<RuntimeVaultDocumentGetResponse>;
+		createDocument: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultDocumentCreateRequest,
+		) => Promise<RuntimeVaultDocumentCreateResponse>;
+		updateDocument: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultDocumentUpdateRequest,
+		) => Promise<RuntimeVaultDocumentUpdateResponse>;
+		deleteDocument: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultDocumentDeleteRequest,
+		) => Promise<RuntimeVaultDocumentDeleteResponse>;
+		crystallizeChatToDoc: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultCrystallizeRequest,
+		) => Promise<RuntimeVaultCrystallizeResponse>;
 		notifyStateUpdated: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeWorkspaceStateNotifyResponse>;
 		saveState: (
 			scope: RuntimeTrpcWorkspaceScope,
@@ -808,6 +856,42 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeFileDeleteResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.deleteFile(ctx.workspaceScope, input);
+			}),
+		listDocuments: workspaceProcedure
+			.input(runtimeVaultDocumentsListRequestSchema)
+			.output(runtimeVaultDocumentsListResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.listDocuments(ctx.workspaceScope, input);
+			}),
+		getDocument: workspaceProcedure
+			.input(runtimeVaultDocumentGetRequestSchema)
+			.output(runtimeVaultDocumentGetResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.getDocument(ctx.workspaceScope, input);
+			}),
+		createDocument: workspaceProcedure
+			.input(runtimeVaultDocumentCreateRequestSchema)
+			.output(runtimeVaultDocumentCreateResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.createDocument(ctx.workspaceScope, input);
+			}),
+		updateDocument: workspaceProcedure
+			.input(runtimeVaultDocumentUpdateRequestSchema)
+			.output(runtimeVaultDocumentUpdateResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.updateDocument(ctx.workspaceScope, input);
+			}),
+		deleteDocument: workspaceProcedure
+			.input(runtimeVaultDocumentDeleteRequestSchema)
+			.output(runtimeVaultDocumentDeleteResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.deleteDocument(ctx.workspaceScope, input);
+			}),
+		crystallizeChatToDoc: workspaceProcedure
+			.input(runtimeVaultCrystallizeRequestSchema)
+			.output(runtimeVaultCrystallizeResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.crystallizeChatToDoc(ctx.workspaceScope, input);
 			}),
 		notifyStateUpdated: workspaceProcedure
 			.output(runtimeWorkspaceStateNotifyResponseSchema)

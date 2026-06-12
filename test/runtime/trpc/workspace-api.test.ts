@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RuntimeTaskSessionSummary, RuntimeWorkspaceChangesResponse } from "../../../src/core/api-contract";
+import type { SessionMessage } from "../../../src/session/session-message";
 
 const workspaceTaskWorktreeMocks = vi.hoisted(() => ({
 	resolveTaskCwd: vi.fn(),
@@ -402,5 +403,122 @@ describe("createWorkspaceApi file library", () => {
 		expect(await api.deleteFile(scope(), { id: added.file.id })).toEqual({ deleted: true });
 		expect(await api.deleteFile(scope(), { id: added.file.id })).toEqual({ deleted: false });
 		expect((await api.listFiles(scope())).files).toHaveLength(0);
+	});
+});
+
+function message(role: SessionMessage["role"], content: string, createdAt: number): SessionMessage {
+	return { id: `${role}-${createdAt}`, role, content, createdAt };
+}
+
+describe("createWorkspaceApi vault documents", () => {
+	let repoPath: string;
+	let broadcastRuntimeWorkspaceStateUpdated: ReturnType<typeof vi.fn>;
+
+	// Build the API with injectable session transcripts so crystallize can be
+	// exercised; the vault store itself writes to the real temp `repoPath`.
+	function createApi(options: { piMessages?: SessionMessage[]; terminalMessages?: SessionMessage[] } = {}) {
+		broadcastRuntimeWorkspaceStateUpdated = vi.fn();
+		return createWorkspaceApi({
+			ensureTerminalManagerForWorkspace: vi.fn(
+				async () => ({ loadTaskSessionMessages: vi.fn(async () => options.terminalMessages ?? []) }) as never,
+			),
+			getScopedPiTaskSessionService: vi.fn(
+				async () => ({ loadTaskSessionMessages: vi.fn(async () => options.piMessages ?? []) }) as never,
+			),
+			broadcastRuntimeWorkspaceStateUpdated: broadcastRuntimeWorkspaceStateUpdated as never,
+			broadcastRuntimeProjectsUpdated: vi.fn(),
+			buildWorkspaceStateSnapshot: vi.fn(),
+		});
+	}
+
+	const scope = () => ({ workspaceId: "workspace-1", workspacePath: repoPath });
+
+	beforeEach(async () => {
+		repoPath = await mkdtemp(join(tmpdir(), "kanban-workspace-api-vault-"));
+	});
+
+	afterEach(async () => {
+		await rm(repoPath, { recursive: true, force: true });
+	});
+
+	it("creates, lists (filtered by type), gets, and deletes documents, broadcasting on each mutation", async () => {
+		const api = createApi();
+
+		const created = await api.createDocument(scope(), {
+			type: "requirement",
+			title: "Doc A",
+			body: "Body A",
+			frontmatter: { priority: "high" },
+		});
+		expect(created.document).toMatchObject({ type: "requirement", title: "Doc A", body: "Body A" });
+		expect(created.document.frontmatter).toMatchObject({ status: "proposed", priority: "high" });
+		expect(broadcastRuntimeWorkspaceStateUpdated).toHaveBeenCalledWith("workspace-1", repoPath);
+
+		await api.createDocument(scope(), { type: "note", title: "A note" });
+
+		expect((await api.listDocuments(scope(), { type: "requirement" })).documents).toHaveLength(1);
+		expect((await api.listDocuments(scope(), {})).documents).toHaveLength(2);
+
+		const got = await api.getDocument(scope(), { id: created.document.id });
+		expect(got.document?.body).toBe("Body A");
+
+		const updated = await api.updateDocument(scope(), {
+			id: created.document.id,
+			frontmatter: { status: "clarified" },
+		});
+		expect(updated.document.frontmatter.status).toBe("clarified");
+
+		broadcastRuntimeWorkspaceStateUpdated.mockClear();
+		expect((await api.deleteDocument(scope(), { id: created.document.id })).deleted).toBe(true);
+		expect(broadcastRuntimeWorkspaceStateUpdated).toHaveBeenCalledWith("workspace-1", repoPath);
+
+		// Deleting an unknown id does not broadcast.
+		broadcastRuntimeWorkspaceStateUpdated.mockClear();
+		expect((await api.deleteDocument(scope(), { id: "nope" })).deleted).toBe(false);
+		expect(broadcastRuntimeWorkspaceStateUpdated).not.toHaveBeenCalled();
+	});
+
+	it("crystallizes a pi transcript into a markdown document and persists it", async () => {
+		const api = createApi({
+			piMessages: [
+				message("user", "How do we throttle logins?", 1),
+				message("reasoning", "internal thought", 2),
+				message("assistant", "Token bucket per account.", 3),
+			],
+		});
+
+		const result = await api.crystallizeChatToDoc(scope(), { sessionId: "task-1", type: "requirement" });
+		expect(result.document.type).toBe("requirement");
+		expect(result.document.title).toBe("How do we throttle logins?");
+		expect(result.document.body).toContain("**User:**");
+		expect(result.document.body).toContain("Token bucket per account.");
+		expect(result.document.body).not.toContain("internal thought");
+		expect(broadcastRuntimeWorkspaceStateUpdated).toHaveBeenCalledWith("workspace-1", repoPath);
+
+		// The crystallized doc is now a real, listable vault document.
+		const listed = await api.listDocuments(scope(), { type: "requirement" });
+		expect(listed.documents).toHaveLength(1);
+		expect(listed.documents[0]?.id).toBe(result.document.id);
+	});
+
+	it("respects lastN and an explicit title, falling back to the terminal transcript when pi is empty", async () => {
+		const api = createApi({
+			terminalMessages: [
+				message("user", "first", 1),
+				message("assistant", "older answer", 2),
+				message("user", "second", 3),
+				message("assistant", "latest answer", 4),
+			],
+		});
+
+		const result = await api.crystallizeChatToDoc(scope(), {
+			sessionId: "task-1",
+			type: "note",
+			lastN: 2,
+			title: "CLI note",
+		});
+		expect(result.document.title).toBe("CLI note");
+		expect(result.document.body).toContain("latest answer");
+		expect(result.document.body).not.toContain("older answer");
 	});
 });

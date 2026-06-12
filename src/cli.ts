@@ -10,6 +10,7 @@ import { registerFileCommand } from "./commands/file";
 import { registerHooksCommand } from "./commands/hooks";
 import { registerRequirementCommand } from "./commands/requirement";
 import { registerTaskCommand } from "./commands/task";
+import { registerVaultCommand } from "./commands/vault";
 import { installProxyFetch } from "./config/proxy-fetch";
 import { loadGlobalRuntimeConfig, loadRuntimeConfig } from "./config/runtime-config";
 import type { RuntimeCommandRunResponse } from "./core/api-contract";
@@ -706,6 +707,7 @@ function createProgram(invocationArgs: string[]): Command {
 	registerTaskCommand(program);
 	registerRequirementCommand(program);
 	registerFileCommand(program);
+	registerVaultCommand(program);
 	registerHooksCommand(program);
 
 	program
