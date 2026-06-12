@@ -3,12 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInitialBoardData } from "@/data/board-data";
 import { useWorkspaceSync } from "@/hooks/use-workspace-sync";
-import type {
-	RuntimeRequirementTaskLinksData,
-	RuntimeRequirementsData,
-	RuntimeTaskSessionSummary,
-	RuntimeWorkspaceStateResponse,
-} from "@/runtime/types";
+import type { RuntimeTaskSessionSummary, RuntimeWorkspaceStateResponse } from "@/runtime/types";
 import type { BoardData } from "@/types";
 
 const fetchWorkspaceStateMock = vi.hoisted(() => vi.fn());
@@ -56,8 +51,6 @@ function createWorkspaceState(taskId: string, revision: number): RuntimeWorkspac
 		},
 		board: createBoard(taskId),
 		sessions: {},
-		requirements: { items: [] },
-		requirementTaskLinks: { links: [] },
 		revision,
 	};
 }
@@ -137,8 +130,6 @@ function HookHarness({
 }): null {
 	const [board, setBoard] = useState<BoardData>(() => createInitialBoardData());
 	const [sessions, setSessions] = useState<Record<string, RuntimeTaskSessionSummary>>({});
-	const [, setRequirements] = useState<RuntimeRequirementsData>({ items: [] });
-	const [, setRequirementTaskLinks] = useState<RuntimeRequirementTaskLinksData>({ links: [] });
 	const [canPersistWorkspaceState, setCanPersistWorkspaceState] = useState(false);
 	const { refreshWorkspaceState, resetWorkspaceSyncState } = useWorkspaceSync({
 		currentProjectId: "project-a",
@@ -148,8 +139,6 @@ function HookHarness({
 		isDocumentVisible,
 		setBoard,
 		setSessions,
-		setRequirements,
-		setRequirementTaskLinks,
 		setCanPersistWorkspaceState,
 	});
 

@@ -151,39 +151,18 @@ export const runtimeBoardDataSchema = z.object({
 });
 export type RuntimeBoardData = z.infer<typeof runtimeBoardDataSchema>;
 
+// Requirement priority is the one piece of the legacy requirement contract that
+// outlives the subsystem: the vault `requirement` document type reuses it for its
+// `priority` frontmatter field (see `src/vault/vault-types.ts`).
 export const runtimeRequirementPrioritySchema = z.enum(["low", "medium", "high", "urgent"]);
 export type RuntimeRequirementPriority = z.infer<typeof runtimeRequirementPrioritySchema>;
 
-export const runtimeRequirementStatusSchema = z.enum(["draft", "active", "done", "archived"]);
-export type RuntimeRequirementStatus = z.infer<typeof runtimeRequirementStatusSchema>;
-
-// The vault-era "problem state" of a requirement, replacing the delivery-flavored
-// status above as requirements become customer-facing problem statements rather
-// than delivery items: proposed (在提) | clarified (已澄清) | parked (搁置) |
-// invalid (失效). Added alongside the legacy status during the additive contract
-// phase (B2); the migration map (draft→proposed, active/done→clarified,
-// archived→parked) lands with the vault document store.
+// The vault-era "problem state" of a requirement: a requirement faces the
+// customer, so its states describe the *problem*, not delivery — proposed (在提) |
+// clarified (已澄清) | parked (搁置) | invalid (失效). Lives in the frontmatter of a
+// `requirement` vault document.
 export const runtimeRequirementProblemStatusSchema = z.enum(["proposed", "clarified", "parked", "invalid"]);
 export type RuntimeRequirementProblemStatus = z.infer<typeof runtimeRequirementProblemStatusSchema>;
-
-export const runtimeRequirementItemSchema = z.object({
-	id: z.string(),
-	title: z.string(),
-	description: z.string().default(""),
-	priority: runtimeRequirementPrioritySchema.default("medium"),
-	status: runtimeRequirementStatusSchema.default("draft"),
-	// Reserved for the future "link / split a requirement into tasks" capability.
-	linkedTaskIds: z.array(z.string()).default([]),
-	order: z.number().default(0),
-	createdAt: z.number(),
-	updatedAt: z.number(),
-});
-export type RuntimeRequirementItem = z.infer<typeof runtimeRequirementItemSchema>;
-
-export const runtimeRequirementsDataSchema = z.object({
-	items: z.array(runtimeRequirementItemSchema).default([]),
-});
-export type RuntimeRequirementsData = z.infer<typeof runtimeRequirementsDataSchema>;
 
 // A single home sidebar chat thread. `id` is the thread id (the fourth segment
 // of the home agent session id), NOT the full synthetic session id. Each thread
@@ -235,57 +214,6 @@ export const runtimeHomeChatThreadMutationResponseSchema = z.object({
 	error: z.string().optional(),
 });
 export type RuntimeHomeChatThreadMutationResponse = z.infer<typeof runtimeHomeChatThreadMutationResponseSchema>;
-
-export const runtimeRequirementChangeSourceSchema = z.enum(["human", "agent"]);
-export type RuntimeRequirementChangeSource = z.infer<typeof runtimeRequirementChangeSourceSchema>;
-
-export const runtimeRequirementChangeKindSchema = z.enum(["create", "update", "delete", "revert"]);
-export type RuntimeRequirementChangeKind = z.infer<typeof runtimeRequirementChangeKindSchema>;
-
-export const runtimeRequirementVersionSchema = z.object({
-	requirementId: z.string(),
-	version: z.number().int().positive(),
-	changeKind: runtimeRequirementChangeKindSchema,
-	snapshot: runtimeRequirementItemSchema,
-	source: runtimeRequirementChangeSourceSchema,
-	reason: z.string().nullable().default(null),
-	createdAt: z.number(),
-});
-export type RuntimeRequirementVersion = z.infer<typeof runtimeRequirementVersionSchema>;
-
-export const runtimeRequirementVersionsDataSchema = z.object({
-	versions: z.array(runtimeRequirementVersionSchema).default([]),
-});
-export type RuntimeRequirementVersionsData = z.infer<typeof runtimeRequirementVersionsDataSchema>;
-
-export const runtimeRequirementVersionsRequestSchema = z.object({
-	requirementId: z.string().optional(),
-});
-export type RuntimeRequirementVersionsRequest = z.infer<typeof runtimeRequirementVersionsRequestSchema>;
-
-export const runtimeRequirementVersionsResponseSchema = z.object({
-	requirementId: z.string().nullable(),
-	versions: z.array(runtimeRequirementVersionSchema),
-});
-export type RuntimeRequirementVersionsResponse = z.infer<typeof runtimeRequirementVersionsResponseSchema>;
-
-// A one-way requirement -> task association. Lives entirely on the requirement side:
-// the task board/card schema is never touched and only its id is referenced here.
-// A link either exists or it does not — there is a single confirmed state, and every
-// link is mirrored into the requirement's linkedTaskIds (the source of truth for
-// associations).
-export const runtimeRequirementTaskLinkSchema = z.object({
-	requirementId: z.string(),
-	taskId: z.string(),
-	source: runtimeRequirementChangeSourceSchema,
-	createdAt: z.number(),
-});
-export type RuntimeRequirementTaskLink = z.infer<typeof runtimeRequirementTaskLinkSchema>;
-
-export const runtimeRequirementTaskLinksDataSchema = z.object({
-	links: z.array(runtimeRequirementTaskLinkSchema).default([]),
-});
-export type RuntimeRequirementTaskLinksData = z.infer<typeof runtimeRequirementTaskLinksDataSchema>;
 
 // ---------------------------------------------------------------------------
 // Files library
@@ -632,8 +560,6 @@ export const runtimeWorkspaceStateResponseSchema = z.object({
 	git: runtimeGitRepositoryInfoSchema,
 	board: runtimeBoardDataSchema,
 	sessions: z.record(z.string(), runtimeTaskSessionSummarySchema),
-	requirements: runtimeRequirementsDataSchema.default({ items: [] }),
-	requirementTaskLinks: runtimeRequirementTaskLinksDataSchema.default({ links: [] }),
 	revision: z.number(),
 });
 export type RuntimeWorkspaceStateResponse = z.infer<typeof runtimeWorkspaceStateResponseSchema>;
@@ -641,8 +567,6 @@ export type RuntimeWorkspaceStateResponse = z.infer<typeof runtimeWorkspaceState
 export const runtimeWorkspaceStateSaveRequestSchema = z.object({
 	board: runtimeBoardDataSchema,
 	sessions: z.record(z.string(), runtimeTaskSessionSummarySchema),
-	requirements: runtimeRequirementsDataSchema.optional(),
-	requirementTaskLinks: runtimeRequirementTaskLinksDataSchema.optional(),
 	expectedRevision: z.number().int().nonnegative().optional(),
 });
 export type RuntimeWorkspaceStateSaveRequest = z.infer<typeof runtimeWorkspaceStateSaveRequestSchema>;

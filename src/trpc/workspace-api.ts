@@ -6,8 +6,6 @@ import type {
 	RuntimeGitSummaryResponse,
 	RuntimeGitSyncAction,
 	RuntimeGitSyncResponse,
-	RuntimeRequirementVersionsRequest,
-	RuntimeRequirementVersionsResponse,
 	RuntimeTaskSessionSummary,
 	RuntimeWorkspaceChangesMode,
 	RuntimeWorkspaceFileSearchResponse,
@@ -20,11 +18,7 @@ import {
 } from "../core/api-validation";
 import { FileLibraryStore } from "../files/file-library-store";
 import type { SessionMessage } from "../session/session-message";
-import {
-	loadWorkspaceRequirementVersions,
-	saveWorkspaceState,
-	WorkspaceStateConflictError,
-} from "../state/workspace-state";
+import { saveWorkspaceState, WorkspaceStateConflictError } from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { renderTranscriptToMarkdown, selectTranscriptMessages } from "../vault/crystallize";
 import { VaultDocumentStore } from "../vault/vault-document-store";
@@ -387,17 +381,6 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 		},
 		loadState: async (workspaceScope) => {
 			return await deps.buildWorkspaceStateSnapshot(workspaceScope.workspaceId, workspaceScope.workspacePath);
-		},
-		loadRequirementVersions: async (workspaceScope, input: RuntimeRequirementVersionsRequest) => {
-			const data = await loadWorkspaceRequirementVersions(workspaceScope.workspacePath);
-			const requirementId = input.requirementId?.trim() ? input.requirementId.trim() : null;
-			const versions = requirementId
-				? data.versions.filter((version) => version.requirementId === requirementId)
-				: data.versions;
-			return {
-				requirementId,
-				versions,
-			} satisfies RuntimeRequirementVersionsResponse;
 		},
 		notifyStateUpdated: async (workspaceScope) => {
 			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);

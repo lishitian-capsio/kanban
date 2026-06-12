@@ -21,7 +21,6 @@ export default defineConfig({
 			"@runtime-task-title": resolve(__dirname, "../src/core/task-title.ts"),
 			"@runtime-task-worktree-path": resolve(__dirname, "../src/workspace/task-worktree-path.ts"),
 			"@runtime-task-state": resolve(__dirname, "../src/core/task-board-mutations.ts"),
-			"@runtime-requirement-versions": resolve(__dirname, "../src/core/requirement-versions.ts"),
 		},
 		conditions: ["import", "module", "browser", "default"],
 	},

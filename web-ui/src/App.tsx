@@ -65,12 +65,7 @@ import {
 	selectLatestTaskChatMessageForTask,
 	selectTaskChatMessagesForTask,
 } from "@/runtime/native-agent";
-import type {
-	RuntimeReasoningEffort,
-	RuntimeRequirementsData,
-	RuntimeRequirementTaskLinksData,
-	RuntimeTaskSessionSummary,
-} from "@/runtime/types";
+import type { RuntimeReasoningEffort, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useRuntimeProjectConfig } from "@/runtime/use-runtime-project-config";
 import { useTerminalConnectionReady } from "@/runtime/use-terminal-connection-ready";
 import { useWorkspacePersistence } from "@/runtime/use-workspace-persistence";
@@ -89,8 +84,6 @@ export default function App(): ReactElement {
 	const terminalThemeColors = useTerminalThemeColors();
 	const [board, setBoard] = useState<BoardData>(() => createInitialBoardData());
 	const [sessions, setSessions] = useState<Record<string, RuntimeTaskSessionSummary>>({});
-	const [requirements, setRequirements] = useState<RuntimeRequirementsData>({ items: [] });
-	const [requirementTaskLinks, setRequirementTaskLinks] = useState<RuntimeRequirementTaskLinksData>({ links: [] });
 	const [canPersistWorkspaceState, setCanPersistWorkspaceState] = useState(false);
 	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 	const [settingsInitialSection, setSettingsInitialSection] = useState<RuntimeSettingsSection | null>(null);
@@ -232,8 +225,6 @@ export default function App(): ReactElement {
 		isDocumentVisible,
 		setBoard,
 		setSessions,
-		setRequirements,
-		setRequirementTaskLinks,
 		setCanPersistWorkspaceState,
 	});
 	const { selectedTaskId, selectedCard, setSelectedTaskId, handleBack } = useDetailTaskNavigation({
@@ -485,8 +476,6 @@ export default function App(): ReactElement {
 	useWorkspacePersistence({
 		board,
 		sessions,
-		requirements,
-		requirementTaskLinks,
 		currentProjectId,
 		workspaceRevision,
 		hydrationNonce: workspaceHydrationNonce,

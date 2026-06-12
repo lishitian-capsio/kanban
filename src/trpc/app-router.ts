@@ -79,8 +79,6 @@ import type {
 	RuntimeProjectRemoveRequest,
 	RuntimeProjectRemoveResponse,
 	RuntimeProjectsResponse,
-	RuntimeRequirementVersionsRequest,
-	RuntimeRequirementVersionsResponse,
 	RuntimeRunUpdateResponse,
 	RuntimeShellSessionStartRequest,
 	RuntimeShellSessionStartResponse,
@@ -202,8 +200,6 @@ import {
 	runtimeProjectRemoveRequestSchema,
 	runtimeProjectRemoveResponseSchema,
 	runtimeProjectsResponseSchema,
-	runtimeRequirementVersionsRequestSchema,
-	runtimeRequirementVersionsResponseSchema,
 	runtimeRunUpdateResponseSchema,
 	runtimeShellSessionStartRequestSchema,
 	runtimeShellSessionStartResponseSchema,
@@ -418,10 +414,6 @@ export interface RuntimeTrpcContext {
 			input: RuntimeWorkspaceFileSearchRequest,
 		) => Promise<RuntimeWorkspaceFileSearchResponse>;
 		loadState: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeWorkspaceStateResponse>;
-		loadRequirementVersions: (
-			scope: RuntimeTrpcWorkspaceScope,
-			input: RuntimeRequirementVersionsRequest,
-		) => Promise<RuntimeRequirementVersionsResponse>;
 		listFiles: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeFilesListResponse>;
 		getFile: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFileGetRequest) => Promise<RuntimeFileGetResponse>;
 		addFile: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFileAddRequest) => Promise<RuntimeFileAddResponse>;
@@ -812,12 +804,6 @@ export const runtimeAppRouter = t.router({
 		getState: workspaceProcedure.output(runtimeWorkspaceStateResponseSchema).query(async ({ ctx }) => {
 			return await ctx.workspaceApi.loadState(ctx.workspaceScope);
 		}),
-		getRequirementVersions: workspaceProcedure
-			.input(runtimeRequirementVersionsRequestSchema)
-			.output(runtimeRequirementVersionsResponseSchema)
-			.query(async ({ ctx, input }) => {
-				return await ctx.workspaceApi.loadRequirementVersions(ctx.workspaceScope, input);
-			}),
 		listFiles: workspaceProcedure.output(runtimeFilesListResponseSchema).query(async ({ ctx }) => {
 			return await ctx.workspaceApi.listFiles(ctx.workspaceScope);
 		}),

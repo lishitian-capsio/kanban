@@ -65,13 +65,15 @@ describe("renderAppendSystemPrompt", () => {
 		expect(rendered).toContain("Provide exactly one of");
 		expect(rendered).toContain("task delete --column done");
 		expect(rendered).toContain("kanban task link");
-		expect(rendered).toContain("kanban requirement create");
-		expect(rendered).toContain("kanban requirement list");
-		expect(rendered).toContain("kanban requirement link-task");
-		expect(rendered).toContain("kanban requirement unlink-task");
-		expect(rendered).toContain("kanban requirement history");
-		expect(rendered).toContain("kanban requirement revert");
-		expect(rendered).toContain("Tasks and requirements are two independent lists");
+		expect(rendered).toContain("kanban vault doc create");
+		expect(rendered).toContain("kanban vault doc list");
+		expect(rendered).toContain("kanban vault doc update");
+		expect(rendered).toContain("kanban vault doc delete");
+		expect(rendered).toContain("Tasks and requirements are two independent things");
+		// The requirement subsystem and its bespoke CLI are retired in favor of vault documents.
+		expect(rendered).not.toContain("kanban requirement");
+		expect(rendered).not.toContain("requirement history");
+		expect(rendered).not.toContain("requirement revert");
 		expect(rendered).not.toContain("requirement review");
 		expect(rendered).not.toContain("requirement reconcile");
 		expect(rendered).not.toContain("requirement confirm-link");

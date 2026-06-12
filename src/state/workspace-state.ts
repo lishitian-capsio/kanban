@@ -9,40 +9,29 @@ import {
 	type RuntimeBoardData,
 	type RuntimeGitRepositoryInfo,
 	type RuntimeHomeChatThreadsData,
-	type RuntimeRequirementItem,
-	type RuntimeRequirementsData,
-	type RuntimeRequirementTaskLinksData,
-	type RuntimeRequirementVersionsData,
 	type RuntimeTaskSessionSummary,
-	type RuntimeVaultDocument,
 	type RuntimeWorkspaceStateResponse,
 	type RuntimeWorkspaceStateSaveRequest,
 	runtimeHomeChatThreadsDataSchema,
-	runtimeRequirementsDataSchema,
-	runtimeRequirementTaskLinksDataSchema,
-	runtimeRequirementVersionsDataSchema,
 	runtimeTaskSessionSummarySchema,
 	runtimeWorkspaceStateSaveRequestSchema,
 } from "../core/api-contract";
 import { createGitProcessEnv } from "../core/git-process-env";
-import { diffRequirementVersions } from "../core/requirement-versions";
 import { updateTaskDependencies } from "../core/task-board-mutations";
 import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
 import { VaultDocumentStore } from "../vault/vault-document-store";
 import {
-	readRequirementsSharded,
-	readRequirementTaskLinksSharded,
-	readRequirementVersionsSharded,
-	writeRequirementsSharded,
-	writeRequirementTaskLinksSharded,
-	writeRequirementVersionsSharded,
-} from "./requirement-store";
-import {
 	collectRelatedTasks,
+	type LegacyRequirementsData,
+	type LegacyRequirementTaskLinksData,
+	legacyRequirementItemSchema,
+	legacyRequirementsDataSchema,
+	legacyRequirementTaskLinkSchema,
+	legacyRequirementTaskLinksDataSchema,
 	REQUIREMENT_DOC_TYPE,
 	requirementItemToVaultImport,
-	vaultDocumentToRequirementItem,
-} from "./requirement-vault-projection";
+} from "./requirement-vault-migration";
+import { readShardDir } from "./sharded-json-store";
 import { boardNeedsSharding, convertBoardToShards, loadShardedBoard, saveShardedBoard } from "./task-shard-store";
 
 const RUNTIME_HOME_DIR = ".kanban";
@@ -70,15 +59,14 @@ const META_FILENAME = "meta.json";
 const RUNTIME_HOME_GITIGNORE_FILENAME = ".gitignore";
 // Boundary between committed content and machine-local runtime/secrets inside a
 // repo's `.kanban`. Denylist style: committed directories (per-task shards in
-// tasks/, the requirement shard dirs, and the file library in files/) are tracked
-// by default; only known runtime + secret paths are ignored. Binary file-library
-// content goes through Git LFS, configured by files/.gitattributes (see
-// src/files/file-library-store.ts).
+// tasks/ and the file library in files/, including the vault's docs/ markdown)
+// are tracked by default; only known runtime + secret paths are ignored. Binary
+// file-library content goes through Git LFS, configured by files/.gitattributes
+// (see src/files/file-library-store.ts).
 const RUNTIME_HOME_GITIGNORE_CONTENT = `# Kanban runtime data boundary — see docs/superpowers/plans for rationale.
-# Committed (content): workspaces/<id>/board.json (layout) + tasks/<id>.json, the
-# requirement shard dirs (requirements/, requirement-versions/,
-# requirement-task-links/), and files/ (manifest + LFS blobs). Everything below
-# is machine-local or secret.
+# Committed (content): workspaces/<id>/board.json (layout) + tasks/<id>.json, and
+# files/ (manifest + LFS blobs + the vault's docs/ markdown). Everything below is
+# machine-local or secret.
 
 # Machine-local runtime state
 worktrees/
@@ -466,11 +454,17 @@ async function readWorkspaceSessions(
 	return parsePersistedStateFile(sessionsPath, SESSIONS_FILENAME, rawSessions, workspaceSessionsSchema, {});
 }
 
-/** Read requirements from the shard channel (or pre-shard single-file fallback). */
-async function readRequirementShardsOrFiles(repoPath: string, workspaceId: string): Promise<RuntimeRequirementsData> {
+/**
+ * Read legacy requirement items from the shard channel (or pre-shard single-file
+ * fallback) for the **one-time vault migration only**. The requirement subsystem
+ * is retired (B6); this exists solely so {@link migrateRequirementsToVaultDocs}
+ * can read any pre-vault data still on disk and crystallize it into documents.
+ */
+async function readLegacyRequirements(repoPath: string, workspaceId: string): Promise<LegacyRequirementsData> {
 	const shardDir = getWorkspaceRequirementsShardDir(repoPath, workspaceId);
 	if (await pathExists(shardDir)) {
-		return await readRequirementsSharded(shardDir);
+		const shards = await readShardDir(shardDir, legacyRequirementItemSchema);
+		return { items: [...shards.values()] };
 	}
 	const requirementsPath = getWorkspaceRequirementsPath(repoPath, workspaceId);
 	const rawRequirements = await readJsonFileWithLegacyFallback(
@@ -481,7 +475,7 @@ async function readRequirementShardsOrFiles(repoPath: string, workspaceId: strin
 		requirementsPath,
 		REQUIREMENTS_FILENAME,
 		rawRequirements,
-		runtimeRequirementsDataSchema,
+		legacyRequirementsDataSchema,
 		{
 			items: [],
 		},
@@ -489,51 +483,33 @@ async function readRequirementShardsOrFiles(repoPath: string, workspaceId: strin
 }
 
 /**
- * Read the requirement vault documents (`docs/requirement/*.md`), projected back
- * onto the legacy `RuntimeRequirementItem` contract. Empty until the requirements
- * have been migrated (see {@link migrateRequirementsToVaultDocs}).
+ * Read legacy requirement → task link records from the shard channel (or
+ * pre-shard single-file fallback), again for the one-time vault migration only:
+ * the links collapse into each requirement's `related_tasks` frontmatter.
  */
-async function readRequirementVaultDocuments(repoPath: string): Promise<RuntimeVaultDocument[]> {
-	if (!(await pathExists(getRequirementDocsDir(repoPath)))) {
-		return [];
+async function readLegacyRequirementTaskLinks(
+	repoPath: string,
+	workspaceId: string,
+): Promise<LegacyRequirementTaskLinksData> {
+	const shardDir = getWorkspaceRequirementTaskLinksShardDir(repoPath, workspaceId);
+	if (await pathExists(shardDir)) {
+		const shards = await readShardDir(shardDir, z.array(legacyRequirementTaskLinkSchema));
+		return { links: [...shards.values()].flat() };
 	}
-	return await new VaultDocumentStore(repoPath).list(REQUIREMENT_DOC_TYPE);
-}
-
-/**
- * Requirements for the legacy read contract, unioning the migrated vault documents
- * with any shard/single-file requirements still written by the not-yet-retired
- * write path. A **live shard edit wins** over its frozen migrated document on id
- * collision (so an edit through the old path stays visible, and `saveWorkspaceState`
- * diffs against fresh state rather than a stale doc); migrated documents fill in
- * every requirement the shard channel no longer carries, so nothing is dropped.
- */
-async function readWorkspaceRequirements(repoPath: string, workspaceId: string): Promise<RuntimeRequirementsData> {
-	const baseline = await readRequirementShardsOrFiles(repoPath, workspaceId);
-	const docs = await readRequirementVaultDocuments(repoPath);
-	if (docs.length === 0) {
-		return baseline;
-	}
-	const ordered = [...docs].sort(
-		(left, right) => left.createdAt - right.createdAt || compareStrings(left.id, right.id),
+	const linksPath = getWorkspaceRequirementTaskLinksPath(repoPath, workspaceId);
+	const rawLinks = await readJsonFileWithLegacyFallback(
+		linksPath,
+		getLegacyWorkspaceFilePath(workspaceId, REQUIREMENT_TASK_LINKS_FILENAME),
 	);
-	const items = new Map<string, RuntimeRequirementItem>();
-	for (const [index, doc] of ordered.entries()) {
-		items.set(doc.id, vaultDocumentToRequirementItem(doc, index));
-	}
-	let appendOrder = ordered.length;
-	for (const shardItem of baseline.items) {
-		const existing = items.get(shardItem.id);
-		items.set(shardItem.id, { ...shardItem, order: existing ? existing.order : appendOrder++ });
-	}
-	const merged = [...items.values()].sort(
-		(left, right) => left.order - right.order || compareStrings(left.id, right.id),
+	return parsePersistedStateFile(
+		linksPath,
+		REQUIREMENT_TASK_LINKS_FILENAME,
+		rawLinks,
+		legacyRequirementTaskLinksDataSchema,
+		{
+			links: [],
+		},
 	);
-	return { items: merged };
-}
-
-function compareStrings(left: string, right: string): number {
-	return left < right ? -1 : left > right ? 1 : 0;
 }
 
 async function readWorkspaceHomeThreads(repoPath: string, workspaceId: string): Promise<RuntimeHomeChatThreadsData> {
@@ -576,73 +552,6 @@ export async function mutateWorkspaceHomeThreads(
 		});
 		return next;
 	});
-}
-
-async function readWorkspaceRequirementVersions(
-	repoPath: string,
-	workspaceId: string,
-): Promise<RuntimeRequirementVersionsData> {
-	const shardDir = getWorkspaceRequirementVersionsShardDir(repoPath, workspaceId);
-	if (await pathExists(shardDir)) {
-		return await readRequirementVersionsSharded(shardDir);
-	}
-	const versionsPath = getWorkspaceRequirementVersionsPath(repoPath, workspaceId);
-	const rawVersions = await readJsonFileWithLegacyFallback(
-		versionsPath,
-		getLegacyWorkspaceFilePath(workspaceId, REQUIREMENT_VERSIONS_FILENAME),
-	);
-	return parsePersistedStateFile(
-		versionsPath,
-		REQUIREMENT_VERSIONS_FILENAME,
-		rawVersions,
-		runtimeRequirementVersionsDataSchema,
-		{ versions: [] },
-	);
-}
-
-export async function loadWorkspaceRequirementVersions(cwd: string): Promise<RuntimeRequirementVersionsData> {
-	const context = await loadWorkspaceContext(cwd);
-	return await readWorkspaceRequirementVersions(context.repoPath, context.workspaceId);
-}
-
-/**
- * Read task links from the shard channel (or pre-shard single-file fallback). The
- * task-link shard survives the vault migration (retired in B6), so this stays the
- * source of truth for the link aggregate during the transition — the migrated
- * documents only mirror the associations into each requirement's `related_tasks`.
- */
-async function readRequirementTaskLinkShardsOrFiles(
-	repoPath: string,
-	workspaceId: string,
-): Promise<RuntimeRequirementTaskLinksData> {
-	const shardDir = getWorkspaceRequirementTaskLinksShardDir(repoPath, workspaceId);
-	if (await pathExists(shardDir)) {
-		return await readRequirementTaskLinksSharded(shardDir);
-	}
-	const linksPath = getWorkspaceRequirementTaskLinksPath(repoPath, workspaceId);
-	const rawLinks = await readJsonFileWithLegacyFallback(
-		linksPath,
-		getLegacyWorkspaceFilePath(workspaceId, REQUIREMENT_TASK_LINKS_FILENAME),
-	);
-	return parsePersistedStateFile(
-		linksPath,
-		REQUIREMENT_TASK_LINKS_FILENAME,
-		rawLinks,
-		runtimeRequirementTaskLinksDataSchema,
-		{ links: [] },
-	);
-}
-
-async function readWorkspaceRequirementTaskLinks(
-	repoPath: string,
-	workspaceId: string,
-): Promise<RuntimeRequirementTaskLinksData> {
-	return await readRequirementTaskLinkShardsOrFiles(repoPath, workspaceId);
-}
-
-export async function loadWorkspaceRequirementTaskLinks(cwd: string): Promise<RuntimeRequirementTaskLinksData> {
-	const context = await loadWorkspaceContext(cwd);
-	return await readWorkspaceRequirementTaskLinks(context.repoPath, context.workspaceId);
 }
 
 async function readWorkspaceMeta(repoPath: string, workspaceId: string): Promise<WorkspaceStateMeta> {
@@ -792,89 +701,16 @@ async function migrateWorkspaceDataFromLegacyHome(repoPath: string, workspaceId:
 }
 
 /**
- * Split one legacy single-file aggregate (`<file>.json`) into its per-id shard
- * directory, then remove the single file so the repo holds exactly one
- * representation. No-op when the single file is absent. When the shard directory
- * already exists it wins, and any leftover single file is dropped as stale.
- */
-async function migrateSingleFileToShards<T>(
-	singleFilePath: string,
-	shardDir: string,
-	fileLabel: string,
-	schema: z.ZodType<T, z.ZodTypeDef, unknown>,
-	defaultValue: T,
-	writeShards: (dir: string, data: T) => Promise<void>,
-): Promise<void> {
-	if (!(await pathExists(singleFilePath))) {
-		return;
-	}
-	if (await pathExists(shardDir)) {
-		await rm(singleFilePath, { force: true });
-		return;
-	}
-	const raw = await readJsonFile(singleFilePath);
-	const data = parsePersistedStateFile(singleFilePath, fileLabel, raw, schema, defaultValue);
-	await writeShards(shardDir, data);
-	await rm(singleFilePath, { force: true });
-}
-
-/**
- * One-time conversion of a workspace's repo-rooted single-file requirement data
- * (`requirements.json` etc.) into the per-id shard directories. Runs after the T1
- * legacy copy-migration, so a machine-home single file is first copied into the
- * repo and then sharded here. Idempotent and lock-guarded; the cheap pre-check
- * skips the lock entirely once no single files remain (the common case).
- */
-async function migrateRequirementsToShards(repoPath: string, workspaceId: string): Promise<void> {
-	const singleFilePaths = [
-		getWorkspaceRequirementsPath(repoPath, workspaceId),
-		getWorkspaceRequirementVersionsPath(repoPath, workspaceId),
-		getWorkspaceRequirementTaskLinksPath(repoPath, workspaceId),
-	];
-	const present = await Promise.all(singleFilePaths.map((path) => pathExists(path)));
-	if (!present.some(Boolean)) {
-		return;
-	}
-	await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
-		await migrateSingleFileToShards(
-			getWorkspaceRequirementsPath(repoPath, workspaceId),
-			getWorkspaceRequirementsShardDir(repoPath, workspaceId),
-			REQUIREMENTS_FILENAME,
-			runtimeRequirementsDataSchema,
-			{ items: [] },
-			writeRequirementsSharded,
-		);
-		await migrateSingleFileToShards(
-			getWorkspaceRequirementVersionsPath(repoPath, workspaceId),
-			getWorkspaceRequirementVersionsShardDir(repoPath, workspaceId),
-			REQUIREMENT_VERSIONS_FILENAME,
-			runtimeRequirementVersionsDataSchema,
-			{ versions: [] },
-			writeRequirementVersionsSharded,
-		);
-		await migrateSingleFileToShards(
-			getWorkspaceRequirementTaskLinksPath(repoPath, workspaceId),
-			getWorkspaceRequirementTaskLinksShardDir(repoPath, workspaceId),
-			REQUIREMENT_TASK_LINKS_FILENAME,
-			runtimeRequirementTaskLinksDataSchema,
-			{ links: [] },
-			writeRequirementTaskLinksSharded,
-		);
-	});
-}
-
-/**
- * One-time, idempotent conversion of a workspace's requirement shards (or their
- * pre-shard single-file / legacy-home fallback sources) into vault documents at
- * `<repo>/.kanban/files/docs/requirement/<slug>-<id>.md`. Runs after
- * {@link migrateRequirementsToShards}, so single files are already sharded by the
- * time we read. Each requirement becomes one markdown doc — description → body,
- * delivery status → PROBLEM state, links → `related_tasks` — preserving the
- * original id and timestamps. Only the `requirements/` shard directory is deleted
- * here — the requirement content now lives in the vault. The `requirement-versions/`
- * and `requirement-task-links/` shards are left untouched (still served by the
- * not-yet-retired version/link subsystems); they are removed in the B6 retirement
- * alongside that code. The `docs/requirement/` guard makes re-runs a no-op.
+ * One-time, idempotent conversion of a workspace's pre-vault requirement data
+ * (per-id `requirements/` shards, or the older single-file `requirements.json` /
+ * legacy-home fallback) into vault documents at
+ * `<repo>/.kanban/files/docs/requirement/<slug>-<id>.md`. Runs after the T1 legacy
+ * copy-migration, so a machine-home single file is already copied into the repo.
+ * Each requirement becomes one markdown doc — description → body, delivery status →
+ * PROBLEM state, links → `related_tasks` — preserving the original id and
+ * timestamps. The `docs/requirement/` guard makes re-runs a no-op; the legacy
+ * on-disk sources are removed by {@link dropRetiredRequirementData}, which runs
+ * immediately after in {@link prepareRepoRuntimeHome}.
  */
 async function migrateRequirementsToVaultDocs(repoPath: string, workspaceId: string): Promise<void> {
 	if (await pathExists(getRequirementDocsDir(repoPath))) {
@@ -894,18 +730,43 @@ async function migrateRequirementsToVaultDocs(repoPath: string, workspaceId: str
 		if (await pathExists(getRequirementDocsDir(repoPath))) {
 			return;
 		}
-		const requirements = await readRequirementShardsOrFiles(repoPath, workspaceId);
+		const requirements = await readLegacyRequirements(repoPath, workspaceId);
 		if (requirements.items.length === 0) {
 			return;
 		}
-		const links = (await readRequirementTaskLinkShardsOrFiles(repoPath, workspaceId)).links;
+		const links = (await readLegacyRequirementTaskLinks(repoPath, workspaceId)).links;
 		const store = new VaultDocumentStore(repoPath);
 		for (const item of requirements.items) {
 			await store.importDocument(requirementItemToVaultImport(item, collectRelatedTasks(item, links)));
 		}
-		// The requirement content now lives as vault documents; drop only the
-		// requirements shard dir. Version + task-link shards are retired in B6.
-		await rm(getWorkspaceRequirementsShardDir(repoPath, workspaceId), { recursive: true, force: true });
+	});
+}
+
+/**
+ * Remove every pre-vault requirement source from a repo's workspace dir: the per-id
+ * shard directories (`requirements/`, `requirement-versions/`,
+ * `requirement-task-links/`) and their older single-file forms. Idempotent, with a
+ * cheap presence precheck that skips the lock when nothing remains. Runs right after
+ * {@link migrateRequirementsToVaultDocs} (which has already read whatever it needed),
+ * so it both finishes a fresh migration and cleans up the version/task-link shards
+ * left behind by the interim B5 migration. Machine-home (`~/.kanban`) originals are
+ * never touched (non-destructive policy).
+ */
+async function dropRetiredRequirementData(repoPath: string, workspaceId: string): Promise<void> {
+	const retiredPaths = [
+		getWorkspaceRequirementsShardDir(repoPath, workspaceId),
+		getWorkspaceRequirementVersionsShardDir(repoPath, workspaceId),
+		getWorkspaceRequirementTaskLinksShardDir(repoPath, workspaceId),
+		getWorkspaceRequirementsPath(repoPath, workspaceId),
+		getWorkspaceRequirementVersionsPath(repoPath, workspaceId),
+		getWorkspaceRequirementTaskLinksPath(repoPath, workspaceId),
+	];
+	const present = await Promise.all(retiredPaths.map((path) => pathExists(path)));
+	if (!present.some(Boolean)) {
+		return;
+	}
+	await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
+		await Promise.all(retiredPaths.map((path) => rm(path, { recursive: true, force: true })));
 	});
 }
 
@@ -1025,8 +886,6 @@ function toWorkspaceStateResponse(
 	context: RuntimeWorkspaceContext,
 	board: RuntimeBoardData,
 	sessions: Record<string, RuntimeTaskSessionSummary>,
-	requirements: RuntimeRequirementsData,
-	requirementTaskLinks: RuntimeRequirementTaskLinksData,
 	revision: number,
 ): RuntimeWorkspaceStateResponse {
 	return {
@@ -1035,8 +894,6 @@ function toWorkspaceStateResponse(
 		git: context.git,
 		board,
 		sessions,
-		requirements,
-		requirementTaskLinks,
 		revision,
 	};
 }
@@ -1101,8 +958,8 @@ export async function loadWorkspaceContext(
 async function prepareRepoRuntimeHome(repoPath: string, workspaceId: string): Promise<void> {
 	await migrateWorkspaceDataFromLegacyHome(repoPath, workspaceId);
 	await ensureRuntimeHomeGitignore(repoPath);
-	await migrateRequirementsToShards(repoPath, workspaceId);
 	await migrateRequirementsToVaultDocs(repoPath, workspaceId);
+	await dropRetiredRequirementData(repoPath, workspaceId);
 	await migrateWorkspaceBoardToShards(repoPath, workspaceId);
 }
 
@@ -1177,10 +1034,8 @@ export async function loadWorkspaceState(cwd: string): Promise<RuntimeWorkspaceS
 	const context = await loadWorkspaceContext(cwd);
 	const board = await readWorkspaceBoard(context.repoPath, context.workspaceId);
 	const sessions = await readWorkspaceSessions(context.repoPath, context.workspaceId);
-	const requirements = await readWorkspaceRequirements(context.repoPath, context.workspaceId);
-	const requirementTaskLinks = await readWorkspaceRequirementTaskLinks(context.repoPath, context.workspaceId);
 	const meta = await readWorkspaceMeta(context.repoPath, context.workspaceId);
-	return toWorkspaceStateResponse(context, board, sessions, requirements, requirementTaskLinks, meta.revision);
+	return toWorkspaceStateResponse(context, board, sessions, meta.revision);
 }
 
 export async function saveWorkspaceState(
@@ -1204,20 +1059,6 @@ export async function saveWorkspaceState(
 		}
 		const board = parsedPayload.board;
 		const sessions = parsedPayload.sessions;
-		// Preserve existing requirements when a (possibly legacy) payload omits them,
-		// so a board-only save never wipes the workspace's requirement items.
-		const previousRequirements = await readWorkspaceRequirements(repoPath, workspaceId);
-		const requirements = parsedPayload.requirements ?? previousRequirements;
-		// Likewise preserve requirement<->task links when a payload omits them.
-		const requirementTaskLinks =
-			parsedPayload.requirementTaskLinks ?? (await readWorkspaceRequirementTaskLinks(repoPath, workspaceId));
-		// Whole-snapshot saves (the web UI path) don't carry per-operation intent, so diff the
-		// previous and next requirement sets to record create/update/delete versions — keeping the
-		// version history complete regardless of whether edits came from the CLI or the UI.
-		const previousVersions = await readWorkspaceRequirementVersions(repoPath, workspaceId);
-		const nextVersions = diffRequirementVersions(previousRequirements, requirements, previousVersions, {
-			source: "human",
-		});
 		const nextRevision = currentMeta.revision + 1;
 		const nextMeta: WorkspaceStateMeta = {
 			revision: nextRevision,
@@ -1228,38 +1069,19 @@ export async function saveWorkspaceState(
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceSessionsPath(repoPath, workspaceId), sessions, {
 			lock: null,
 		});
-		await writeRequirementsSharded(getWorkspaceRequirementsShardDir(repoPath, workspaceId), requirements);
-		await writeRequirementTaskLinksSharded(
-			getWorkspaceRequirementTaskLinksShardDir(repoPath, workspaceId),
-			requirementTaskLinks,
-		);
-		if (nextVersions !== previousVersions) {
-			await writeRequirementVersionsSharded(
-				getWorkspaceRequirementVersionsShardDir(repoPath, workspaceId),
-				nextVersions,
-			);
-		}
 		await lockedFileSystem.writeJsonFileAtomic(metaPath, nextMeta, {
 			lock: null,
 		});
 
-		return toWorkspaceStateResponse(context, board, sessions, requirements, requirementTaskLinks, nextRevision);
+		return toWorkspaceStateResponse(context, board, sessions, nextRevision);
 	});
 }
 
 export interface RuntimeWorkspaceAtomicMutationResult<T> {
 	board: RuntimeBoardData;
 	sessions?: Record<string, RuntimeTaskSessionSummary>;
-	requirements?: RuntimeRequirementsData;
-	requirementTaskLinks?: RuntimeRequirementTaskLinksData;
-	requirementVersions?: RuntimeRequirementVersionsData;
 	value: T;
 	save?: boolean;
-}
-
-export interface RuntimeWorkspaceMutationContext {
-	requirementTaskLinks: RuntimeRequirementTaskLinksData;
-	requirementVersions: RuntimeRequirementVersionsData;
 }
 
 export interface RuntimeWorkspaceAtomicMutationResponse<T> {
@@ -1270,33 +1092,17 @@ export interface RuntimeWorkspaceAtomicMutationResponse<T> {
 
 export async function mutateWorkspaceState<T>(
 	cwd: string,
-	mutate: (
-		state: RuntimeWorkspaceStateResponse,
-		context: RuntimeWorkspaceMutationContext,
-	) => RuntimeWorkspaceAtomicMutationResult<T>,
+	mutate: (state: RuntimeWorkspaceStateResponse) => RuntimeWorkspaceAtomicMutationResult<T>,
 ): Promise<RuntimeWorkspaceAtomicMutationResponse<T>> {
 	const context = await loadWorkspaceContext(cwd);
 	const { repoPath, workspaceId } = context;
 	return await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
 		const currentBoard = await readWorkspaceBoard(repoPath, workspaceId);
 		const currentSessions = await readWorkspaceSessions(repoPath, workspaceId);
-		const currentRequirements = await readWorkspaceRequirements(repoPath, workspaceId);
-		const currentRequirementTaskLinks = await readWorkspaceRequirementTaskLinks(repoPath, workspaceId);
-		const currentRequirementVersions = await readWorkspaceRequirementVersions(repoPath, workspaceId);
 		const currentMeta = await readWorkspaceMeta(repoPath, workspaceId);
-		const currentState = toWorkspaceStateResponse(
-			context,
-			currentBoard,
-			currentSessions,
-			currentRequirements,
-			currentRequirementTaskLinks,
-			currentMeta.revision,
-		);
+		const currentState = toWorkspaceStateResponse(context, currentBoard, currentSessions, currentMeta.revision);
 
-		const mutation = mutate(currentState, {
-			requirementTaskLinks: currentRequirementTaskLinks,
-			requirementVersions: currentRequirementVersions,
-		});
+		const mutation = mutate(currentState);
 		if (mutation.save === false) {
 			return {
 				value: mutation.value,
@@ -1307,9 +1113,6 @@ export async function mutateWorkspaceState<T>(
 
 		const nextBoard = mutation.board;
 		const nextSessions = mutation.sessions ?? currentSessions;
-		const nextRequirements = mutation.requirements ?? currentRequirements;
-		const nextRequirementTaskLinks = mutation.requirementTaskLinks ?? currentRequirementTaskLinks;
-		const nextRequirementVersions = mutation.requirementVersions ?? currentRequirementVersions;
 		const nextRevision = currentMeta.revision + 1;
 		const nextMeta: WorkspaceStateMeta = {
 			revision: nextRevision,
@@ -1320,29 +1123,13 @@ export async function mutateWorkspaceState<T>(
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceSessionsPath(repoPath, workspaceId), nextSessions, {
 			lock: null,
 		});
-		await writeRequirementsSharded(getWorkspaceRequirementsShardDir(repoPath, workspaceId), nextRequirements);
-		await writeRequirementTaskLinksSharded(
-			getWorkspaceRequirementTaskLinksShardDir(repoPath, workspaceId),
-			nextRequirementTaskLinks,
-		);
-		await writeRequirementVersionsSharded(
-			getWorkspaceRequirementVersionsShardDir(repoPath, workspaceId),
-			nextRequirementVersions,
-		);
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceMetaPath(repoPath, workspaceId), nextMeta, {
 			lock: null,
 		});
 
 		return {
 			value: mutation.value,
-			state: toWorkspaceStateResponse(
-				context,
-				nextBoard,
-				nextSessions,
-				nextRequirements,
-				nextRequirementTaskLinks,
-				nextRevision,
-			),
+			state: toWorkspaceStateResponse(context, nextBoard, nextSessions, nextRevision),
 			saved: true,
 		};
 	});

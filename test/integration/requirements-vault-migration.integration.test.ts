@@ -4,16 +4,19 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
-
-import type { RuntimeRequirementItem, RuntimeRequirementStatus } from "../../src/core/api-contract";
-import { getWorkspaceDirectoryPath, loadWorkspaceState } from "../../src/state/workspace-state";
+import type { LegacyRequirementItem } from "../../src/state/requirement-vault-migration";
+import {
+	getMachineKanbanHomePath,
+	getWorkspaceDirectoryPath,
+	loadWorkspaceState,
+} from "../../src/state/workspace-state";
 import { VaultDocumentStore } from "../../src/vault/vault-document-store";
 import { createGitTestEnv } from "../utilities/git-env";
 import { createTempDir } from "../utilities/temp-dir";
 
 const WORKSPACE_ID = "vaultrepo";
 
-function requirement(id: string, overrides: Partial<RuntimeRequirementItem> = {}): RuntimeRequirementItem {
+function requirement(id: string, overrides: Partial<LegacyRequirementItem> = {}): LegacyRequirementItem {
 	return {
 		id,
 		title: `Requirement ${id}`,
@@ -28,7 +31,7 @@ function requirement(id: string, overrides: Partial<RuntimeRequirementItem> = {}
 	};
 }
 
-function seedRequirementShard(workspaceDir: string, item: RuntimeRequirementItem): void {
+function seedRequirementShard(workspaceDir: string, item: LegacyRequirementItem): void {
 	const dir = join(workspaceDir, "requirements");
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, `${item.id}.json`), JSON.stringify(item), "utf8");
@@ -44,7 +47,7 @@ function seedTaskLinkShard(workspaceDir: string, requirementId: string, taskIds:
 	);
 }
 
-function seedVersionShard(workspaceDir: string, item: RuntimeRequirementItem): void {
+function seedVersionShard(workspaceDir: string, item: LegacyRequirementItem): void {
 	const dir = join(workspaceDir, "requirement-versions");
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(
@@ -102,10 +105,15 @@ async function withRepo<T>(run: (repoPath: string) => Promise<T>): Promise<T> {
 
 const docsRequirementDir = (repoPath: string): string => join(repoPath, ".kanban", "files", "docs", "requirement");
 
-const requirementsShardDir = (workspaceDir: string): string => join(workspaceDir, "requirements");
+// Every pre-vault requirement source the B6 retirement must clean up.
+const retiredDirs = (workspaceDir: string): string[] => [
+	join(workspaceDir, "requirements"),
+	join(workspaceDir, "requirement-versions"),
+	join(workspaceDir, "requirement-task-links"),
+];
 
 describe.sequential("requirements vault migration", () => {
-	it("migrates sharded requirements into vault docs, remapping status + links, and deletes the requirements shard dir", async () => {
+	it("migrates sharded requirements into vault docs, remapping status + links, and deletes all retired requirement data", async () => {
 		await withRepo(async (repoPath) => {
 			const workspaceDir = getWorkspaceDirectoryPath(repoPath, WORKSPACE_ID);
 			seedRequirementShard(workspaceDir, requirement("r1", { status: "draft", description: "Body one" }));
@@ -119,7 +127,7 @@ describe.sequential("requirements vault migration", () => {
 			seedTaskLinkShard(workspaceDir, "r2", ["task-b"]);
 			seedVersionShard(workspaceDir, requirement("r1"));
 
-			const state = await loadWorkspaceState(repoPath);
+			await loadWorkspaceState(repoPath);
 
 			// One markdown document per requirement, named <slug>-<id>.md.
 			const docFiles = (await readdir(docsRequirementDir(repoPath))).sort();
@@ -145,24 +153,10 @@ describe.sequential("requirements vault migration", () => {
 			// Links (linkedTaskIds + the task-link shard) collapse into related_tasks, deduped.
 			expect(byId.get("r2")?.frontmatter.related_tasks).toEqual(["task-a", "task-b"]);
 
-			// Only the requirements shard dir is consumed. The version + task-link shards
-			// are left intact for the B6 retirement (still served by the old subsystems).
-			expect(existsSync(requirementsShardDir(workspaceDir))).toBe(false);
-			expect(existsSync(join(workspaceDir, "requirement-versions"))).toBe(true);
-			expect(existsSync(join(workspaceDir, "requirement-task-links"))).toBe(true);
-
-			// Read-path backfill: the legacy contract still serves the requirements (no data lost).
-			expect(state.requirements.items.map((item) => item.id)).toEqual(["r1", "r2", "r3", "r4"]);
-			const statusById = new Map(state.requirements.items.map((item) => [item.id, item.status]));
-			expect(statusById.get("r1")).toBe<RuntimeRequirementStatus>("draft");
-			expect(statusById.get("r2")).toBe<RuntimeRequirementStatus>("active"); // clarified → active (lossy reverse)
-			expect(statusById.get("r3")).toBe<RuntimeRequirementStatus>("archived");
-			expect(state.requirements.items.find((item) => item.id === "r2")?.linkedTaskIds).toEqual(["task-a", "task-b"]);
-			// Task-link read stays shard-first, so the aggregate reflects the (kept) link
-			// shard only — task-a lived solely in linkedTaskIds, not as a link record.
-			expect(
-				state.requirementTaskLinks.links.filter((link) => link.requirementId === "r2").map((link) => link.taskId),
-			).toEqual(["task-b"]);
+			// The requirement subsystem is retired: every shard directory is gone.
+			for (const dir of retiredDirs(workspaceDir)) {
+				expect(existsSync(dir)).toBe(false);
+			}
 		});
 	});
 
@@ -176,17 +170,38 @@ describe.sequential("requirements vault migration", () => {
 			const firstPass = (await readdir(docsRequirementDir(repoPath))).sort();
 
 			// The docs/requirement guard makes a second prepare a no-op.
-			const reloaded = await loadWorkspaceState(repoPath);
+			await loadWorkspaceState(repoPath);
 			const secondPass = (await readdir(docsRequirementDir(repoPath))).sort();
 
 			expect(secondPass).toEqual(firstPass);
 			expect(secondPass).toHaveLength(2);
-			expect(reloaded.requirements.items.map((item) => item.id)).toEqual(["r1", "r2"]);
-			expect(existsSync(requirementsShardDir(workspaceDir))).toBe(false);
+			for (const dir of retiredDirs(workspaceDir)) {
+				expect(existsSync(dir)).toBe(false);
+			}
 		});
 	});
 
-	it("migrates a legacy single-file requirements.json (sharded first) into vault docs", async () => {
+	it("cleans up leftover version + task-link shards even when requirements already migrated (interim-B5 state)", async () => {
+		await withRepo(async (repoPath) => {
+			const workspaceDir = getWorkspaceDirectoryPath(repoPath, WORKSPACE_ID);
+			// Simulate a workspace migrated by the interim B5 step: docs already exist, but the
+			// version + task-link shards were left behind.
+			const store = new VaultDocumentStore(repoPath);
+			await store.create({ type: "requirement", title: "Already migrated", body: "kept" });
+			seedTaskLinkShard(workspaceDir, "r1", ["task-a"]);
+			seedVersionShard(workspaceDir, requirement("r1"));
+
+			await loadWorkspaceState(repoPath);
+
+			// The retired shards are removed; the already-migrated doc is untouched.
+			for (const dir of retiredDirs(workspaceDir)) {
+				expect(existsSync(dir)).toBe(false);
+			}
+			expect((await store.list("requirement")).map((doc) => doc.title)).toEqual(["Already migrated"]);
+		});
+	});
+
+	it("migrates a legacy single-file requirements.json into vault docs and removes the single file", async () => {
 		await withRepo(async (repoPath) => {
 			const workspaceDir = getWorkspaceDirectoryPath(repoPath, WORKSPACE_ID);
 			mkdirSync(workspaceDir, { recursive: true });
@@ -196,17 +211,37 @@ describe.sequential("requirements vault migration", () => {
 				"utf8",
 			);
 
-			const state = await loadWorkspaceState(repoPath);
+			await loadWorkspaceState(repoPath);
 
 			expect((await readdir(docsRequirementDir(repoPath))).sort()).toEqual(["requirement-old-old.md"]);
 			const docs = await new VaultDocumentStore(repoPath).list("requirement");
 			expect(docs[0]?.frontmatter.status).toBe("proposed");
 			expect(docs[0]?.body).toBe("Legacy body");
 
-			// The single file and the intermediate shard dir are both consumed.
+			// The single file is consumed and no intermediate shard dir is ever created.
 			expect(existsSync(join(workspaceDir, "requirements.json"))).toBe(false);
 			expect(existsSync(join(workspaceDir, "requirements"))).toBe(false);
-			expect(state.requirements.items.map((item) => item.id)).toEqual(["old"]);
+		});
+	});
+
+	it("copy-migrates legacy ~/.kanban single-file requirements into vault docs, leaving the original intact", async () => {
+		await withRepo(async (repoPath) => {
+			const legacyDir = join(getMachineKanbanHomePath(), "workspaces", WORKSPACE_ID);
+			mkdirSync(legacyDir, { recursive: true });
+			writeFileSync(
+				join(legacyDir, "requirements.json"),
+				JSON.stringify({ items: [requirement("leg", { status: "active", description: "From machine home" })] }),
+				"utf8",
+			);
+
+			await loadWorkspaceState(repoPath);
+
+			const docs = await new VaultDocumentStore(repoPath).list("requirement");
+			expect(docs.map((doc) => doc.id)).toEqual(["leg"]);
+			expect(docs[0]?.frontmatter.status).toBe("clarified"); // active → clarified
+			expect(docs[0]?.body).toBe("From machine home");
+			// The machine-home original is never moved or deleted (non-destructive policy).
+			expect(existsSync(join(legacyDir, "requirements.json"))).toBe(true);
 		});
 	});
 });

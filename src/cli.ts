@@ -8,7 +8,6 @@ import ora, { type Ora } from "ora";
 import packageJson from "../package.json" with { type: "json" };
 import { registerFileCommand } from "./commands/file";
 import { registerHooksCommand } from "./commands/hooks";
-import { registerRequirementCommand } from "./commands/requirement";
 import { registerTaskCommand } from "./commands/task";
 import { registerVaultCommand } from "./commands/vault";
 import { installProxyFetch } from "./config/proxy-fetch";
@@ -705,7 +704,6 @@ function createProgram(invocationArgs: string[]): Command {
 	program.addOption(new Option("--agent <id>", "Deprecated compatibility flag. Ignored.").hideHelp());
 
 	registerTaskCommand(program);
-	registerRequirementCommand(program);
 	registerFileCommand(program);
 	registerVaultCommand(program);
 	registerHooksCommand(program);
