@@ -1205,3 +1205,56 @@ body.kb-dependency-link-mode {
 		app-region: no-drag;
 	}
 }
+
+/*
+ * @uiw/react-md-editor is forced to dark via `data-color-mode="dark"` on the
+ * `.kb-md-editor` wrapper; these overrides remap the editor's Primer color
+ * variables to Kanban's design tokens so it never leaks its bundled light theme
+ * and matches the surrounding dark surfaces. The markdown preview is rendered by
+ * KanbanMarkdownContent, so only the editor chrome + textarea are themed here.
+ */
+.kb-md-editor .w-md-editor {
+	--color-canvas-default: var(--color-surface-2);
+	--color-canvas-subtle: var(--color-surface-1);
+	--color-border-default: var(--color-border);
+	--color-border-muted: var(--color-border);
+	--color-fg-default: var(--color-text-primary);
+	--color-fg-muted: var(--color-text-secondary);
+	--color-fg-subtle: var(--color-text-tertiary);
+	--color-accent-fg: var(--color-accent);
+	--color-neutral-muted: var(--color-surface-3);
+	height: 100% !important;
+	background-color: var(--color-surface-2);
+	color: var(--color-text-primary);
+	border: 1px solid var(--color-border);
+	border-radius: 6px;
+	box-shadow: none;
+}
+
+.kb-md-editor .w-md-editor-toolbar {
+	background-color: var(--color-surface-1);
+	border-bottom: 1px solid var(--color-border);
+}
+
+.kb-md-editor .w-md-editor-toolbar button {
+	color: var(--color-text-secondary);
+}
+
+.kb-md-editor .w-md-editor-toolbar li > button:hover,
+.kb-md-editor .w-md-editor-toolbar li.active > button {
+	background-color: var(--color-surface-3);
+	color: var(--color-text-primary);
+}
+
+.kb-md-editor .w-md-editor-text-pre,
+.kb-md-editor .w-md-editor-text-input,
+.kb-md-editor .w-md-editor-text {
+	color: var(--color-text-primary) !important;
+	-webkit-text-fill-color: var(--color-text-primary);
+	font-size: 13px;
+	line-height: 1.6;
+}
+
+.kb-md-editor .w-md-editor-text-pre .token {
+	color: var(--color-text-secondary);
+}

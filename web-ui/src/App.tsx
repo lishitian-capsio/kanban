@@ -11,11 +11,9 @@ import { CardDetailView } from "@/components/card-detail-view";
 import { ClearTrashDialog } from "@/components/clear-trash-dialog";
 import { DebugDialog } from "@/components/debug-dialog";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
-import { FilesView } from "@/components/files/files-view";
 import { GitHistoryView } from "@/components/git-history-view";
 import { KanbanBoard } from "@/components/kanban-board";
 import { ProjectNavigationPanel } from "@/components/project-navigation-panel";
-import { RequirementsView } from "@/components/requirements/requirements-view";
 import { RuntimeSettingsDialog, type RuntimeSettingsSection } from "@/components/runtime-settings-dialog";
 import { StartupOnboardingDialog } from "@/components/startup-onboarding-dialog";
 import { TaskCreateDialog } from "@/components/task-create-dialog";
@@ -32,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { UpdateNotificationController } from "@/components/update-notification-controller";
+import { VaultView } from "@/components/vault/vault-view";
 import { createInitialBoardData } from "@/data/board-data";
 import { createIdleTaskSession } from "@/hooks/app-utils";
 import { KanbanAccessBlockedFallback } from "@/hooks/kanban-access-blocked-fallback";
@@ -958,14 +957,10 @@ export default function App(): ReactElement {
 							) : (
 								<div className="flex flex-1 flex-col min-h-0 min-w-0">
 									<div className="flex flex-1 min-h-0 min-w-0">
-										{isFilesOpen ? (
-											<FilesView workspaceId={currentProjectId} />
-										) : isRequirementsOpen ? (
-											<RequirementsView
+										{isFilesOpen || isRequirementsOpen ? (
+											<VaultView
 												workspaceId={currentProjectId}
-												requirements={requirements}
-												revision={workspaceRevision ?? 0}
-												onRequirementsChange={setRequirements}
+												initialView={isFilesOpen ? "files" : "requirements"}
 											/>
 										) : isGitHistoryOpen ? (
 											<GitHistoryView

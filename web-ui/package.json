@@ -29,6 +29,7 @@
     "@sentry/react": "^10.45.0",
     "@tailwindcss/vite": "^4.2.1",
     "@trpc/client": "^11.11.0",
+    "@uiw/react-md-editor": "^4.1.1",
     "@xterm/addon-clipboard": "^0.2.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-unicode11": "^0.9.0",
@@ -50,7 +51,8 @@
     "react-virtuoso": "^4.18.3",
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
-    "tailwindcss": "^4.2.1"
+    "tailwindcss": "^4.2.1",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.1",
