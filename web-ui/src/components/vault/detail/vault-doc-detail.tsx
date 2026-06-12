@@ -23,6 +23,10 @@ import { VaultPropertiesPanel } from "./vault-properties-panel";
 interface VaultDocDetailProps {
 	view: VaultTypeView;
 	doc: VaultDoc;
+	/** `type:customer` docs, for the customer picker on requirement-like types. */
+	customers: VaultDoc[];
+	/** Type-specific sections rendered between the properties panel and the editor. */
+	extras?: React.ReactNode;
 	onPatch: (id: string, patch: VaultDocPatch) => void;
 	onDelete: (id: string) => void;
 	onBack: () => void;
@@ -34,7 +38,15 @@ interface VaultDocDetailProps {
  * edits are buffered locally and committed on blur so a patch never round-trips
  * per keystroke.
  */
-export function VaultDocDetail({ view, doc, onPatch, onDelete, onBack }: VaultDocDetailProps): React.ReactElement {
+export function VaultDocDetail({
+	view,
+	doc,
+	customers,
+	extras,
+	onPatch,
+	onDelete,
+	onBack,
+}: VaultDocDetailProps): React.ReactElement {
 	const [title, setTitle] = useState(doc.name);
 	const [body, setBody] = useState(doc.body);
 	const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -94,8 +106,11 @@ export function VaultDocDetail({ view, doc, onPatch, onDelete, onBack }: VaultDo
 			<VaultPropertiesPanel
 				view={view}
 				doc={doc}
+				customers={customers}
 				onPatchFrontmatter={(patch) => onPatch(doc.id, { frontmatter: patch })}
 			/>
+
+			{extras}
 
 			<DocEditor value={body} onChange={setBody} onBlur={commitBody} />
 

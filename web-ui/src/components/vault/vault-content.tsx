@@ -68,6 +68,8 @@ function ViewModeToggle({
 interface VaultContentProps {
 	view: VaultTypeView;
 	docs: VaultDoc[];
+	/** `type:customer` docs, for the customer picker on requirement-like detail views. */
+	customers: VaultDoc[];
 	isLoading: boolean;
 	errorMessage: string | null;
 	isMutating: boolean;
@@ -77,11 +79,14 @@ interface VaultContentProps {
 	onPatch: (id: string, patch: VaultDocPatch) => void;
 	onDelete: (id: string) => void;
 	onCardMove: (docId: string, toColumnId: string) => void;
+	/** Type-specific detail sections (e.g. the customer anchor panel). */
+	renderDetailExtras?: (doc: VaultDoc) => React.ReactNode;
 }
 
 export function VaultContent({
 	view,
 	docs,
+	customers,
 	isLoading,
 	errorMessage,
 	isMutating,
@@ -91,13 +96,17 @@ export function VaultContent({
 	onPatch,
 	onDelete,
 	onCardMove,
+	renderDetailExtras,
 }: VaultContentProps): React.ReactElement {
+	// Only status-bearing types get a board; flat types (Customer, Note) are table-only.
+	const supportsBoard = view.statuses.length > 0;
 	const [mode, setMode] = useState<ViewMode>("table");
 	const [isNewOpen, setIsNewOpen] = useState(false);
 	const [isCreating, setIsCreating] = useState(false);
 
 	const grouped = useMemo(() => groupDocsByStatus(view, docs), [view, docs]);
 	const ViewIcon = view.icon;
+	const effectiveMode: ViewMode = supportsBoard ? mode : "table";
 
 	async function handleCreate(title: string): Promise<void> {
 		setIsCreating(true);
@@ -114,6 +123,8 @@ export function VaultContent({
 			<VaultDocDetail
 				view={view}
 				doc={selectedDoc}
+				customers={customers}
+				extras={renderDetailExtras?.(selectedDoc)}
 				onPatch={onPatch}
 				onDelete={onDelete}
 				onBack={() => onSelectDoc(null)}
@@ -131,7 +142,7 @@ export function VaultContent({
 				</div>
 				<div className="ml-auto flex items-center gap-2">
 					{isMutating ? <Spinner size={14} /> : null}
-					<ViewModeToggle mode={mode} onChange={setMode} />
+					{supportsBoard ? <ViewModeToggle mode={mode} onChange={setMode} /> : null}
 					<button
 						type="button"
 						onClick={() => setIsNewOpen(true)}
@@ -152,7 +163,7 @@ export function VaultContent({
 					<div className="flex flex-1 items-center justify-center px-4 py-12 text-center text-[13px] text-status-red">
 						{errorMessage}
 					</div>
-				) : mode === "table" ? (
+				) : effectiveMode === "table" ? (
 					<VaultTableView view={view} docs={docs} selectedDocId={null} onSelect={onSelectDoc} />
 				) : (
 					<VaultBoard

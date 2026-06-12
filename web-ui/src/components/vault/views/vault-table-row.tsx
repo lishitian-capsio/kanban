@@ -2,6 +2,7 @@ import type React from "react";
 
 import { cn } from "@/components/ui/cn";
 
+import { customerRefLabel } from "../customer/customer-ref";
 import { frontmatterString, type VaultDoc } from "../data/vault-doc-model";
 import type { VaultColumnSpec, VaultTypeView } from "../data/vault-type-registry";
 import { PriorityDot, StatusBadge } from "./vault-property-controls";
@@ -42,6 +43,10 @@ function ColumnCell({
 		}
 		case "updated":
 			return <span className="text-[12px] text-text-tertiary">{formatUpdated(doc.updatedAt)}</span>;
+		case "customer": {
+			const label = customerRefLabel(frontmatterString(doc, column.key));
+			return <span className="truncate text-[13px] text-text-secondary">{label || "—"}</span>;
+		}
 		default: {
 			const value = frontmatterString(doc, column.key);
 			return <span className="truncate text-[13px] text-text-secondary">{value || "—"}</span>;

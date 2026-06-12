@@ -17,7 +17,24 @@ describe("vaultTypeRegistry", () => {
 	});
 
 	it("returns undefined for an unregistered type", () => {
-		expect(getVaultTypeDefinition("note")).toBeUndefined();
+		expect(getVaultTypeDefinition("spec")).toBeUndefined();
+	});
+
+	it("registers the customer anchor type without a status lifecycle", () => {
+		const def = getVaultTypeDefinition("customer");
+		expect(def).toBeDefined();
+		expect(def?.slugField).toBe("title");
+		expect(def?.statusEnum).toBeUndefined();
+	});
+
+	it("registers the decision type with an ADR status enum", () => {
+		const def = getVaultTypeDefinition("decision");
+		expect(def?.statusEnum).toEqual(["proposed", "accepted", "superseded", "rejected"]);
+		expect(def?.defaultFrontmatter).toEqual({ status: "proposed" });
+	});
+
+	it("registers the note type for crystallized minutes", () => {
+		expect(getVaultTypeDefinition("note")?.type).toBe("note");
 	});
 
 	it("lists the requirement definition", () => {

@@ -39,6 +39,10 @@ const requirementFrontmatterSchema = z
 	})
 	.passthrough();
 
+// Decision (ADR-flavored) lifecycle. Decisions are crystallized out of a chat and
+// then ratified, so the states describe the decision's standing over time.
+export const DECISION_STATUSES = ["proposed", "accepted", "superseded", "rejected"] as const;
+
 export const vaultTypeRegistry: Record<string, VaultTypeDefinition> = {
 	requirement: {
 		type: "requirement",
@@ -47,6 +51,27 @@ export const vaultTypeRegistry: Record<string, VaultTypeDefinition> = {
 		statusEnum: REQUIREMENT_PROBLEM_STATUSES,
 		defaultFrontmatter: { status: "proposed", priority: "medium" },
 		frontmatterSchema: requirementFrontmatterSchema,
+	},
+	// Customer is the physical anchor of a requirement (客户 → 需求 → 任务). It has no
+	// status lifecycle; requirements reference it via a `customer` wikilink and pin
+	// supporting material via a `materials` array of file-library ids.
+	customer: {
+		type: "customer",
+		label: "Customer",
+		slugField: "title",
+	},
+	decision: {
+		type: "decision",
+		label: "Decision",
+		slugField: "title",
+		statusEnum: DECISION_STATUSES,
+		defaultFrontmatter: { status: "proposed" },
+	},
+	// Note / meeting minutes (纪要): a free-form crystallized record, no lifecycle.
+	note: {
+		type: "note",
+		label: "Note",
+		slugField: "title",
 	},
 };
 

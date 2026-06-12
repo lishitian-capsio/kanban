@@ -12,6 +12,7 @@ import { KanbanAgentChatPanel } from "@/components/detail-panels/kanban-agent-ch
 import { HomeThreadBar } from "@/components/home-agent/home-thread-bar";
 import { resolveAgentLabel } from "@/components/home-agent/thread-agent-badge";
 import { Spinner } from "@/components/ui/spinner";
+import { CrystallizeButton } from "@/components/vault/crystallize/crystallize-button";
 import { createIdleTaskSession } from "@/hooks/app-utils";
 import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
 import { type HomeAgentActiveThread, useHomeAgentSession } from "@/hooks/use-home-agent-session";
@@ -191,16 +192,23 @@ export function useHomeSidebarAgentPanel({
 
 	return (
 		<div className="flex h-full w-full min-h-0 flex-col gap-2">
-			<HomeThreadBar
-				threads={homeThreads.threads}
-				activeThreadId={homeThreads.activeThreadId}
-				agents={runtimeProjectConfig.agents}
-				defaultAgentId={runtimeProjectConfig.selectedAgentId}
-				onSelectThread={homeThreads.setActiveThread}
-				onCreateThread={homeThreads.createThread}
-				onRenameThread={homeThreads.renameThread}
-				onCloseThread={homeThreads.closeThread}
-			/>
+			<div className="flex items-stretch gap-1">
+				<div className="min-w-0 flex-1">
+					<HomeThreadBar
+						threads={homeThreads.threads}
+						activeThreadId={homeThreads.activeThreadId}
+						agents={runtimeProjectConfig.agents}
+						defaultAgentId={runtimeProjectConfig.selectedAgentId}
+						onSelectThread={homeThreads.setActiveThread}
+						onCreateThread={homeThreads.createThread}
+						onRenameThread={homeThreads.renameThread}
+						onCloseThread={homeThreads.closeThread}
+					/>
+				</div>
+				<div className="flex shrink-0 items-center rounded-md border border-border bg-surface-2 p-1">
+					<CrystallizeButton workspaceId={currentProjectId} sessionId={taskId} />
+				</div>
+			</div>
 			<div className="flex min-h-0 flex-1 [&>*]:w-full [&>*]:self-stretch">{body}</div>
 		</div>
 	);

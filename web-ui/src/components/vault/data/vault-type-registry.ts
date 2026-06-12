@@ -1,4 +1,4 @@
-import { ListChecks, type LucideIcon } from "lucide-react";
+import { Building2, GitBranch, ListChecks, type LucideIcon, StickyNote } from "lucide-react";
 
 /**
  * Client-side mirror of the backend `vaultTypeRegistry` (`src/vault/vault-types.ts`).
@@ -8,7 +8,7 @@ import { ListChecks, type LucideIcon } from "lucide-react";
  * type" seam. MVP registers only `requirement`.
  */
 
-export type VaultPropertyKind = "title" | "status" | "priority" | "text" | "updated";
+export type VaultPropertyKind = "title" | "status" | "priority" | "customer" | "text" | "updated";
 
 export interface VaultStatusOption {
 	value: string;
@@ -101,14 +101,115 @@ const requirementView: VaultTypeView = {
 		{ key: "title", label: "Title", kind: "title" },
 		{ key: "status", label: "Status", kind: "status" },
 		{ key: "priority", label: "Priority", kind: "priority" },
-		{ key: "customer", label: "Customer", kind: "text" },
+		{ key: "customer", label: "Customer", kind: "customer" },
 		{ key: "updatedAt", label: "Updated", kind: "updated" },
 	],
 	template: REQUIREMENT_TEMPLATE,
 };
 
+// Customer: the physical anchor (客户). No status lifecycle and no board — a flat
+// table of accounts. Requirements point at it via their `customer` wikilink, and
+// supporting files hang off it via the `materials` array (see CustomerAnchorPanel).
+const CUSTOMER_TEMPLATE = `---
+contact: ""
+materials: []
+---
+
+## About
+
+Who is this customer and what do they do?
+
+## Context
+
+Key background, relationships, and history.
+`;
+
+const customerView: VaultTypeView = {
+	type: "customer",
+	label: "Customer",
+	pluralLabel: "Customers",
+	icon: Building2,
+	statusKey: "status",
+	statuses: [],
+	priorities: [],
+	columns: [
+		{ key: "title", label: "Title", kind: "title" },
+		{ key: "contact", label: "Contact", kind: "text" },
+		{ key: "updatedAt", label: "Updated", kind: "updated" },
+	],
+	template: CUSTOMER_TEMPLATE,
+};
+
+// Decision (ADR): crystallized from a conversation, then ratified over time.
+const DECISION_STATUSES: VaultStatusOption[] = [
+	{ value: "proposed", label: "Proposed", badgeClass: "border-status-blue/40 text-status-blue" },
+	{ value: "accepted", label: "Accepted", badgeClass: "border-status-green/40 text-status-green" },
+	{ value: "superseded", label: "Superseded", badgeClass: "border-status-orange/40 text-status-orange" },
+	{ value: "rejected", label: "Rejected", badgeClass: "border-border text-text-tertiary" },
+];
+
+const DECISION_TEMPLATE = `---
+status: proposed
+---
+
+## Context
+
+What is the situation that forces a decision?
+
+## Decision
+
+What did we decide?
+
+## Consequences
+
+What becomes easier or harder as a result?
+`;
+
+const decisionView: VaultTypeView = {
+	type: "decision",
+	label: "Decision",
+	pluralLabel: "Decisions",
+	icon: GitBranch,
+	statusKey: "status",
+	statuses: DECISION_STATUSES,
+	priorities: [],
+	columns: [
+		{ key: "title", label: "Title", kind: "title" },
+		{ key: "status", label: "Status", kind: "status" },
+		{ key: "updatedAt", label: "Updated", kind: "updated" },
+	],
+	template: DECISION_TEMPLATE,
+};
+
+// Note / meeting minutes (纪要): a free-form crystallized record, no lifecycle.
+const NOTE_TEMPLATE = `---
+---
+
+## Summary
+
+## Notes
+`;
+
+const noteView: VaultTypeView = {
+	type: "note",
+	label: "Note",
+	pluralLabel: "Notes",
+	icon: StickyNote,
+	statusKey: "status",
+	statuses: [],
+	priorities: [],
+	columns: [
+		{ key: "title", label: "Title", kind: "title" },
+		{ key: "updatedAt", label: "Updated", kind: "updated" },
+	],
+	template: NOTE_TEMPLATE,
+};
+
 const VAULT_TYPE_VIEWS: Record<string, VaultTypeView> = {
 	requirement: requirementView,
+	customer: customerView,
+	decision: decisionView,
+	note: noteView,
 };
 
 export function getVaultTypeView(type: string): VaultTypeView | undefined {
