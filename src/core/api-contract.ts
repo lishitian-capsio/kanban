@@ -586,6 +586,43 @@ export const runtimeVaultDocumentLinksGetResponseSchema = z.object({
 });
 export type RuntimeVaultDocumentLinksGetResponse = z.infer<typeof runtimeVaultDocumentLinksGetResponseSchema>;
 
+// Full-text search across the vault. The runtime scans the doc store (no separate
+// index) and scores each match by position — a title hit outranks a frontmatter
+// keyword hit, which outranks a body hit — so callers get a relevance-ordered
+// list with a snippet to render. `field` reports where the strongest hit landed.
+export const runtimeVaultSearchMatchFieldSchema = z.enum(["title", "frontmatter", "body"]);
+export type RuntimeVaultSearchMatchField = z.infer<typeof runtimeVaultSearchMatchFieldSchema>;
+
+export const runtimeVaultSearchRequestSchema = z.object({
+	query: z.string(),
+	// Optional type filter (e.g. "requirement"); omitted searches every type.
+	type: z.string().optional(),
+	// Cap on returned results (defaults applied server-side).
+	limit: z.number().int().positive().optional(),
+});
+export type RuntimeVaultSearchRequest = z.infer<typeof runtimeVaultSearchRequestSchema>;
+
+export const runtimeVaultSearchResultSchema = z.object({
+	id: z.string(),
+	type: z.string(),
+	title: z.string(),
+	// Path relative to the repo root, stable across every worktree checkout.
+	relativePath: z.string(),
+	// Higher is a stronger match; ordering, not an absolute scale.
+	score: z.number(),
+	// Where the strongest hit landed, for the result's secondary label/icon.
+	field: runtimeVaultSearchMatchFieldSchema,
+	// A short excerpt around the match, suitable for rendering under the title.
+	snippet: z.string(),
+	updatedAt: z.number(),
+});
+export type RuntimeVaultSearchResult = z.infer<typeof runtimeVaultSearchResultSchema>;
+
+export const runtimeVaultSearchResponseSchema = z.object({
+	results: z.array(runtimeVaultSearchResultSchema),
+});
+export type RuntimeVaultSearchResponse = z.infer<typeof runtimeVaultSearchResponseSchema>;
+
 export const runtimeGitRepositoryInfoSchema = z.object({
 	currentBranch: z.string().nullable(),
 	defaultBranch: z.string().nullable(),

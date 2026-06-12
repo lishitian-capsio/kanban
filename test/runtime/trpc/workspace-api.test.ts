@@ -478,6 +478,26 @@ describe("createWorkspaceApi vault documents", () => {
 		expect(broadcastRuntimeWorkspaceStateUpdated).not.toHaveBeenCalled();
 	});
 
+	it("searches the scanned doc store, ranking title hits over body hits and honoring the type filter", async () => {
+		const api = createApi();
+
+		// Distinct match tiers keep the ordering independent of write timestamps:
+		// exact title > word-boundary title > body-only.
+		await api.createDocument(scope(), { type: "requirement", title: "login", body: "unrelated" });
+		await api.createDocument(scope(), { type: "requirement", title: "Signup flow", body: "add a login throttle" });
+		await api.createDocument(scope(), { type: "note", title: "Improve login page" });
+
+		const all = await api.searchDocuments(scope(), { query: "login" });
+		expect(all.results.map((r) => r.title)).toEqual(["login", "Improve login page", "Signup flow"]);
+		expect(all.results[0].field).toBe("title");
+
+		const requirementsOnly = await api.searchDocuments(scope(), { query: "login", type: "requirement" });
+		expect(requirementsOnly.results.map((r) => r.type)).toEqual(["requirement", "requirement"]);
+
+		const none = await api.searchDocuments(scope(), { query: "   " });
+		expect(none.results).toEqual([]);
+	});
+
 	it("crystallizes a pi transcript into a markdown document and persists it", async () => {
 		const api = createApi({
 			piMessages: [

@@ -23,6 +23,7 @@ import type { TerminalSessionManager } from "../terminal/session-manager";
 import { renderTranscriptToMarkdown, selectTranscriptMessages } from "../vault/crystallize";
 import { VaultDocumentStore } from "../vault/vault-document-store";
 import { buildVaultLinkIndex } from "../vault/vault-link-index";
+import { searchVaultDocuments } from "../vault/vault-search";
 import {
 	createEmptyWorkspaceChangesResponse,
 	getWorkspaceChanges,
@@ -446,6 +447,12 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 			const documents = await new VaultDocumentStore(workspaceScope.workspacePath).list();
 			const index = buildVaultLinkIndex(documents);
 			return { outgoing: index.outgoing(input.id), backlinks: index.backlinks(input.id) };
+		},
+		searchDocuments: async (workspaceScope, input) => {
+			const type = input.type?.trim() ? input.type.trim() : undefined;
+			const documents = await new VaultDocumentStore(workspaceScope.workspacePath).list(type);
+			const results = searchVaultDocuments(documents, input.query, { limit: input.limit });
+			return { results };
 		},
 		createDocument: async (workspaceScope, input) => {
 			const document = await new VaultDocumentStore(workspaceScope.workspacePath).create({

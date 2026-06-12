@@ -123,6 +123,8 @@ import type {
 	RuntimeVaultDocumentsListResponse,
 	RuntimeVaultDocumentUpdateRequest,
 	RuntimeVaultDocumentUpdateResponse,
+	RuntimeVaultSearchRequest,
+	RuntimeVaultSearchResponse,
 	RuntimeWorkspaceChangesRequest,
 	RuntimeWorkspaceChangesResponse,
 	RuntimeWorkspaceFileSearchRequest,
@@ -253,6 +255,8 @@ import {
 	runtimeVaultDocumentsListResponseSchema,
 	runtimeVaultDocumentUpdateRequestSchema,
 	runtimeVaultDocumentUpdateResponseSchema,
+	runtimeVaultSearchRequestSchema,
+	runtimeVaultSearchResponseSchema,
 	runtimeWorkspaceChangesRequestSchema,
 	runtimeWorkspaceChangesResponseSchema,
 	runtimeWorkspaceFileSearchRequestSchema,
@@ -483,6 +487,10 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeVaultDocumentLinksGetRequest,
 		) => Promise<RuntimeVaultDocumentLinksGetResponse>;
+		searchDocuments: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultSearchRequest,
+		) => Promise<RuntimeVaultSearchResponse>;
 		createDocument: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeVaultDocumentCreateRequest,
@@ -932,6 +940,12 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeVaultDocumentLinksGetResponseSchema)
 			.query(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.getDocumentLinks(ctx.workspaceScope, input);
+			}),
+		searchDocuments: workspaceProcedure
+			.input(runtimeVaultSearchRequestSchema)
+			.output(runtimeVaultSearchResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.searchDocuments(ctx.workspaceScope, input);
 			}),
 		createDocument: workspaceProcedure
 			.input(runtimeVaultDocumentCreateRequestSchema)

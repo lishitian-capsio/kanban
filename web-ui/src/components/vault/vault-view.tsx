@@ -1,5 +1,6 @@
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 
 import { FilesView } from "@/components/files/files-view";
 
@@ -8,6 +9,8 @@ import { CustomerAnchorPanel } from "./customer/customer-anchor-panel";
 import { type UseVaultDocsResult, useVaultDocs, type VaultDocPatch } from "./data/use-vault-docs";
 import type { VaultDoc } from "./data/vault-doc-model";
 import { getVaultTypeView, listVaultTypeViews } from "./data/vault-type-registry";
+import { QuickOpenPalette } from "./search/quick-open-palette";
+import { VaultSearchPanel } from "./search/vault-search-panel";
 import { VaultContent } from "./vault-content";
 import { type VaultSelection, VaultSidebar } from "./vault-sidebar";
 
@@ -40,6 +43,8 @@ export function VaultView({
 	const types = useMemo(() => listVaultTypeViews(), []);
 	const [selection, setSelection] = useState<VaultSelection>(() => selectionFromInitial(initialView));
 	const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+	const [searchOpen, setSearchOpen] = useState(false);
+	const [quickOpenOpen, setQuickOpenOpen] = useState(false);
 
 	// Re-point the rail when the top-bar entry point changes (Files ↔ Requirements).
 	useEffect(() => {
@@ -73,6 +78,25 @@ export function VaultView({
 		setSelection({ kind: "type", type });
 		setSelectedDocId(id);
 	}, []);
+
+	// Vault-scoped search shortcuts (only active while the vault surface is mounted):
+	// ⌘/Ctrl+K opens the quick-open palette, ⌘/Ctrl+⇧+F the full-text search panel.
+	useHotkeys(
+		"mod+k",
+		() => {
+			setSearchOpen(false);
+			setQuickOpenOpen(true);
+		},
+		{ enableOnFormTags: true, enableOnContentEditable: true, preventDefault: true },
+	);
+	useHotkeys(
+		"mod+shift+f",
+		() => {
+			setQuickOpenOpen(false);
+			setSearchOpen(true);
+		},
+		{ enableOnFormTags: true, enableOnContentEditable: true, preventDefault: true },
+	);
 
 	const handleCreate = useCallback(
 		async (title: string) => {
@@ -136,7 +160,24 @@ export function VaultView({
 
 	return (
 		<div className="flex flex-1 min-h-0">
-			<VaultSidebar types={types} selection={selection} onSelect={handleSelectSurface} />
+			<VaultSidebar
+				types={types}
+				selection={selection}
+				onSelect={handleSelectSurface}
+				onOpenSearch={() => setSearchOpen(true)}
+			/>
+			<VaultSearchPanel
+				workspaceId={workspaceId}
+				open={searchOpen}
+				onClose={() => setSearchOpen(false)}
+				onOpenDoc={handleOpenDoc}
+			/>
+			<QuickOpenPalette
+				workspaceId={workspaceId}
+				open={quickOpenOpen}
+				onClose={() => setQuickOpenOpen(false)}
+				onOpenDoc={handleOpenDoc}
+			/>
 			{selection.kind === "files" ? (
 				<FilesView workspaceId={workspaceId} />
 			) : view ? (
