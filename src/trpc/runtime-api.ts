@@ -10,6 +10,7 @@ import { TRPCError } from "@trpc/server";
 import { createMcpRuntimeService, type McpRuntimeService } from "../agent-sdk/kanban/mcp-runtime-service";
 import { createKanbanMcpSettingsService } from "../agent-sdk/kanban/mcp-settings-service";
 import { type PiLaunchProfile, resolvePiApiKey, resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
+import { buildPiSystemPrompt } from "../agent-sdk/kanban/pi-system-prompt";
 import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
 import { createProviderService } from "../agent-sdk/kanban/provider-service";
 import { isKanbanClearSlashCommand } from "../agent-sdk/shared/slash-commands";
@@ -59,6 +60,7 @@ import {
 import { isHomeAgentSessionId, resolveHomeAgentId } from "../core/home-agent-session";
 import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
 import { resolveTaskTitle } from "../core/task-title.js";
+import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-prompt";
 import { openInBrowser } from "../server/browser";
 import type { HomeThreadStore } from "../session/home-thread-store";
 import {
@@ -118,6 +120,20 @@ async function resolveExistingTaskCwdOrEnsure(options: {
 			ensure: true,
 		});
 	}
+}
+
+/**
+ * Build the full pi system prompt for a home (sidebar) agent session.
+ * Combines the base pi prompt (senior engineer identity, workspace context,
+ * project rules) with the Kanban sidebar append prompt (board management
+ * identity and CLI instructions). Returns `undefined` for non-home tasks
+ * so they fall through to the default pi system prompt.
+ */
+function resolvePiHomeAgentSystemPrompt(taskId: string, cwd: string): string | undefined {
+	const appendPrompt = resolveHomeAgentAppendSystemPrompt(taskId);
+	if (!appendPrompt) return undefined;
+	const basePrompt = buildPiSystemPrompt({ cwd });
+	return `${basePrompt}\n\n${appendPrompt}`;
 }
 
 function createAgentProfileId(): string {
@@ -311,6 +327,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					});
 					const piTaskSessionService = await deps.getScopedPiTaskSessionService(workspaceScope);
 					const resolvedPiTitle = resolveTaskTitle(body.taskTitle?.trim(), body.prompt);
+					const homeAgentSystemPrompt = resolvePiHomeAgentSystemPrompt(body.taskId, taskCwd);
 					const summary = await piTaskSessionService.startTaskSession({
 						taskId: body.taskId,
 						cwd: taskCwd,
@@ -325,6 +342,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 						apiKey: piLaunchConfig.apiKey,
 						baseUrl: piLaunchConfig.baseUrl,
 						reasoningEffort: piLaunchConfig.reasoningEffort,
+						systemPrompt: homeAgentSystemPrompt,
 					});
 
 					let nextSummary = summary;
@@ -533,6 +551,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					const piLaunchConfig = resolvePiLaunchConfig({
 						workspaceProfile: await loadSelectedPiLaunchProfile(workspaceScope),
 					});
+					const homeAgentSystemPrompt = resolvePiHomeAgentSystemPrompt(body.taskId, workspaceScope.workspacePath);
 					summary = await piService.startTaskSession({
 						taskId: body.taskId,
 						cwd: workspaceScope.workspacePath,
@@ -543,6 +562,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 						apiKey: piLaunchConfig.apiKey,
 						baseUrl: piLaunchConfig.baseUrl,
 						reasoningEffort: piLaunchConfig.reasoningEffort,
+						systemPrompt: homeAgentSystemPrompt,
 					});
 				}
 
@@ -876,6 +896,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 						const piLaunchConfig = resolvePiLaunchConfig({
 							workspaceProfile: await loadSelectedPiLaunchProfile(workspaceScope),
 						});
+						const homeAgentSystemPrompt = resolvePiHomeAgentSystemPrompt(body.taskId, workspaceScope.workspacePath);
 						summary = await piService.startTaskSession({
 							taskId: body.taskId,
 							cwd: workspaceScope.workspacePath,
@@ -888,6 +909,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 							apiKey: piLaunchConfig.apiKey,
 							baseUrl: piLaunchConfig.baseUrl,
 							reasoningEffort: piLaunchConfig.reasoningEffort,
+							systemPrompt: homeAgentSystemPrompt,
 						});
 					}
 				}

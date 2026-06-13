@@ -865,6 +865,15 @@ const qwenAdapter: AgentSessionAdapter = {
 			env.QWEN_CODE_SYSTEM_SETTINGS_PATH = settingsPath;
 		}
 
+		const appendedSystemPrompt = resolveHomeAgentAppendSystemPrompt(input.taskId);
+		if (
+			appendedSystemPrompt &&
+			!hasCliOption(args, "--append-system-prompt") &&
+			!hasCliOption(args, "--system-prompt")
+		) {
+			args.push("--append-system-prompt", appendedSystemPrompt);
+		}
+
 		const trimmed = input.prompt.trim();
 		if (trimmed) {
 			args.push("-i", trimmed);

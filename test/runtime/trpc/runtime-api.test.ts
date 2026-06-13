@@ -1586,6 +1586,7 @@ describe("createRuntimeApi startTaskSession", () => {
 			apiKey: "sk-or-test",
 			baseUrl: "https://openrouter.ai/api/v1",
 			reasoningEffort: null,
+			systemPrompt: expect.any(String),
 		});
 	});
 
