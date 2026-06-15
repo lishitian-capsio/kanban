@@ -106,6 +106,10 @@ vi.mock("@/components/shared/account-organization-section", () => ({
 	AccountOrganizationSection: () => null,
 }));
 
+vi.mock("@/components/shared/agent-provider-selector", () => ({
+	AgentProviderSelector: () => null,
+}));
+
 vi.mock("@/hooks/use-runtime-settings-kanban-controller", () => ({
 	useRuntimeSettingsKanbanController: () => ({
 		currentProviderSettings: {
@@ -146,6 +150,7 @@ vi.mock("@/runtime/use-runtime-config", () => ({
 
 vi.mock("@/runtime/runtime-config-query", () => ({
 	openFileOnHost: vi.fn(async () => undefined),
+	fetchKanbanProviderCatalog: vi.fn(async () => []),
 }));
 
 vi.mock("@/utils/notification-permission", () => ({

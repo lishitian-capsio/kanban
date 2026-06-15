@@ -12,7 +12,14 @@ import { createKanbanMcpSettingsService } from "../agent-sdk/kanban/mcp-settings
 import { type PiLaunchProfile, resolvePiApiKey, resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
 import { buildPiSystemPrompt } from "../agent-sdk/kanban/pi-system-prompt";
 import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
-import { createProviderService } from "../agent-sdk/kanban/provider-service";
+import { createAgentProviderService } from "../agent-sdk/kanban/agent-provider-service";
+import {
+	getAgentProviderConfig,
+	getAllAgentProviderConfigs,
+	saveAgentProvider,
+	deleteAgentProvider,
+	type AgentProviderConfig,
+} from "../agent-sdk/kanban/agent-provider-config";
 import { isKanbanClearSlashCommand } from "../agent-sdk/shared/slash-commands";
 import { setRuntimeProxyStateFromConfig } from "../config/proxy-fetch";
 import type { RuntimeConfigState } from "../config/runtime-config";
@@ -23,6 +30,10 @@ import type {
 	RuntimeAgentProfileMutationResponse,
 	RuntimeAgentProfileRecord,
 	RuntimeAgentProfilesData,
+	RuntimeAgentProviderConfigListResponse,
+	RuntimeAgentProviderConfigSaveRequest,
+	RuntimeAgentProviderMutationRequest,
+	RuntimeAgentProviderMutationResponse,
 	RuntimeCommandRunResponse,
 	RuntimeRunUpdateResponse,
 	RuntimeUpdateStatusResponse,
@@ -38,14 +49,12 @@ import {
 	parseHomeChatThreadCreateRequest,
 	parseHomeChatThreadRenameRequest,
 	parseKanbanAccountSwitchRequest,
-	parseKanbanAddProviderRequest,
 	parseKanbanDeviceAuthCompleteRequest,
 	parseKanbanMcpOAuthRequest,
 	parseKanbanMcpSettingsSaveRequest,
 	parseKanbanOauthLoginRequest,
 	parseKanbanProviderModelsRequest,
-	parseKanbanProviderSettingsSaveRequest,
-	parseKanbanUpdateProviderRequest,
+	parseFetchRemoteModelsRequest,
 	parseRuntimeConfigSaveRequest,
 	parseShellSessionStartRequest,
 	parseTaskChatAbortRequest,
@@ -185,7 +194,7 @@ async function loadSelectedPiLaunchProfile(scope: RuntimeTrpcWorkspaceScope): Pr
 }
 
 export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrpcContext["runtimeApi"] {
-	const providerService = createProviderService();
+	const agentProviderService = createAgentProviderService();
 	const kanbanMcpSettingsService = createKanbanMcpSettingsService();
 	const mcpRuntimeService = createMcpRuntimeService({
 		onAuthStatusesChanged: (statuses) => {
@@ -195,7 +204,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 	const debugResetTargetPaths = [join(homedir(), ".kanban")] as const;
 
 	const buildConfigResponse = (runtimeConfig: RuntimeConfigState) =>
-		buildRuntimeConfigResponse(runtimeConfig, providerService.getProviderSettingsSummary());
+		buildRuntimeConfigResponse(runtimeConfig, agentProviderService.getAgentProviderSummary("pi"));
 
 	const callTaskSessionService = async <T>(
 		workspaceScope: RuntimeTrpcWorkspaceScope,
@@ -256,24 +265,6 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				getKanbanRuntimeNoProxyHosts(),
 			);
 			return buildConfigResponse(nextRuntimeConfig);
-		},
-		saveKanbanProviderSettings: async (_workspaceScope, input) => {
-			const body = parseKanbanProviderSettingsSaveRequest(input);
-			const response = providerService.saveProviderSettings(body);
-			deps.bumpKanbanSessionContextVersion?.();
-			return response;
-		},
-		addKanbanProvider: async (_workspaceScope, input) => {
-			const body = parseKanbanAddProviderRequest(input);
-			const response = await providerService.addCustomProvider(body);
-			deps.bumpKanbanSessionContextVersion?.();
-			return response;
-		},
-		updateKanbanProvider: async (_workspaceScope, input) => {
-			const body = parseKanbanUpdateProviderRequest(input);
-			const response = await providerService.updateCustomProvider(body);
-			deps.bumpKanbanSessionContextVersion?.();
-			return response;
 		},
 		startTaskSession: async (workspaceScope, input) => {
 			try {
@@ -693,21 +684,22 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		createAgentProfile: async (workspaceScope, input): Promise<RuntimeAgentProfileMutationResponse> => {
 			const body = parseAgentProfileCreateRequest(input);
 			const providerId = body.providerId?.trim() || null;
-			// Secrets (API key) + the coherent provider config go to the machine-home store
-			// the existing secure way — never into the committed profile record.
+			// Secrets (API key) + the coherent provider config go to the per-agent config store.
 			if (providerId) {
-				providerService.saveProviderSettings({
-					providerId,
-					modelId: body.modelId ?? undefined,
+				const agentConfig: AgentProviderConfig = {
+					agentId: body.agentId,
+					provider: providerId,
+					model: body.modelId ?? undefined,
 					apiKey: body.apiKey ?? undefined,
 					baseUrl: body.baseUrl ?? undefined,
-					reasoningEffort: body.reasoningEffort ?? undefined,
+					reasoning: body.reasoningEffort ? { effort: body.reasoningEffort } : undefined,
 					region: body.region ?? undefined,
 					gcp:
 						body.gcpProjectId !== undefined || body.gcpRegion !== undefined
-							? { projectId: body.gcpProjectId ?? null, region: body.gcpRegion ?? null }
+							? { projectId: body.gcpProjectId ?? undefined, region: body.gcpRegion ?? undefined }
 							: undefined,
-				});
+				};
+				await agentProviderService.saveAgentProvider(body.agentId, agentConfig);
 			}
 			const id = createAgentProfileId();
 			const record: RuntimeAgentProfileRecord = {
@@ -739,17 +731,21 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			const effectiveProviderId =
 				body.providerId !== undefined ? body.providerId?.trim() || null : existing.providerId;
 			if (effectiveProviderId) {
-				providerService.saveProviderSettings({
-					providerId: effectiveProviderId,
-					...(body.modelId !== undefined ? { modelId: body.modelId } : {}),
-					...(body.apiKey !== undefined ? { apiKey: body.apiKey } : {}),
-					...(body.baseUrl !== undefined ? { baseUrl: body.baseUrl } : {}),
-					...(body.reasoningEffort !== undefined ? { reasoningEffort: body.reasoningEffort } : {}),
-					...(body.region !== undefined ? { region: body.region } : {}),
+				const existingAgentConfig = getAgentProviderConfig(existing.agentId);
+				const agentConfig: AgentProviderConfig = {
+					...(existingAgentConfig ?? { agentId: existing.agentId }),
+					agentId: existing.agentId,
+					provider: effectiveProviderId,
+					...(body.modelId !== undefined ? { model: body.modelId ?? undefined } : {}),
+					...(body.apiKey !== undefined ? { apiKey: body.apiKey ?? undefined } : {}),
+					...(body.baseUrl !== undefined ? { baseUrl: body.baseUrl ?? undefined } : {}),
+					...(body.reasoningEffort !== undefined ? { reasoning: body.reasoningEffort ? { effort: body.reasoningEffort } : undefined } : {}),
+					...(body.region !== undefined ? { region: body.region ?? undefined } : {}),
 					...(body.gcpProjectId !== undefined || body.gcpRegion !== undefined
-						? { gcp: { projectId: body.gcpProjectId ?? null, region: body.gcpRegion ?? null } }
+						? { gcp: { projectId: body.gcpProjectId ?? undefined, region: body.gcpRegion ?? undefined } }
 						: {}),
-				});
+				};
+				await agentProviderService.saveAgentProvider(existing.agentId, agentConfig);
 			}
 			const patch: AgentProfilePatch = {};
 			if (body.name !== undefined) patch.name = body.name;
@@ -789,30 +785,54 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			return buildAgentProfileMutationResponse(data, getSelectedAgentProfile(data, body.agentId));
 		},
 		getKanbanProviderCatalog: async (_workspaceScope) => {
-			return await providerService.getProviderCatalog();
+			return await agentProviderService.getAllAgentProviderCatalog();
 		},
 		getKanbanAccountProfile: async (_workspaceScope) => {
-			return await providerService.getKanbanAccountProfile();
+			return await agentProviderService.getKanbanAccountProfile();
 		},
 		getKanbanKanbanAccess: async (_workspaceScope) => {
-			return await providerService.getKanbanKanbanAccess();
+			return await agentProviderService.getKanbanKanbanAccess();
 		},
 		getFeaturebaseToken: async (_workspaceScope) => {
-			return await providerService.getFeaturebaseToken();
+			return await agentProviderService.getFeaturebaseToken();
 		},
 		getKanbanAccountBalance: async (_workspaceScope) => {
-			return await providerService.getKanbanAccountBalance();
+			return await agentProviderService.getKanbanAccountBalance();
 		},
 		getKanbanAccountOrganizations: async (_workspaceScope) => {
-			return await providerService.getKanbanAccountOrganizations();
+			return await agentProviderService.getKanbanAccountOrganizations();
 		},
 		switchKanbanAccount: async (_workspaceScope, input) => {
 			const body = parseKanbanAccountSwitchRequest(input);
-			return await providerService.switchKanbanAccount(body.organizationId);
+			return await agentProviderService.switchKanbanAccount(body.organizationId);
 		},
 		getKanbanProviderModels: async (_workspaceScope, input) => {
 			const body = parseKanbanProviderModelsRequest(input);
-			return await providerService.getProviderModels(body.providerId);
+			return await agentProviderService.getProviderModels(body.providerId);
+		},
+		fetchRemoteProviderModels: async (_workspaceScope, input) => {
+			const body = parseFetchRemoteModelsRequest(input);
+			const modelsPath = body.protocol === "anthropic" ? "/v1/models" : "/models";
+			const url = `${body.baseUrl.replace(/\/$/, "")}${modelsPath}`;
+			const headers: Record<string, string> = {};
+			if (body.apiKey) {
+				headers.Authorization = `Bearer ${body.apiKey}`;
+			}
+			const response = await fetch(url, { headers });
+			if (!response.ok) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: `Failed to fetch models from ${url}: HTTP ${response.status} ${response.statusText}`,
+				});
+			}
+			const data = (await response.json()) as Record<string, unknown>;
+			let models: string[] = [];
+			if (Array.isArray(data.data)) {
+				models = (data.data as Array<{ id?: string }>).map((m) => m.id).filter(Boolean) as string[];
+			} else if (Array.isArray(data.models)) {
+				models = (data.models as Array<{ id?: string; name?: string }>).map((m) => m.id || m.name).filter(Boolean) as string[];
+			}
+			return { models };
 		},
 		getKanbanMcpAuthStatuses: async (_workspaceScope) => {
 			const statuses = await mcpRuntimeService.getAuthStatuses();
@@ -842,7 +862,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		},
 		runKanbanProviderOAuthLogin: async (_workspaceScope, input) => {
 			const body = parseKanbanOauthLoginRequest(input);
-			const response = await providerService.runOauthLogin({
+			const response = await agentProviderService.runOauthLogin({
 				providerId: body.provider,
 				baseUrl: body.baseUrl,
 			});
@@ -852,11 +872,11 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			return response;
 		},
 		startKanbanDeviceAuth: async () => {
-			return await providerService.startDeviceAuth();
+			return await agentProviderService.startDeviceAuth();
 		},
 		completeKanbanDeviceAuth: async (_workspaceScope, input) => {
 			const body = parseKanbanDeviceAuthCompleteRequest(input);
-			const response = await providerService.completeDeviceAuth({
+			const response = await agentProviderService.completeDeviceAuth({
 				deviceCode: body.deviceCode,
 				expiresInSeconds: body.expiresInSeconds,
 				pollIntervalSeconds: body.pollIntervalSeconds,
@@ -1011,6 +1031,33 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		},
 		runUpdateNow: async () => {
 			return await deps.runUpdateNow();
+		},
+		listAgentProviderConfigs: async (): Promise<RuntimeAgentProviderConfigListResponse> => {
+			return { agents: getAllAgentProviderConfigs() };
+		},
+		saveAgentProviderConfig: async (
+			input: RuntimeAgentProviderConfigSaveRequest,
+		): Promise<RuntimeAgentProviderMutationResponse> => {
+			await saveAgentProvider(input.agentId, input.config as AgentProviderConfig);
+			return { ok: true, config: getAgentProviderConfig(input.agentId) ?? undefined };
+		},
+		addProviderToAgent: async (
+			_input: RuntimeAgentProviderMutationRequest,
+		): Promise<RuntimeAgentProviderMutationResponse> => {
+			// No-op in per-agent model.
+			return { ok: true, config: getAgentProviderConfig(_input.agentId) ?? undefined };
+		},
+		removeProviderFromAgent: async (
+			_input: RuntimeAgentProviderMutationRequest,
+		): Promise<RuntimeAgentProviderMutationResponse> => {
+			// No-op in per-agent model.
+			return { ok: true, config: getAgentProviderConfig(_input.agentId) ?? undefined };
+		},
+		selectAgentProvider: async (
+			_input: RuntimeAgentProviderMutationRequest,
+		): Promise<RuntimeAgentProviderMutationResponse> => {
+			// No-op in per-agent model.
+			return { ok: true, config: getAgentProviderConfig(_input.agentId) ?? undefined };
 		},
 	};
 }

@@ -71,7 +71,7 @@ export const runtimeSlashCommandsResponseSchema = z.object({
 });
 export type RuntimeSlashCommandsResponse = z.infer<typeof runtimeSlashCommandsResponseSchema>;
 
-export const runtimeAgentIdSchema = z.enum(["claude", "codex", "gemini", "opencode", "droid", "kiro", "pi", "qwen"]);
+export const runtimeAgentIdSchema = z.enum(["claude", "codex", "gemini", "opencode", "droid", "kiro", "pi"]);
 export type RuntimeAgentId = z.infer<typeof runtimeAgentIdSchema>;
 
 const runtimeBoardColumnIdEnum = z.enum(["backlog", "in_progress", "review", "trash"]);
@@ -1250,6 +1250,15 @@ export const runtimeFeaturebaseTokenResponseSchema = z.object({
 });
 export type RuntimeFeaturebaseTokenResponse = z.infer<typeof runtimeFeaturebaseTokenResponseSchema>;
 
+export const runtimeProviderProtocolSchema = z.enum(["anthropic", "openai"]);
+export type RuntimeProviderProtocol = z.infer<typeof runtimeProviderProtocolSchema>;
+
+export const runtimeProtocolConfigSchema = z.object({
+	protocol: runtimeProviderProtocolSchema,
+	baseUrl: z.string().optional(),
+});
+export type RuntimeProtocolConfig = z.infer<typeof runtimeProtocolConfigSchema>;
+
 export const runtimeKanbanProviderCatalogItemSchema = z.object({
 	id: z.string(),
 	name: z.string(),
@@ -1259,6 +1268,7 @@ export const runtimeKanbanProviderCatalogItemSchema = z.object({
 	baseUrl: z.string().nullable(),
 	supportsBaseUrl: z.boolean(),
 	env: z.array(z.string()).optional(),
+	protocols: z.array(runtimeProtocolConfigSchema).default([]),
 });
 export type RuntimeKanbanProviderCatalogItem = z.infer<typeof runtimeKanbanProviderCatalogItemSchema>;
 
@@ -1287,6 +1297,19 @@ export const runtimeKanbanProviderModelsResponseSchema = z.object({
 });
 export type RuntimeKanbanProviderModelsResponse = z.infer<typeof runtimeKanbanProviderModelsResponseSchema>;
 
+// ── Remote model fetching (by baseUrl + protocol) ─────────────────────────────
+export const runtimeFetchRemoteModelsRequestSchema = z.object({
+	baseUrl: z.string().url(),
+	protocol: runtimeProviderProtocolSchema,
+	apiKey: z.string().optional(),
+});
+export type RuntimeFetchRemoteModelsRequest = z.infer<typeof runtimeFetchRemoteModelsRequestSchema>;
+
+export const runtimeFetchRemoteModelsResponseSchema = z.object({
+	models: z.array(z.string()),
+});
+export type RuntimeFetchRemoteModelsResponse = z.infer<typeof runtimeFetchRemoteModelsResponseSchema>;
+
 export const runtimeKanbanProviderCapabilitySchema = z.enum([
 	"streaming",
 	"tools",
@@ -1296,39 +1319,59 @@ export const runtimeKanbanProviderCapabilitySchema = z.enum([
 ]);
 export type RuntimeKanbanProviderCapability = z.infer<typeof runtimeKanbanProviderCapabilitySchema>;
 
-export const runtimeKanbanAddProviderRequestSchema = z.object({
-	providerId: z.string(),
-	name: z.string(),
-	baseUrl: z.string(),
-	apiKey: z.string().nullable().optional(),
-	headers: z.record(z.string(), z.string()).optional(),
-	timeoutMs: z.number().int().positive().optional(),
-	models: z.array(z.string()),
-	defaultModelId: z.string().nullable().optional(),
-	modelsSourceUrl: z.string().nullable().optional(),
-	capabilities: z.array(runtimeKanbanProviderCapabilitySchema).optional(),
-});
-export type RuntimeKanbanAddProviderRequest = z.infer<typeof runtimeKanbanAddProviderRequestSchema>;
+// ── Agent-level provider config ──────────────────────────────────────────────
 
-export const runtimeKanbanAddProviderResponseSchema = runtimeKanbanProviderSettingsSchema;
-export type RuntimeKanbanAddProviderResponse = z.infer<typeof runtimeKanbanAddProviderResponseSchema>;
-
-export const runtimeKanbanUpdateProviderRequestSchema = z.object({
-	providerId: z.string(),
-	name: z.string().optional(),
+export const runtimeAgentProviderConfigSchema = z.object({
+	agentId: z.string(),
+	provider: z.string().optional(),
+	model: z.string().optional(),
+	apiKey: z.string().optional(),
 	baseUrl: z.string().optional(),
-	apiKey: z.string().nullable().optional(),
-	headers: z.record(z.string(), z.string()).nullable().optional(),
-	timeoutMs: z.number().int().positive().nullable().optional(),
-	models: z.array(z.string()).optional(),
-	defaultModelId: z.string().nullable().optional(),
-	modelsSourceUrl: z.string().nullable().optional(),
-	capabilities: z.array(runtimeKanbanProviderCapabilitySchema).optional(),
+	protocols: z.array(z.object({
+		protocol: z.string(),
+		baseUrl: z.string().optional(),
+	})).optional(),
+	reasoning: z.object({
+		enabled: z.boolean().optional(),
+		effort: z.string().optional(),
+		budgetTokens: z.number().optional(),
+	}).optional(),
+	headers: z.record(z.string()).optional(),
+	timeout: z.number().optional(),
+	region: z.string().optional(),
+	aws: z.record(z.unknown()).optional(),
+	gcp: z.object({ projectId: z.string().optional(), region: z.string().optional() }).optional(),
 });
-export type RuntimeKanbanUpdateProviderRequest = z.infer<typeof runtimeKanbanUpdateProviderRequestSchema>;
+export type RuntimeAgentProviderConfig = z.infer<typeof runtimeAgentProviderConfigSchema>;
 
-export const runtimeKanbanUpdateProviderResponseSchema = runtimeKanbanProviderSettingsSchema;
-export type RuntimeKanbanUpdateProviderResponse = z.infer<typeof runtimeKanbanUpdateProviderResponseSchema>;
+export const runtimeAgentProviderConfigListResponseSchema = z.object({
+	agents: z.record(z.string(), runtimeAgentProviderConfigSchema),
+});
+export type RuntimeAgentProviderConfigListResponse = z.infer<typeof runtimeAgentProviderConfigListResponseSchema>;
+
+export const runtimeAgentProviderConfigSaveRequestSchema = z.object({
+	agentId: z.string(),
+	config: runtimeAgentProviderConfigSchema,
+});
+export type RuntimeAgentProviderConfigSaveRequest = z.infer<typeof runtimeAgentProviderConfigSaveRequestSchema>;
+
+export const runtimeAgentProviderDeleteRequestSchema = z.object({
+	agentId: z.string(),
+});
+export type RuntimeAgentProviderDeleteRequest = z.infer<typeof runtimeAgentProviderDeleteRequestSchema>;
+
+export const runtimeAgentProviderMutationRequestSchema = z.object({
+	agentId: z.string(),
+	providerId: z.string(),
+});
+export type RuntimeAgentProviderMutationRequest = z.infer<typeof runtimeAgentProviderMutationRequestSchema>;
+
+export const runtimeAgentProviderMutationResponseSchema = z.object({
+	ok: z.boolean(),
+	config: runtimeAgentProviderConfigSchema.optional(),
+	error: z.string().optional(),
+});
+export type RuntimeAgentProviderMutationResponse = z.infer<typeof runtimeAgentProviderMutationResponseSchema>;
 
 export const runtimeKanbanOauthLoginRequestSchema = z.object({
 	provider: runtimeKanbanOauthProviderSchema,
@@ -1363,36 +1406,6 @@ export type RuntimeKanbanDeviceAuthCompleteRequest = z.infer<typeof runtimeKanba
 
 export const runtimeKanbanDeviceAuthCompleteResponseSchema = runtimeKanbanOauthLoginResponseSchema;
 export type RuntimeKanbanDeviceAuthCompleteResponse = z.infer<typeof runtimeKanbanDeviceAuthCompleteResponseSchema>;
-
-export const runtimeKanbanProviderSettingsSaveRequestSchema = z.object({
-	providerId: z.string(),
-	modelId: z.string().nullable().optional(),
-	apiKey: z.string().nullable().optional(),
-	baseUrl: z.string().nullable().optional(),
-	reasoningEffort: runtimeReasoningEffortSchema.nullable().optional(),
-	region: z.string().nullable().optional(),
-	aws: z
-		.object({
-			accessKey: z.string().nullable().optional(),
-			secretKey: z.string().nullable().optional(),
-			sessionToken: z.string().nullable().optional(),
-			region: z.string().nullable().optional(),
-			profile: z.string().nullable().optional(),
-			authentication: z.enum(["iam", "api-key", "profile"]).nullable().optional(),
-			endpoint: z.string().nullable().optional(),
-		})
-		.optional(),
-	gcp: z
-		.object({
-			projectId: z.string().nullable().optional(),
-			region: z.string().nullable().optional(),
-		})
-		.optional(),
-});
-export type RuntimeKanbanProviderSettingsSaveRequest = z.infer<typeof runtimeKanbanProviderSettingsSaveRequestSchema>;
-
-export const runtimeKanbanProviderSettingsSaveResponseSchema = runtimeKanbanProviderSettingsSchema;
-export type RuntimeKanbanProviderSettingsSaveResponse = z.infer<typeof runtimeKanbanProviderSettingsSaveResponseSchema>;
 
 const runtimeKanbanMcpServerBaseSchema = z.object({
 	name: z.string(),

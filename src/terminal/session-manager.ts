@@ -2,7 +2,8 @@
 // It owns process lifecycle, terminal protocol filtering, and summary updates
 // for command-driven agents such as Claude Code, Codex, Gemini, and shell sessions.
 
-import { buildProxyEnvVars } from "../config/proxy-env";
+import { buildBridgeProxyEnvVars } from "../unified-proxy/network-bridge";
+import { buildAgentProviderEnv } from "../unified-proxy/env-injector";
 import type {
 	RuntimeTaskHookActivity,
 	RuntimeTaskImage,
@@ -11,7 +12,6 @@ import type {
 	RuntimeTaskSessionSummary,
 	RuntimeTaskTurnCheckpoint,
 } from "../core/api-contract";
-import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
 import type { SessionMessage } from "../session/session-message";
 import {
 	mergeSessionMessages,
@@ -462,18 +462,14 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			workspaceId: request.workspaceId,
 		});
 
+		// Build provider-specific env vars (custom baseUrl/apiKey for non-official providers).
+		const agentProviderEnv = await buildAgentProviderEnv(request.agentId);
+
 		const env = buildTerminalEnvironment(
 			request.env,
 			launch.env,
-			buildProxyEnvVars(
-				request.proxyEnabled ?? false,
-				request.proxyHost ?? "",
-				request.proxyPort ?? "",
-				request.proxyUsername ?? "",
-				request.proxyPassword ?? "",
-				request.noProxy ?? "",
-				getKanbanRuntimeNoProxyHosts(),
-			),
+			agentProviderEnv.env,
+			buildBridgeProxyEnvVars(),
 		);
 
 		// Adapters can wrap the configured agent binary when they need extra runtime wiring
@@ -734,15 +730,7 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 		});
 		const env = buildTerminalEnvironment(
 			request.env,
-			buildProxyEnvVars(
-				request.proxyEnabled ?? false,
-				request.proxyHost ?? "",
-				request.proxyPort ?? "",
-				request.proxyUsername ?? "",
-				request.proxyPassword ?? "",
-				request.noProxy ?? "",
-				getKanbanRuntimeNoProxyHosts(),
-			),
+			buildBridgeProxyEnvVars(),
 		);
 		const sessionStartedAt = now();
 

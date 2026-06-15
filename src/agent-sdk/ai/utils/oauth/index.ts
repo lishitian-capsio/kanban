@@ -73,11 +73,6 @@ const builtInOAuthProviders: OAuthProviderInfo[] = [
 		available: true,
 	},
 	{
-		id: "alibaba-coding-plan",
-		name: "Alibaba Coding Plan",
-		available: true,
-	},
-	{
 		id: "zhipu-coding-plan",
 		name: "Zhipu Coding Plan (智谱)",
 		available: true,

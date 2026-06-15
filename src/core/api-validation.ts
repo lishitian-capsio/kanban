@@ -15,14 +15,13 @@ import {
 	type RuntimeHomeChatThreadRenameRequest,
 	type RuntimeHookIngestRequest,
 	type RuntimeKanbanAccountSwitchRequest,
-	type RuntimeKanbanAddProviderRequest,
 	type RuntimeKanbanDeviceAuthCompleteRequest,
 	type RuntimeKanbanMcpOAuthRequest,
 	type RuntimeKanbanMcpSettingsSaveRequest,
 	type RuntimeKanbanOauthLoginRequest,
 	type RuntimeKanbanProviderModelsRequest,
-	type RuntimeKanbanProviderSettingsSaveRequest,
-	type RuntimeKanbanUpdateProviderRequest,
+	type RuntimeFetchRemoteModelsRequest,
+	type RuntimeFetchRemoteModelsResponse,
 	type RuntimeProjectAddRequest,
 	type RuntimeProjectRemoveRequest,
 	type RuntimeShellSessionStartRequest,
@@ -55,14 +54,12 @@ import {
 	runtimeHomeChatThreadRenameRequestSchema,
 	runtimeHookIngestRequestSchema,
 	runtimeKanbanAccountSwitchRequestSchema,
-	runtimeKanbanAddProviderRequestSchema,
 	runtimeKanbanDeviceAuthCompleteRequestSchema,
 	runtimeKanbanMcpOAuthRequestSchema,
 	runtimeKanbanMcpSettingsSaveRequestSchema,
 	runtimeKanbanOauthLoginRequestSchema,
 	runtimeKanbanProviderModelsRequestSchema,
-	runtimeKanbanProviderSettingsSaveRequestSchema,
-	runtimeKanbanUpdateProviderRequestSchema,
+	runtimeFetchRemoteModelsRequestSchema,
 	runtimeProjectAddRequestSchema,
 	runtimeProjectRemoveRequestSchema,
 	runtimeShellSessionStartRequestSchema,
@@ -433,115 +430,8 @@ export function parseKanbanProviderModelsRequest(value: unknown): RuntimeKanbanP
 	};
 }
 
-export function parseKanbanAddProviderRequest(value: unknown): RuntimeKanbanAddProviderRequest {
-	const parsed = parseWithSchema(runtimeKanbanAddProviderRequestSchema, value);
-	const providerId = parsed.providerId.trim().toLowerCase().replace(/\s+/g, "-");
-	if (!providerId) {
-		throw new Error("Provider ID cannot be empty.");
-	}
-	const name = parsed.name.trim();
-	if (!name) {
-		throw new Error("Provider name cannot be empty.");
-	}
-	const baseUrl = parsed.baseUrl.trim();
-	if (!baseUrl) {
-		throw new Error("Base URL cannot be empty.");
-	}
-	const models = [...new Set(parsed.models.map((model) => model.trim()).filter((model) => model.length > 0))];
-	const modelsSourceUrl = parsed.modelsSourceUrl?.trim() || null;
-	if (models.length === 0 && !modelsSourceUrl) {
-		throw new Error("Add at least one model or set a model source URL.");
-	}
-	const headers = parsed.headers
-		? Object.fromEntries(
-				Object.entries(parsed.headers)
-					.map(([key, entry]) => [key.trim(), entry.trim()] as const)
-					.filter(([key]) => key.length > 0),
-			)
-		: undefined;
-
-	return {
-		providerId,
-		name,
-		baseUrl,
-		apiKey: parsed.apiKey?.trim() || null,
-		...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
-		...(parsed.timeoutMs !== undefined ? { timeoutMs: parsed.timeoutMs } : {}),
-		models,
-		defaultModelId: parsed.defaultModelId?.trim() || null,
-		modelsSourceUrl,
-		capabilities: parsed.capabilities ? [...new Set(parsed.capabilities)] : undefined,
-	};
-}
-
-export function parseKanbanUpdateProviderRequest(value: unknown): RuntimeKanbanUpdateProviderRequest {
-	const parsed = parseWithSchema(runtimeKanbanUpdateProviderRequestSchema, value);
-	const providerId = parsed.providerId.trim().toLowerCase().replace(/\s+/g, "-");
-	if (!providerId) {
-		throw new Error("Provider ID cannot be empty.");
-	}
-
-	const headers =
-		parsed.headers === undefined
-			? undefined
-			: parsed.headers === null
-				? null
-				: Object.fromEntries(
-						Object.entries(parsed.headers)
-							.map(([key, entry]) => [key.trim(), entry.trim()] as const)
-							.filter(([key]) => key.length > 0),
-					);
-	const models = parsed.models?.map((model) => model.trim()).filter((model) => model.length > 0);
-
-	return {
-		providerId,
-		...(parsed.name !== undefined ? { name: parsed.name.trim() } : {}),
-		...(parsed.baseUrl !== undefined ? { baseUrl: parsed.baseUrl.trim() } : {}),
-		...(parsed.apiKey !== undefined ? { apiKey: parsed.apiKey?.trim() || null } : {}),
-		...(headers !== undefined ? { headers } : {}),
-		...(parsed.timeoutMs !== undefined ? { timeoutMs: parsed.timeoutMs } : {}),
-		...(models !== undefined ? { models: [...new Set(models)] } : {}),
-		...(parsed.defaultModelId !== undefined ? { defaultModelId: parsed.defaultModelId?.trim() || null } : {}),
-		...(parsed.modelsSourceUrl !== undefined ? { modelsSourceUrl: parsed.modelsSourceUrl?.trim() || null } : {}),
-		...(parsed.capabilities ? { capabilities: [...new Set(parsed.capabilities)] } : {}),
-	};
-}
-
-export function parseKanbanProviderSettingsSaveRequest(value: unknown): RuntimeKanbanProviderSettingsSaveRequest {
-	const parsed = parseWithSchema(runtimeKanbanProviderSettingsSaveRequestSchema, value);
-	const providerId = parsed.providerId.trim();
-	if (!providerId) {
-		throw new Error("Provider ID cannot be empty.");
-	}
-
-	const aws =
-		parsed.aws === undefined
-			? undefined
-			: {
-					...(parsed.aws.accessKey !== undefined ? { accessKey: parsed.aws.accessKey?.trim() || null } : {}),
-					...(parsed.aws.secretKey !== undefined ? { secretKey: parsed.aws.secretKey?.trim() || null } : {}),
-					...(parsed.aws.sessionToken !== undefined
-						? { sessionToken: parsed.aws.sessionToken?.trim() || null }
-						: {}),
-					...(parsed.aws.region !== undefined ? { region: parsed.aws.region?.trim() || null } : {}),
-					...(parsed.aws.profile !== undefined ? { profile: parsed.aws.profile?.trim() || null } : {}),
-					...(parsed.aws.authentication !== undefined ? { authentication: parsed.aws.authentication } : {}),
-					...(parsed.aws.endpoint !== undefined ? { endpoint: parsed.aws.endpoint?.trim() || null } : {}),
-				};
-	const gcp =
-		parsed.gcp === undefined
-			? undefined
-			: {
-					...(parsed.gcp.projectId !== undefined ? { projectId: parsed.gcp.projectId?.trim() || null } : {}),
-					...(parsed.gcp.region !== undefined ? { region: parsed.gcp.region?.trim() || null } : {}),
-				};
-	return {
-		...parsed,
-		providerId,
-		...(parsed.region !== undefined ? { region: parsed.region?.trim() || null } : {}),
-		...(aws ? { aws } : {}),
-		...(gcp ? { gcp } : {}),
-	};
+export function parseFetchRemoteModelsRequest(value: unknown): RuntimeFetchRemoteModelsRequest {
+	return parseWithSchema(runtimeFetchRemoteModelsRequestSchema, value);
 }
 
 export function parseKanbanMcpSettingsSaveRequest(value: unknown): RuntimeKanbanMcpSettingsSaveRequest {

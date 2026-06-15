@@ -72,6 +72,7 @@ describe("agent-profile-store", () => {
 		it("maps non-secret provider settings into a default profile record", () => {
 			const profile = buildDefaultProfileFromProviderSettings(
 				{
+					agentId: "pi",
 					provider: "openai",
 					model: "gpt-5",
 					baseUrl: "https://example.test/v1",
@@ -98,7 +99,7 @@ describe("agent-profile-store", () => {
 
 		it("never copies the secret apiKey into the committed record", () => {
 			const profile = buildDefaultProfileFromProviderSettings(
-				{ provider: "anthropic", apiKey: "sk-secret" },
+				{ agentId: "pi", provider: "anthropic", apiKey: "sk-secret" },
 				{ id: "x", name: "X", agentId: "pi" },
 			);
 			expect(JSON.stringify(profile)).not.toContain("sk-secret");
@@ -107,7 +108,7 @@ describe("agent-profile-store", () => {
 		it("returns null when there are no settings or no provider", () => {
 			expect(buildDefaultProfileFromProviderSettings(null, { id: "x", name: "X", agentId: "pi" })).toBeNull();
 			expect(
-				buildDefaultProfileFromProviderSettings({ provider: "  " }, { id: "x", name: "X", agentId: "pi" }),
+				buildDefaultProfileFromProviderSettings({ agentId: "pi", provider: "  " }, { id: "x", name: "X", agentId: "pi" }),
 			).toBeNull();
 		});
 	});

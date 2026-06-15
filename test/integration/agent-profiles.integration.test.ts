@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { resetProviderSettingsCache, saveProviderSettings } from "../../src/agent-sdk/kanban/provider-settings-store";
+import { resetAgentProviderConfigCache, saveAgentProvider } from "../../src/agent-sdk/kanban/agent-provider-config";
 import { createAgentProfile, selectAgentProfile } from "../../src/state/agent-profile-registry";
 import {
 	loadWorkspaceAgentProfiles,
@@ -40,34 +40,32 @@ function initGitRepository(path: string): void {
 
 describe.sequential("agent profiles integration", () => {
 	let settingsTemp: { path: string; cleanup: () => void };
-	const previousSettingsPath = process.env.KANBAN_PROVIDER_SETTINGS_PATH;
+	const previousSettingsPath = process.env.KANBAN_AGENT_PROVIDERS_PATH;
 
 	beforeEach(() => {
-		settingsTemp = createTempDir("kanban-provider-settings-");
-		process.env.KANBAN_PROVIDER_SETTINGS_PATH = join(settingsTemp.path, "provider_settings.json");
-		resetProviderSettingsCache();
+		settingsTemp = createTempDir("kanban-agent-config-");
+		process.env.KANBAN_AGENT_PROVIDERS_PATH = join(settingsTemp.path, "agent_providers.json");
+		resetAgentProviderConfigCache();
 	});
 
 	afterEach(() => {
-		if (previousSettingsPath === undefined) delete process.env.KANBAN_PROVIDER_SETTINGS_PATH;
-		else process.env.KANBAN_PROVIDER_SETTINGS_PATH = previousSettingsPath;
-		resetProviderSettingsCache();
+		if (previousSettingsPath === undefined) delete process.env.KANBAN_AGENT_PROVIDERS_PATH;
+		else process.env.KANBAN_AGENT_PROVIDERS_PATH = previousSettingsPath;
+		resetAgentProviderConfigCache();
 		settingsTemp.cleanup();
 	});
 
-	it("migrates existing provider settings into a selected default pi profile (no secrets)", async () => {
+	it("migrates existing agent provider config into a selected default pi profile (no secrets)", async () => {
 		await withTemporaryHome(async () => {
 			const { path: sandboxRoot, cleanup } = createTempDir("kanban-agent-profiles-");
 			try {
-				// Seed the user's machine-home provider settings (incl. a secret API key).
-				saveProviderSettings({
-					settings: {
-						provider: "openai",
-						model: "gpt-5",
-						apiKey: "sk-secret-key",
-						baseUrl: "https://api.openai.test/v1",
-					},
-					setLastUsed: true,
+				// Seed the user's per-agent provider config (incl. a secret API key).
+				await saveAgentProvider("pi", {
+					agentId: "pi",
+					provider: "openai",
+					model: "gpt-5",
+					apiKey: "sk-secret-key",
+					baseUrl: "https://api.openai.test/v1",
 				});
 
 				const workspacePath = join(sandboxRoot, "project");

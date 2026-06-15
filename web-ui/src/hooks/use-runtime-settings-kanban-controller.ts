@@ -5,17 +5,16 @@ import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, us
 import { showAppToast } from "@/components/app-toaster";
 import { getRuntimeKanbanProviderSettings } from "@/runtime/native-agent";
 import {
-	addKanbanProvider,
 	completeKanbanDeviceAuth,
+	fetchAgentProviderConfigs,
 	fetchKanbanProviderCatalog,
 	fetchKanbanProviderModels,
 	runKanbanProviderOauthLogin,
-	saveKanbanProviderSettings,
+	saveAgentProviderConfig,
 	startKanbanDeviceAuth,
-	updateKanbanProvider,
 } from "@/runtime/runtime-config-query";
 import type {
-	RuntimeAgentId,
+	RuntimeAgentProviderConfig,
 	RuntimeKanbanOauthLoginResponse,
 	RuntimeKanbanOauthProvider,
 	RuntimeKanbanProviderCapability,
@@ -31,7 +30,6 @@ import { isLocalhostAccess } from "@/utils/localhost-detection";
 interface UseRuntimeSettingsKanbanControllerOptions {
 	open: boolean;
 	workspaceId: string | null;
-	selectedAgentId: RuntimeAgentId;
 	config: RuntimeConfigResponse | null;
 	taskKanbanSettings?: RuntimeTaskAgentSettings;
 }
@@ -63,10 +61,15 @@ interface SaveProviderSettingsOverrides {
 	};
 }
 
+export interface ProtocolConfigInput {
+	protocol: "anthropic" | "openai";
+	baseUrl?: string;
+}
+
 export interface AddKanbanProviderInput {
 	providerId: string;
 	name: string;
-	baseUrl: string;
+	baseUrl?: string;
 	apiKey?: string | null;
 	headers?: Record<string, string>;
 	timeoutMs?: number;
@@ -74,6 +77,7 @@ export interface AddKanbanProviderInput {
 	defaultModelId?: string | null;
 	modelsSourceUrl?: string | null;
 	capabilities?: RuntimeKanbanProviderCapability[];
+	protocols?: ProtocolConfigInput[];
 }
 
 export interface UpdateKanbanProviderInput {
@@ -87,6 +91,7 @@ export interface UpdateKanbanProviderInput {
 	defaultModelId?: string | null;
 	modelsSourceUrl?: string | null;
 	capabilities?: RuntimeKanbanProviderCapability[];
+	protocols?: ProtocolConfigInput[];
 }
 
 export interface UseRuntimeSettingsKanbanControllerResult {
@@ -158,6 +163,29 @@ function normalizeBaseUrlForProvider(providerId: string, baseUrl: string | null 
 	return baseUrl ?? "";
 }
 
+/**
+ * Build a RuntimeKanbanProviderSettings summary from a saved RuntimeAgentProviderConfig.
+ * OAuth fields are preserved from the existing settings since saveAgentProviderConfig
+ * does not modify OAuth state.
+ */
+function buildProviderSettingsFromConfig(
+	config: RuntimeAgentProviderConfig,
+	existing: RuntimeKanbanProviderSettings | null,
+): RuntimeKanbanProviderSettings {
+	return {
+		providerId: config.provider?.trim() || null,
+		modelId: config.model?.trim() || null,
+		baseUrl: config.baseUrl?.trim() || null,
+		reasoningEffort: (config.reasoning?.effort as RuntimeReasoningEffort | undefined) ?? null,
+		apiKeyConfigured: !!(config.apiKey?.trim()),
+		oauthProvider: existing?.oauthProvider ?? null,
+		oauthAccessTokenConfigured: existing?.oauthAccessTokenConfigured ?? false,
+		oauthRefreshTokenConfigured: existing?.oauthRefreshTokenConfigured ?? false,
+		oauthAccountId: existing?.oauthAccountId ?? null,
+		oauthExpiresAt: existing?.oauthExpiresAt ?? null,
+	};
+}
+
 function getDefaultBaseUrlForProvider(providers: RuntimeKanbanProviderCatalogItem[], providerId: string): string {
 	const normalizedProviderId = providerId.trim().toLowerCase();
 	if (!normalizedProviderId) {
@@ -202,7 +230,10 @@ function getDefaultModelIdForProvider(providers: RuntimeKanbanProviderCatalogIte
 export function useRuntimeSettingsKanbanController(
 	options: UseRuntimeSettingsKanbanControllerOptions,
 ): UseRuntimeSettingsKanbanControllerResult {
-	const { open, workspaceId, selectedAgentId, config, taskKanbanSettings } = options;
+	const { open, workspaceId, config, taskKanbanSettings } = options;
+	// Pi is always the primary agent for Settings provider configuration.
+	// Each agent manages its own provider config independently at runtime.
+	const selectedAgentId = "pi" as const;
 	const [providerId, setProviderId] = useState("");
 	const [modelId, setModelId] = useState("");
 	const [apiKey, setApiKey] = useState("");
@@ -367,7 +398,7 @@ export function useRuntimeSettingsKanbanController(
 	]);
 
 	useEffect(() => {
-		if (!open || selectedAgentId !== "pi") {
+		if (!open) {
 			setProviderCatalog([]);
 			setIsLoadingProviderCatalog(false);
 			return;
@@ -394,10 +425,10 @@ export function useRuntimeSettingsKanbanController(
 		return () => {
 			cancelled = true;
 		};
-	}, [open, selectedAgentId, workspaceId]);
+	}, [open, workspaceId]);
 
 	useEffect(() => {
-		if (!open || selectedAgentId !== "pi") {
+		if (!open) {
 			return;
 		}
 		if (providerId.trim().length > 0) {
@@ -415,10 +446,10 @@ export function useRuntimeSettingsKanbanController(
 		setProviderId(nextProviderId);
 		setModelId(defaultProvider.defaultModelId?.trim() ?? "");
 		setBaseUrl(resolveBaseUrlForProvider(providerCatalog, nextProviderId, null));
-	}, [open, providerCatalog, providerId, selectedAgentId]);
+	}, [open, providerCatalog, providerId]);
 
 	useEffect(() => {
-		if (!open || selectedAgentId !== "pi") {
+		if (!open) {
 			return;
 		}
 		if (providerId.trim().length === 0 || modelId.trim().length > 0) {
@@ -429,10 +460,10 @@ export function useRuntimeSettingsKanbanController(
 			return;
 		}
 		setModelId(defaultModelId);
-	}, [modelId, open, providerCatalog, providerId, selectedAgentId]);
+	}, [modelId, open, providerCatalog, providerId]);
 
 	useEffect(() => {
-		if (!open || selectedAgentId !== "pi") {
+		if (!open) {
 			return;
 		}
 		if (providerId.trim().length === 0 || baseUrl.trim().length > 0) {
@@ -443,7 +474,7 @@ export function useRuntimeSettingsKanbanController(
 			return;
 		}
 		setBaseUrl(normalizeBaseUrlForProvider(providerId, defaultBaseUrl));
-	}, [baseUrl, open, providerCatalog, providerId, selectedAgentId]);
+	}, [baseUrl, open, providerCatalog, providerId]);
 
 	const nextProviderModelsRequestId = useCallback((): number => {
 		providerModelsRequestIdRef.current += 1;
@@ -479,7 +510,7 @@ export function useRuntimeSettingsKanbanController(
 	);
 
 	useEffect(() => {
-		if (!open || selectedAgentId !== "pi") {
+		if (!open) {
 			nextProviderModelsRequestId();
 			setProviderModels([]);
 			setIsLoadingProviderModels(false);
@@ -496,7 +527,7 @@ export function useRuntimeSettingsKanbanController(
 		return () => {
 			nextProviderModelsRequestId();
 		};
-	}, [loadProviderModelsForProvider, nextProviderModelsRequestId, open, providerId, selectedAgentId]);
+	}, [loadProviderModelsForProvider, nextProviderModelsRequestId, open, providerId]);
 
 	const saveProviderSettingsDraft = useCallback(
 		async (overrides?: SaveProviderSettingsOverrides): Promise<SaveResult> => {
@@ -544,33 +575,52 @@ export function useRuntimeSettingsKanbanController(
 								endpoint: awsEndpoint.trim() || null,
 							}
 						: undefined;
-			const nextGcp =
+			const rawGcp =
 				overrides && "gcp" in overrides
 					? overrides.gcp
 					: isVertexProvider
-						? {
-								projectId: gcpProjectId.trim() || null,
-								region: gcpRegion.trim() || null,
-							}
+						? { projectId: gcpProjectId.trim(), region: gcpRegion.trim() }
 						: undefined;
+			const nextGcp = rawGcp
+				? {
+						projectId: rawGcp.projectId?.trim() || undefined,
+						region: rawGcp.region?.trim() || undefined,
+					}
+				: undefined;
 			const payloadRegion = isVertexProvider ? nextRegion : null;
 			try {
-				const savedSettings = await saveKanbanProviderSettings(workspaceId, {
-					providerId: trimmedProviderId,
-					modelId: trimmedModelId,
-					baseUrl: trimmedBaseUrl,
-					reasoningEffort: nextReasoningEffort,
-					...(trimmedApiKey !== undefined ? { apiKey: trimmedApiKey } : {}),
-					...(isVertexProvider ? { region: payloadRegion } : {}),
-					...(nextAws !== undefined ? { aws: nextAws } : {}),
+				const agentConfig: RuntimeAgentProviderConfig = {
+					agentId: selectedAgentId,
+					provider: trimmedProviderId,
+					model: trimmedModelId ?? undefined,
+					baseUrl: trimmedBaseUrl ?? undefined,
+					reasoning: nextReasoningEffort ? { effort: nextReasoningEffort } : undefined,
+					...(trimmedApiKey !== undefined && trimmedApiKey !== null ? { apiKey: trimmedApiKey } : {}),
+					...(isVertexProvider ? { region: payloadRegion ?? undefined } : {}),
+					...(nextAws !== undefined ? { aws: nextAws as Record<string, unknown> } : {}),
 					...(nextGcp !== undefined ? { gcp: nextGcp } : {}),
-				});
-				setProviderId(savedSettings.providerId ?? savedSettings.oauthProvider ?? trimmedProviderId);
-				setModelId(savedSettings.modelId ?? "");
-				setApiKey("");
-				setBaseUrl(savedSettings.baseUrl ?? "");
-				setReasoningEffort(savedSettings.reasoningEffort ?? "");
-				setProviderSettingsOverride(savedSettings);
+				};
+				const result = await saveAgentProviderConfig(workspaceId, selectedAgentId, agentConfig);
+				if (!result.ok) {
+					return { ok: false, message: result.error ?? "Failed to save provider settings." };
+				}
+				const savedConfig = result.config;
+				if (savedConfig) {
+					const savedSettings = buildProviderSettingsFromConfig(savedConfig, effectiveProviderSettings);
+					setProviderId(savedSettings.providerId ?? savedSettings.oauthProvider ?? trimmedProviderId);
+					setModelId(savedSettings.modelId ?? "");
+					setApiKey("");
+					setBaseUrl(savedSettings.baseUrl ?? "");
+					setReasoningEffort(savedSettings.reasoningEffort ?? "");
+					setProviderSettingsOverride(savedSettings);
+				} else {
+					// Fallback: use form state to update local settings.
+					setProviderId(trimmedProviderId);
+					setModelId(trimmedModelId ?? "");
+					setApiKey("");
+					setBaseUrl(trimmedBaseUrl ?? "");
+					setReasoningEffort(nextReasoningEffort ?? "");
+				}
 				return { ok: true };
 			} catch (error) {
 				return {
@@ -589,6 +639,7 @@ export function useRuntimeSettingsKanbanController(
 			awsSecretKey,
 			awsSessionToken,
 			baseUrl,
+			effectiveProviderSettings,
 			gcpProjectId,
 			gcpRegion,
 			hasUnsavedChanges,
@@ -646,24 +697,43 @@ export function useRuntimeSettingsKanbanController(
 	const addCustomProvider = useCallback(
 		async (input: AddKanbanProviderInput): Promise<SaveResult> => {
 			try {
-				const savedSettings = await addKanbanProvider(workspaceId, input);
-				const nextProviderId = savedSettings.providerId ?? input.providerId.trim().toLowerCase();
-				setProviderId(nextProviderId);
-				setModelId(savedSettings.modelId ?? input.defaultModelId?.trim() ?? input.models[0] ?? "");
-				setApiKey("");
-				setBaseUrl(savedSettings.baseUrl ?? input.baseUrl);
-				setReasoningEffort(savedSettings.reasoningEffort ?? "");
-				setProviderSettingsOverride(savedSettings);
-
-				setIsLoadingProviderCatalog(true);
-				try {
-					setProviderCatalog(await fetchKanbanProviderCatalog(workspaceId));
-				} finally {
-					setIsLoadingProviderCatalog(false);
+				const agentConfig: RuntimeAgentProviderConfig = {
+					agentId: selectedAgentId,
+					provider: input.providerId,
+					apiKey: input.apiKey?.trim() || undefined,
+					baseUrl: input.baseUrl?.trim() || undefined,
+					model: input.defaultModelId?.trim() || undefined,
+					protocols: input.protocols?.map((p) => ({
+						protocol: p.protocol,
+						baseUrl: p.baseUrl?.trim() || undefined,
+					})),
+					headers: input.headers,
+					timeout: input.timeoutMs,
+				};
+				const result = await saveAgentProviderConfig(workspaceId, selectedAgentId, agentConfig);
+				if (!result.ok) {
+					return { ok: false, message: result.error ?? "Failed to add provider." };
 				}
-
-				await loadProviderModelsForProvider(nextProviderId);
-
+				const savedConfig = result.config;
+				if (savedConfig) {
+					const savedSettings = buildProviderSettingsFromConfig(savedConfig, effectiveProviderSettings);
+					const nextProviderId = savedSettings.providerId ?? input.providerId.trim().toLowerCase();
+					setProviderId(nextProviderId);
+					setModelId(savedSettings.modelId ?? input.defaultModelId?.trim() ?? input.models[0] ?? "");
+					setApiKey("");
+					setBaseUrl(savedSettings.baseUrl ?? input.baseUrl ?? "");
+					setReasoningEffort(savedSettings.reasoningEffort ?? "");
+					setProviderSettingsOverride(savedSettings);
+					await loadProviderModelsForProvider(nextProviderId);
+				} else {
+					const nextProviderId = input.providerId.trim().toLowerCase();
+					setProviderId(nextProviderId);
+					setModelId(input.defaultModelId?.trim() ?? input.models[0] ?? "");
+					setApiKey("");
+					setBaseUrl(input.baseUrl ?? "");
+					setProviderSettingsOverride(null);
+					await loadProviderModelsForProvider(nextProviderId);
+				}
 				return { ok: true };
 			} catch (error) {
 				return {
@@ -672,7 +742,7 @@ export function useRuntimeSettingsKanbanController(
 				};
 			}
 		},
-		[loadProviderModelsForProvider, workspaceId],
+		[effectiveProviderSettings, loadProviderModelsForProvider, workspaceId],
 	);
 
 	const runOauthLogin = useCallback(async (): Promise<SaveResult> => {
@@ -731,24 +801,56 @@ export function useRuntimeSettingsKanbanController(
 	const updateCustomProvider = useCallback(
 		async (input: UpdateKanbanProviderInput): Promise<SaveResult> => {
 			try {
-				const savedSettings = await updateKanbanProvider(workspaceId, input);
-				const nextProviderId = savedSettings.providerId ?? input.providerId.trim().toLowerCase();
-				setProviderId(nextProviderId);
-				setModelId(savedSettings.modelId ?? input.defaultModelId?.trim() ?? modelId);
-				setApiKey("");
-				setBaseUrl(savedSettings.baseUrl ?? input.baseUrl ?? baseUrl);
-				setReasoningEffort(savedSettings.reasoningEffort ?? "");
-				setProviderSettingsOverride(savedSettings);
-
-				setIsLoadingProviderCatalog(true);
+				// Fetch existing config to merge updates into.
+				let existingConfig: RuntimeAgentProviderConfig | null = null;
 				try {
-					setProviderCatalog(await fetchKanbanProviderCatalog(workspaceId));
-				} finally {
-					setIsLoadingProviderCatalog(false);
+					const configs = await fetchAgentProviderConfigs(workspaceId);
+					existingConfig = configs.agents[selectedAgentId] ?? null;
+				} catch {
+					// If fetch fails, start from empty.
 				}
-
-				await loadProviderModelsForProvider(nextProviderId);
-
+				const mergedConfig: RuntimeAgentProviderConfig = {
+					...(existingConfig ?? { agentId: selectedAgentId }),
+					agentId: selectedAgentId,
+					provider: input.providerId,
+					...(input.apiKey !== undefined ? { apiKey: input.apiKey?.trim() || undefined } : {}),
+					...(input.baseUrl !== undefined ? { baseUrl: input.baseUrl?.trim() || undefined } : {}),
+					...(input.defaultModelId !== undefined ? { model: input.defaultModelId?.trim() || undefined } : {}),
+					...(input.protocols !== undefined
+						? {
+								protocols: input.protocols.map((p) => ({
+									protocol: p.protocol,
+									baseUrl: p.baseUrl?.trim() || undefined,
+								})),
+							}
+						: {}),
+					...(input.headers !== undefined ? { headers: input.headers ?? undefined } : {}),
+					...(input.timeoutMs !== undefined ? { timeout: input.timeoutMs ?? undefined } : {}),
+				};
+				const result = await saveAgentProviderConfig(workspaceId, selectedAgentId, mergedConfig);
+				if (!result.ok) {
+					return { ok: false, message: result.error ?? "Failed to update provider." };
+				}
+				const savedConfig = result.config;
+				if (savedConfig) {
+					const savedSettings = buildProviderSettingsFromConfig(savedConfig, effectiveProviderSettings);
+					const nextProviderId = savedSettings.providerId ?? input.providerId.trim().toLowerCase();
+					setProviderId(nextProviderId);
+					setModelId(savedSettings.modelId ?? input.defaultModelId?.trim() ?? modelId);
+					setApiKey("");
+					setBaseUrl(savedSettings.baseUrl ?? input.baseUrl ?? baseUrl);
+					setReasoningEffort(savedSettings.reasoningEffort ?? "");
+					setProviderSettingsOverride(savedSettings);
+					await loadProviderModelsForProvider(nextProviderId);
+				} else {
+					const nextProviderId = input.providerId.trim().toLowerCase();
+					setProviderId(nextProviderId);
+					setModelId(input.defaultModelId?.trim() ?? modelId);
+					setApiKey("");
+					setBaseUrl(input.baseUrl ?? baseUrl);
+					setProviderSettingsOverride(null);
+					await loadProviderModelsForProvider(nextProviderId);
+				}
 				return { ok: true };
 			} catch (error) {
 				return {
@@ -757,7 +859,7 @@ export function useRuntimeSettingsKanbanController(
 				};
 			}
 		},
-		[baseUrl, loadProviderModelsForProvider, modelId, workspaceId],
+		[baseUrl, effectiveProviderSettings, loadProviderModelsForProvider, modelId, workspaceId],
 	);
 
 	return {

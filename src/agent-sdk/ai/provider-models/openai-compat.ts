@@ -1100,7 +1100,7 @@ function mapWaferModel(
 	// the result a finite dyadic for every observed value.
 	// For the Pass SKU the per-token rate is bundled in the flat-rate
 	// subscription, so we follow the convention shared with
-	// `kimi-code`/`firepass`/`alibaba-coding-plan` and seed every Pass model with
+	// `kimi-code`/`firepass` and seed every Pass model with
 	// `cost: 0` regardless of what the upstream envelope says.
 	const isPassSku = providerId === "wafer-pass";
 	const cost = isPassSku
@@ -1528,37 +1528,6 @@ export function kiloModelManagerOptions(config?: KiloModelManagerConfig): ModelM
 				provider: "kilo",
 				baseUrl,
 				apiKey,
-			}),
-	};
-}
-
-// ---------------------------------------------------------------------------
-// Alibaba Coding Plan
-// ---------------------------------------------------------------------------
-
-export interface AlibabaCodingPlanModelManagerConfig {
-	apiKey?: string;
-	baseUrl?: string;
-}
-
-export function alibabaCodingPlanModelManagerOptions(
-	config?: AlibabaCodingPlanModelManagerConfig,
-): ModelManagerOptions<"openai-completions"> {
-	const apiKey = config?.apiKey;
-	const baseUrl = config?.baseUrl ?? "https://coding-intl.dashscope.aliyuncs.com/v1";
-	const references = createBundledReferenceMap<"openai-completions">("alibaba-coding-plan");
-	return {
-		providerId: "alibaba-coding-plan",
-		fetchDynamicModels: () =>
-			fetchOpenAICompatibleModels({
-				api: "openai-completions",
-				provider: "alibaba-coding-plan",
-				baseUrl,
-				apiKey,
-				mapModel: (entry, defaults) => {
-					const reference = references.get(defaults.id);
-					return mapWithBundledReference(entry, defaults, reference);
-				},
 			}),
 	};
 }
@@ -2711,17 +2680,6 @@ const MODELS_DEV_PROVIDER_DESCRIPTORS_CODING_PLANS: readonly ModelsDevProviderDe
 			reasoningContentField: "reasoning_content",
 		},
 	}),
-	// --- Alibaba Coding Plan ---
-	openAiCompletionsDescriptor(
-		"alibaba-coding-plan",
-		"alibaba-coding-plan",
-		"https://coding-intl.dashscope.aliyuncs.com/v1",
-		{
-			compat: {
-				supportsDeveloperRole: false,
-			},
-		},
-	),
 	// --- Zhipu Coding Plan ---
 	openAiCompletionsDescriptor(
 		"zhipu-coding-plan",

@@ -394,6 +394,14 @@ async function startServer(): Promise<{
 			`[proxy-fetch] cleared inherited proxy env (${strippedProxy.https ?? strippedProxy.http}); in-process routing now follows Kanban proxy settings`,
 		);
 	}
+
+	// Start the network bridge for CLI agent sessions. The bridge is a lightweight
+	// forward proxy that CLI agents point their HTTP_PROXY at. It reads the
+	// RuntimeProxyState holder on every request, so proxy config changes take
+	// effect immediately without restarting sessions.
+	const { startNetworkBridge, stopNetworkBridge } = await import("./unified-proxy/network-bridge.js");
+	const networkBridge = startNetworkBridge();
+	console.log(`[network-bridge] started at ${networkBridge.url} — CLI agent sessions will route through it`);
 	/*
 		Server-only modules are loaded lazily because task-oriented subcommands like
 		`kanban task create` and `kanban hooks ingest` do not need the runtime server.
@@ -526,6 +534,7 @@ async function startServer(): Promise<{
 			closeRuntimeServer: close,
 			skipSessionCleanup: options?.skipSessionCleanup ?? false,
 		});
+		await stopNetworkBridge();
 	};
 
 	return {

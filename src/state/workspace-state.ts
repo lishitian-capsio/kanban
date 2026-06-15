@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { z } from "zod";
 
-import { getLastUsedProviderSettings } from "../agent-sdk/kanban/provider-settings-store";
+import { getAgentProviderConfig } from "../agent-sdk/kanban/agent-provider-config";
 import {
 	type RuntimeAgentProfilesData,
 	type RuntimeBoardData,
@@ -1021,20 +1021,20 @@ async function prepareRepoRuntimeHome(repoPath: string, workspaceId: string): Pr
 }
 
 /**
- * One-time, idempotent conversion of the user's existing machine-home provider
- * settings into a single default `pi` agent profile, selected for that agent. This
+ * One-time, idempotent conversion of the user's per-agent provider config
+ * into a single default `pi` agent profile, selected for that agent. This
  * makes the new profile the workspace layer of the launch-config resolution chain
  * while preserving the user's prior provider/model choice. Secrets are NOT copied —
- * only non-secret config (the API key stays in the machine-home store and is resolved
- * by providerId at launch). Gated on the absence of the `agent-profiles/` directory so
- * re-runs are a cheap no-op; skipped entirely when no provider settings exist yet.
+ * only non-secret config (the API key stays in the per-agent store and is resolved
+ * at launch). Gated on the absence of the `agent-profiles/` directory so
+ * re-runs are a cheap no-op; skipped entirely when no agent config exists yet.
  */
 async function migrateProviderSettingsToAgentProfile(repoPath: string, workspaceId: string): Promise<void> {
 	const profilesDir = getWorkspaceAgentProfilesShardDir(repoPath, workspaceId);
 	if (await pathExists(profilesDir)) {
 		return;
 	}
-	const profile = buildDefaultProfileFromProviderSettings(getLastUsedProviderSettings(), {
+	const profile = buildDefaultProfileFromProviderSettings(getAgentProviderConfig("pi"), {
 		id: "default",
 		name: "Default",
 		agentId: "pi",

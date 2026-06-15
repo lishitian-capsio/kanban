@@ -4,11 +4,14 @@
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type {
 	RuntimeAgentId,
+	RuntimeAgentProviderConfig,
+	RuntimeAgentProviderConfigListResponse,
+	RuntimeAgentProviderMutationRequest,
+	RuntimeAgentProviderMutationResponse,
 	RuntimeKanbanAccountBalanceResponse,
 	RuntimeKanbanAccountOrganizationsResponse,
 	RuntimeKanbanAccountProfileResponse,
 	RuntimeKanbanAccountSwitchResponse,
-	RuntimeKanbanAddProviderResponse,
 	RuntimeKanbanDeviceAuthCompleteRequest,
 	RuntimeKanbanDeviceAuthCompleteResponse,
 	RuntimeKanbanDeviceAuthStartResponse,
@@ -19,12 +22,8 @@ import type {
 	RuntimeKanbanMcpSettingsResponse,
 	RuntimeKanbanOauthLoginResponse,
 	RuntimeKanbanOauthProvider,
-	RuntimeKanbanProviderCapability,
 	RuntimeKanbanProviderCatalogItem,
 	RuntimeKanbanProviderModel,
-	RuntimeKanbanProviderSettings,
-	RuntimeReasoningEffort,
-	RuntimeKanbanUpdateProviderResponse,
 	RuntimeConfigResponse,
 	RuntimeDebugResetAllStateResponse,
 	RuntimeFeaturebaseTokenResponse,
@@ -60,70 +59,13 @@ export async function saveRuntimeConfig(
 	return await trpcClient.runtime.saveConfig.mutate(nextConfig);
 }
 
-export async function saveKanbanProviderSettings(
+export async function saveAgentProviderConfig(
 	workspaceId: string | null,
-	input: {
-		providerId: string;
-		modelId?: string | null;
-		apiKey?: string | null;
-		baseUrl?: string | null;
-		reasoningEffort?: RuntimeReasoningEffort | null;
-		region?: string | null;
-		aws?: {
-			accessKey?: string | null;
-			secretKey?: string | null;
-			sessionToken?: string | null;
-			region?: string | null;
-			profile?: string | null;
-			authentication?: "iam" | "api-key" | "profile" | null;
-			endpoint?: string | null;
-		};
-		gcp?: {
-			projectId?: string | null;
-			region?: string | null;
-		};
-	},
-): Promise<RuntimeKanbanProviderSettings> {
+	agentId: string,
+	config: RuntimeAgentProviderConfig,
+): Promise<RuntimeAgentProviderMutationResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.saveKanbanProviderSettings.mutate(input);
-}
-
-export async function addKanbanProvider(
-	workspaceId: string | null,
-	input: {
-		providerId: string;
-		name: string;
-		baseUrl: string;
-		apiKey?: string | null;
-		headers?: Record<string, string>;
-		timeoutMs?: number;
-		models: string[];
-		defaultModelId?: string | null;
-		modelsSourceUrl?: string | null;
-		capabilities?: RuntimeKanbanProviderCapability[];
-	},
-): Promise<RuntimeKanbanAddProviderResponse> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.addKanbanProvider.mutate(input);
-}
-
-export async function updateKanbanProvider(
-	workspaceId: string | null,
-	input: {
-		providerId: string;
-		name?: string;
-		baseUrl?: string;
-		apiKey?: string | null;
-		headers?: Record<string, string> | null;
-		timeoutMs?: number | null;
-		models?: string[];
-		defaultModelId?: string | null;
-		modelsSourceUrl?: string | null;
-		capabilities?: RuntimeKanbanProviderCapability[];
-	},
-): Promise<RuntimeKanbanUpdateProviderResponse> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.updateKanbanProvider.mutate(input);
+	return await trpcClient.runtime.saveAgentProviderConfig.mutate({ agentId, config });
 }
 
 export async function fetchKanbanProviderCatalog(
@@ -256,4 +198,47 @@ export async function fetchRuntimeUpdateStatus(workspaceId: string | null): Prom
 export async function runRuntimeUpdateNow(workspaceId: string | null): Promise<RuntimeRunUpdateResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
 	return await trpcClient.runtime.runUpdateNow.mutate();
+}
+
+// ── Agent Provider Config ────────────────────────────────────────────────────
+
+export async function fetchAgentProviderConfigs(
+	workspaceId: string | null,
+): Promise<RuntimeAgentProviderConfigListResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.runtime.listAgentProviderConfigs.query();
+}
+
+export async function addProviderToAgent(
+	workspaceId: string | null,
+	input: RuntimeAgentProviderMutationRequest,
+): Promise<RuntimeAgentProviderMutationResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.runtime.addProviderToAgent.mutate(input);
+}
+
+export async function removeProviderFromAgent(
+	workspaceId: string | null,
+	input: RuntimeAgentProviderMutationRequest,
+): Promise<RuntimeAgentProviderMutationResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.runtime.removeProviderFromAgent.mutate(input);
+}
+
+export async function selectAgentProvider(
+	workspaceId: string | null,
+	input: RuntimeAgentProviderMutationRequest,
+): Promise<RuntimeAgentProviderMutationResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.runtime.selectAgentProvider.mutate(input);
+}
+
+// ── Remote model fetching ──────────────────────────────────────────────────
+
+export async function fetchRemoteProviderModels(
+	workspaceId: string | null,
+	input: { baseUrl: string; protocol: "anthropic" | "openai"; apiKey?: string },
+): Promise<{ models: string[] }> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.runtime.fetchRemoteProviderModels.mutate(input);
 }

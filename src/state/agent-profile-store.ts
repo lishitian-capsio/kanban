@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import type { ProviderSettings } from "../agent-sdk/kanban/provider-settings-store";
+import type { AgentProviderConfig } from "../agent-sdk/kanban/agent-provider-config";
 import {
 	type RuntimeAgentId,
 	type RuntimeAgentProfileRecord,
@@ -78,18 +78,18 @@ function toReasoningEffort(effort: string | undefined): RuntimeReasoningEffort |
 }
 
 /**
- * Convert a machine-home {@link ProviderSettings} blob into a default
+ * Convert an {@link AgentProviderConfig} blob into a default
  * {@link RuntimeAgentProfileRecord} for `agentId`, copying only NON-SECRET launch
  * config. The API key (and any other secret) is intentionally dropped — it stays in
- * the machine-home store and is resolved by providerId at launch. Returns `null` when
- * there is nothing worth migrating (no settings or no provider). Used by the one-time
- * provider-settings → default-profile migration in `workspace-state.ts`.
+ * the per-agent config store and is resolved at launch. Returns `null` when
+ * there is nothing worth migrating (no config or no provider). Used by the one-time
+ * agent-config → default-profile migration in `workspace-state.ts`.
  */
 export function buildDefaultProfileFromProviderSettings(
-	settings: ProviderSettings | null,
+	config: AgentProviderConfig | null,
 	identity: { id: string; name: string; agentId: RuntimeAgentId },
 ): RuntimeAgentProfileRecord | null {
-	const providerId = settings?.provider?.trim();
+	const providerId = config?.provider?.trim();
 	if (!providerId) {
 		return null;
 	}
@@ -98,11 +98,11 @@ export function buildDefaultProfileFromProviderSettings(
 		name: identity.name,
 		agentId: identity.agentId,
 		providerId,
-		modelId: settings?.model?.trim() || null,
-		baseUrl: settings?.baseUrl?.trim() || null,
-		reasoningEffort: toReasoningEffort(settings?.reasoning?.effort),
-		region: settings?.region?.trim() || null,
-		gcpProjectId: settings?.gcp?.projectId?.trim() || null,
-		gcpRegion: settings?.gcp?.region?.trim() || null,
+		modelId: config?.model?.trim() || null,
+		baseUrl: config?.baseUrl?.trim() || null,
+		reasoningEffort: toReasoningEffort(config?.reasoning?.effort),
+		region: config?.region?.trim() || null,
+		gcpProjectId: config?.gcp?.projectId?.trim() || null,
+		gcpRegion: config?.gcp?.region?.trim() || null,
 	};
 }

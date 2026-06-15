@@ -3,28 +3,27 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { resolvePiLaunchConfig } from "../../src/agent-sdk/kanban/pi-provider-config";
-import { resetProviderSettingsCache } from "../../src/agent-sdk/kanban/provider-settings-store";
+import { resetAgentProviderConfigCache } from "../../src/agent-sdk/kanban/agent-provider-config";
 import { createTempDir } from "../utilities/temp-dir";
 
-// Point the machine-home provider settings store at an empty temp path so the only
-// "workspace layer" in play is the profile we pass in explicitly. Without this the
-// developer's real ~/.kanban settings would leak into resolution.
+// Point the per-agent config store at an empty temp path so the only
+// "workspace layer" in play is the profile we pass in explicitly.
 let temp: { path: string; cleanup: () => void };
-const previousPath = process.env.KANBAN_PROVIDER_SETTINGS_PATH;
+const previousPath = process.env.KANBAN_AGENT_PROVIDERS_PATH;
 
 beforeEach(() => {
 	temp = createTempDir("pi-launch-profile-");
-	process.env.KANBAN_PROVIDER_SETTINGS_PATH = join(temp.path, "provider_settings.json");
-	resetProviderSettingsCache();
+	process.env.KANBAN_AGENT_PROVIDERS_PATH = join(temp.path, "agent_providers.json");
+	resetAgentProviderConfigCache();
 });
 
 afterEach(() => {
 	if (previousPath === undefined) {
-		delete process.env.KANBAN_PROVIDER_SETTINGS_PATH;
+		delete process.env.KANBAN_AGENT_PROVIDERS_PATH;
 	} else {
-		process.env.KANBAN_PROVIDER_SETTINGS_PATH = previousPath;
+		process.env.KANBAN_AGENT_PROVIDERS_PATH = previousPath;
 	}
-	resetProviderSettingsCache();
+	resetAgentProviderConfigCache();
 	temp.cleanup();
 });
 

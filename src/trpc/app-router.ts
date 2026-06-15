@@ -13,6 +13,10 @@ import type {
 	RuntimeAgentProfileMutationResponse,
 	RuntimeAgentProfileSelectRequest,
 	RuntimeAgentProfileUpdateRequest,
+	RuntimeAgentProviderConfigListResponse,
+	RuntimeAgentProviderConfigSaveRequest,
+	RuntimeAgentProviderMutationRequest,
+	RuntimeAgentProviderMutationResponse,
 	RuntimeCommandRunRequest,
 	RuntimeCommandRunResponse,
 	RuntimeConfigResponse,
@@ -57,8 +61,6 @@ import type {
 	RuntimeKanbanAccountProfileResponse,
 	RuntimeKanbanAccountSwitchRequest,
 	RuntimeKanbanAccountSwitchResponse,
-	RuntimeKanbanAddProviderRequest,
-	RuntimeKanbanAddProviderResponse,
 	RuntimeKanbanDeviceAuthCompleteRequest,
 	RuntimeKanbanDeviceAuthCompleteResponse,
 	RuntimeKanbanDeviceAuthStartResponse,
@@ -74,10 +76,8 @@ import type {
 	RuntimeKanbanProviderCatalogResponse,
 	RuntimeKanbanProviderModelsRequest,
 	RuntimeKanbanProviderModelsResponse,
-	RuntimeKanbanProviderSettingsSaveRequest,
-	RuntimeKanbanProviderSettingsSaveResponse,
-	RuntimeKanbanUpdateProviderRequest,
-	RuntimeKanbanUpdateProviderResponse,
+	RuntimeFetchRemoteModelsRequest,
+	RuntimeFetchRemoteModelsResponse,
 	RuntimeOpenFileRequest,
 	RuntimeOpenFileResponse,
 	RuntimeProjectAddRequest,
@@ -153,6 +153,10 @@ import {
 	runtimeAgentProfileMutationResponseSchema,
 	runtimeAgentProfileSelectRequestSchema,
 	runtimeAgentProfileUpdateRequestSchema,
+	runtimeAgentProviderConfigListResponseSchema,
+	runtimeAgentProviderConfigSaveRequestSchema,
+	runtimeAgentProviderMutationRequestSchema,
+	runtimeAgentProviderMutationResponseSchema,
 	runtimeCommandRunRequestSchema,
 	runtimeCommandRunResponseSchema,
 	runtimeConfigResponseSchema,
@@ -197,8 +201,6 @@ import {
 	runtimeKanbanAccountProfileResponseSchema,
 	runtimeKanbanAccountSwitchRequestSchema,
 	runtimeKanbanAccountSwitchResponseSchema,
-	runtimeKanbanAddProviderRequestSchema,
-	runtimeKanbanAddProviderResponseSchema,
 	runtimeKanbanDeviceAuthCompleteRequestSchema,
 	runtimeKanbanDeviceAuthCompleteResponseSchema,
 	runtimeKanbanDeviceAuthStartResponseSchema,
@@ -214,10 +216,8 @@ import {
 	runtimeKanbanProviderCatalogResponseSchema,
 	runtimeKanbanProviderModelsRequestSchema,
 	runtimeKanbanProviderModelsResponseSchema,
-	runtimeKanbanProviderSettingsSaveRequestSchema,
-	runtimeKanbanProviderSettingsSaveResponseSchema,
-	runtimeKanbanUpdateProviderRequestSchema,
-	runtimeKanbanUpdateProviderResponseSchema,
+	runtimeFetchRemoteModelsRequestSchema,
+	runtimeFetchRemoteModelsResponseSchema,
 	runtimeOpenFileRequestSchema,
 	runtimeOpenFileResponseSchema,
 	runtimeProjectAddRequestSchema,
@@ -300,18 +300,6 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope | null,
 			input: RuntimeConfigSaveRequest,
 		) => Promise<RuntimeConfigResponse>;
-		saveKanbanProviderSettings: (
-			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeKanbanProviderSettingsSaveRequest,
-		) => Promise<RuntimeKanbanProviderSettingsSaveResponse>;
-		addKanbanProvider: (
-			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeKanbanAddProviderRequest,
-		) => Promise<RuntimeKanbanAddProviderResponse>;
-		updateKanbanProvider: (
-			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeKanbanUpdateProviderRequest,
-		) => Promise<RuntimeKanbanUpdateProviderResponse>;
 		startTaskSession: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeTaskSessionStartRequest,
@@ -400,6 +388,10 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope | null,
 			input: RuntimeKanbanProviderModelsRequest,
 		) => Promise<RuntimeKanbanProviderModelsResponse>;
+		fetchRemoteProviderModels: (
+			scope: RuntimeTrpcWorkspaceScope | null,
+			input: RuntimeFetchRemoteModelsRequest,
+		) => Promise<RuntimeFetchRemoteModelsResponse>;
 		runKanbanProviderOAuthLogin: (
 			scope: RuntimeTrpcWorkspaceScope | null,
 			input: RuntimeKanbanOauthLoginRequest,
@@ -433,6 +425,19 @@ export interface RuntimeTrpcContext {
 		openFile: (input: RuntimeOpenFileRequest) => Promise<RuntimeOpenFileResponse>;
 		getUpdateStatus: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeUpdateStatusResponse>;
 		runUpdateNow: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeRunUpdateResponse>;
+		listAgentProviderConfigs: () => Promise<RuntimeAgentProviderConfigListResponse>;
+		saveAgentProviderConfig: (
+			input: RuntimeAgentProviderConfigSaveRequest,
+		) => Promise<RuntimeAgentProviderMutationResponse>;
+		addProviderToAgent: (
+			input: RuntimeAgentProviderMutationRequest,
+		) => Promise<RuntimeAgentProviderMutationResponse>;
+		removeProviderFromAgent: (
+			input: RuntimeAgentProviderMutationRequest,
+		) => Promise<RuntimeAgentProviderMutationResponse>;
+		selectAgentProvider: (
+			input: RuntimeAgentProviderMutationRequest,
+		) => Promise<RuntimeAgentProviderMutationResponse>;
 	};
 	workspaceApi: {
 		loadGitSummary: (
@@ -641,24 +646,6 @@ export const runtimeAppRouter = t.router({
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.saveConfig(ctx.workspaceScope, input);
 			}),
-		saveKanbanProviderSettings: t.procedure
-			.input(runtimeKanbanProviderSettingsSaveRequestSchema)
-			.output(runtimeKanbanProviderSettingsSaveResponseSchema)
-			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.saveKanbanProviderSettings(ctx.workspaceScope, input);
-			}),
-		addKanbanProvider: t.procedure
-			.input(runtimeKanbanAddProviderRequestSchema)
-			.output(runtimeKanbanAddProviderResponseSchema)
-			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.addKanbanProvider(ctx.workspaceScope, input);
-			}),
-		updateKanbanProvider: t.procedure
-			.input(runtimeKanbanUpdateProviderRequestSchema)
-			.output(runtimeKanbanUpdateProviderResponseSchema)
-			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.updateKanbanProvider(ctx.workspaceScope, input);
-			}),
 		startTaskSession: workspaceProcedure
 			.input(runtimeTaskSessionStartRequestSchema)
 			.output(runtimeTaskSessionStartResponseSchema)
@@ -795,6 +782,12 @@ export const runtimeAppRouter = t.router({
 			.query(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.getKanbanProviderModels(ctx.workspaceScope, input);
 			}),
+		fetchRemoteProviderModels: t.procedure
+			.input(runtimeFetchRemoteModelsRequestSchema)
+			.output(runtimeFetchRemoteModelsResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.fetchRemoteProviderModels(ctx.workspaceScope, input);
+			}),
 		getKanbanMcpAuthStatuses: t.procedure.output(runtimeKanbanMcpAuthStatusResponseSchema).query(async ({ ctx }) => {
 			return await ctx.runtimeApi.getKanbanMcpAuthStatuses(ctx.workspaceScope);
 		}),
@@ -857,6 +850,35 @@ export const runtimeAppRouter = t.router({
 		runUpdateNow: t.procedure.output(runtimeRunUpdateResponseSchema).mutation(async ({ ctx }) => {
 			return await ctx.runtimeApi.runUpdateNow(ctx.workspaceScope);
 		}),
+		listAgentProviderConfigs: t.procedure
+			.output(runtimeAgentProviderConfigListResponseSchema)
+			.query(async ({ ctx }) => {
+				return await ctx.runtimeApi.listAgentProviderConfigs();
+			}),
+		saveAgentProviderConfig: t.procedure
+			.input(runtimeAgentProviderConfigSaveRequestSchema)
+			.output(runtimeAgentProviderMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.saveAgentProviderConfig(input);
+			}),
+		addProviderToAgent: t.procedure
+			.input(runtimeAgentProviderMutationRequestSchema)
+			.output(runtimeAgentProviderMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.addProviderToAgent(input);
+			}),
+		removeProviderFromAgent: t.procedure
+			.input(runtimeAgentProviderMutationRequestSchema)
+			.output(runtimeAgentProviderMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.removeProviderFromAgent(input);
+			}),
+		selectAgentProvider: t.procedure
+			.input(runtimeAgentProviderMutationRequestSchema)
+			.output(runtimeAgentProviderMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.selectAgentProvider(input);
+			}),
 	}),
 	workspace: t.router({
 		getGitSummary: workspaceProcedure

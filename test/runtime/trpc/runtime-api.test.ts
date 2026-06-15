@@ -38,6 +38,14 @@ const oauthMocks = vi.hoisted(() => ({
 	deleteProviderSettings: vi.fn(),
 }));
 
+// Agent-level provider config mock — replaces the old provider-settings-store.
+const agentProviderConfigMocks = vi.hoisted(() => ({
+	getAgentProviderConfig: vi.fn(),
+	getAllAgentProviderConfigs: vi.fn(() => ({})),
+	saveAgentProvider: vi.fn(),
+	deleteAgentProvider: vi.fn(),
+}));
+
 const llmsModelMocks = vi.hoisted(() => ({
 	getAllProviders: vi.fn(),
 	getModelsForProvider: vi.fn(),
@@ -148,17 +156,23 @@ vi.mock("../../../src/agent-sdk/kanban/pi-provider-config.js", () => ({
 	toOmpEffort: (...args: unknown[]) => piProviderConfigMocks.toOmpEffort(...args),
 }));
 
-// The omp provider service reads selected/custom provider settings from the
-// on-disk omp store. Mock it and route every read/write back through the
-// shared `oauthMocks` so the `setSelectedProviderSettings` helper drives the
-// pi code path too, and so tests never touch the real `~/.kanban` store.
+// The per-agent provider config is the source of truth now.
+// Mock it and route reads through agentProviderConfigMocks.
+vi.mock("../../../src/agent-sdk/kanban/agent-provider-config.js", () => ({
+	getAgentProviderConfig: (agentId: string) => agentProviderConfigMocks.getAgentProviderConfig(agentId) ?? null,
+	getAllAgentProviderConfigs: () => agentProviderConfigMocks.getAllAgentProviderConfigs(),
+	saveAgentProvider: (agentId: string, config: unknown) => agentProviderConfigMocks.saveAgentProvider(agentId, config),
+	deleteAgentProvider: (agentId: string) => agentProviderConfigMocks.deleteAgentProvider(agentId),
+}));
+
+// Legacy provider-settings-store is deleted; keep a no-op mock for any stale imports.
 vi.mock("../../../src/agent-sdk/kanban/provider-settings-store.js", () => ({
-	getProviderSettings: (providerId: string) => oauthMocks.getProviderSettings(providerId) ?? null,
-	getLastUsedProviderSettings: () => oauthMocks.getLastUsedProviderSettings() ?? null,
-	getLastUsedProviderId: () => oauthMocks.getLastUsedProviderSettings()?.provider ?? null,
-	getAllProviders: () => oauthMocks.getAllProviders(),
-	saveProviderSettings: (input: unknown) => oauthMocks.saveProviderSettings(input),
-	deleteProviderSettings: (providerId: string) => oauthMocks.deleteProviderSettings(providerId),
+	getProviderSettings: () => null,
+	getLastUsedProviderSettings: () => null,
+	getLastUsedProviderId: () => null,
+	getAllProviders: () => ({}),
+	saveProviderSettings: vi.fn(),
+	deleteProviderSettings: vi.fn(),
 	resetProviderSettingsCache: vi.fn(),
 }));
 
@@ -273,6 +287,24 @@ function setSelectedProviderSettings(
 	oauthMocks.getProviderSettings.mockImplementation((providerId: string) =>
 		settings && settings.provider === providerId ? settings : undefined,
 	);
+	// Also seed the per-agent provider config mock (new source of truth).
+	if (settings) {
+		const config = {
+			agentId: "pi",
+			provider: settings.provider,
+			model: settings.model,
+			baseUrl: settings.baseUrl,
+			apiKey: settings.apiKey,
+			reasoning: settings.reasoning,
+		};
+		agentProviderConfigMocks.getAgentProviderConfig.mockImplementation((agentId: string) =>
+			agentId === "pi" ? config : null,
+		);
+		agentProviderConfigMocks.getAllAgentProviderConfigs.mockReturnValue({ pi: config });
+	} else {
+		agentProviderConfigMocks.getAgentProviderConfig.mockReturnValue(null);
+		agentProviderConfigMocks.getAllAgentProviderConfigs.mockReturnValue({});
+	}
 }
 
 function restoreEnvVar(name: "KANBAN_API_KEY" | "OCA_API_KEY", value: string | undefined): void {
@@ -556,7 +588,7 @@ describe("createRuntimeApi startTaskSession", () => {
 		const api = createTestRuntimeApi({
 			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
 			// Workspace-global agent is pi, but the home thread is backed by claude.
-			loadScopedRuntimeConfig: vi.fn(async () => ({ ...createRuntimeConfigState(), selectedAgentId: "pi" })),
+			loadScopedRuntimeConfig: vi.fn(async () => ({ ...createRuntimeConfigState(), selectedAgentId: "pi" as const })),
 			setActiveRuntimeConfig: vi.fn(),
 			getScopedTerminalManager: vi.fn(async () => terminalManager as never),
 			getScopedPiTaskSessionService: vi.fn(async () => piTaskSessionService as never),
@@ -1812,8 +1844,9 @@ describe("createRuntimeApi startTaskSession", () => {
 			workspaceId: "workspace-1",
 			workspacePath: "/tmp/repo",
 		});
-		expect(catalogResponse.providers.some((provider) => provider.id === "cline")).toBe(true);
-		expect(catalogResponse.providers.find((provider) => provider.id === "cline")?.enabled).toBe(true);
+		// In the per-agent model, catalog items are keyed by agent id, not provider name.
+		expect(catalogResponse.providers.some((provider) => provider.id === "pi")).toBe(true);
+		expect(catalogResponse.providers.find((provider) => provider.id === "pi")?.enabled).toBe(true);
 
 		const modelsResponse = await api.getKanbanProviderModels(
 			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
@@ -1999,20 +2032,11 @@ describe("createRuntimeApi startTaskSession", () => {
 		});
 		// A custom (non-bundled) provider with no base URL cannot list models, so
 		// the runtime falls back to the provider's saved model id.
-		oauthMocks.getLastUsedProviderSettings.mockReturnValue({
+		setSelectedProviderSettings({
 			provider: "my-fallback",
 			model: "my-fallback/v1",
 			apiKey: "fallback-key",
 		});
-		oauthMocks.getProviderSettings.mockImplementation((providerId: string) =>
-			providerId === "my-fallback"
-				? {
-						provider: "my-fallback",
-						model: "my-fallback/v1",
-						apiKey: "fallback-key",
-					}
-				: null,
-		);
 
 		const response = await api.getKanbanProviderModels(
 			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
@@ -2028,66 +2052,6 @@ describe("createRuntimeApi startTaskSession", () => {
 				},
 			],
 		});
-	});
-
-	it("adds a custom OpenAI-compatible provider through the SDK-backed flow", async () => {
-		const api = createTestRuntimeApi({
-			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
-			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
-			setActiveRuntimeConfig: vi.fn(),
-			getScopedTerminalManager: vi.fn(async () => ({}) as never),
-			getScopedPiTaskSessionService: vi.fn(async () => createPiTaskSessionServiceMock() as never),
-			resolveInteractiveShellCommand: vi.fn(),
-			runCommand: vi.fn(),
-		});
-		// No provider exists yet; after the save the omp store returns the new one.
-		oauthMocks.getAllProviders.mockReturnValue({});
-		oauthMocks.getProviderSettings.mockImplementation((providerId: string) =>
-			providerId === "my-provider"
-				? {
-						provider: "my-provider",
-						model: "qwen2.5-coder:32b",
-						apiKey: "secret-key",
-						baseUrl: "http://localhost:8000/v1",
-					}
-				: null,
-		);
-
-		const response = await api.addKanbanProvider(
-			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
-			{
-				providerId: "my-provider",
-				name: "My Provider",
-				baseUrl: "http://localhost:8000/v1",
-				apiKey: "secret-key",
-				models: ["qwen2.5-coder:32b"],
-				defaultModelId: "qwen2.5-coder:32b",
-				capabilities: ["tools", "streaming"],
-			},
-		);
-
-		expect(response).toEqual(
-			expect.objectContaining({
-				providerId: "my-provider",
-				modelId: "qwen2.5-coder:32b",
-				baseUrl: "http://localhost:8000/v1",
-				apiKeyConfigured: true,
-			}),
-		);
-		// The omp runtime persists the custom provider through the local provider
-		// settings store (one `SaveProviderSettingsInput` argument).
-		expect(oauthMocks.saveProviderSettings).toHaveBeenCalledWith(
-			expect.objectContaining({
-				settings: expect.objectContaining({
-					provider: "my-provider",
-					model: "qwen2.5-coder:32b",
-					apiKey: "secret-key",
-					baseUrl: "http://localhost:8000/v1",
-				}),
-				tokenSource: "manual",
-				setLastUsed: true,
-			}),
-		);
 	});
 
 	it("returns a null account profile in the omp runtime", async () => {
@@ -2281,37 +2245,6 @@ describe("createRuntimeApi startTaskSession", () => {
 		expect(oauthMocks.loginKanbanOAuth).not.toHaveBeenCalled();
 		expect(oauthMocks.saveProviderSettings).not.toHaveBeenCalled();
 		expect(bumpKanbanSessionContextVersion).not.toHaveBeenCalled();
-	});
-
-	it("bumps cline session context when provider settings are saved", async () => {
-		const bumpKanbanSessionContextVersion = vi.fn();
-		const api = createTestRuntimeApi({
-			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
-			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
-			setActiveRuntimeConfig: vi.fn(),
-			getScopedTerminalManager: vi.fn(async () => ({}) as never),
-			getScopedPiTaskSessionService: vi.fn(async () => createPiTaskSessionServiceMock() as never),
-			resolveInteractiveShellCommand: vi.fn(),
-			runCommand: vi.fn(),
-			bumpKanbanSessionContextVersion,
-		});
-		setSelectedProviderSettings({
-			provider: "openrouter",
-			model: "openrouter/auto",
-			apiKey: "openrouter-key",
-			baseUrl: "https://openrouter.ai/api/v1",
-		});
-
-		const response = await api.saveKanbanProviderSettings(
-			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
-			{
-				providerId: "openrouter",
-				modelId: "openrouter/free",
-			},
-		);
-
-		expect(response.providerId).toBe("openrouter");
-		expect(bumpKanbanSessionContextVersion).toHaveBeenCalledTimes(1);
 	});
 
 	it("returns Kanban MCP settings", async () => {

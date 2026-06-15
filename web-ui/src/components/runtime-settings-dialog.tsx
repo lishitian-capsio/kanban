@@ -11,21 +11,27 @@ import {
 	Bell,
 	Check,
 	ChevronDown,
-	Circle,
-	CircleDot,
 	CircleUser,
 	ExternalLink,
 	FolderOpen,
 	GitCommit,
 	Globe,
+	Key,
 	Palette,
+	Pencil,
 	Plus,
 	Settings,
 	SlidersHorizontal,
+	Trash2,
 	X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccountOrganizationSection } from "@/components/shared/account-organization-section";
+import { AgentProviderSelector } from "@/components/shared/agent-provider-selector";
+import {
+	KanbanAddProviderDialog,
+	type KanbanProviderDialogInitialValues,
+} from "@/components/shared/kanban-add-provider-dialog";
 import { KanbanOauthSignInPanel } from "@/components/shared/kanban-oauth-signin-panel";
 import {
 	getRuntimeShortcutIconComponent,
@@ -42,8 +48,8 @@ import { TASK_GIT_BASE_REF_PROMPT_VARIABLE, type TaskGitAction } from "@/git-act
 import { useRuntimeSettingsKanbanController } from "@/hooks/use-runtime-settings-kanban-controller";
 import { previewThemeId, readStoredThemeId, saveThemeId, THEME_GROUPS, THEMES, type ThemeId } from "@/hooks/use-theme";
 import { useLayoutCustomizations } from "@/resize/layout-customizations";
-import { openFileOnHost } from "@/runtime/runtime-config-query";
-import type { RuntimeAgentId, RuntimeConfigResponse, RuntimeProjectShortcut } from "@/runtime/types";
+import { fetchKanbanProviderCatalog, openFileOnHost } from "@/runtime/runtime-config-query";
+import type { RuntimeAgentId, RuntimeConfigResponse, RuntimeKanbanProviderCatalogItem, RuntimeProjectShortcut } from "@/runtime/types";
 import { useRuntimeConfig } from "@/runtime/use-runtime-config";
 import {
 	type BrowserNotificationPermission,
@@ -87,9 +93,9 @@ const GIT_PROMPT_VARIANT_OPTIONS: Array<{ value: TaskGitAction; label: string }>
 
 export type RuntimeSettingsSection = "shortcuts";
 
-const SETTINGS_AGENT_ORDER: readonly RuntimeAgentId[] = ["pi", "claude", "codex", "droid", "kiro", "qwen"];
+const SETTINGS_AGENT_ORDER: readonly RuntimeAgentId[] = ["pi", "claude", "codex", "droid", "kiro"];
 
-type SettingsNavId = "general" | "account" | "proxy" | "git-prompts" | "notifications" | "appearance" | "project";
+type SettingsNavId = "general" | "account" | "providers" | "proxy" | "git-prompts" | "notifications" | "appearance" | "project";
 
 const SETTINGS_NAV_ITEMS: ReadonlyArray<{
 	id: SettingsNavId;
@@ -99,6 +105,7 @@ const SETTINGS_NAV_ITEMS: ReadonlyArray<{
 }> = [
 	{ id: "general", label: "General", icon: <SlidersHorizontal size={16} /> },
 	{ id: "account", label: "Account", icon: <CircleUser size={16} />, accountOnly: true },
+	{ id: "providers", label: "Providers", icon: <Key size={16} /> },
 	{ id: "proxy", label: "Network Proxy", icon: <Globe size={16} /> },
 	{ id: "git-prompts", label: "Git Prompts", icon: <GitCommit size={16} /> },
 	{ id: "notifications", label: "Notifications", icon: <Bell size={16} /> },
@@ -140,14 +147,14 @@ function getNextShortcutLabel(shortcuts: RuntimeProjectShortcut[], baseLabel: st
 
 function AgentRow({
 	agent,
-	isSelected,
-	onSelect,
 	disabled,
+	workspaceId,
+	onAddProvider,
 }: {
 	agent: RuntimeSettingsAgentRowModel;
-	isSelected: boolean;
-	onSelect: () => void;
 	disabled: boolean;
+	workspaceId: string | null;
+	onAddProvider?: () => void;
 }): React.ReactElement {
 	const installUrl = getRuntimeAgentCatalogEntry(agent.id)?.installUrl;
 	const isNativeKanban = agent.id === "pi";
@@ -155,31 +162,8 @@ function AgentRow({
 	const isInstallStatusPending = !isNativeKanban && agent.installed === null;
 
 	return (
-		<div
-			role="button"
-			tabIndex={0}
-			onClick={() => {
-				if (isInstalled && !disabled) {
-					onSelect();
-				}
-			}}
-			onKeyDown={(event) => {
-				if (event.key === "Enter" && isInstalled && !disabled) {
-					onSelect();
-				}
-			}}
-			className="flex items-center justify-between gap-3 py-1.5"
-			style={{ cursor: isInstalled ? "pointer" : "default" }}
-		>
+		<div className="flex items-center justify-between gap-3 py-1.5">
 			<div className="flex items-start gap-2 min-w-0">
-				{isSelected ? (
-					<CircleDot size={16} className="text-accent mt-0.5 shrink-0" />
-				) : (
-					<Circle
-						size={16}
-						className={cn("mt-0.5 shrink-0", !isInstalled ? "text-text-tertiary" : "text-text-secondary")}
-					/>
-				)}
 				<div className="min-w-0">
 					<div className="flex items-center gap-2">
 						<span className="text-[13px] text-text-primary">{agent.label}</span>
@@ -203,7 +187,6 @@ function AgentRow({
 					href={installUrl}
 					target="_blank"
 					rel="noreferrer"
-					onClick={(event: React.MouseEvent) => event.stopPropagation()}
 					className="inline-flex items-center justify-center rounded-md font-medium duration-150 cursor-default select-none h-7 px-2 text-xs bg-surface-2 border border-border text-text-primary hover:bg-surface-3 hover:border-border-bright"
 				>
 					Install
@@ -212,7 +195,14 @@ function AgentRow({
 				<Button size="sm" disabled>
 					Install
 				</Button>
-			) : null}
+			) : (
+				<AgentProviderSelector
+					agentId={agent.id}
+					workspaceId={workspaceId}
+					controlsDisabled={disabled}
+					onAddProvider={onAddProvider}
+				/>
+			)}
 		</div>
 	);
 }
@@ -360,7 +350,6 @@ export function RuntimeSettingsDialog({
 }): React.ReactElement {
 	const { config, isLoading, isSaving, save, refresh } = useRuntimeConfig(open, workspaceId, initialConfig);
 	const { resetLayoutCustomizations } = useLayoutCustomizations();
-	const [selectedAgentId, setSelectedAgentId] = useState<RuntimeAgentId>("claude");
 	const [agentAutonomousModeEnabled, setAgentAutonomousModeEnabled] = useState(true);
 	const [readyForReviewNotificationsEnabled, setReadyForReviewNotificationsEnabled] = useState(true);
 	const [initialThemeId, setInitialThemeId] = useState<ThemeId>(readStoredThemeId);
@@ -385,6 +374,10 @@ export function RuntimeSettingsDialog({
 	const bodyRef = useRef<HTMLDivElement>(null);
 	const isScrollingProgrammatically = useRef(false);
 	const [activeSection, setActiveSection] = useState<SettingsNavId>("general");
+	// ── Providers dialog state ──────────────────────────────────────────────
+	const [providerDialogOpen, setProviderDialogOpen] = useState(false);
+	const [providerDialogMode, setProviderDialogMode] = useState<"add" | "edit">("add");
+	const [providerDialogInitialValues, setProviderDialogInitialValues] = useState<KanbanProviderDialogInitialValues | null>(null);
 	const controlsDisabled = isLoading || isSaving || config === null;
 	const commitPromptTemplateDefault = config?.commitPromptTemplateDefault ?? "";
 	const openPrPromptTemplateDefault = config?.openPrPromptTemplateDefault ?? "";
@@ -404,6 +397,36 @@ export function RuntimeSettingsDialog({
 	const bypassPermissionsCheckboxId = "runtime-settings-bypass-permissions";
 	const refreshNotificationPermission = useCallback(() => {
 		setNotificationPermission(getBrowserNotificationPermission());
+	}, []);
+
+	const handleOpenAddProviderDialog = useCallback(() => {
+		setProviderDialogMode("add");
+		setProviderDialogInitialValues(null);
+		setProviderDialogOpen(true);
+	}, []);
+
+	// ── Provider catalog (for Providers nav section) ─────────────────────────
+	const [providerCatalogAll, setProviderCatalogAll] = useState<RuntimeKanbanProviderCatalogItem[]>([]);
+	const reloadProviderCatalog = useCallback(() => {
+		if (!open) return;
+		void fetchKanbanProviderCatalog(workspaceId).then(setProviderCatalogAll).catch(() => setProviderCatalogAll([]));
+	}, [open, workspaceId]);
+	useEffect(() => {
+		reloadProviderCatalog();
+	}, [reloadProviderCatalog]);
+
+	const handleOpenEditProviderDialog = useCallback((provider: RuntimeKanbanProviderCatalogItem) => {
+		setProviderDialogMode("edit");
+		setProviderDialogInitialValues({
+			providerId: provider.id,
+			name: provider.name,
+			baseUrl: provider.baseUrl ?? "",
+			defaultModelId: provider.defaultModelId ?? "",
+			protocols: provider.protocols.map((p) => p.protocol),
+			protocolConfigs: provider.protocols.map((p) => ({ protocol: p.protocol, baseUrl: p.baseUrl })),
+			models: [],
+		});
+		setProviderDialogOpen(true);
 	}, []);
 
 	const supportedAgents = useMemo<RuntimeSettingsAgentRowModel[]>(() => {
@@ -435,21 +458,32 @@ export function RuntimeSettingsDialog({
 	const agentSettings = useRuntimeSettingsKanbanController({
 		open,
 		workspaceId,
-		selectedAgentId,
 		config,
 	});
+	const handleProviderDialogSubmit = useCallback(
+		async (input: import("@/hooks/use-runtime-settings-kanban-controller").AddKanbanProviderInput | import("@/hooks/use-runtime-settings-kanban-controller").UpdateKanbanProviderInput) => {
+			try {
+				if (providerDialogMode === "add") {
+					await agentSettings.addCustomProvider(input as import("@/hooks/use-runtime-settings-kanban-controller").AddKanbanProviderInput);
+				} else {
+					await agentSettings.updateCustomProvider(input as import("@/hooks/use-runtime-settings-kanban-controller").UpdateKanbanProviderInput);
+				}
+				reloadProviderCatalog();
+				return { ok: true };
+			} catch (error) {
+				return { ok: false, message: error instanceof Error ? error.message : String(error) };
+			}
+		},
+		[agentSettings, providerDialogMode, reloadProviderCatalog],
+	);
 	// The slim Account section only manages managed-provider OAuth + account/org/credits;
 	// per-agent provider/model/MCP config now lives inline in the home chat composer.
-	const showAccountSection = selectedAgentId === "pi" && agentSettings.isOauthProviderSelected;
+	const showAccountSection = agentSettings.isOauthProviderSelected;
 	const showClineAccountControls = showAccountSection && agentSettings.providerId.trim() === "cline";
 	const navItems = useMemo(
 		() => SETTINGS_NAV_ITEMS.filter((item) => !item.accountOnly || showAccountSection),
 		[showAccountSection],
 	);
-	const configuredAgentId = config?.selectedAgentId ?? null;
-	const firstInstalledAgentId = displayedAgents.find((agent) => agent.installed)?.id;
-	const fallbackAgentId = firstInstalledAgentId ?? displayedAgents[0]?.id ?? "claude";
-	const initialSelectedAgentId = configuredAgentId ?? fallbackAgentId;
 	const initialAgentAutonomousModeEnabled = config?.agentAutonomousModeEnabled ?? true;
 	const initialReadyForReviewNotificationsEnabled = config?.readyForReviewNotificationsEnabled ?? true;
 	const initialShortcuts = config?.shortcuts ?? [];
@@ -464,9 +498,6 @@ export function RuntimeSettingsDialog({
 	const hasUnsavedChanges = useMemo(() => {
 		if (!config) {
 			return false;
-		}
-		if (selectedAgentId !== initialSelectedAgentId) {
-			return true;
 		}
 		if (agentAutonomousModeEnabled !== initialAgentAutonomousModeEnabled) {
 			return true;
@@ -511,7 +542,6 @@ export function RuntimeSettingsDialog({
 		initialProxyPort,
 		initialProxyUsername,
 		initialReadyForReviewNotificationsEnabled,
-		initialSelectedAgentId,
 		initialShortcuts,
 		initialThemeId,
 		noProxy,
@@ -522,7 +552,6 @@ export function RuntimeSettingsDialog({
 		proxyPort,
 		proxyUsername,
 		readyForReviewNotificationsEnabled,
-		selectedAgentId,
 		shortcuts,
 	]);
 
@@ -530,7 +559,6 @@ export function RuntimeSettingsDialog({
 		if (!open) {
 			return;
 		}
-		setSelectedAgentId(configuredAgentId ?? fallbackAgentId);
 		setAgentAutonomousModeEnabled(config?.agentAutonomousModeEnabled ?? true);
 		setReadyForReviewNotificationsEnabled(config?.readyForReviewNotificationsEnabled ?? true);
 		setShortcuts(config?.shortcuts ?? []);
@@ -554,9 +582,7 @@ export function RuntimeSettingsDialog({
 		config?.proxyPassword,
 		config?.noProxy,
 		config?.readyForReviewNotificationsEnabled,
-		config?.selectedAgentId,
 		config?.shortcuts,
-		fallbackAgentId,
 		open,
 	]);
 
@@ -694,11 +720,6 @@ export function RuntimeSettingsDialog({
 			setSaveError("Runtime settings are still loading. Try again in a moment.");
 			return;
 		}
-		const selectedAgent = displayedAgents.find((agent) => agent.id === selectedAgentId);
-		if (!selectedAgent || selectedAgent.installed !== true) {
-			setSaveError("Selected agent is not installed. Install it first or choose an installed agent.");
-			return;
-		}
 		const shouldRequestNotificationPermission =
 			!initialReadyForReviewNotificationsEnabled &&
 			readyForReviewNotificationsEnabled &&
@@ -708,7 +729,7 @@ export function RuntimeSettingsDialog({
 			setNotificationPermission(nextPermission);
 		}
 		const saved = await save({
-			selectedAgentId,
+			selectedAgentId: "pi",
 			agentAutonomousModeEnabled,
 			readyForReviewNotificationsEnabled,
 			shortcuts,
@@ -799,9 +820,9 @@ export function RuntimeSettingsDialog({
 							<AgentRow
 								key={agent.id}
 								agent={agent}
-								isSelected={agent.id === selectedAgentId}
-								onSelect={() => setSelectedAgentId(agent.id)}
 								disabled={controlsDisabled}
+								workspaceId={workspaceId}
+								onAddProvider={handleOpenAddProviderDialog}
 							/>
 						))}
 						{config === null ? (
@@ -863,6 +884,69 @@ export function RuntimeSettingsDialog({
 							</div>
 						</>
 					) : null}
+
+					{/* ---- Providers ---- */}
+					<div data-settings-section="providers" />
+					<div className="sticky top-0 -mx-5 px-5 pt-4 pb-2 bg-surface-1 z-10">
+						<h2 className="flex items-center gap-2 text-base font-semibold text-text-primary m-0">
+							<Key size={16} className="text-text-secondary" />
+							Providers
+						</h2>
+					</div>
+					<div className="rounded-lg border border-border bg-surface-0 px-4 py-3 mb-4">
+						<p className="text-text-secondary text-[13px] mt-0 mb-3">
+							Configure providers for the Pi agent. Each provider defines an API endpoint and available models.
+						</p>
+						<div className="flex flex-col gap-1">
+							{providerCatalogAll.length === 0 ? (
+								<p className="text-text-tertiary text-[13px] py-2">No providers configured. Click "Add Provider" to get started.</p>
+							) : (
+								providerCatalogAll.map((provider) => (
+									<div
+										key={provider.id}
+										className="flex items-center justify-between gap-3 py-2 px-2 rounded hover:bg-surface-1"
+									>
+										<div className="min-w-0 flex-1">
+											<div className="flex items-center gap-2">
+												<span className="text-[13px] text-text-primary font-medium">{provider.name}</span>
+												<span className="text-[11px] text-text-tertiary font-mono">{provider.id}</span>
+											</div>
+											{provider.defaultModelId ? (
+												<p className="text-text-secondary text-[11px] mt-0.5 m-0 truncate">
+													Default model: {provider.defaultModelId}
+												</p>
+											) : null}
+											{provider.protocols.length > 0 ? (
+												<p className="text-text-tertiary text-[10px] mt-0.5 m-0">
+													{provider.protocols.map((p) => p.protocol).join(", ")}
+												</p>
+											) : null}
+										</div>
+										<div className="flex items-center gap-1.5 shrink-0">
+											<Button
+												size="sm"
+												variant="ghost"
+												icon={<Pencil size={12} />}
+												onClick={() => handleOpenEditProviderDialog(provider)}
+											>
+												Edit
+											</Button>
+										</div>
+									</div>
+								))
+							)}
+						</div>
+						<div className="mt-3 pt-3 border-t border-border">
+							<Button
+								size="sm"
+								icon={<Plus size={14} />}
+								onClick={handleOpenAddProviderDialog}
+								disabled={controlsDisabled}
+							>
+								Add Provider
+							</Button>
+						</div>
+					</div>
 
 					{/* ---- Network Proxy ---- */}
 					<div data-settings-section="proxy" />
@@ -1287,6 +1371,15 @@ export function RuntimeSettingsDialog({
 					Save
 				</Button>
 			</DialogFooter>
+			<KanbanAddProviderDialog
+				open={providerDialogOpen}
+				onOpenChange={setProviderDialogOpen}
+				workspaceId={workspaceId}
+				existingProviderIds={providerCatalogAll.map((p) => p.id)}
+				mode={providerDialogMode}
+				initialValues={providerDialogInitialValues}
+				onSubmit={handleProviderDialogSubmit}
+			/>
 		</Dialog>
 	);
 }

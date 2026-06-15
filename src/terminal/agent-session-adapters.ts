@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { getAgentProviderConfig } from "../agent-sdk/kanban/agent-provider-config";
+import { getBaseUrlForProtocol } from "../agent-sdk/kanban/provider-protocol";
 import type {
 	RuntimeAgentId,
 	RuntimeHookEvent,
@@ -535,56 +538,109 @@ const claudeAdapter: AgentSessionAdapter = {
 
 		const hooks = resolveHookContext(input);
 		if (hooks) {
-			const settingsPath = join(getHookAgentDirectory("claude"), "settings.json");
-			const hooksSettings = {
-				hooks: {
-					Stop: [{ hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "claude" }) }] }],
-					SubagentStop: [
-						{ hooks: [{ type: "command", command: buildHookCommand("activity", { source: "claude" }) }] },
-					],
-					PreToolUse: [
-						{
-							matcher: "*",
-							hooks: [{ type: "command", command: buildHookCommand("activity", { source: "claude" }) }],
-						},
-					],
-					PermissionRequest: [
-						{
-							matcher: "*",
-							hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "claude" }) }],
-						},
-					],
-					PostToolUse: [
-						{
-							matcher: "*",
-							hooks: [{ type: "command", command: buildHookCommand("to_in_progress", { source: "claude" }) }],
-						},
-					],
-					PostToolUseFailure: [
-						{
-							matcher: "*",
-							hooks: [{ type: "command", command: buildHookCommand("to_in_progress", { source: "claude" }) }],
-						},
-					],
-					Notification: [
-						{
-							matcher: "permission_prompt",
-							hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "claude" }) }],
-						},
-						{
-							matcher: "*",
-							hooks: [{ type: "command", command: buildHookCommand("activity", { source: "claude" }) }],
-						},
-					],
-					UserPromptSubmit: [
-						{
-							hooks: [{ type: "command", command: buildHookCommand("to_in_progress", { source: "claude" }) }],
-						},
-					],
-				},
+			// Merge hooks + provider config directly into ~/.claude/settings.json.
+			// This is the native config file Claude Code always reads — no --settings
+			// flag needed, avoiding priority/conflict issues.
+			const claudeSettingsPath = join(homedir(), ".claude", "settings.json");
+			const claudeConfigDir = join(homedir(), ".claude");
+
+			// Read existing settings to preserve user config (permissions, plugins, etc.)
+			let currentSettings: Record<string, unknown> = {};
+			try {
+				const raw = await readFile(claudeSettingsPath, "utf8");
+				currentSettings = JSON.parse(raw) as Record<string, unknown>;
+			} catch {
+				// File doesn't exist or is invalid — start fresh
+			}
+
+			// Build provider env (BASE_URL + API_KEY for custom providers)
+			const providerEnv: Record<string, string> = {};
+			const providerConfig = getAgentProviderConfig("claude");
+			if (providerConfig) {
+				const anthropicBaseUrl = providerConfig.protocols
+					? getBaseUrlForProtocol(providerConfig.protocols, "anthropic")
+					: undefined;
+				const baseUrl = anthropicBaseUrl || providerConfig.baseUrl;
+				if (baseUrl) {
+					providerEnv.ANTHROPIC_BASE_URL = baseUrl;
+				}
+				if (providerConfig.apiKey) {
+					providerEnv.ANTHROPIC_API_KEY = providerConfig.apiKey;
+				}
+			}
+
+			// Merge: existing settings + hooks + provider env
+			const hooksConfig = {
+				Stop: [{ hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "claude" }) }] }],
+				SubagentStop: [
+					{ hooks: [{ type: "command", command: buildHookCommand("activity", { source: "claude" }) }] },
+				],
+				PreToolUse: [
+					{
+						matcher: "*",
+						hooks: [{ type: "command", command: buildHookCommand("activity", { source: "claude" }) }],
+					},
+				],
+				PermissionRequest: [
+					{
+						matcher: "*",
+						hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "claude" }) }],
+					},
+				],
+				PostToolUse: [
+					{
+						matcher: "*",
+						hooks: [{ type: "command", command: buildHookCommand("to_in_progress", { source: "claude" }) }],
+					},
+				],
+				PostToolUseFailure: [
+					{
+						matcher: "*",
+						hooks: [{ type: "command", command: buildHookCommand("to_in_progress", { source: "claude" }) }],
+					},
+				],
+				Notification: [
+					{
+						matcher: "permission_prompt",
+						hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "claude" }) }],
+					},
+					{
+						matcher: "*",
+						hooks: [{ type: "command", command: buildHookCommand("activity", { source: "claude" }) }],
+					},
+				],
+				UserPromptSubmit: [
+					{
+						hooks: [{ type: "command", command: buildHookCommand("to_in_progress", { source: "claude" }) }],
+					},
+				],
 			};
-			await ensureTextFile(settingsPath, JSON.stringify(hooksSettings, null, 2));
-			args.push("--settings", settingsPath);
+
+			currentSettings.hooks = hooksConfig;
+
+			// Merge provider env into existing env (preserve other env vars)
+			if (Object.keys(providerEnv).length > 0) {
+				const existingEnv = (currentSettings.env as Record<string, string> | undefined) ?? {};
+				currentSettings.env = { ...existingEnv, ...providerEnv };
+			} else {
+				// Using official provider — clean up any leftover custom provider env
+				const existingEnv = currentSettings.env as Record<string, string> | undefined;
+				if (existingEnv) {
+					delete existingEnv.ANTHROPIC_BASE_URL;
+					delete existingEnv.ANTHROPIC_API_KEY;
+					if (Object.keys(existingEnv).length === 0) {
+						delete currentSettings.env;
+					}
+				}
+			}
+
+			// Ensure ~/.claude directory exists
+			if (!existsSync(claudeConfigDir)) {
+				mkdirSync(claudeConfigDir, { recursive: true });
+			}
+			await ensureTextFile(claudeSettingsPath, JSON.stringify(currentSettings, null, 2));
+			// No --settings flag needed — Claude Code reads ~/.claude/settings.json natively
+
 			Object.assign(
 				env,
 				createHookRuntimeEnv({
@@ -775,108 +831,6 @@ const geminiAdapter: AgentSessionAdapter = {
 				args,
 				env,
 			};
-		}
-
-		return {
-			args,
-			env,
-		};
-	},
-};
-
-// Qwen Code is a Gemini-CLI fork, so it shares Gemini's launch flags (`-i` to seed an
-// interactive prompt, `--yolo` for autonomous mode, `--resume latest`, `--approval-mode=plan`).
-// Its hook system, however, follows the Claude-Code convention (event names `Stop`,
-// `PreToolUse`, `PostToolUse`, `Notification`, ...) rather than Gemini's `BeforeTool`/
-// `AfterAgent` scheme, so the hook settings mirror the Claude adapter. The settings file is
-// injected via Qwen's `QWEN_CODE_SYSTEM_SETTINGS_PATH` system-settings env var (the fork's
-// analogue of `GEMINI_CLI_SYSTEM_SETTINGS_PATH`). The `Stop` hook firing `to_review` is the
-// turn boundary the session state machine uses to fold committed output into a transcript turn.
-const qwenAdapter: AgentSessionAdapter = {
-	async prepare(input) {
-		const args = [...input.args];
-		const env: Record<string, string | undefined> = {};
-
-		if (input.autonomousModeEnabled && !hasCliOption(args, "--yolo")) {
-			args.push("--yolo");
-		}
-
-		if (input.resumeFromTrash && !hasCliOption(args, "--resume")) {
-			args.push("--resume", "latest");
-		}
-
-		if (input.startInPlanMode) {
-			args.push("--approval-mode=plan");
-		}
-
-		const hooks = resolveHookContext(input);
-		if (hooks) {
-			const settingsPath = join(getHookAgentDirectory("qwen"), "settings.json");
-			const hooksSettings = {
-				hooks: {
-					Stop: [{ hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "qwen" }) }] }],
-					SubagentStop: [
-						{ hooks: [{ type: "command", command: buildHookCommand("activity", { source: "qwen" }) }] },
-					],
-					PreToolUse: [
-						{
-							matcher: "*",
-							hooks: [{ type: "command", command: buildHookCommand("activity", { source: "qwen" }) }],
-						},
-					],
-					PermissionRequest: [
-						{
-							matcher: "*",
-							hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "qwen" }) }],
-						},
-					],
-					PostToolUse: [
-						{
-							matcher: "*",
-							hooks: [{ type: "command", command: buildHookCommand("to_in_progress", { source: "qwen" }) }],
-						},
-					],
-					PostToolUseFailure: [
-						{
-							matcher: "*",
-							hooks: [{ type: "command", command: buildHookCommand("to_in_progress", { source: "qwen" }) }],
-						},
-					],
-					Notification: [
-						{
-							matcher: "permission_prompt",
-							hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "qwen" }) }],
-						},
-						{
-							matcher: "*",
-							hooks: [{ type: "command", command: buildHookCommand("activity", { source: "qwen" }) }],
-						},
-					],
-				},
-			};
-			await ensureTextFile(settingsPath, JSON.stringify(hooksSettings, null, 2));
-			Object.assign(
-				env,
-				createHookRuntimeEnv({
-					taskId: hooks.taskId,
-					workspaceId: hooks.workspaceId,
-				}),
-			);
-			env.QWEN_CODE_SYSTEM_SETTINGS_PATH = settingsPath;
-		}
-
-		const appendedSystemPrompt = resolveHomeAgentAppendSystemPrompt(input.taskId);
-		if (
-			appendedSystemPrompt &&
-			!hasCliOption(args, "--append-system-prompt") &&
-			!hasCliOption(args, "--system-prompt")
-		) {
-			args.push("--append-system-prompt", appendedSystemPrompt);
-		}
-
-		const trimmed = input.prompt.trim();
-		if (trimmed) {
-			args.push("-i", trimmed);
 		}
 
 		return {
@@ -1380,7 +1334,6 @@ const ADAPTERS: Record<RuntimeAgentId, AgentSessionAdapter> = {
 	claude: claudeAdapter,
 	codex: codexAdapter,
 	gemini: geminiAdapter,
-	qwen: qwenAdapter,
 	opencode: opencodeAdapter,
 	droid: droidAdapter,
 	kiro: kiroAdapter,

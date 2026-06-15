@@ -1,11 +1,11 @@
 // Provider and model resolution for pi agent sessions.
-// Uses the omp built-in model registry (models.json) and the kanban
-// provider settings store.
+// Uses the omp built-in model registry (models.json) and the per-agent
+// provider configuration store.
 import type { RuntimeReasoningEffort } from "../../core/api-contract";
 import { Effort } from "../ai/model-thinking";
 import { type GeneratedProvider, getBundledModel, getBundledModels, getBundledProviders } from "../ai/models";
 import type { Api, Model } from "../ai/types";
-import { getLastUsedProviderSettings, getProviderSettings } from "./provider-settings-store";
+import { getAgentProviderConfig } from "./agent-provider-config";
 
 export const PI_DEFAULT_PROVIDER_ID = "anthropic";
 export const PI_DEFAULT_MODEL_ID = "claude-sonnet-4-20250514";
@@ -145,23 +145,20 @@ export function resolvePiLaunchConfig(input?: {
 	let baseUrl = profile?.baseUrl?.trim() || null;
 	let reasoningEffort = input?.reasoningEffortOverride ?? profile?.reasoningEffort ?? null;
 
-	// Fill any still-missing values from saved provider settings (machine-home layer).
+	// Fill any still-missing values from per-agent provider config.
 	if (!providerId || !modelId || !baseUrl) {
 		try {
-			const lastUsed = getLastUsedProviderSettings();
-			const selected = lastUsed?.provider
-				? (getProviderSettings(lastUsed.provider.trim().toLowerCase()) ?? lastUsed)
-				: null;
-			if (selected) {
-				providerId = providerId || selected.provider?.trim() || null;
-				modelId = modelId || selected.model?.trim() || null;
-				baseUrl = baseUrl || selected.baseUrl?.trim() || null;
+			const agentConfig = getAgentProviderConfig("pi");
+			if (agentConfig) {
+				providerId = providerId || agentConfig.provider?.trim() || null;
+				modelId = modelId || agentConfig.model?.trim() || null;
+				baseUrl = baseUrl || agentConfig.baseUrl?.trim() || null;
 				if (!reasoningEffort) {
-					reasoningEffort = (selected.reasoning?.effort?.trim() as RuntimeReasoningEffort) || null;
+					reasoningEffort = (agentConfig.reasoning?.effort?.trim() as RuntimeReasoningEffort) || null;
 				}
 			}
 		} catch {
-			// Settings layer unavailable
+			// Config layer unavailable
 		}
 	}
 
@@ -179,7 +176,7 @@ export function resolvePiLaunchConfig(input?: {
 }
 
 /**
- * Resolve API key: environment variables first, then saved provider settings.
+ * Resolve API key: environment variables first, then per-agent provider config.
  */
 export function resolvePiApiKey(providerId: string): string | null {
 	// 1. Environment variables take priority
@@ -190,15 +187,15 @@ export function resolvePiApiKey(providerId: string): string | null {
 			return value.trim();
 		}
 	}
-	// 2. Fall back to saved provider settings
+	// 2. Fall back to per-agent provider config
 	try {
-		const settings = getProviderSettings(providerId) ?? getLastUsedProviderSettings();
-		const apiKey = settings?.apiKey?.trim() || settings?.auth?.apiKey?.trim() || "";
+		const agentConfig = getAgentProviderConfig("pi");
+		const apiKey = agentConfig?.apiKey?.trim() || "";
 		if (apiKey) {
 			return apiKey;
 		}
 	} catch {
-		// Settings layer unavailable
+		// Config layer unavailable
 	}
 	return null;
 }

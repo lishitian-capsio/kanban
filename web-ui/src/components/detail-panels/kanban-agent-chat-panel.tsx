@@ -185,7 +185,6 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 		const agentSettings = useRuntimeSettingsKanbanController({
 			open: true,
 			workspaceId,
-			selectedAgentId: "pi",
 			config: runtimeConfig,
 			taskKanbanSettings,
 		});

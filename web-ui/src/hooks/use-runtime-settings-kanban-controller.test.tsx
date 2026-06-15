@@ -12,20 +12,18 @@ import type {
 
 const fetchKanbanProviderCatalogMock = vi.hoisted(() => vi.fn());
 const fetchKanbanProviderModelsMock = vi.hoisted(() => vi.fn());
-const addKanbanProviderMock = vi.hoisted(() => vi.fn());
-const updateKanbanProviderMock = vi.hoisted(() => vi.fn());
-const saveKanbanProviderSettingsMock = vi.hoisted(() => vi.fn());
+const saveAgentProviderConfigMock = vi.hoisted(() => vi.fn());
+const fetchAgentProviderConfigsMock = vi.hoisted(() => vi.fn());
 const runKanbanProviderOauthLoginMock = vi.hoisted(() => vi.fn());
 const startKanbanDeviceAuthMock = vi.hoisted(() => vi.fn());
 const completeKanbanDeviceAuthMock = vi.hoisted(() => vi.fn());
 const isLocalhostAccessMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/runtime/runtime-config-query", () => ({
-	addKanbanProvider: addKanbanProviderMock,
-	updateKanbanProvider: updateKanbanProviderMock,
+	saveAgentProviderConfig: saveAgentProviderConfigMock,
+	fetchAgentProviderConfigs: fetchAgentProviderConfigsMock,
 	fetchKanbanProviderCatalog: fetchKanbanProviderCatalogMock,
 	fetchKanbanProviderModels: fetchKanbanProviderModelsMock,
-	saveKanbanProviderSettings: saveKanbanProviderSettingsMock,
 	runKanbanProviderOauthLogin: runKanbanProviderOauthLoginMock,
 	startKanbanDeviceAuth: startKanbanDeviceAuthMock,
 	completeKanbanDeviceAuth: completeKanbanDeviceAuthMock,
@@ -148,14 +146,12 @@ function createDeferred<T>(): {
 function HookHarness({
 	open,
 	workspaceId,
-	selectedAgentId,
 	config,
 	taskKanbanSettings,
 	onSnapshot,
 }: {
 	open: boolean;
 	workspaceId: string | null;
-	selectedAgentId: RuntimeConfigResponse["selectedAgentId"];
 	config: RuntimeConfigResponse | null;
 	taskKanbanSettings?: RuntimeTaskAgentSettings;
 	onSnapshot: (snapshot: HookSnapshot) => void;
@@ -163,7 +159,6 @@ function HookHarness({
 	const state = useRuntimeSettingsKanbanController({
 		open,
 		workspaceId,
-		selectedAgentId,
 		config,
 		taskKanbanSettings,
 	});
@@ -216,9 +211,8 @@ describe("useRuntimeSettingsKanbanController", () => {
 	beforeEach(() => {
 		fetchKanbanProviderCatalogMock.mockReset();
 		fetchKanbanProviderModelsMock.mockReset();
-		addKanbanProviderMock.mockReset();
-		updateKanbanProviderMock.mockReset();
-		saveKanbanProviderSettingsMock.mockReset();
+		saveAgentProviderConfigMock.mockReset();
+		fetchAgentProviderConfigsMock.mockReset();
 		runKanbanProviderOauthLoginMock.mockReset();
 		startKanbanDeviceAuthMock.mockReset();
 		completeKanbanDeviceAuthMock.mockReset();
@@ -273,7 +267,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -322,7 +315,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId={null}
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -361,7 +353,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -397,7 +388,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -434,7 +424,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -476,7 +465,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -527,7 +515,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					taskKanbanSettings={{
 						providerId: "openrouter",
@@ -584,7 +571,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					taskKanbanSettings={{
 						modelId: "anthropic/claude-sonnet-4.6",
@@ -638,7 +624,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					taskKanbanSettings={{}}
 					onSnapshot={(snapshot) => {
@@ -665,17 +650,16 @@ describe("useRuntimeSettingsKanbanController", () => {
 			baseUrl: "https://old.example.com",
 		});
 		let latestSnapshot: HookSnapshot | null = null;
-		saveKanbanProviderSettingsMock.mockResolvedValue({
-			providerId: "openrouter",
-			modelId: "gpt-5",
-			baseUrl: "https://openrouter.ai/api",
-			reasoningEffort: "high",
-			apiKeyConfigured: true,
-			oauthProvider: null,
-			oauthAccessTokenConfigured: false,
-			oauthRefreshTokenConfigured: false,
-			oauthAccountId: null,
-			oauthExpiresAt: null,
+		saveAgentProviderConfigMock.mockResolvedValue({
+			ok: true,
+			config: {
+				agentId: "pi",
+				provider: "openrouter",
+				model: "gpt-5",
+				baseUrl: "https://openrouter.ai/api",
+				apiKey: "secret-key",
+				reasoning: { effort: "high" },
+			},
 		});
 
 		await act(async () => {
@@ -683,7 +667,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -708,12 +691,13 @@ describe("useRuntimeSettingsKanbanController", () => {
 			expect(await requireSnapshot(latestSnapshot).saveProviderSettings()).toEqual({ ok: true });
 		});
 
-		expect(saveKanbanProviderSettingsMock).toHaveBeenCalledWith("workspace-1", {
-			providerId: "openrouter",
-			modelId: "gpt-5",
+		expect(saveAgentProviderConfigMock).toHaveBeenCalledWith("workspace-1", "pi", {
+			agentId: "pi",
+			provider: "openrouter",
+			model: "gpt-5",
 			apiKey: "secret-key",
 			baseUrl: "https://openrouter.ai/api",
-			reasoningEffort: "high",
+			reasoning: { effort: "high" },
 		});
 		expect(requireSnapshot(latestSnapshot).providerId).toBe("openrouter");
 		expect(requireSnapshot(latestSnapshot).modelId).toBe("gpt-5");
@@ -733,17 +717,14 @@ describe("useRuntimeSettingsKanbanController", () => {
 			apiKeyConfigured: true,
 		});
 		let latestSnapshot: HookSnapshot | null = null;
-		saveKanbanProviderSettingsMock.mockResolvedValue({
-			providerId: "openrouter",
-			modelId: "openrouter/free",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoningEffort: null,
-			apiKeyConfigured: true,
-			oauthProvider: null,
-			oauthAccessTokenConfigured: false,
-			oauthRefreshTokenConfigured: false,
-			oauthAccountId: null,
-			oauthExpiresAt: null,
+		saveAgentProviderConfigMock.mockResolvedValue({
+			ok: true,
+			config: {
+				agentId: "pi",
+				provider: "openrouter",
+				model: "openrouter/free",
+				baseUrl: "https://openrouter.ai/api/v1",
+			},
 		});
 
 		await act(async () => {
@@ -751,7 +732,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -767,11 +747,11 @@ describe("useRuntimeSettingsKanbanController", () => {
 			});
 		});
 
-		expect(saveKanbanProviderSettingsMock).toHaveBeenCalledWith("workspace-1", {
-			providerId: "openrouter",
-			modelId: "openrouter/free",
+		expect(saveAgentProviderConfigMock).toHaveBeenCalledWith("workspace-1", "pi", {
+			agentId: "pi",
+			provider: "openrouter",
+			model: "openrouter/free",
 			baseUrl: "https://openrouter.ai/api/v1",
-			reasoningEffort: null,
 		});
 	});
 
@@ -802,17 +782,15 @@ describe("useRuntimeSettingsKanbanController", () => {
 				supportsReasoningEffort: true,
 			},
 		]);
-		saveKanbanProviderSettingsMock.mockResolvedValue({
-			providerId: "litellm",
-			modelId: "gpt-5.4",
-			baseUrl: "http://127.0.0.1:4010/v1",
-			reasoningEffort: null,
-			apiKeyConfigured: true,
-			oauthProvider: null,
-			oauthAccessTokenConfigured: false,
-			oauthRefreshTokenConfigured: false,
-			oauthAccountId: null,
-			oauthExpiresAt: null,
+		saveAgentProviderConfigMock.mockResolvedValue({
+			ok: true,
+			config: {
+				agentId: "pi",
+				provider: "litellm",
+				model: "gpt-5.4",
+				baseUrl: "http://127.0.0.1:4010/v1",
+				apiKey: "test-key-catalog",
+			},
 		});
 
 		await act(async () => {
@@ -820,7 +798,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -850,12 +827,12 @@ describe("useRuntimeSettingsKanbanController", () => {
 			await flushAsyncWork();
 		});
 
-		expect(saveKanbanProviderSettingsMock).toHaveBeenCalledWith("workspace-1", {
-			providerId: "litellm",
-			modelId: "gpt-5.4",
+		expect(saveAgentProviderConfigMock).toHaveBeenCalledWith("workspace-1", "pi", {
+			agentId: "pi",
+			provider: "litellm",
+			model: "gpt-5.4",
 			apiKey: "test-key-catalog",
 			baseUrl: "http://127.0.0.1:4010/v1",
-			reasoningEffort: null,
 		});
 		expect(fetchKanbanProviderModelsMock).toHaveBeenLastCalledWith("workspace-1", "litellm");
 		expect(requireSnapshot(latestSnapshot).providerModelIds).toEqual(["private-proxy-model"]);
@@ -889,17 +866,14 @@ describe("useRuntimeSettingsKanbanController", () => {
 				name: "fresh-proxy-model",
 			},
 		]);
-		saveKanbanProviderSettingsMock.mockResolvedValue({
-			providerId: "litellm",
-			modelId: "gpt-5.4",
-			baseUrl: "http://127.0.0.1:4010/v1",
-			reasoningEffort: null,
-			apiKeyConfigured: false,
-			oauthProvider: null,
-			oauthAccessTokenConfigured: false,
-			oauthRefreshTokenConfigured: false,
-			oauthAccountId: null,
-			oauthExpiresAt: null,
+		saveAgentProviderConfigMock.mockResolvedValue({
+			ok: true,
+			config: {
+				agentId: "pi",
+				provider: "litellm",
+				model: "gpt-5.4",
+				baseUrl: "http://127.0.0.1:4010/v1",
+			},
 		});
 
 		await act(async () => {
@@ -907,7 +881,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -942,38 +915,21 @@ describe("useRuntimeSettingsKanbanController", () => {
 		expect(requireSnapshot(latestSnapshot).providerModelIds).toEqual(["fresh-proxy-model"]);
 	});
 
-	it("adds a custom provider and refreshes catalog and models", async () => {
+	it("adds a custom provider and refreshes models", async () => {
 		const config = createRuntimeConfigResponse({
 			providerId: "cline",
 			modelId: "claude-sonnet-4-6",
 		});
 		let latestSnapshot: HookSnapshot | null = null;
-		fetchKanbanProviderCatalogMock
-			.mockResolvedValueOnce([
-				{
-					id: "cline",
-					name: "Kanban",
-					oauthSupported: true,
-					enabled: true,
-					defaultModelId: "claude-sonnet-4-6",
-				},
-			])
-			.mockResolvedValueOnce([
-				{
-					id: "cline",
-					name: "Kanban",
-					oauthSupported: true,
-					enabled: false,
-					defaultModelId: "claude-sonnet-4-6",
-				},
-				{
-					id: "my-provider",
-					name: "My Provider",
-					oauthSupported: false,
-					enabled: true,
-					defaultModelId: "qwen2.5-coder:32b",
-				},
-			]);
+		fetchKanbanProviderCatalogMock.mockResolvedValue([
+			{
+				id: "cline",
+				name: "Kanban",
+				oauthSupported: true,
+				enabled: true,
+				defaultModelId: "claude-sonnet-4-6",
+			},
+		]);
 		fetchKanbanProviderModelsMock
 			.mockResolvedValueOnce([
 				{
@@ -987,17 +943,15 @@ describe("useRuntimeSettingsKanbanController", () => {
 					name: "Qwen 2.5 Coder 32B",
 				},
 			]);
-		addKanbanProviderMock.mockResolvedValue({
-			providerId: "my-provider",
-			modelId: "qwen2.5-coder:32b",
-			baseUrl: "http://localhost:8000/v1",
-			reasoningEffort: null,
-			apiKeyConfigured: true,
-			oauthProvider: null,
-			oauthAccessTokenConfigured: false,
-			oauthRefreshTokenConfigured: false,
-			oauthAccountId: null,
-			oauthExpiresAt: null,
+		saveAgentProviderConfigMock.mockResolvedValue({
+			ok: true,
+			config: {
+				agentId: "pi",
+				provider: "my-provider",
+				model: "qwen2.5-coder:32b",
+				baseUrl: "http://localhost:8000/v1",
+				apiKey: "secret-key",
+			},
 		});
 
 		await act(async () => {
@@ -1005,7 +959,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -1034,23 +987,20 @@ describe("useRuntimeSettingsKanbanController", () => {
 			).toEqual({ ok: true });
 		});
 
-		expect(addKanbanProviderMock).toHaveBeenCalledWith("workspace-1", {
-			providerId: "my-provider",
-			name: "My Provider",
+		expect(saveAgentProviderConfigMock).toHaveBeenCalledWith("workspace-1", "pi", expect.objectContaining({
+			agentId: "pi",
+			provider: "my-provider",
 			baseUrl: "http://localhost:8000/v1",
 			apiKey: "secret-key",
-			models: ["qwen2.5-coder:32b"],
-			defaultModelId: "qwen2.5-coder:32b",
-			modelsSourceUrl: null,
-			capabilities: ["tools", "streaming"],
-		});
+			model: "qwen2.5-coder:32b",
+		}));
 		expect(fetchKanbanProviderCatalogMock).toHaveBeenLastCalledWith("workspace-1");
 		expect(fetchKanbanProviderModelsMock).toHaveBeenLastCalledWith("workspace-1", "my-provider");
 		expect(requireSnapshot(latestSnapshot).providerId).toBe("my-provider");
 		expect(requireSnapshot(latestSnapshot).modelId).toBe("qwen2.5-coder:32b");
 		expect(requireSnapshot(latestSnapshot).baseUrl).toBe("http://localhost:8000/v1");
 		expect(requireSnapshot(latestSnapshot).apiKeyConfigured).toBe(true);
-		expect(requireSnapshot(latestSnapshot).providerCatalogIds).toEqual(["cline", "my-provider"]);
+		expect(requireSnapshot(latestSnapshot).providerCatalogIds).toEqual(["cline"]);
 		expect(requireSnapshot(latestSnapshot).providerModelIds).toEqual(["qwen2.5-coder:32b"]);
 		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(false);
 	});
@@ -1094,7 +1044,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -1169,7 +1118,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -1227,7 +1175,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -1252,17 +1199,13 @@ describe("useRuntimeSettingsKanbanController", () => {
 			baseUrl: "https://openrouter.ai/api",
 		});
 		let latestSnapshot: HookSnapshot | null = null;
-		saveKanbanProviderSettingsMock.mockResolvedValue({
-			providerId: "cline",
-			modelId: "claude-sonnet-4-6",
-			baseUrl: null,
-			reasoningEffort: null,
-			apiKeyConfigured: false,
-			oauthProvider: "cline",
-			oauthAccessTokenConfigured: false,
-			oauthRefreshTokenConfigured: false,
-			oauthAccountId: null,
-			oauthExpiresAt: null,
+		saveAgentProviderConfigMock.mockResolvedValue({
+			ok: true,
+			config: {
+				agentId: "pi",
+				provider: "cline",
+				model: "gpt-5",
+			},
 		});
 
 		await act(async () => {
@@ -1270,7 +1213,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -1289,13 +1231,11 @@ describe("useRuntimeSettingsKanbanController", () => {
 			expect(await requireSnapshot(latestSnapshot).saveProviderSettings()).toEqual({ ok: true });
 		});
 
-		expect(saveKanbanProviderSettingsMock).toHaveBeenCalledWith("workspace-1", {
-			providerId: "cline",
-			modelId: "gpt-5",
-			apiKey: null,
-			baseUrl: null,
-			reasoningEffort: null,
-		});
+		expect(saveAgentProviderConfigMock).toHaveBeenCalledWith("workspace-1", "pi", expect.objectContaining({
+			agentId: "pi",
+			provider: "cline",
+			model: "gpt-5",
+		}));
 		expect(requireSnapshot(latestSnapshot).baseUrl).toBe("");
 	});
 
@@ -1331,7 +1271,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
@@ -1395,7 +1334,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 				<HookHarness
 					open={true}
 					workspaceId="workspace-1"
-					selectedAgentId="pi"
 					config={config}
 					onSnapshot={(snapshot) => {
 						latestSnapshot = snapshot;
