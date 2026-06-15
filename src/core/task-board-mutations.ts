@@ -4,10 +4,11 @@ import type {
 	RuntimeBoardColumnId,
 	RuntimeBoardData,
 	RuntimeBoardDependency,
-	RuntimeTaskAutoReviewMode,
 	RuntimeTaskAgentSettings,
+	RuntimeTaskAutoReviewMode,
 	RuntimeTaskImage,
 } from "./api-contract";
+import { safeRandomUUID } from "./safe-uuid";
 import { createUniqueTaskId } from "./task-id";
 import { resolveTaskTitle } from "./task-title";
 
@@ -122,7 +123,7 @@ function collectTaskIds(board: RuntimeBoardData): Set<string> {
 }
 
 function createDependencyId(): string {
-	return crypto.randomUUID().replaceAll("-", "").slice(0, 8);
+	return safeRandomUUID().replaceAll("-", "").slice(0, 8);
 }
 
 function createDependencyPairKey(backlogTaskId: string, linkedTaskId: string): string {

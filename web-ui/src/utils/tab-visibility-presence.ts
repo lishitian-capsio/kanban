@@ -1,3 +1,5 @@
+import { safeRandomUUID } from "@runtime-safe-uuid";
+
 import { LocalStorageKey, readLocalStorageItem, writeLocalStorageItem } from "@/storage/local-storage-store";
 
 const TAB_VISIBILITY_PRESENCE_STORAGE_KEY = LocalStorageKey.TabVisibilityPresence;
@@ -61,10 +63,7 @@ function pruneStaleEntries(
 }
 
 export function createTabPresenceId(): string {
-	if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-		return crypto.randomUUID();
-	}
-	return `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+	return safeRandomUUID();
 }
 
 export function markTabVisible(tabId: string, workspaceId: string | null | undefined): void {

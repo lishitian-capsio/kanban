@@ -51,9 +51,21 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 
+// Simulate a non-secure browsing context (plain HTTP + non-localhost): the
+// browser leaves crypto.randomUUID undefined but still exposes
+// crypto.getRandomValues. Delegate getRandomValues to the real implementation
+// so the uuid fallback keeps real entropy.
+function stubNonSecureContext(): void {
+	const realCrypto = globalThis.crypto;
+	vi.stubGlobal("crypto", {
+		getRandomValues: (array: Uint8Array) => realCrypto.getRandomValues(array),
+		randomUUID: undefined,
+	});
+}
+
 describe("board dependency state", () => {
 	it("creates tasks when randomUUID is unavailable", () => {
-		vi.stubGlobal("crypto", { randomUUID: undefined });
+		stubNonSecureContext();
 
 		const board = addTaskToColumn(createInitialBoardData(), "backlog", {
 			prompt: "Task A",
@@ -65,17 +77,36 @@ describe("board dependency state", () => {
 		expect(backlogCards[0]?.id).toHaveLength(5);
 	});
 
+	it("creates task dependencies when randomUUID is unavailable", () => {
+		stubNonSecureContext();
+
+		const fixture = createBacklogBoard(["Task A", "Task B"]);
+		const taskA = requireTaskId(fixture.taskIdByPrompt["Task A"], "Task A");
+		const taskB = requireTaskId(fixture.taskIdByPrompt["Task B"], "Task B");
+		const movedA = moveTaskToColumn(fixture.board, taskA, "in_progress");
+
+		const linked = addTaskDependency(movedA.board, taskA, taskB);
+
+		expect(linked.added).toBe(true);
+		expect(linked.dependency?.id).toMatch(/^[0-9a-f]{8}$/i);
+	});
+
 	it("uses random entropy when randomUUID is unavailable", () => {
-		vi.stubGlobal("crypto", { randomUUID: undefined });
-		vi.spyOn(Math, "random").mockReturnValue(0.123456789);
+		stubNonSecureContext();
 
 		const board = addTaskToColumn(createInitialBoardData(), "backlog", {
 			prompt: "Task A",
 			baseRef: "main",
 		});
-		const backlogCards = board.columns.find((column) => column.id === "backlog")?.cards ?? [];
+		const second = addTaskToColumn(board, "backlog", {
+			prompt: "Task B",
+			baseRef: "main",
+		});
+		const backlogCards = second.columns.find((column) => column.id === "backlog")?.cards ?? [];
 
-		expect(backlogCards[0]?.id).toBe("4fzzz");
+		// Not a timestamp-derived id, and not colliding across tasks.
+		expect(backlogCards[0]?.id).toHaveLength(5);
+		expect(backlogCards[0]?.id).not.toBe(backlogCards[1]?.id);
 	});
 
 	it("prevents duplicate links in either direction", () => {

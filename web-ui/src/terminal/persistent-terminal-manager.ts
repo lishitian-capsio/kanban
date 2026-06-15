@@ -1,3 +1,4 @@
+import { safeRandomUUID } from "@runtime-safe-uuid";
 import { ClipboardAddon } from "@xterm/addon-clipboard";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -50,10 +51,7 @@ interface EnsurePersistentTerminalInput extends PersistentTerminalAppearance {
 }
 
 function generateTerminalClientId(): string {
-	if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-		return crypto.randomUUID();
-	}
-	return `terminal-${Math.random().toString(36).slice(2, 10)}`;
+	return safeRandomUUID();
 }
 
 function getTerminalIoWebSocketUrl(taskId: string, workspaceId: string, clientId: string): string {

@@ -1,4 +1,5 @@
 import type { DropResult } from "@hello-pangea/dnd";
+import { safeRandomUUID } from "@runtime-safe-uuid";
 import { createShortTaskId } from "@runtime-task-id";
 import * as runtimeTaskState from "@runtime-task-state";
 
@@ -67,10 +68,7 @@ function normalizeColumnId(id: string): BoardColumnId | null {
 }
 
 function createBrowserUuid(): string {
-	if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-		return crypto.randomUUID();
-	}
-	return Math.random().toString(36).slice(2, 12);
+	return safeRandomUUID();
 }
 
 function normalizeTaskImages(rawImages: unknown): TaskImage[] | undefined {
@@ -571,8 +569,7 @@ export function applyTaskDetailAgentSettingsSelection(
 		return { board, updated: false };
 	}
 
-	const hasExplicitTaskAgentSettings =
-		selection.card.agentId === "pi" || selection.card.agentSettings !== undefined;
+	const hasExplicitTaskAgentSettings = selection.card.agentId === "pi" || selection.card.agentSettings !== undefined;
 	if (!hasExplicitTaskAgentSettings) {
 		return { board, updated: false };
 	}
@@ -607,8 +604,7 @@ export function applyTaskDetailAgentSettingsChange(
 		return { board, updated: false };
 	}
 
-	const hasExplicitTaskAgentSettings =
-		selection.card.agentId === "pi" || selection.card.agentSettings !== undefined;
+	const hasExplicitTaskAgentSettings = selection.card.agentId === "pi" || selection.card.agentSettings !== undefined;
 	if (!hasExplicitTaskAgentSettings) {
 		return { board, updated: false };
 	}
