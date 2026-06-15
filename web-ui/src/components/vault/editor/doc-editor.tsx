@@ -97,6 +97,11 @@ export function DocEditor({
 							preview="edit"
 							visibleDragbar={false}
 							height="100%"
+							// Edit/Preview is handled by our own toggle above (preview delegates
+							// to KanbanMarkdownContent), so drop the package's redundant
+							// preview/live/edit/fullscreen group to declutter the toolbar and
+							// avoid it fighting the externally-controlled `preview` mode.
+							extraCommands={[]}
 							textareaProps={{
 								placeholder: "Write the document body in markdown…",
 								...(completionEnabled
