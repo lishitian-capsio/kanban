@@ -16,6 +16,7 @@ import {
 import type { KeyboardEvent, MouseEvent } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { showAppToast } from "@/components/app-toaster";
 import {
 	formatKanbanReasoningEffortLabel,
 	formatKanbanSelectedModelButtonText,
@@ -30,7 +31,8 @@ import { useTaskWorkspaceSnapshotValue } from "@/stores/workspace-metadata-store
 import type { BoardCard as BoardCardModel, BoardColumnId } from "@/types";
 import { getTaskAutoReviewCancelButtonLabel } from "@/types";
 import { formatPathForDisplay } from "@/utils/path-display";
-import { useMeasure } from "@/utils/react-use";
+import { useCopyToClipboard, useMeasure } from "@/utils/react-use";
+import { formatTaskIdChipLabel } from "@/utils/task-id";
 import {
 	clampTextWithInlineSuffix,
 	getTaskPromptDescription,
@@ -270,6 +272,8 @@ export function BoardCard({
 	defaultKanbanModelId?: string | null;
 }): React.ReactElement {
 	const [isHovered, setIsHovered] = useState(false);
+	const [, copyToClipboard] = useCopyToClipboard();
+	const taskIdChipLabel = useMemo(() => formatTaskIdChipLabel(card.id), [card.id]);
 	const [isEditingTitle, setIsEditingTitle] = useState(false);
 	const [draftTitle, setDraftTitle] = useState(card.title);
 	const titleInputRef = useRef<HTMLInputElement | null>(null);
@@ -339,6 +343,12 @@ export function BoardCard({
 	const stopEvent = (event: MouseEvent<HTMLElement>) => {
 		event.preventDefault();
 		event.stopPropagation();
+	};
+
+	const handleCopyTaskId = (event: MouseEvent<HTMLElement>) => {
+		stopEvent(event);
+		copyToClipboard(card.id);
+		showAppToast({ intent: "success", message: "已复制任务 ID", timeout: 2000 }, `copy-task-id:${card.id}`);
 	};
 
 	const submitTitle = () => {
@@ -565,6 +575,16 @@ export function BoardCard({
 						>
 							<div className="flex items-center gap-2" style={{ minHeight: 24 }}>
 								{statusMarker ? <div className="inline-flex items-center">{statusMarker}</div> : null}
+								<button
+									type="button"
+									title={`Task ID: ${card.id} (click to copy)`}
+									aria-label={`Copy task ID ${card.id}`}
+									onMouseDown={stopEvent}
+									onClick={handleCopyTaskId}
+									className="shrink-0 max-w-[10ch] truncate cursor-pointer rounded-sm bg-surface-3 px-1 py-0.5 font-mono text-[10px] leading-none text-text-tertiary hover:bg-surface-4 hover:text-text-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+								>
+									{taskIdChipLabel}
+								</button>
 								<div className="flex-1 min-w-0">
 									{isEditingTitle ? (
 										<input

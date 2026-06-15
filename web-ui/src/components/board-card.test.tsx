@@ -33,8 +33,17 @@ vi.mock("@/stores/workspace-metadata-store", () => ({
 	useTaskWorkspaceSnapshotValue: () => mockWorkspaceSnapshot,
 }));
 
+const mockShowAppToast = vi.fn();
+
+vi.mock("@/components/app-toaster", () => ({
+	showAppToast: (...args: unknown[]) => mockShowAppToast(...args),
+}));
+
+const mockCopyToClipboard = vi.fn();
+
 vi.mock("@/utils/react-use", () => ({
 	useMedia: () => false,
+	useCopyToClipboard: () => [{ value: undefined, error: undefined, noUserInteraction: true }, mockCopyToClipboard],
 	useMeasure: () => {
 		mockMeasureCallCount += 1;
 		const width = mockMeasureWidths[(mockMeasureCallCount - 1) % mockMeasureWidths.length] ?? 240;
@@ -147,6 +156,8 @@ describe("BoardCard", () => {
 		mockWorkspaceSnapshot = undefined;
 		mockMeasureWidths = [240, 240, 240];
 		mockMeasureCallCount = 0;
+		mockCopyToClipboard.mockClear();
+		mockShowAppToast.mockClear();
 		previousActEnvironment = (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
 			.IS_REACT_ACT_ENVIRONMENT;
 		(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -199,6 +210,42 @@ describe("BoardCard", () => {
 			button.textContent?.includes("Cancel Auto-"),
 		);
 		expect(nextCancelButton).toBeUndefined();
+	});
+
+	it("copies the full task id and toasts when the id chip is clicked", async () => {
+		const onClick = vi.fn();
+		await act(async () => {
+			root.render(<BoardCard card={createCard({ id: "0a42e" })} index={0} columnId="backlog" onClick={onClick} />);
+		});
+
+		const chip = container.querySelector('button[aria-label="Copy task ID 0a42e"]');
+		expect(chip).toBeInstanceOf(HTMLButtonElement);
+		expect(chip?.textContent?.trim()).toBe("0a42e");
+
+		await act(async () => {
+			chip?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			(chip as HTMLButtonElement | null)?.click();
+		});
+
+		expect(mockCopyToClipboard).toHaveBeenCalledWith("0a42e");
+		expect(mockShowAppToast).toHaveBeenCalledWith(
+			expect.objectContaining({ intent: "success", message: "已复制任务 ID" }),
+			"copy-task-id:0a42e",
+		);
+		// Copying the id must not select/open the card.
+		expect(onClick).not.toHaveBeenCalled();
+	});
+
+	it("renders the id chip on trash cards too", async () => {
+		await act(async () => {
+			root.render(
+				<TooltipProvider>
+					<BoardCard card={createCard({ id: "0a42e" })} index={0} columnId="trash" />
+				</TooltipProvider>,
+			);
+		});
+
+		expect(container.querySelector('button[aria-label="Copy task ID 0a42e"]')).toBeInstanceOf(HTMLButtonElement);
 	});
 
 	it("shows a loading state on the review done button while moving to done", async () => {
