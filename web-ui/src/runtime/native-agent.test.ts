@@ -5,6 +5,7 @@ import {
 	isKanbanProviderAuthenticated,
 	isNativeAgentSelected,
 	isTaskAgentSetupSatisfied,
+	resolveEffectiveTaskAgentId,
 	selectLatestTaskChatMessageForTask,
 	selectTaskChatMessagesForTask,
 } from "@/runtime/native-agent";
@@ -91,6 +92,67 @@ describe("native-agent helpers", () => {
 	it("treats pi as the native chat agent", () => {
 		expect(isNativeAgentSelected("pi")).toBe(true);
 		expect(isNativeAgentSelected("codex")).toBe(false);
+	});
+
+	describe("resolveEffectiveTaskAgentId", () => {
+		it("prefers the live session agent over card and selected", () => {
+			expect(
+				resolveEffectiveTaskAgentId({
+					sessionAgentId: "claude",
+					cardAgentId: "codex",
+					selectedAgentId: "pi",
+				}),
+			).toBe("claude");
+		});
+
+		it("falls back to the card agent when there is no session agent", () => {
+			expect(
+				resolveEffectiveTaskAgentId({
+					sessionAgentId: null,
+					cardAgentId: "claude",
+					selectedAgentId: "pi",
+				}),
+			).toBe("claude");
+			expect(
+				resolveEffectiveTaskAgentId({
+					sessionAgentId: undefined,
+					cardAgentId: "claude",
+					selectedAgentId: "pi",
+				}),
+			).toBe("claude");
+		});
+
+		it("falls back to the globally-selected agent when neither session nor card has one", () => {
+			expect(
+				resolveEffectiveTaskAgentId({
+					sessionAgentId: null,
+					cardAgentId: undefined,
+					selectedAgentId: "pi",
+				}),
+			).toBe("pi");
+		});
+
+		it("returns null when nothing resolves an agent", () => {
+			expect(
+				resolveEffectiveTaskAgentId({
+					sessionAgentId: null,
+					cardAgentId: undefined,
+					selectedAgentId: null,
+				}),
+			).toBeNull();
+		});
+
+		it("routes a claude task to the terminal transport even when pi is globally selected", () => {
+			// Regression: commit/auto-commit must follow the task's actual agent,
+			// not the global selection (otherwise the pi-only chat endpoint errors
+			// with "Task chat session is not running." for a claude task).
+			const effectiveAgentId = resolveEffectiveTaskAgentId({
+				sessionAgentId: "claude",
+				cardAgentId: undefined,
+				selectedAgentId: "pi",
+			});
+			expect(isNativeAgentSelected(effectiveAgentId)).toBe(false);
+		});
 	});
 
 	it("treats selected pi as task-ready when pi authentication is configured", () => {

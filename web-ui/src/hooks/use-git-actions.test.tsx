@@ -2,8 +2,14 @@ import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createIdleTaskSession } from "@/hooks/app-utils";
 import { type UseGitActionsResult, useGitActions } from "@/hooks/use-git-actions";
-import type { RuntimeConfigResponse, RuntimeTaskWorkspaceInfoResponse } from "@/runtime/types";
+import type {
+	RuntimeAgentId,
+	RuntimeConfigResponse,
+	RuntimeTaskSessionSummary,
+	RuntimeTaskWorkspaceInfoResponse,
+} from "@/runtime/types";
 import { clearTaskWorkspaceInfo, clearTaskWorkspaceSnapshot } from "@/stores/workspace-metadata-store";
 import type { BoardData } from "@/types";
 
@@ -134,20 +140,33 @@ function createWorkspaceInfo(): RuntimeTaskWorkspaceInfoResponse {
 	};
 }
 
+function createTaskSession(taskId: string, agentId: RuntimeAgentId): RuntimeTaskSessionSummary {
+	return {
+		...createIdleTaskSession(taskId),
+		agentId,
+		state: "awaiting_review",
+	};
+}
+
 function HookHarness({
 	onSnapshot,
 	sendTaskSessionInput,
 	sendTaskChatMessage,
+	selectedAgentId = "pi",
+	taskSessions = {},
 }: {
 	onSnapshot: (snapshot: HookSnapshot) => void;
 	sendTaskSessionInput: Parameters<typeof useGitActions>[0]["sendTaskSessionInput"];
 	sendTaskChatMessage: Parameters<typeof useGitActions>[0]["sendTaskChatMessage"];
+	selectedAgentId?: RuntimeConfigResponse["selectedAgentId"];
+	taskSessions?: Record<string, RuntimeTaskSessionSummary>;
 }): null {
 	const gitActions = useGitActions({
 		currentProjectId: "project-1",
 		board: createBoard(),
 		selectedCard: null,
-		runtimeProjectConfig: createRuntimeConfig("pi"),
+		runtimeProjectConfig: createRuntimeConfig(selectedAgentId),
+		taskSessions,
 		sendTaskSessionInput,
 		sendTaskChatMessage,
 		fetchTaskWorkspaceInfo: async () => createWorkspaceInfo(),
@@ -229,6 +248,49 @@ describe("useGitActions", () => {
 
 		expect(sendTaskChatMessage).toHaveBeenCalledWith("task-1", expect.any(String), { mode: "act" });
 		expect(sendTaskSessionInput).not.toHaveBeenCalled();
+		expect(showAppToastMock).not.toHaveBeenCalled();
+	});
+
+	it("routes commit to the terminal session when the task's agent is terminal-class, even if pi is globally selected", async () => {
+		// Regression: a claude task in review must commit through the terminal
+		// input path, not the pi-only chat endpoint (which would error with
+		// "Task chat session is not running.").
+		const sendTaskSessionInput = vi.fn(async () => ({ ok: true }));
+		const sendTaskChatMessage = vi.fn(async () => ({ ok: true }));
+		let latestSnapshot: HookSnapshot | null = null;
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					selectedAgentId="pi"
+					taskSessions={{ "task-1": createTaskSession("task-1", "claude") }}
+					sendTaskSessionInput={sendTaskSessionInput}
+					sendTaskChatMessage={sendTaskChatMessage}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await Promise.resolve();
+		});
+
+		if (latestSnapshot === null) {
+			throw new Error("Expected a hook snapshot.");
+		}
+
+		await act(async () => {
+			latestSnapshot?.handleAgentCommitTask("task-1");
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+
+		expect(sendTaskChatMessage).not.toHaveBeenCalled();
+		expect(sendTaskSessionInput).toHaveBeenCalledWith("task-1", expect.any(String), {
+			appendNewline: false,
+			mode: "paste",
+		});
 		expect(showAppToastMock).not.toHaveBeenCalled();
 	});
 });

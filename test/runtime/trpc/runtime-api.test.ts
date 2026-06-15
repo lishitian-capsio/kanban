@@ -1444,6 +1444,70 @@ describe("createRuntimeApi startTaskSession", () => {
 		expect(piTaskSessionService.cancelTaskTurn).toHaveBeenCalledWith("task-1");
 	});
 
+	it("falls back to the terminal manager when pi has no session (terminal-class agent)", async () => {
+		const terminalSummary = createSummary({ agentId: "claude", pid: 4321 });
+		const latestTerminalMessage = {
+			id: "terminal-message-1",
+			role: "assistant" as const,
+			content: "Committed.",
+			createdAt: Date.now(),
+		};
+		const terminalManager = {
+			writeInput: vi.fn(() => terminalSummary),
+			listMessages: vi.fn(() => [latestTerminalMessage]),
+		};
+		// pi owns nothing for a claude task: send + rebind both yield null.
+		const piTaskSessionService = createPiTaskSessionServiceMock();
+
+		const api = createTestRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => terminalManager as never),
+			getScopedPiTaskSessionService: vi.fn(async () => piTaskSessionService as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+
+		const response = await api.sendTaskChatMessage(
+			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
+			{ taskId: "task-1", text: "commit please" },
+		);
+
+		expect(response.ok).toBe(true);
+		expect(response.summary).toEqual(terminalSummary);
+		expect(response.message).toEqual(latestTerminalMessage);
+		expect(terminalManager.writeInput).toHaveBeenCalledWith("task-1", Buffer.from("commit please\r", "utf8"));
+		expect(piTaskSessionService.rebindPersistedTaskSession).toHaveBeenCalledWith("task-1");
+	});
+
+	it("reports the chat session as not running when neither pi nor terminal owns the task", async () => {
+		const terminalManager = {
+			writeInput: vi.fn(() => null),
+			listMessages: vi.fn(() => []),
+		};
+		const piTaskSessionService = createPiTaskSessionServiceMock();
+
+		const api = createTestRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => terminalManager as never),
+			getScopedPiTaskSessionService: vi.fn(async () => piTaskSessionService as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+
+		const response = await api.sendTaskChatMessage(
+			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
+			{ taskId: "task-1", text: "commit please" },
+		);
+
+		expect(response.ok).toBe(false);
+		expect(response.error).toBe("Task chat session is not running.");
+		expect(terminalManager.writeInput).toHaveBeenCalledWith("task-1", Buffer.from("commit please\r", "utf8"));
+	});
+
 	it("handles clear slash commands without sending them to the model", async () => {
 		const summary = createSummary({ agentId: "pi", pid: null, state: "idle" });
 		const piTaskSessionService = createPiTaskSessionServiceMock();

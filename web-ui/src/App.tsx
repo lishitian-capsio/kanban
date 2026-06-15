@@ -387,6 +387,7 @@ export default function App(): ReactElement {
 		board,
 		selectedCard,
 		runtimeProjectConfig,
+		taskSessions: sessions,
 		sendTaskSessionInput,
 		sendTaskChatMessage,
 		fetchTaskWorkspaceInfo,

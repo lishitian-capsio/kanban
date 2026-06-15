@@ -11,6 +11,21 @@ export function isNativeAgentSelected(agentId: RuntimeAgentId | null | undefined
 	return agentId === "pi";
 }
 
+/**
+ * Resolve the agent that actually backs a task's session, preferring the live
+ * session summary, then the card's stored agent, then the globally-selected
+ * agent. Mirrors the chat-panel resolution so per-task routing (kanban chat vs
+ * terminal PTY) is consistent across the UI instead of keying off the global
+ * `selectedAgentId`.
+ */
+export function resolveEffectiveTaskAgentId(input: {
+	sessionAgentId: RuntimeAgentId | null | undefined;
+	cardAgentId: RuntimeAgentId | null | undefined;
+	selectedAgentId: RuntimeAgentId | null | undefined;
+}): RuntimeAgentId | null {
+	return input.sessionAgentId ?? input.cardAgentId ?? input.selectedAgentId ?? null;
+}
+
 export function getRuntimeKanbanProviderSettings(
 	config: Pick<RuntimeConfigResponse, "kanbanProviderSettings"> | null | undefined,
 ): RuntimeKanbanProviderSettings {

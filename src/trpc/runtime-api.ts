@@ -906,6 +906,24 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 							summary = await piService.sendTaskSessionInput(body.taskId, body.text, requestedMode, body.images);
 						}
 						if (!summary) {
+							// Fall back to the terminal manager: CLI/terminal agents
+							// (claude/codex/...) are not tracked by the pi service, so route
+							// the input to the live PTY instead of hard-failing. Mirrors the
+							// agent-agnostic fallback already in getTaskChatMessages /
+							// sendTaskSessionInput. The text is submitted with a trailing CR.
+							const terminalManager = await deps.getScopedTerminalManager(workspaceScope);
+							const terminalSummary = terminalManager.writeInput(
+								body.taskId,
+								Buffer.from(`${body.text}\r`, "utf8"),
+							);
+							if (terminalSummary) {
+								const latestTerminalMessage = terminalManager.listMessages(body.taskId).at(-1) ?? null;
+								return {
+									ok: true,
+									summary: terminalSummary,
+									message: latestTerminalMessage,
+								};
+							}
 							return {
 								ok: false,
 								summary: null,

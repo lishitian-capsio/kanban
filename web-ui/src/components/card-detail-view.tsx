@@ -17,7 +17,7 @@ import { ResizableBottomPane } from "@/resize/resizable-bottom-pane";
 import { ResizeHandle } from "@/resize/resize-handle";
 import { useCardDetailLayout } from "@/resize/use-card-detail-layout";
 import { useResizeDrag } from "@/resize/use-resize-drag";
-import { isNativeAgentSelected } from "@/runtime/native-agent";
+import { isNativeAgentSelected, resolveEffectiveTaskAgentId } from "@/runtime/native-agent";
 import type {
 	RuntimeAgentId,
 	RuntimeReasoningEffort,
@@ -512,7 +512,11 @@ export function CardDetailView({
 	const detailDiffFileTreePanelFlex = `0 0 ${detailDiffFileTreePanelPercent}`;
 	const showMoveToTrashActions = selection.column.id === "review" || selection.column.id === "in_progress";
 	const isTaskTerminalEnabled = selection.column.id === "in_progress" || selection.column.id === "review";
-	const effectiveTaskAgentId = sessionSummary?.agentId ?? selection.card.agentId ?? selectedAgentId;
+	const effectiveTaskAgentId = resolveEffectiveTaskAgentId({
+		sessionAgentId: sessionSummary?.agentId,
+		cardAgentId: selection.card.agentId,
+		selectedAgentId,
+	});
 	const showKanbanAgentChatPanel = isNativeAgentSelected(effectiveTaskAgentId);
 	const availablePaths = useMemo(() => {
 		if (!runtimeFiles || runtimeFiles.length === 0) {

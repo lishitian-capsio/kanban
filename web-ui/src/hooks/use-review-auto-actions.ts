@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 
+import { type AutoReviewFailure, shouldSkipAfterFailure } from "@/git-actions/auto-review-retry";
 import type { TaskGitAction } from "@/git-actions/build-task-git-action-prompt";
 import { findCardSelection } from "@/state/board-state";
 import { getTaskWorkspaceSnapshot, subscribeToAnyTaskMetadata } from "@/stores/workspace-metadata-store";
@@ -44,6 +45,10 @@ export function useReviewAutoActions({
 	const runAutoReviewGitActionRef = useRef(runAutoReviewGitAction);
 	const requestMoveTaskToTrashRef = useRef(requestMoveTaskToTrash);
 	const awaitingCleanActionByTaskIdRef = useRef<Record<string, TaskGitAction>>({});
+	// Tracks the most recent auto-review action that FAILED for a task, so we do
+	// not retry it on a tight loop. Cleared when the diff changes, the action
+	// changes, the task leaves review, or auto-review is toggled off.
+	const failedAutoActionByTaskIdRef = useRef<Record<string, AutoReviewFailure>>({});
 	const timerByTaskIdRef = useRef<Record<string, number>>({});
 	type ScheduledAutoReviewAction = TaskAutoReviewMode | "move_to_done_after_git_action";
 	const scheduledActionByTaskIdRef = useRef<Record<string, ScheduledAutoReviewAction>>({});
@@ -75,6 +80,7 @@ export function useReviewAutoActions({
 			window.clearTimeout(timer);
 		}
 		awaitingCleanActionByTaskIdRef.current = {};
+		failedAutoActionByTaskIdRef.current = {};
 		timerByTaskIdRef.current = {};
 		scheduledActionByTaskIdRef.current = {};
 		moveToTrashInFlightTaskIdsRef.current.clear();
@@ -144,11 +150,17 @@ export function useReviewAutoActions({
 					clearAutoReviewTimer(taskId);
 				}
 			}
+			for (const taskId of Object.keys(failedAutoActionByTaskIdRef.current)) {
+				if (!reviewTaskIds.has(taskId)) {
+					delete failedAutoActionByTaskIdRef.current[taskId];
+				}
+			}
 
 			for (const reviewTask of reviewCardsForAutomation) {
 				const autoReviewEnabled = isTaskAutoReviewEnabled(reviewTask);
 				if (!autoReviewEnabled) {
 					delete awaitingCleanActionByTaskIdRef.current[reviewTask.id];
+					delete failedAutoActionByTaskIdRef.current[reviewTask.id];
 					clearAutoReviewTimer(reviewTask.id);
 					continue;
 				}
@@ -207,6 +219,19 @@ export function useReviewAutoActions({
 					continue;
 				}
 
+				// Stop retrying an action that already failed for this same diff: a
+				// broken session (e.g. a not-running agent) must not spin a tight
+				// retry loop that floods error toasts. A new diff or a different
+				// action clears the block below and allows a fresh attempt.
+				const recordedFailure = failedAutoActionByTaskIdRef.current[reviewTask.id];
+				if (shouldSkipAfterFailure(recordedFailure, autoReviewMode, changedFiles ?? 0)) {
+					clearAutoReviewTimer(reviewTask.id);
+					continue;
+				}
+				if (recordedFailure) {
+					delete failedAutoActionByTaskIdRef.current[reviewTask.id];
+				}
+
 				scheduleAutoReviewAction(reviewTask.id, autoReviewMode, () => {
 					const latestSelection = findCardSelection(boardRef.current, reviewTask.id);
 					if (!latestSelection || latestSelection.column.id !== "review") {
@@ -223,6 +248,13 @@ export function useReviewAutoActions({
 					void runAutoReviewGitActionRef.current(reviewTask.id, latestMode).then((triggered) => {
 						if (!triggered && awaitingCleanActionByTaskIdRef.current[reviewTask.id] === latestMode) {
 							delete awaitingCleanActionByTaskIdRef.current[reviewTask.id];
+							// Record the failure so we do not immediately re-arm the same
+							// action for the same diff. Re-read changedFiles at failure time
+							// so the signature reflects the working tree we actually acted on.
+							failedAutoActionByTaskIdRef.current[reviewTask.id] = {
+								action: latestMode,
+								changedFiles: getTaskWorkspaceSnapshot(reviewTask.id)?.changedFiles ?? 0,
+							};
 						}
 					});
 				});
