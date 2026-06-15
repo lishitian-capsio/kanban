@@ -3,24 +3,27 @@
 // When a CLI agent has a non-official provider selected, this module builds the
 // env vars needed to redirect the agent's API calls to the chosen provider.
 //
-// For Claude Code, we write to ~/.claude/settings.json (CC Switch approach)
-// instead of injecting env vars, to avoid OAuth/API key conflicts.
+// All agents (including Claude Code) use per-spawn env injection — we never write
+// a global ~/.claude/settings.json. This lets multiple Claude sessions each use
+// their own provider in parallel, and keeps them free of any inherited shell
+// ANTHROPIC_* variables.
 //
-// Two injection modes:
-//   1. Settings file (Claude Code) — write to ~/.claude/settings.json
-//   2. Direct env var override (Codex, Droid, etc.) — set *_BASE_URL and *_API_KEY
+// An agent registers a *set* of providers; a session picks one by `providerId`
+// at launch. When no provider is selected (or the selected one is unknown) we
+// fall back to the agent's default provider, and finally to the official
+// provider (no override) when the agent has none configured.
 //
-// Auth-gateway translation (when extra provider speaks a different protocol)
+// Auth-gateway translation (when an extra provider speaks a different protocol)
 // is planned for later.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { type AgentProviderConfig, getAgentProviderConfig } from "../agent-sdk/kanban/agent-provider-config";
 import {
-	getAgentProviderConfig,
-	type AgentProviderConfig,
-} from "../agent-sdk/kanban/agent-provider-config";
-import { resolveProtocolEnvVars, getBaseUrlForProtocol } from "../agent-sdk/kanban/provider-protocol";
+	AGENT_PROTOCOL_COMPATIBILITY,
+	type ProtocolConfig,
+	type ProviderProtocol,
+	resolveAnthropicApiKeyEnvVar,
+	resolveProtocolEnvVars,
+} from "../agent-sdk/kanban/provider-protocol";
 
 // ------------------------------------------------------------------ types
 
@@ -31,98 +34,6 @@ export interface AgentProviderEnv {
 	usesCustomProvider: boolean;
 }
 
-interface ClaudeSettingsFile {
-	env?: {
-		ANTHROPIC_BASE_URL?: string;
-		ANTHROPIC_API_KEY?: string;
-		ANTHROPIC_MODEL?: string;
-	};
-}
-
-// ------------------------------------------------------------------ Claude Code settings
-
-function getClaudeConfigDir(): string {
-	return join(homedir(), ".claude");
-}
-
-function getClaudeSettingsPath(): string {
-	return join(getClaudeConfigDir(), "settings.json");
-}
-
-/**
- * Write provider config to ~/.claude/settings.json (CC Switch approach).
- *
- * When a custom provider is selected, we write both ANTHROPIC_BASE_URL and
- * ANTHROPIC_API_KEY. The API key is required because Claude Code's OAuth token
- * only works with the official api.anthropic.com endpoint — custom endpoints
- * reject it with 403. The "Both claude.ai and ANTHROPIC_API_KEY set" warning
- * is informational; the API key takes precedence and the custom endpoint works.
- *
- * When switching back to the official provider, clearClaudeSettings() removes
- * these keys so OAuth works normally again.
- */
-function writeClaudeSettings(config: AgentProviderConfig): void {
-	const configDir = getClaudeConfigDir();
-	const settingsPath = getClaudeSettingsPath();
-	if (!existsSync(configDir)) {
-		mkdirSync(configDir, { recursive: true });
-	}
-
-	let current: ClaudeSettingsFile = {};
-	if (existsSync(settingsPath)) {
-		try {
-			current = JSON.parse(readFileSync(settingsPath, "utf8")) as ClaudeSettingsFile;
-		} catch {
-			// corrupted file, start fresh
-			current = {};
-		}
-	}
-
-	current.env = {
-		...current.env,
-	};
-
-	// Use anthropic protocol's baseUrl if available, fall back to legacy baseUrl
-	const anthropicBaseUrl = config.protocols
-		? getBaseUrlForProtocol(config.protocols, "anthropic")
-		: undefined;
-	const baseUrl = anthropicBaseUrl || config.baseUrl;
-
-	if (baseUrl) {
-		current.env.ANTHROPIC_BASE_URL = baseUrl;
-	}
-	if (config.apiKey) {
-		current.env.ANTHROPIC_API_KEY = config.apiKey;
-	}
-
-	writeFileSync(settingsPath, JSON.stringify(current, null, 2));
-}
-
-/**
- * Clear provider config from ~/.claude/settings.json when switching back to official.
- */
-function clearClaudeSettings(): void {
-	const settingsPath = getClaudeSettingsPath();
-	if (!existsSync(settingsPath)) {
-		return;
-	}
-
-	try {
-		const current = JSON.parse(readFileSync(settingsPath, "utf8")) as ClaudeSettingsFile;
-		if (current.env) {
-			delete current.env.ANTHROPIC_BASE_URL;
-			delete current.env.ANTHROPIC_API_KEY;
-			// If env is now empty, remove it entirely
-			if (Object.keys(current.env).length === 0) {
-				delete current.env;
-			}
-		}
-		writeFileSync(settingsPath, JSON.stringify(current, null, 2));
-	} catch {
-		// ignore errors
-	}
-}
-
 // ------------------------------------------------------------------ public API
 
 /**
@@ -130,31 +41,33 @@ function clearClaudeSettings(): void {
  * provider config. If the agent has a non-official provider selected and that
  * provider has a baseUrl, the env vars redirect to it.
  *
- * For Claude Code: writes to ~/.claude/settings.json instead of env vars.
- * For other agents: returns env vars for direct injection.
+ * `providerId` selects which of the agent's registered providers to use; when
+ * omitted (or unknown) the agent's default provider is used.
  *
  * Returns `{ env: {}, usesCustomProvider: false }` when the official provider
- * is selected or no custom provider config exists.
+ * is selected, no custom provider config exists, or the provider's protocols
+ * are incompatible with the agent.
  */
-export async function buildAgentProviderEnv(agentId: string): Promise<AgentProviderEnv> {
-	const config = getAgentProviderConfig(agentId);
+export async function buildAgentProviderEnv(agentId: string, providerId?: string): Promise<AgentProviderEnv> {
+	// Selected provider, falling back to the agent's default when the selection
+	// is missing or unknown.
+	const config =
+		(providerId !== undefined ? getAgentProviderConfig(agentId, providerId) : null) ??
+		getAgentProviderConfig(agentId);
 
 	// No per-agent config → no custom provider override.
 	if (!config) {
-		if (agentId === "claude") {
-			clearClaudeSettings();
-		}
 		return { env: {}, usesCustomProvider: false };
 	}
 
-	// Claude Code: write to settings file (CC Switch approach)
-	if (agentId === "claude") {
-		writeClaudeSettings(config);
-		return { env: {}, usesCustomProvider: true };
-	}
+	// Resolve env vars based on provider protocols + agent compatibility.
+	// When the config predates protocols, fall back to the agent's primary
+	// protocol (e.g. claude → anthropic, codex → openai) carrying the legacy
+	// baseUrl, rather than a blanket openai default that claude can't speak.
+	const agentProtocols = AGENT_PROTOCOL_COMPATIBILITY[agentId] ?? [];
+	const fallbackProtocol: ProviderProtocol = agentProtocols[0] ?? "openai";
+	const protocols: ProtocolConfig[] = config.protocols ?? [{ protocol: fallbackProtocol, baseUrl: config.baseUrl }];
 
-	// Other agents: resolve env vars based on provider protocols + agent compatibility
-	const protocols = config.protocols ?? [{ protocol: "openai" as const }];
 	const resolved = resolveProtocolEnvVars(protocols, agentId);
 	if (!resolved) {
 		// Agent not compatible with the provider's protocols —
@@ -167,11 +80,19 @@ export async function buildAgentProviderEnv(agentId: string): Promise<AgentProvi
 
 /**
  * Direct URL override: the custom provider speaks the same wire protocol as
- * the official one, so we just redirect *_BASE_URL to its endpoint and inject
- * the API key.
+ * the official one, so we redirect *_BASE_URL to its endpoint and inject the
+ * API key. For the Anthropic protocol the key goes to ANTHROPIC_AUTH_TOKEN
+ * (Bearer, default) or ANTHROPIC_API_KEY (x-api-key) per `apiKeyField`, and any
+ * configured model overrides are injected as ANTHROPIC_MODEL /
+ * ANTHROPIC_DEFAULT_{HAIKU,SONNET,OPUS}_MODEL.
  */
 function buildDirectOverrideEnv(
-	resolved: { baseUrlEnvVar: string; apiKeyEnvVar: string; resolvedBaseUrl: string | undefined },
+	resolved: {
+		baseUrlEnvVar: string;
+		apiKeyEnvVar: string;
+		resolvedBaseUrl: string | undefined;
+		matchedProtocol: ProviderProtocol;
+	},
 	config: AgentProviderConfig,
 ): AgentProviderEnv {
 	const env: Record<string, string | undefined> = {};
@@ -181,8 +102,30 @@ function buildDirectOverrideEnv(
 	if (baseUrl) {
 		env[resolved.baseUrlEnvVar] = baseUrl;
 	}
+
 	if (config.apiKey) {
-		env[resolved.apiKeyEnvVar] = config.apiKey;
+		const apiKeyEnvVar =
+			resolved.matchedProtocol === "anthropic"
+				? resolveAnthropicApiKeyEnvVar(config.apiKeyField)
+				: resolved.apiKeyEnvVar;
+		env[apiKeyEnvVar] = config.apiKey;
+	}
+
+	// Anthropic-only model overrides.
+	if (resolved.matchedProtocol === "anthropic") {
+		if (config.model) {
+			env.ANTHROPIC_MODEL = config.model;
+		}
+		const defaults = config.anthropicDefaultModels;
+		if (defaults?.haiku) {
+			env.ANTHROPIC_DEFAULT_HAIKU_MODEL = defaults.haiku;
+		}
+		if (defaults?.sonnet) {
+			env.ANTHROPIC_DEFAULT_SONNET_MODEL = defaults.sonnet;
+		}
+		if (defaults?.opus) {
+			env.ANTHROPIC_DEFAULT_OPUS_MODEL = defaults.opus;
+		}
 	}
 
 	return {

@@ -1,19 +1,24 @@
 // Agent-level provider configuration store.
 //
-// Each agent (Claude Code, Codex, Pi, etc.) has its own independent provider
-// configuration. An agent stores the full provider settings (apiKey, baseUrl,
-// model, protocols, etc.) directly — no global provider pool, no shared config.
+// Each agent (Claude Code, Codex, Pi, etc.) owns a *set* of named provider
+// configs plus a default. A session can pick any one of them by `providerId`
+// (the provider name) at launch, so two sessions of the same agent can each run
+// a different provider in parallel. Each provider config stores its full
+// settings (apiKey, baseUrl, model, protocols, etc.) — no global provider pool,
+// no cross-agent sharing.
 //
 // Storage: ~/.kanban/settings/agent_providers.json
 //
-// Switching the provider takes effect on the next request — no session restart.
+// The provider id within an agent is the (normalized) provider name, so an agent
+// can register e.g. "anthropic" and "my-relay" side by side. Adding/changing a
+// provider takes effect on the next session launch — no restart.
 
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { lockedFileSystem } from "../../fs/locked-file-system";
-import type { ProtocolConfig } from "./provider-protocol";
-import type { ProviderSettingsReasoning } from "./provider-types";
+import type { ApiKeyField, ProtocolConfig } from "./provider-protocol";
+import type { AnthropicDefaultModels, ProviderSettingsReasoning } from "./provider-types";
 
 // ------------------------------------------------------------------ types
 
@@ -34,6 +39,10 @@ export interface AgentProviderConfig {
 	baseUrl?: string;
 	/** Per-protocol configuration with independent base URLs. */
 	protocols?: ProtocolConfig[];
+	/** Which header the Anthropic-protocol key is sent under (defaults to auth_token). */
+	apiKeyField?: ApiKeyField;
+	/** Optional per-tier Anthropic model overrides (ANTHROPIC_DEFAULT_*_MODEL). */
+	anthropicDefaultModels?: AnthropicDefaultModels;
 	/** Reasoning/thinking settings. */
 	reasoning?: ProviderSettingsReasoning;
 	/** Custom HTTP headers to include in requests. */
@@ -48,8 +57,21 @@ export interface AgentProviderConfig {
 	gcp?: { projectId?: string; region?: string };
 }
 
+/**
+ * The set of provider configs an agent has registered, plus which one is the
+ * default (used when a session does not explicitly select a provider).
+ */
+export interface AgentProviderSet {
+	/** Agent id (normalized lowercase). */
+	agentId: string;
+	/** All registered provider configs for this agent. */
+	providers: AgentProviderConfig[];
+	/** Provider id (normalized provider name) of the default selection, if any. */
+	defaultProviderId?: string;
+}
+
 interface AgentProvidersFile {
-	agents: Record<string, AgentProviderConfig>;
+	agents: Record<string, AgentProviderSet>;
 }
 
 // ------------------------------------------------------------------ paths
@@ -69,6 +91,55 @@ export function resolveAgentProvidersPath(): string {
 
 let cachedState: AgentProvidersFile | null = null;
 
+/** Coerce one raw on-disk object into a validated AgentProviderConfig. */
+function validateConfig(agentId: string, config: Record<string, unknown>): AgentProviderConfig {
+	const c = config as Partial<AgentProviderConfig>;
+	return {
+		agentId,
+		provider: typeof c.provider === "string" ? c.provider : undefined,
+		model: typeof c.model === "string" ? c.model : undefined,
+		apiKey: typeof c.apiKey === "string" ? c.apiKey : undefined,
+		baseUrl: typeof c.baseUrl === "string" ? c.baseUrl : undefined,
+		protocols: Array.isArray(c.protocols) ? c.protocols : undefined,
+		apiKeyField: c.apiKeyField === "auth_token" || c.apiKeyField === "api_key" ? c.apiKeyField : undefined,
+		anthropicDefaultModels:
+			c.anthropicDefaultModels && typeof c.anthropicDefaultModels === "object"
+				? c.anthropicDefaultModels
+				: undefined,
+		reasoning: c.reasoning,
+		headers: c.headers,
+		timeout: typeof c.timeout === "number" ? c.timeout : undefined,
+		region: typeof c.region === "string" ? c.region : undefined,
+		aws: c.aws,
+		gcp: c.gcp,
+	};
+}
+
+/**
+ * Coerce one raw on-disk agent value into an AgentProviderSet.
+ *
+ * Backward-compat: the legacy on-disk shape stored a *single* provider config
+ * per agent (no `providers` array). Such a value is migrated in-memory into a
+ * one-element set whose default is that provider.
+ */
+function validateSet(agentId: string, value: unknown): AgentProviderSet | null {
+	if (!value || typeof value !== "object") {
+		return null;
+	}
+	const raw = value as Record<string, unknown>;
+	if (Array.isArray(raw.providers)) {
+		const providers = raw.providers
+			.filter((p): p is Record<string, unknown> => Boolean(p) && typeof p === "object")
+			.map((p) => validateConfig(agentId, p));
+		const defaultProviderId =
+			typeof raw.defaultProviderId === "string" ? normalizeProviderId(raw.defaultProviderId) : undefined;
+		return reconcileSet({ agentId, providers, defaultProviderId });
+	}
+	// Legacy single-config shape.
+	const legacy = validateConfig(agentId, raw);
+	return reconcileSet({ agentId, providers: [legacy], defaultProviderId: providerIdOf(legacy) });
+}
+
 function readStore(path: string): AgentProvidersFile {
 	if (!existsSync(path)) {
 		return { agents: {} };
@@ -77,23 +148,11 @@ function readStore(path: string): AgentProvidersFile {
 		const raw = readFileSync(path, "utf8");
 		const parsed = JSON.parse(raw) as Partial<AgentProvidersFile>;
 		if (parsed.agents && typeof parsed.agents === "object") {
-			const validated: Record<string, AgentProviderConfig> = {};
-			for (const [agentId, config] of Object.entries(parsed.agents)) {
-				if (config && typeof config === "object") {
-					validated[agentId] = {
-						agentId,
-						provider: typeof config.provider === "string" ? config.provider : undefined,
-						model: typeof config.model === "string" ? config.model : undefined,
-						apiKey: typeof config.apiKey === "string" ? config.apiKey : undefined,
-						baseUrl: typeof config.baseUrl === "string" ? config.baseUrl : undefined,
-						protocols: Array.isArray(config.protocols) ? config.protocols : undefined,
-						reasoning: config.reasoning,
-						headers: config.headers,
-						timeout: typeof config.timeout === "number" ? config.timeout : undefined,
-						region: typeof config.region === "string" ? config.region : undefined,
-						aws: config.aws,
-						gcp: config.gcp,
-					};
+			const validated: Record<string, AgentProviderSet> = {};
+			for (const [agentId, value] of Object.entries(parsed.agents)) {
+				const set = validateSet(normalizeAgentId(agentId), value);
+				if (set) {
+					validated[normalizeAgentId(agentId)] = set;
 				}
 			}
 			return { agents: validated };
@@ -128,44 +187,46 @@ function normalizeAgentId(agentId: string): string {
 	return agentId.trim().toLowerCase();
 }
 
-// ------------------------------------------------------------------ public API
+/** The provider id used to address a provider within an agent (its normalized name). */
+export function normalizeProviderId(providerId: string | undefined | null): string {
+	return (providerId ?? "").trim().toLowerCase();
+}
 
-/**
- * Get the provider config for a specific agent. Returns `null` if the agent
- * has not been configured yet.
- */
-export function getAgentProviderConfig(agentId: string): AgentProviderConfig | null {
-	const state = loadState();
-	const id = normalizeAgentId(agentId);
-	return state.agents[id] ?? null;
+/** Provider id of a config (its normalized provider name, or "default" when unnamed). */
+function providerIdOf(config: AgentProviderConfig): string {
+	return normalizeProviderId(config.provider) || "default";
 }
 
 /**
- * Save (overwrite) the full provider config for an agent.
+ * Ensure a set is internally consistent: drop empty provider lists' default and
+ * point `defaultProviderId` at an existing provider (the first when unset/stale).
  */
-export async function saveAgentProvider(agentId: string, config: AgentProviderConfig): Promise<void> {
-	const state = loadState();
-	const id = normalizeAgentId(agentId);
+function reconcileSet(set: AgentProviderSet): AgentProviderSet {
+	const providers = set.providers;
+	if (providers.length === 0) {
+		return { agentId: set.agentId, providers: [], defaultProviderId: undefined };
+	}
+	const ids = providers.map(providerIdOf);
+	const defaultProviderId =
+		set.defaultProviderId && ids.includes(set.defaultProviderId) ? set.defaultProviderId : ids[0];
+	return { agentId: set.agentId, providers, defaultProviderId };
+}
 
-	// Clean string fields
-	const cleaned: AgentProviderConfig = { ...config, agentId: id };
+/** Trim/normalize a provider config's string fields prior to persistence. */
+function cleanProviderConfig(agentId: string, config: AgentProviderConfig): AgentProviderConfig {
+	const cleaned: AgentProviderConfig = { ...config, agentId };
 	if (cleaned.provider !== undefined) {
-		const v = cleaned.provider.trim();
-		cleaned.provider = v || undefined;
+		cleaned.provider = cleaned.provider.trim() || undefined;
 	}
 	if (cleaned.model !== undefined) {
-		const v = cleaned.model.trim();
-		cleaned.model = v || undefined;
+		cleaned.model = cleaned.model.trim() || undefined;
 	}
 	if (cleaned.apiKey !== undefined) {
-		const v = cleaned.apiKey.trim();
-		cleaned.apiKey = v || undefined;
+		cleaned.apiKey = cleaned.apiKey.trim() || undefined;
 	}
 	if (cleaned.baseUrl !== undefined) {
-		const v = cleaned.baseUrl.trim();
-		cleaned.baseUrl = v || undefined;
+		cleaned.baseUrl = cleaned.baseUrl.trim() || undefined;
 	}
-	// Clean protocol configs: trim each baseUrl
 	if (cleaned.protocols) {
 		cleaned.protocols = cleaned.protocols.map((c) => {
 			const trimmed: ProtocolConfig = { protocol: c.protocol };
@@ -175,7 +236,6 @@ export async function saveAgentProvider(agentId: string, config: AgentProviderCo
 			}
 			return trimmed;
 		});
-		// Sync legacy baseUrl from first protocol config
 		const firstBaseUrl = cleaned.protocols[0]?.baseUrl;
 		if (firstBaseUrl && !cleaned.baseUrl) {
 			cleaned.baseUrl = firstBaseUrl;
@@ -184,35 +244,130 @@ export async function saveAgentProvider(agentId: string, config: AgentProviderCo
 	if (cleaned.reasoning) {
 		const r = { ...cleaned.reasoning };
 		if (typeof r.effort === "string") {
-			const v = r.effort.trim();
-			r.effort = v || undefined;
+			r.effort = r.effort.trim() || undefined;
 		}
-		if (r.enabled === undefined && r.effort === undefined && r.budgetTokens === undefined) {
-			cleaned.reasoning = undefined;
-		} else {
-			cleaned.reasoning = r;
-		}
+		cleaned.reasoning =
+			r.enabled === undefined && r.effort === undefined && r.budgetTokens === undefined ? undefined : r;
 	}
+	return cleaned;
+}
 
-	state.agents[id] = cleaned;
-	await writeStore(state);
+// ------------------------------------------------------------------ public API
+
+/**
+ * Get a single provider config for an agent.
+ *
+ * - With `providerId`: returns that exact provider, or `null` if the agent has
+ *   not registered it.
+ * - Without `providerId`: returns the agent's default provider, or `null` when
+ *   the agent has no providers configured.
+ */
+export function getAgentProviderConfig(agentId: string, providerId?: string): AgentProviderConfig | null {
+	const set = getAgentProviderSet(agentId);
+	if (!set || set.providers.length === 0) {
+		return null;
+	}
+	const targetId = providerId !== undefined ? normalizeProviderId(providerId) : set.defaultProviderId;
+	if (!targetId) {
+		return null;
+	}
+	return set.providers.find((p) => providerIdOf(p) === targetId) ?? null;
+}
+
+/** Get the full provider set (all registered providers + default) for an agent. */
+export function getAgentProviderSet(agentId: string): AgentProviderSet | null {
+	const state = loadState();
+	return state.agents[normalizeAgentId(agentId)] ?? null;
 }
 
 /**
- * Delete the provider config for an agent.
+ * Add or update a provider for an agent, keyed by its (normalized) provider
+ * name. The first provider registered for an agent becomes its default.
  */
-export async function deleteAgentProvider(agentId: string): Promise<void> {
+export async function saveAgentProvider(agentId: string, config: AgentProviderConfig): Promise<void> {
 	const state = loadState();
 	const id = normalizeAgentId(agentId);
-	delete state.agents[id];
+	const cleaned = cleanProviderConfig(id, config);
+	const cleanedId = providerIdOf(cleaned);
+
+	const existing = state.agents[id];
+	const providers = existing ? existing.providers.filter((p) => providerIdOf(p) !== cleanedId) : [];
+	providers.push(cleaned);
+	const defaultProviderId = existing?.defaultProviderId ?? cleanedId;
+
+	state.agents[id] = reconcileSet({ agentId: id, providers, defaultProviderId });
 	await writeStore(state);
 }
 
 /**
- * Get all configured agent providers (for listing in UI).
- * Only returns agents that have been explicitly configured — no defaults.
+ * Delete a provider config.
+ *
+ * - With `providerId`: removes just that provider (re-pointing the default to
+ *   another provider when the removed one was the default).
+ * - Without `providerId`: removes the agent's entire provider set.
+ */
+export async function deleteAgentProvider(agentId: string, providerId?: string): Promise<void> {
+	const state = loadState();
+	const id = normalizeAgentId(agentId);
+
+	if (providerId === undefined) {
+		delete state.agents[id];
+		await writeStore(state);
+		return;
+	}
+
+	const existing = state.agents[id];
+	if (!existing) {
+		return;
+	}
+	const targetId = normalizeProviderId(providerId);
+	const providers = existing.providers.filter((p) => providerIdOf(p) !== targetId);
+	const defaultProviderId = existing.defaultProviderId === targetId ? undefined : existing.defaultProviderId;
+	if (providers.length === 0) {
+		delete state.agents[id];
+	} else {
+		state.agents[id] = reconcileSet({ agentId: id, providers, defaultProviderId });
+	}
+	await writeStore(state);
+}
+
+/** Set which registered provider is the agent's default. No-op if unknown. */
+export async function setDefaultAgentProvider(agentId: string, providerId: string): Promise<void> {
+	const state = loadState();
+	const id = normalizeAgentId(agentId);
+	const existing = state.agents[id];
+	if (!existing) {
+		return;
+	}
+	const targetId = normalizeProviderId(providerId);
+	if (!existing.providers.some((p) => providerIdOf(p) === targetId)) {
+		return;
+	}
+	state.agents[id] = reconcileSet({ ...existing, defaultProviderId: targetId });
+	await writeStore(state);
+}
+
+/**
+ * Get the default provider config for every configured agent (back-compat shape
+ * for the legacy single-provider list view). Agents with no providers are
+ * omitted.
  */
 export function getAllAgentProviderConfigs(): Record<string, AgentProviderConfig> {
+	const state = loadState();
+	const result: Record<string, AgentProviderConfig> = {};
+	for (const [agentId, set] of Object.entries(state.agents)) {
+		const config = getAgentProviderConfig(agentId);
+		if (config) {
+			result[agentId] = config;
+		} else if (set.providers[0]) {
+			result[agentId] = set.providers[0];
+		}
+	}
+	return result;
+}
+
+/** Get the full provider set for every configured agent. */
+export function getAllAgentProviderSets(): Record<string, AgentProviderSet> {
 	const state = loadState();
 	return { ...state.agents };
 }
@@ -220,27 +375,4 @@ export function getAllAgentProviderConfigs(): Record<string, AgentProviderConfig
 /** Reset the in-memory cache (useful for tests). */
 export function resetAgentProviderConfigCache(): void {
 	cachedState = null;
-}
-
-// ------------------------------------------------------------------ deprecated stubs
-// Kept for backward compatibility until runtime-api.ts / app-router.ts are updated.
-
-/** @deprecated Use saveAgentProvider() instead. */
-export async function saveAgentProviderConfig(config: AgentProviderConfig): Promise<void> {
-	await saveAgentProvider(config.agentId, config);
-}
-
-/** @deprecated Will be removed. */
-export async function addProviderToAgent(_agentId: string, _providerId: string): Promise<void> {
-	// No-op in per-agent model.
-}
-
-/** @deprecated Will be removed. */
-export async function removeProviderFromAgent(_agentId: string, _providerId: string): Promise<void> {
-	// No-op in per-agent model.
-}
-
-/** @deprecated Will be removed. */
-export async function selectAgentProvider(_agentId: string, _providerId: string): Promise<void> {
-	// No-op in per-agent model.
 }

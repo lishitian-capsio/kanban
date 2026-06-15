@@ -5,6 +5,16 @@ export type ProviderProtocol = "anthropic" | "openai";
 export const PROVIDER_PROTOCOLS: readonly ProviderProtocol[] = ["anthropic", "openai"];
 
 /**
+ * Which header the Anthropic-protocol API key is sent under.
+ *   - `"auth_token"` → `ANTHROPIC_AUTH_TOKEN` (Bearer; what most relays/gateways expect)
+ *   - `"api_key"`    → `ANTHROPIC_API_KEY` (x-api-key; the official api.anthropic.com)
+ *
+ * Defaults to `"auth_token"` when unset.
+ */
+export type ApiKeyField = "auth_token" | "api_key";
+export const DEFAULT_API_KEY_FIELD: ApiKeyField = "auth_token";
+
+/**
  * Per-protocol configuration carrying the endpoint URL.
  * A provider may support multiple protocols, each with its own base URL.
  */
@@ -150,7 +160,12 @@ export function normalizeProtocolsForProvider(
 export function resolveProtocolEnvVars(
 	providerProtocols: ProtocolConfig[],
 	agentId: string,
-): { baseUrlEnvVar: string; apiKeyEnvVar: string; resolvedBaseUrl: string | undefined } | null {
+): {
+	baseUrlEnvVar: string;
+	apiKeyEnvVar: string;
+	resolvedBaseUrl: string | undefined;
+	matchedProtocol: ProviderProtocol;
+} | null {
 	const agentProtocols = AGENT_PROTOCOL_COMPATIBILITY[agentId] ?? [];
 	const protocolNames = extractProtocolList(providerProtocols);
 
@@ -163,6 +178,7 @@ export function resolveProtocolEnvVars(
 			baseUrlEnvVar: envMap.baseUrl,
 			apiKeyEnvVar: envMap.apiKey,
 			resolvedBaseUrl: baseUrl,
+			matchedProtocol: proto,
 		};
 	}
 
@@ -180,7 +196,19 @@ export function resolveProtocolEnvVars(
 		baseUrlEnvVar: envMap.baseUrl,
 		apiKeyEnvVar: envMap.apiKey,
 		resolvedBaseUrl: baseUrl,
+		matchedProtocol,
 	};
+}
+
+/**
+ * Resolve the env var name the Anthropic-protocol API key should be injected
+ * under, based on the provider's `apiKeyField`. Defaults to `ANTHROPIC_AUTH_TOKEN`.
+ */
+export function resolveAnthropicApiKeyEnvVar(
+	apiKeyField: ApiKeyField | undefined,
+): "ANTHROPIC_AUTH_TOKEN" | "ANTHROPIC_API_KEY" {
+	const field = apiKeyField ?? DEFAULT_API_KEY_FIELD;
+	return field === "api_key" ? "ANTHROPIC_API_KEY" : "ANTHROPIC_AUTH_TOKEN";
 }
 
 /**

@@ -20,19 +20,19 @@ import type {
 	RuntimeKanbanProviderSettings,
 	RuntimeReasoningEffort,
 } from "../../core/api-contract";
-import { getBundledModels, type GeneratedProvider } from "../ai/models";
+import { type GeneratedProvider, getBundledModels } from "../ai/models";
 import {
 	type AgentProviderConfig,
 	deleteAgentProvider,
 	getAgentProviderConfig,
-	getAllAgentProviderConfigs,
+	getAllAgentProviderSets,
 	saveAgentProvider,
 } from "./agent-provider-config";
 import {
 	BUNDLED_PROVIDER_DEFAULT_PROTOCOLS,
-	type ProtocolConfig,
 	getBaseUrlForProtocol,
 	getDefaultProtocolsForProvider,
+	type ProtocolConfig,
 } from "./provider-protocol";
 
 // ------------------------------------------------------------------ helpers
@@ -106,9 +106,7 @@ function formatProviderName(id: string): string {
 
 function extractModelRecords(payload: unknown): Array<{ id: string; name?: string }> {
 	const container =
-		payload && typeof payload === "object" && !Array.isArray(payload)
-			? (payload as Record<string, unknown>)
-			: null;
+		payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as Record<string, unknown>) : null;
 	const list = Array.isArray(payload)
 		? payload
 		: container
@@ -150,7 +148,9 @@ async function fetchModelsFromEndpoint(baseUrl: string, apiKey?: string): Promis
 			});
 
 			if (!response.ok && response.status >= 500 && attempt < maxAttempts) {
-				console.warn(`[kanban] /models endpoint returned ${response.status} for ${modelsUrl}, retrying (${attempt}/${maxAttempts})...`);
+				console.warn(
+					`[kanban] /models endpoint returned ${response.status} for ${modelsUrl}, retrying (${attempt}/${maxAttempts})...`,
+				);
 				await new Promise((r) => setTimeout(r, 1000 * attempt));
 				continue;
 			}
@@ -165,11 +165,17 @@ async function fetchModelsFromEndpoint(baseUrl: string, apiKey?: string): Promis
 				.sort((a, b) => a.name.localeCompare(b.name));
 		} catch (error) {
 			if (attempt < maxAttempts) {
-				console.warn(`[kanban] /models endpoint fetch failed for ${modelsUrl}, retrying (${attempt}/${maxAttempts}):`, error instanceof Error ? error.message : error);
+				console.warn(
+					`[kanban] /models endpoint fetch failed for ${modelsUrl}, retrying (${attempt}/${maxAttempts}):`,
+					error instanceof Error ? error.message : error,
+				);
 				await new Promise((r) => setTimeout(r, 1000 * attempt));
 				continue;
 			}
-			console.warn(`[kanban] /models endpoint fetch failed for ${modelsUrl} after ${maxAttempts} attempts:`, error instanceof Error ? error.message : error);
+			console.warn(
+				`[kanban] /models endpoint fetch failed for ${modelsUrl} after ${maxAttempts} attempts:`,
+				error instanceof Error ? error.message : error,
+			);
 			return [];
 		}
 	}
@@ -208,13 +214,15 @@ export function createAgentProviderService() {
 		 * Shows all bundled providers, with configured ones marked as enabled.
 		 */
 		async getAllAgentProviderCatalog(): Promise<RuntimeKanbanProviderCatalogResponse> {
-			const allConfigs = getAllAgentProviderConfigs();
-			// Build a map of configured providers (keyed by provider name)
+			// Build a map of configured providers (keyed by provider name) across
+			// every agent's registered provider set.
 			const configuredProviders = new Map<string, AgentProviderConfig>();
-			for (const config of Object.values(allConfigs)) {
-				const providerName = config.provider?.trim().toLowerCase();
-				if (providerName) {
-					configuredProviders.set(providerName, config);
+			for (const set of Object.values(getAllAgentProviderSets())) {
+				for (const config of set.providers) {
+					const providerName = config.provider?.trim().toLowerCase();
+					if (providerName) {
+						configuredProviders.set(providerName, config);
+					}
 				}
 			}
 
@@ -225,9 +233,10 @@ export function createAgentProviderService() {
 			for (const [providerName, config] of configuredProviders) {
 				seenProviders.add(providerName);
 				const protocolConfigs: ProtocolConfig[] = config.protocols ?? getDefaultProtocolsForProvider(providerName);
-				const legacyBaseUrl = config.baseUrl?.trim()
-					|| getBaseUrlForProtocol(protocolConfigs, protocolConfigs[0]?.protocol ?? "openai")
-					|| null;
+				const legacyBaseUrl =
+					config.baseUrl?.trim() ||
+					getBaseUrlForProtocol(protocolConfigs, protocolConfigs[0]?.protocol ?? "openai") ||
+					null;
 
 				providers.push({
 					id: providerName,
@@ -247,7 +256,8 @@ export function createAgentProviderService() {
 					continue;
 				}
 				const protocolConfigs = getDefaultProtocolsForProvider(bundledProvider);
-				const defaultBaseUrl = getBaseUrlForProtocol(protocolConfigs, protocolConfigs[0]?.protocol ?? "openai") || null;
+				const defaultBaseUrl =
+					getBaseUrlForProtocol(protocolConfigs, protocolConfigs[0]?.protocol ?? "openai") || null;
 
 				providers.push({
 					id: bundledProvider,
@@ -293,13 +303,11 @@ export function createAgentProviderService() {
 			}
 
 			// For non-bundled providers, try remote /models endpoint discovery.
-			// Search all agent configs for one matching this providerId.
-			const allConfigs = getAllAgentProviderConfigs();
-			for (const config of Object.values(allConfigs)) {
+			// Search every agent's registered providers for one matching this providerId.
+			const allConfigs = Object.values(getAllAgentProviderSets()).flatMap((set) => set.providers);
+			for (const config of allConfigs) {
 				if (config.provider?.trim().toLowerCase() === normalizedProviderId) {
-					const openaiBaseUrl = config.protocols
-						? getBaseUrlForProtocol(config.protocols, "openai")
-						: undefined;
+					const openaiBaseUrl = config.protocols ? getBaseUrlForProtocol(config.protocols, "openai") : undefined;
 					const discoveryBaseUrl = openaiBaseUrl || config.baseUrl;
 					if (discoveryBaseUrl) {
 						const discoveredModels = await fetchModelsFromEndpoint(

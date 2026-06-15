@@ -17,6 +17,7 @@ import type {
 	RuntimeAgentProviderConfigSaveRequest,
 	RuntimeAgentProviderMutationRequest,
 	RuntimeAgentProviderMutationResponse,
+	RuntimeAgentProviderSetListResponse,
 	RuntimeCommandRunRequest,
 	RuntimeCommandRunResponse,
 	RuntimeConfigResponse,
@@ -25,6 +26,8 @@ import type {
 	RuntimeDirectoryListRequest,
 	RuntimeDirectoryListResponse,
 	RuntimeFeaturebaseTokenResponse,
+	RuntimeFetchRemoteModelsRequest,
+	RuntimeFetchRemoteModelsResponse,
 	RuntimeFileAddRequest,
 	RuntimeFileAddResponse,
 	RuntimeFileBytesRequest,
@@ -76,8 +79,6 @@ import type {
 	RuntimeKanbanProviderCatalogResponse,
 	RuntimeKanbanProviderModelsRequest,
 	RuntimeKanbanProviderModelsResponse,
-	RuntimeFetchRemoteModelsRequest,
-	RuntimeFetchRemoteModelsResponse,
 	RuntimeOpenFileRequest,
 	RuntimeOpenFileResponse,
 	RuntimeProjectAddRequest,
@@ -157,6 +158,7 @@ import {
 	runtimeAgentProviderConfigSaveRequestSchema,
 	runtimeAgentProviderMutationRequestSchema,
 	runtimeAgentProviderMutationResponseSchema,
+	runtimeAgentProviderSetListResponseSchema,
 	runtimeCommandRunRequestSchema,
 	runtimeCommandRunResponseSchema,
 	runtimeConfigResponseSchema,
@@ -165,6 +167,8 @@ import {
 	runtimeDirectoryListRequestSchema,
 	runtimeDirectoryListResponseSchema,
 	runtimeFeaturebaseTokenResponseSchema,
+	runtimeFetchRemoteModelsRequestSchema,
+	runtimeFetchRemoteModelsResponseSchema,
 	runtimeFileAddRequestSchema,
 	runtimeFileAddResponseSchema,
 	runtimeFileBytesRequestSchema,
@@ -216,8 +220,6 @@ import {
 	runtimeKanbanProviderCatalogResponseSchema,
 	runtimeKanbanProviderModelsRequestSchema,
 	runtimeKanbanProviderModelsResponseSchema,
-	runtimeFetchRemoteModelsRequestSchema,
-	runtimeFetchRemoteModelsResponseSchema,
 	runtimeOpenFileRequestSchema,
 	runtimeOpenFileResponseSchema,
 	runtimeProjectAddRequestSchema,
@@ -426,12 +428,11 @@ export interface RuntimeTrpcContext {
 		getUpdateStatus: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeUpdateStatusResponse>;
 		runUpdateNow: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeRunUpdateResponse>;
 		listAgentProviderConfigs: () => Promise<RuntimeAgentProviderConfigListResponse>;
+		listAgentProviders: () => Promise<RuntimeAgentProviderSetListResponse>;
 		saveAgentProviderConfig: (
 			input: RuntimeAgentProviderConfigSaveRequest,
 		) => Promise<RuntimeAgentProviderMutationResponse>;
-		addProviderToAgent: (
-			input: RuntimeAgentProviderMutationRequest,
-		) => Promise<RuntimeAgentProviderMutationResponse>;
+		addProviderToAgent: (input: RuntimeAgentProviderMutationRequest) => Promise<RuntimeAgentProviderMutationResponse>;
 		removeProviderFromAgent: (
 			input: RuntimeAgentProviderMutationRequest,
 		) => Promise<RuntimeAgentProviderMutationResponse>;
@@ -855,6 +856,9 @@ export const runtimeAppRouter = t.router({
 			.query(async ({ ctx }) => {
 				return await ctx.runtimeApi.listAgentProviderConfigs();
 			}),
+		listAgentProviders: t.procedure.output(runtimeAgentProviderSetListResponseSchema).query(async ({ ctx }) => {
+			return await ctx.runtimeApi.listAgentProviders();
+		}),
 		saveAgentProviderConfig: t.procedure
 			.input(runtimeAgentProviderConfigSaveRequestSchema)
 			.output(runtimeAgentProviderMutationResponseSchema)

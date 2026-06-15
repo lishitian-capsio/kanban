@@ -42,8 +42,10 @@ const oauthMocks = vi.hoisted(() => ({
 const agentProviderConfigMocks = vi.hoisted(() => ({
 	getAgentProviderConfig: vi.fn(),
 	getAllAgentProviderConfigs: vi.fn(() => ({})),
+	getAllAgentProviderSets: vi.fn(() => ({})),
 	saveAgentProvider: vi.fn(),
 	deleteAgentProvider: vi.fn(),
+	setDefaultAgentProvider: vi.fn(),
 }));
 
 const llmsModelMocks = vi.hoisted(() => ({
@@ -159,10 +161,15 @@ vi.mock("../../../src/agent-sdk/kanban/pi-provider-config.js", () => ({
 // The per-agent provider config is the source of truth now.
 // Mock it and route reads through agentProviderConfigMocks.
 vi.mock("../../../src/agent-sdk/kanban/agent-provider-config.js", () => ({
-	getAgentProviderConfig: (agentId: string) => agentProviderConfigMocks.getAgentProviderConfig(agentId) ?? null,
+	getAgentProviderConfig: (agentId: string, providerId?: string) =>
+		agentProviderConfigMocks.getAgentProviderConfig(agentId, providerId) ?? null,
 	getAllAgentProviderConfigs: () => agentProviderConfigMocks.getAllAgentProviderConfigs(),
+	getAllAgentProviderSets: () => agentProviderConfigMocks.getAllAgentProviderSets(),
 	saveAgentProvider: (agentId: string, config: unknown) => agentProviderConfigMocks.saveAgentProvider(agentId, config),
-	deleteAgentProvider: (agentId: string) => agentProviderConfigMocks.deleteAgentProvider(agentId),
+	deleteAgentProvider: (agentId: string, providerId?: string) =>
+		agentProviderConfigMocks.deleteAgentProvider(agentId, providerId),
+	setDefaultAgentProvider: (agentId: string, providerId: string) =>
+		agentProviderConfigMocks.setDefaultAgentProvider(agentId, providerId),
 }));
 
 // Legacy provider-settings-store is deleted; keep a no-op mock for any stale imports.
@@ -180,9 +187,7 @@ import { HomeThreadStore } from "../../../src/session/home-thread-store";
 import type { RuntimeTrpcContext } from "../../../src/trpc/app-router";
 import { type CreateRuntimeApiDependencies, createRuntimeApi } from "../../../src/trpc/runtime-api";
 
-function createInMemoryHomeThreadStore(
-	onCloseSession?: (sessionId: string) => Promise<void> | void,
-): HomeThreadStore {
+function createInMemoryHomeThreadStore(onCloseSession?: (sessionId: string) => Promise<void> | void): HomeThreadStore {
 	let data: RuntimeHomeChatThreadsData = { threads: [] };
 	return new HomeThreadStore({
 		workspaceId: "workspace-1",
@@ -301,9 +306,13 @@ function setSelectedProviderSettings(
 			agentId === "pi" ? config : null,
 		);
 		agentProviderConfigMocks.getAllAgentProviderConfigs.mockReturnValue({ pi: config });
+		agentProviderConfigMocks.getAllAgentProviderSets.mockReturnValue({
+			pi: { agentId: "pi", providers: [config], defaultProviderId: settings.provider },
+		});
 	} else {
 		agentProviderConfigMocks.getAgentProviderConfig.mockReturnValue(null);
 		agentProviderConfigMocks.getAllAgentProviderConfigs.mockReturnValue({});
+		agentProviderConfigMocks.getAllAgentProviderSets.mockReturnValue({});
 	}
 }
 
@@ -462,7 +471,11 @@ describe("createRuntimeApi startTaskSession", () => {
 		});
 		setSelectedProviderSettings(null);
 		piProviderConfigMocks.resolvePiLaunchConfig.mockImplementation(
-			(input?: { providerIdOverride?: string | null; modelIdOverride?: string | null; reasoningEffortOverride?: unknown }) => {
+			(input?: {
+				providerIdOverride?: string | null;
+				modelIdOverride?: string | null;
+				reasoningEffortOverride?: unknown;
+			}) => {
 				const providerId = input?.providerIdOverride?.trim() || "anthropic";
 				const modelId = input?.modelIdOverride?.trim() || "claude-sonnet-4-20250514";
 				const settings = oauthMocks.getProviderSettings(providerId) ?? oauthMocks.getLastUsedProviderSettings();
@@ -472,10 +485,14 @@ describe("createRuntimeApi startTaskSession", () => {
 					apiKey = `workos:${settings.auth.accessToken}`;
 				}
 				if (!apiKey) {
-					const envVarName = providerId === "anthropic" ? "ANTHROPIC_API_KEY"
-						: providerId === "openai" ? "OPENAI_API_KEY"
-						: providerId === "cline" ? "KANBAN_API_KEY"
-						: `${providerId.toUpperCase()}_API_KEY`;
+					const envVarName =
+						providerId === "anthropic"
+							? "ANTHROPIC_API_KEY"
+							: providerId === "openai"
+								? "OPENAI_API_KEY"
+								: providerId === "cline"
+									? "KANBAN_API_KEY"
+									: `${providerId.toUpperCase()}_API_KEY`;
 					apiKey = process.env[envVarName] ?? null;
 				}
 				return {
@@ -588,7 +605,10 @@ describe("createRuntimeApi startTaskSession", () => {
 		const api = createTestRuntimeApi({
 			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
 			// Workspace-global agent is pi, but the home thread is backed by claude.
-			loadScopedRuntimeConfig: vi.fn(async () => ({ ...createRuntimeConfigState(), selectedAgentId: "pi" as const })),
+			loadScopedRuntimeConfig: vi.fn(async () => ({
+				...createRuntimeConfigState(),
+				selectedAgentId: "pi" as const,
+			})),
 			setActiveRuntimeConfig: vi.fn(),
 			getScopedTerminalManager: vi.fn(async () => terminalManager as never),
 			getScopedPiTaskSessionService: vi.fn(async () => piTaskSessionService as never),
@@ -613,6 +633,80 @@ describe("createRuntimeApi startTaskSession", () => {
 		expect(piTaskSessionService.startTaskSession).not.toHaveBeenCalled();
 		// Home sessions never resolve a worktree cwd.
 		expect(taskWorktreeMocks.resolveTaskCwd).not.toHaveBeenCalled();
+	});
+
+	it("forwards the card's selected providerId to the terminal session for per-session provider injection", async () => {
+		const terminalManager = {
+			startTaskSession: vi.fn(async () => createSummary({ agentId: "claude" })),
+			applyTurnCheckpoint: vi.fn(),
+		};
+		const piTaskSessionService = createPiTaskSessionServiceMock();
+		const api = createTestRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => ({
+				...createRuntimeConfigState(),
+				selectedAgentId: "claude" as const,
+			})),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => terminalManager as never),
+			getScopedPiTaskSessionService: vi.fn(async () => piTaskSessionService as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+
+		const response = await api.startTaskSession(
+			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
+			{
+				taskId: "task-provider",
+				baseRef: "main",
+				prompt: "do work",
+				agentId: "claude",
+				agentSettings: { providerId: "my-relay" },
+			},
+		);
+
+		expect(response.ok).toBe(true);
+		// The session-selected providerId reaches the terminal manager, which feeds
+		// buildAgentProviderEnv → distinct env per session.
+		expect(terminalManager.startTaskSession).toHaveBeenCalledWith(
+			expect.objectContaining({ agentId: "claude", providerId: "my-relay" }),
+		);
+	});
+
+	it("routes agent provider CRUD by (agentId, providerId)", async () => {
+		const api = createTestRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => ({}) as never),
+			getScopedPiTaskSessionService: vi.fn(async () => createPiTaskSessionServiceMock() as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+
+		agentProviderConfigMocks.getAllAgentProviderSets.mockReturnValue({
+			claude: {
+				agentId: "claude",
+				providers: [
+					{ agentId: "claude", provider: "anthropic" },
+					{ agentId: "claude", provider: "my-relay" },
+				],
+				defaultProviderId: "anthropic",
+			},
+		});
+
+		// Full multi-provider listing exposes every registered provider + default.
+		const list = await api.listAgentProviders();
+		expect(list.agents.claude.providers).toHaveLength(2);
+		expect(list.agents.claude.defaultProviderId).toBe("anthropic");
+
+		// Remove targets a single provider by id.
+		await api.removeProviderFromAgent({ agentId: "claude", providerId: "my-relay" });
+		expect(agentProviderConfigMocks.deleteAgentProvider).toHaveBeenCalledWith("claude", "my-relay");
+
+		// Select sets the agent's default provider.
+		await api.selectAgentProvider({ agentId: "claude", providerId: "my-relay" });
+		expect(agentProviderConfigMocks.setDefaultAgentProvider).toHaveBeenCalledWith("claude", "my-relay");
 	});
 
 	it("ensures the worktree when no existing task cwd is available", async () => {
@@ -1412,12 +1506,7 @@ describe("createRuntimeApi startTaskSession", () => {
 			{ taskId: "task-1", text: "hello" },
 		);
 		expect(sendResponse.ok).toBe(true);
-		expect(piTaskSessionService.sendTaskSessionInput).toHaveBeenCalledWith(
-			"task-1",
-			"hello",
-			undefined,
-			undefined,
-		);
+		expect(piTaskSessionService.sendTaskSessionInput).toHaveBeenCalledWith("task-1", "hello", undefined, undefined);
 		expect(sendResponse.message).toEqual(latestMessage);
 
 		const messagesResponse = await api.getTaskChatMessages(

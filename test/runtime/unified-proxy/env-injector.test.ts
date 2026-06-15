@@ -1,8 +1,9 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Use vi.hoisted so paths are available before module evaluation (vi.mock hoists).
-// Cannot use imported functions inside vi.hoisted — use inline path building.
+// We keep a mock home dir purely to assert that NO code writes ~/.claude/settings.json
+// anymore — provider config is injected as per-spawn env, never a global settings file.
 const { mockHome, mockClaudeDir, mockSettingsPath } = vi.hoisted(() => {
 	const tmpBase = process.env.TMPDIR ?? process.env.TMP ?? "/tmp";
 	const home = `${tmpBase}/kanban-env-injector-test-${Date.now()}`;
@@ -36,53 +37,28 @@ import { buildAgentProviderEnv } from "../../../src/unified-proxy/env-injector";
 describe("env-injector: buildAgentProviderEnv", () => {
 	beforeEach(() => {
 		agentProviderMocks.getAgentProviderConfig.mockReset();
-		// Clean up mock ~/.claude dir
 		if (existsSync(mockClaudeDir)) {
 			rmSync(mockClaudeDir, { recursive: true });
 		}
 	});
 
 	afterEach(() => {
-		// Clean up
 		if (existsSync(mockClaudeDir)) {
 			rmSync(mockClaudeDir, { recursive: true });
 		}
 	});
 
-	function readClaudeSettings(): Record<string, unknown> | null {
-		if (!existsSync(mockSettingsPath)) return null;
-		return JSON.parse(readFileSync(mockSettingsPath, "utf8"));
-	}
-
-	it("returns empty env and clears settings when no config is set (official provider)", async () => {
-		// Pre-populate settings file
-		mkdirSync(mockClaudeDir, { recursive: true });
-		writeFileSync(
-			mockSettingsPath,
-			JSON.stringify({ env: { ANTHROPIC_BASE_URL: "old-url", ANTHROPIC_API_KEY: "old-key" } }),
-		);
-
-		// No per-agent config → official provider fallback
+	it("returns empty env when claude has no config (official provider)", async () => {
 		agentProviderMocks.getAgentProviderConfig.mockReturnValue(null);
 
 		const result = await buildAgentProviderEnv("claude");
 		expect(result.usesCustomProvider).toBe(false);
 		expect(result.env).toEqual({});
-
-		// Settings file should be cleared
-		const settings = readClaudeSettings();
-		expect(settings?.env).toBeUndefined();
+		// No global settings file is ever written.
+		expect(existsSync(mockSettingsPath)).toBe(false);
 	});
 
-	it("returns empty env when agent has no config", async () => {
-		agentProviderMocks.getAgentProviderConfig.mockReturnValue(null);
-
-		const result = await buildAgentProviderEnv("claude");
-		expect(result.usesCustomProvider).toBe(false);
-		expect(result.env).toEqual({});
-	});
-
-	it("writes ANTHROPIC_BASE_URL and ANTHROPIC_API_KEY to ~/.claude/settings.json for custom provider", async () => {
+	it("injects ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN (default) for a custom claude provider", async () => {
 		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
 			agentId: "claude",
 			provider: "custom-aliyun",
@@ -91,46 +67,86 @@ describe("env-injector: buildAgentProviderEnv", () => {
 		});
 
 		const result = await buildAgentProviderEnv("claude");
-		// No env vars returned (Claude Code uses settings file)
 		expect(result.usesCustomProvider).toBe(true);
-		expect(result.env).toEqual({});
+		// Default key field is auth_token (Bearer) — most relays expect this.
+		expect(result.env).toEqual({
+			ANTHROPIC_BASE_URL: "https://custom.aliyun.com/v1",
+			ANTHROPIC_AUTH_TOKEN: "sk-custom-123",
+		});
+		// Never writes a global settings file.
+		expect(existsSync(mockSettingsPath)).toBe(false);
+	});
 
-		// Settings file should have both BASE_URL and API_KEY
-		const settings = readClaudeSettings();
-		expect(settings).toEqual({
-			env: {
-				ANTHROPIC_BASE_URL: "https://custom.aliyun.com/v1",
-				ANTHROPIC_API_KEY: "sk-custom-123",
-			},
+	it("injects ANTHROPIC_API_KEY (x-api-key) for claude when apiKeyField is api_key", async () => {
+		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
+			agentId: "claude",
+			provider: "anthropic",
+			apiKeyField: "api_key",
+			protocols: [{ protocol: "anthropic", baseUrl: "https://api.anthropic.com" }],
+			apiKey: "sk-ant-official",
+		});
+
+		const result = await buildAgentProviderEnv("claude");
+		expect(result.usesCustomProvider).toBe(true);
+		expect(result.env).toEqual({
+			ANTHROPIC_BASE_URL: "https://api.anthropic.com",
+			ANTHROPIC_API_KEY: "sk-ant-official",
 		});
 	});
 
-	it("preserves existing settings when writing Claude config (with API key)", async () => {
-		// Pre-populate with other settings
-		mkdirSync(mockClaudeDir, { recursive: true });
-		writeFileSync(
-			mockSettingsPath,
-			JSON.stringify({ env: { ANTHROPIC_MODEL: "claude-opus-4" }, model: "claude-3.5-sonnet" }),
-		);
-
+	it("injects optional ANTHROPIC_MODEL from the claude provider config", async () => {
 		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
 			agentId: "claude",
-			provider: "custom-aliyun",
-			baseUrl: "https://custom.aliyun.com/v1",
-			apiKey: "sk-custom-123",
+			provider: "custom",
+			baseUrl: "https://relay.example.com",
+			apiKey: "sk-relay",
+			model: "claude-opus-4-8",
 		});
 
-		await buildAgentProviderEnv("claude");
+		const result = await buildAgentProviderEnv("claude");
+		expect(result.env).toEqual({
+			ANTHROPIC_BASE_URL: "https://relay.example.com",
+			ANTHROPIC_AUTH_TOKEN: "sk-relay",
+			ANTHROPIC_MODEL: "claude-opus-4-8",
+		});
+	});
 
-		const settings = readClaudeSettings();
-		expect(settings).toEqual({
-			env: {
-				ANTHROPIC_MODEL: "claude-opus-4",
-				ANTHROPIC_BASE_URL: "https://custom.aliyun.com/v1",
-				ANTHROPIC_API_KEY: "sk-custom-123",
+	it("injects ANTHROPIC_DEFAULT_{HAIKU,SONNET,OPUS}_MODEL when present in config", async () => {
+		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
+			agentId: "claude",
+			provider: "custom",
+			baseUrl: "https://relay.example.com",
+			apiKey: "sk-relay",
+			anthropicDefaultModels: {
+				haiku: "relay-haiku",
+				sonnet: "relay-sonnet",
+				opus: "relay-opus",
 			},
-			model: "claude-3.5-sonnet",
 		});
+
+		const result = await buildAgentProviderEnv("claude");
+		expect(result.env).toEqual({
+			ANTHROPIC_BASE_URL: "https://relay.example.com",
+			ANTHROPIC_AUTH_TOKEN: "sk-relay",
+			ANTHROPIC_DEFAULT_HAIKU_MODEL: "relay-haiku",
+			ANTHROPIC_DEFAULT_SONNET_MODEL: "relay-sonnet",
+			ANTHROPIC_DEFAULT_OPUS_MODEL: "relay-opus",
+		});
+	});
+
+	it("injects only ANTHROPIC_BASE_URL when claude provider has no apiKey", async () => {
+		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
+			agentId: "claude",
+			provider: "custom-no-key",
+			baseUrl: "https://no-key.example.com",
+		});
+
+		const result = await buildAgentProviderEnv("claude");
+		expect(result.usesCustomProvider).toBe(true);
+		expect(result.env).toEqual({
+			ANTHROPIC_BASE_URL: "https://no-key.example.com",
+		});
+		expect(existsSync(mockSettingsPath)).toBe(false);
 	});
 
 	it("injects OPENAI_BASE_URL and OPENAI_API_KEY for Codex with custom provider", async () => {
@@ -148,7 +164,7 @@ describe("env-injector: buildAgentProviderEnv", () => {
 		expect(result.env.OPENAI_API_KEY).toBe("sk-gpt-456");
 	});
 
-	it("injects ANTHROPIC env vars for droid with custom provider", async () => {
+	it("injects ANTHROPIC env vars for droid with custom provider (auth_token default)", async () => {
 		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
 			agentId: "droid",
 			provider: "custom-droid",
@@ -160,7 +176,8 @@ describe("env-injector: buildAgentProviderEnv", () => {
 		const result = await buildAgentProviderEnv("droid");
 		expect(result.usesCustomProvider).toBe(true);
 		expect(result.env.ANTHROPIC_BASE_URL).toBe("https://droid.example.com");
-		expect(result.env.ANTHROPIC_API_KEY).toBe("dk-789");
+		expect(result.env.ANTHROPIC_AUTH_TOKEN).toBe("dk-789");
+		expect(result.env.ANTHROPIC_API_KEY).toBeUndefined();
 	});
 
 	it("injects OPENAI env vars for gemini when provider supports openai protocol", async () => {
@@ -195,23 +212,6 @@ describe("env-injector: buildAgentProviderEnv", () => {
 		expect(result.env).toEqual({});
 	});
 
-	it("returns empty env for non-claude agent when protocols are incompatible", async () => {
-		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
-			agentId: "codex",
-			provider: "anthropic-only-provider",
-			baseUrl: "https://anthropic-only.example.com",
-			apiKey: "sk-anthropic",
-			protocols: [{ protocol: "anthropic", baseUrl: "https://anthropic-only.example.com" }],
-		});
-
-		// codex supports openai, provider only supports anthropic
-		// resolveProtocolEnvVars returns null (no compatible protocol found)
-		// So no env vars are injected — correct behavior
-		const result = await buildAgentProviderEnv("codex");
-		expect(result.usesCustomProvider).toBe(false);
-		expect(result.env).toEqual({});
-	});
-
 	it("returns empty env when provider config is null (not found)", async () => {
 		agentProviderMocks.getAgentProviderConfig.mockReturnValue(null);
 
@@ -220,22 +220,63 @@ describe("env-injector: buildAgentProviderEnv", () => {
 		expect(result.env).toEqual({});
 	});
 
-	it("writes only baseUrl to settings when apiKey is not set", async () => {
-		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
-			agentId: "claude",
-			provider: "custom-no-key",
-			baseUrl: "https://no-key.example.com",
+	describe("per-session provider selection", () => {
+		// Two providers registered for claude. The mock resolves by providerId,
+		// mirroring getAgentProviderConfig(agentId, providerId) with default fallback.
+		const PROVIDERS: Record<string, { agentId: string; provider: string; baseUrl: string; apiKey: string }> = {
+			anthropic: {
+				agentId: "claude",
+				provider: "anthropic",
+				baseUrl: "https://api.anthropic.com",
+				apiKey: "sk-default",
+			},
+			"my-relay": {
+				agentId: "claude",
+				provider: "my-relay",
+				baseUrl: "https://relay.local/v1",
+				apiKey: "sk-relay",
+			},
+		};
+		const DEFAULT_ID = "anthropic";
+
+		beforeEach(() => {
+			agentProviderMocks.getAgentProviderConfig.mockImplementation((_agentId: string, providerId?: string) => {
+				if (providerId === undefined) {
+					return PROVIDERS[DEFAULT_ID];
+				}
+				return PROVIDERS[providerId] ?? null;
+			});
 		});
 
-		const result = await buildAgentProviderEnv("claude");
-		expect(result.usesCustomProvider).toBe(true);
-		expect(result.env).toEqual({});
+		it("injects the selected provider's env when a providerId is given", async () => {
+			const a = await buildAgentProviderEnv("claude", "anthropic");
+			const b = await buildAgentProviderEnv("claude", "my-relay");
 
-		const settings = readClaudeSettings();
-		expect(settings).toEqual({
-			env: {
-				ANTHROPIC_BASE_URL: "https://no-key.example.com",
-			},
+			// Two sessions of the same agent get distinct, independent env.
+			expect(a.env).toEqual({
+				ANTHROPIC_BASE_URL: "https://api.anthropic.com",
+				ANTHROPIC_AUTH_TOKEN: "sk-default",
+			});
+			expect(b.env).toEqual({
+				ANTHROPIC_BASE_URL: "https://relay.local/v1",
+				ANTHROPIC_AUTH_TOKEN: "sk-relay",
+			});
+		});
+
+		it("falls back to the default provider when no providerId is given", async () => {
+			const result = await buildAgentProviderEnv("claude");
+			expect(result.env).toEqual({
+				ANTHROPIC_BASE_URL: "https://api.anthropic.com",
+				ANTHROPIC_AUTH_TOKEN: "sk-default",
+			});
+		});
+
+		it("falls back to the default provider when the selected providerId is unknown", async () => {
+			const result = await buildAgentProviderEnv("claude", "does-not-exist");
+			expect(result.env).toEqual({
+				ANTHROPIC_BASE_URL: "https://api.anthropic.com",
+				ANTHROPIC_AUTH_TOKEN: "sk-default",
+			});
 		});
 	});
 });

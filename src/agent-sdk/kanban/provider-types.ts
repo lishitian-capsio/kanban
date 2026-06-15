@@ -2,7 +2,14 @@
 // These are referenced by multiple modules and define the shape of
 // per-agent provider configuration.
 
-import type { ProtocolConfig } from "./provider-protocol";
+import type { ApiKeyField, ProtocolConfig } from "./provider-protocol";
+
+/** Optional per-tier Anthropic model overrides (mapped to ANTHROPIC_DEFAULT_*_MODEL). */
+export interface AnthropicDefaultModels {
+	haiku?: string;
+	sonnet?: string;
+	opus?: string;
+}
 
 // ------------------------------------------------------------------ types
 
@@ -27,6 +34,10 @@ export interface ProviderSettings {
 	/** @deprecated Legacy single baseUrl. Use `protocols[].baseUrl` instead. Kept for migration compatibility. */
 	baseUrl?: string;
 	protocols?: ProtocolConfig[];
+	/** Which header the Anthropic-protocol key is sent under (defaults to auth_token). */
+	apiKeyField?: ApiKeyField;
+	/** Optional per-tier Anthropic model overrides (ANTHROPIC_DEFAULT_*_MODEL). */
+	anthropicDefaultModels?: AnthropicDefaultModels;
 	reasoning?: ProviderSettingsReasoning;
 	auth?: ProviderSettingsAuth;
 	aws?: Record<string, unknown>;

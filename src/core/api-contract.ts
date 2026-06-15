@@ -1327,15 +1327,21 @@ export const runtimeAgentProviderConfigSchema = z.object({
 	model: z.string().optional(),
 	apiKey: z.string().optional(),
 	baseUrl: z.string().optional(),
-	protocols: z.array(z.object({
-		protocol: z.string(),
-		baseUrl: z.string().optional(),
-	})).optional(),
-	reasoning: z.object({
-		enabled: z.boolean().optional(),
-		effort: z.string().optional(),
-		budgetTokens: z.number().optional(),
-	}).optional(),
+	protocols: z
+		.array(
+			z.object({
+				protocol: z.string(),
+				baseUrl: z.string().optional(),
+			}),
+		)
+		.optional(),
+	reasoning: z
+		.object({
+			enabled: z.boolean().optional(),
+			effort: z.string().optional(),
+			budgetTokens: z.number().optional(),
+		})
+		.optional(),
 	headers: z.record(z.string()).optional(),
 	timeout: z.number().optional(),
 	region: z.string().optional(),
@@ -1348,6 +1354,21 @@ export const runtimeAgentProviderConfigListResponseSchema = z.object({
 	agents: z.record(z.string(), runtimeAgentProviderConfigSchema),
 });
 export type RuntimeAgentProviderConfigListResponse = z.infer<typeof runtimeAgentProviderConfigListResponseSchema>;
+
+// An agent's full set of registered providers plus its default selection. A
+// session can pick any registered provider (by `providerId` = provider name) at
+// launch, so two sessions of the same agent can run different providers.
+export const runtimeAgentProviderSetSchema = z.object({
+	agentId: z.string(),
+	providers: z.array(runtimeAgentProviderConfigSchema),
+	defaultProviderId: z.string().optional(),
+});
+export type RuntimeAgentProviderSet = z.infer<typeof runtimeAgentProviderSetSchema>;
+
+export const runtimeAgentProviderSetListResponseSchema = z.object({
+	agents: z.record(z.string(), runtimeAgentProviderSetSchema),
+});
+export type RuntimeAgentProviderSetListResponse = z.infer<typeof runtimeAgentProviderSetListResponseSchema>;
 
 export const runtimeAgentProviderConfigSaveRequestSchema = z.object({
 	agentId: z.string(),

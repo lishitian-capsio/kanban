@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,11 +20,14 @@ vi.mock("../../../src/fs/locked-file-system", () => ({
 }));
 
 import {
-	getAgentProviderConfig,
-	saveAgentProvider,
 	deleteAgentProvider,
+	getAgentProviderConfig,
+	getAgentProviderSet,
 	getAllAgentProviderConfigs,
+	getAllAgentProviderSets,
 	resetAgentProviderConfigCache,
+	saveAgentProvider,
+	setDefaultAgentProvider,
 } from "../../../src/agent-sdk/kanban/agent-provider-config";
 
 describe("agent-provider-config", () => {
@@ -89,7 +92,7 @@ describe("agent-provider-config", () => {
 		expect(loaded!.baseUrl).toBe("https://api.example.com");
 	});
 
-	it("overwrites an existing config on save", async () => {
+	it("overwrites a provider with the same name on save (and keeps the default)", async () => {
 		await saveAgentProvider("claude", {
 			agentId: "claude",
 			provider: "anthropic",
@@ -97,19 +100,81 @@ describe("agent-provider-config", () => {
 		});
 		await saveAgentProvider("claude", {
 			agentId: "claude",
-			provider: "custom-proxy",
+			provider: "anthropic",
 			model: "claude-4",
 			baseUrl: "https://proxy.local",
 		});
 		resetAgentProviderConfigCache();
 
+		const set = getAgentProviderSet("claude");
+		expect(set!.providers).toHaveLength(1);
 		const config = getAgentProviderConfig("claude");
-		expect(config!.provider).toBe("custom-proxy");
+		expect(config!.provider).toBe("anthropic");
 		expect(config!.model).toBe("claude-4");
 		expect(config!.baseUrl).toBe("https://proxy.local");
 	});
 
-	it("deletes an agent config", async () => {
+	it("registers multiple named providers for one agent and selects by providerId", async () => {
+		await saveAgentProvider("claude", {
+			agentId: "claude",
+			provider: "anthropic",
+			baseUrl: "https://api.anthropic.com",
+			apiKey: "sk-a",
+		});
+		await saveAgentProvider("claude", {
+			agentId: "claude",
+			provider: "my-relay",
+			baseUrl: "https://relay.local",
+			apiKey: "sk-b",
+		});
+		resetAgentProviderConfigCache();
+
+		const set = getAgentProviderSet("claude");
+		expect(set!.providers).toHaveLength(2);
+		// First registered provider remains the default.
+		expect(set!.defaultProviderId).toBe("anthropic");
+		expect(getAgentProviderConfig("claude")!.provider).toBe("anthropic");
+
+		// Each provider is independently addressable by providerId.
+		expect(getAgentProviderConfig("claude", "anthropic")!.baseUrl).toBe("https://api.anthropic.com");
+		expect(getAgentProviderConfig("claude", "my-relay")!.baseUrl).toBe("https://relay.local");
+		// Unknown providerId resolves to null (no silent default).
+		expect(getAgentProviderConfig("claude", "nope")).toBeNull();
+	});
+
+	it("changes the default provider via setDefaultAgentProvider", async () => {
+		await saveAgentProvider("claude", { agentId: "claude", provider: "anthropic" });
+		await saveAgentProvider("claude", { agentId: "claude", provider: "my-relay" });
+		await setDefaultAgentProvider("claude", "my-relay");
+		resetAgentProviderConfigCache();
+
+		expect(getAgentProviderSet("claude")!.defaultProviderId).toBe("my-relay");
+		expect(getAgentProviderConfig("claude")!.provider).toBe("my-relay");
+	});
+
+	it("ignores setDefaultAgentProvider for an unknown providerId", async () => {
+		await saveAgentProvider("claude", { agentId: "claude", provider: "anthropic" });
+		await setDefaultAgentProvider("claude", "ghost");
+		resetAgentProviderConfigCache();
+		expect(getAgentProviderSet("claude")!.defaultProviderId).toBe("anthropic");
+	});
+
+	it("deletes a single provider and re-points the default", async () => {
+		await saveAgentProvider("claude", { agentId: "claude", provider: "anthropic" });
+		await saveAgentProvider("claude", { agentId: "claude", provider: "my-relay" });
+		resetAgentProviderConfigCache();
+		expect(getAgentProviderSet("claude")!.defaultProviderId).toBe("anthropic");
+
+		await deleteAgentProvider("claude", "anthropic");
+		resetAgentProviderConfigCache();
+		const set = getAgentProviderSet("claude");
+		expect(set!.providers).toHaveLength(1);
+		expect(set!.providers[0].provider).toBe("my-relay");
+		// Default re-points to the surviving provider.
+		expect(set!.defaultProviderId).toBe("my-relay");
+	});
+
+	it("deletes the whole agent set when no providerId is given", async () => {
 		await saveAgentProvider("claude", {
 			agentId: "claude",
 			provider: "anthropic",
@@ -121,6 +186,36 @@ describe("agent-provider-config", () => {
 		await deleteAgentProvider("claude");
 		resetAgentProviderConfigCache();
 		expect(getAgentProviderConfig("claude")).toBeNull();
+		expect(getAgentProviderSet("claude")).toBeNull();
+	});
+
+	it("deleting the last remaining provider removes the agent set", async () => {
+		await saveAgentProvider("claude", { agentId: "claude", provider: "anthropic" });
+		resetAgentProviderConfigCache();
+		await deleteAgentProvider("claude", "anthropic");
+		resetAgentProviderConfigCache();
+		expect(getAgentProviderSet("claude")).toBeNull();
+	});
+
+	it("migrates a legacy single-config on-disk shape into a one-provider set", async () => {
+		// Write the pre-multi-provider on-disk shape directly.
+		const path = join(temp.path, "agent_providers.json");
+		writeFileSync(
+			path,
+			JSON.stringify({
+				agents: {
+					claude: { agentId: "claude", provider: "anthropic", model: "claude-3", apiKey: "sk-legacy" },
+				},
+			}),
+		);
+		resetAgentProviderConfigCache();
+
+		const set = getAgentProviderSet("claude");
+		expect(set!.providers).toHaveLength(1);
+		expect(set!.defaultProviderId).toBe("anthropic");
+		const config = getAgentProviderConfig("claude");
+		expect(config!.provider).toBe("anthropic");
+		expect(config!.apiKey).toBe("sk-legacy");
 	});
 
 	it("lists all configured agent configs", async () => {
@@ -139,6 +234,11 @@ describe("agent-provider-config", () => {
 		expect(Object.keys(all)).toContain("codex");
 		expect(all["claude"].provider).toBe("anthropic");
 		expect(all["codex"].provider).toBe("openai");
+
+		const sets = getAllAgentProviderSets();
+		expect(sets["claude"].providers).toHaveLength(1);
+		expect(sets["claude"].defaultProviderId).toBe("anthropic");
+		expect(sets["codex"].providers).toHaveLength(1);
 	});
 
 	it("handles a corrupted JSON file gracefully", () => {
@@ -155,16 +255,12 @@ describe("agent-provider-config", () => {
 		await saveAgentProvider("claude", {
 			agentId: "claude",
 			provider: "anthropic",
-			protocols: [
-				{ protocol: "anthropic", baseUrl: "https://anthropic.example.com" },
-			],
+			protocols: [{ protocol: "anthropic", baseUrl: "https://anthropic.example.com" }],
 		});
 		resetAgentProviderConfigCache();
 
 		const config = getAgentProviderConfig("claude");
-		expect(config!.protocols).toEqual([
-			{ protocol: "anthropic", baseUrl: "https://anthropic.example.com" },
-		]);
+		expect(config!.protocols).toEqual([{ protocol: "anthropic", baseUrl: "https://anthropic.example.com" }]);
 	});
 
 	it("trims whitespace from string fields on save", async () => {
@@ -182,6 +278,20 @@ describe("agent-provider-config", () => {
 		expect(config!.model).toBe("gpt-5");
 		expect(config!.apiKey).toBe("sk-test");
 		expect(config!.baseUrl).toBe("https://api.example.com");
+	});
+
+	it("stores apiKeyField and anthropicDefaultModels round-trip", async () => {
+		await saveAgentProvider("claude", {
+			agentId: "claude",
+			provider: "anthropic",
+			apiKeyField: "api_key",
+			anthropicDefaultModels: { haiku: "h-model", sonnet: "s-model", opus: "o-model" },
+		});
+		resetAgentProviderConfigCache();
+
+		const config = getAgentProviderConfig("claude");
+		expect(config!.apiKeyField).toBe("api_key");
+		expect(config!.anthropicDefaultModels).toEqual({ haiku: "h-model", sonnet: "s-model", opus: "o-model" });
 	});
 
 	it("stores reasoning settings", async () => {

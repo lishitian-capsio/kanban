@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-	resolveProtocolEnvVars,
-	isAgentCompatibleWithProvider,
+	extractProtocolList,
+	getBaseUrlForProtocol,
 	getDefaultProtocolsForProvider,
+	isAgentCompatibleWithProvider,
 	normalizeProtocols,
 	normalizeProtocolsForProvider,
-	getBaseUrlForProtocol,
-	extractProtocolList,
-	type ProviderProtocol,
 	type ProtocolConfig,
+	type ProviderProtocol,
+	resolveAnthropicApiKeyEnvVar,
+	resolveProtocolEnvVars,
 } from "../../../src/agent-sdk/kanban/provider-protocol";
 
 // Helper to build ProtocolConfig[]
@@ -27,6 +28,7 @@ describe("provider-protocol", () => {
 				baseUrlEnvVar: "ANTHROPIC_BASE_URL",
 				apiKeyEnvVar: "ANTHROPIC_API_KEY",
 				resolvedBaseUrl: "https://anthropic.example.com",
+				matchedProtocol: "anthropic",
 			});
 		});
 
@@ -36,6 +38,7 @@ describe("provider-protocol", () => {
 				baseUrlEnvVar: "OPENAI_BASE_URL",
 				apiKeyEnvVar: "OPENAI_API_KEY",
 				resolvedBaseUrl: "https://openai.example.com",
+				matchedProtocol: "openai",
 			});
 		});
 
@@ -45,6 +48,7 @@ describe("provider-protocol", () => {
 				baseUrlEnvVar: "ANTHROPIC_BASE_URL",
 				apiKeyEnvVar: "ANTHROPIC_API_KEY",
 				resolvedBaseUrl: undefined,
+				matchedProtocol: "anthropic",
 			});
 		});
 
@@ -59,6 +63,7 @@ describe("provider-protocol", () => {
 				baseUrlEnvVar: "OPENAI_BASE_URL",
 				apiKeyEnvVar: "OPENAI_API_KEY",
 				resolvedBaseUrl: "https://openai.example.com",
+				matchedProtocol: "openai",
 			});
 		});
 
@@ -69,6 +74,7 @@ describe("provider-protocol", () => {
 				baseUrlEnvVar: "OPENAI_BASE_URL",
 				apiKeyEnvVar: "OPENAI_API_KEY",
 				resolvedBaseUrl: "https://openai.example.com",
+				matchedProtocol: "openai",
 			});
 		});
 
@@ -84,12 +90,27 @@ describe("provider-protocol", () => {
 				baseUrlEnvVar: "OPENAI_BASE_URL",
 				apiKeyEnvVar: "OPENAI_API_KEY",
 				resolvedBaseUrl: undefined,
+				matchedProtocol: "openai",
 			});
 		});
 
 		it("returns null when no protocols and no fallback", () => {
 			const result = resolveProtocolEnvVars([], "claude");
 			expect(result).toBeNull();
+		});
+	});
+
+	describe("resolveAnthropicApiKeyEnvVar", () => {
+		it("defaults to ANTHROPIC_AUTH_TOKEN (Bearer) when apiKeyField is unset", () => {
+			expect(resolveAnthropicApiKeyEnvVar(undefined)).toBe("ANTHROPIC_AUTH_TOKEN");
+		});
+
+		it("returns ANTHROPIC_AUTH_TOKEN for auth_token", () => {
+			expect(resolveAnthropicApiKeyEnvVar("auth_token")).toBe("ANTHROPIC_AUTH_TOKEN");
+		});
+
+		it("returns ANTHROPIC_API_KEY (x-api-key) for api_key", () => {
+			expect(resolveAnthropicApiKeyEnvVar("api_key")).toBe("ANTHROPIC_API_KEY");
 		});
 	});
 
@@ -176,9 +197,7 @@ describe("provider-protocol", () => {
 
 		it("converts legacy string[] for a known provider", () => {
 			const result = normalizeProtocolsForProvider(["anthropic"], "anthropic", "https://anthropic.example.com");
-			expect(result).toEqual([
-				{ protocol: "anthropic", baseUrl: "https://anthropic.example.com" },
-			]);
+			expect(result).toEqual([{ protocol: "anthropic", baseUrl: "https://anthropic.example.com" }]);
 		});
 	});
 

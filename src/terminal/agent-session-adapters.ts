@@ -5,8 +5,6 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { getAgentProviderConfig } from "../agent-sdk/kanban/agent-provider-config";
-import { getBaseUrlForProtocol } from "../agent-sdk/kanban/provider-protocol";
 import type {
 	RuntimeAgentId,
 	RuntimeHookEvent,
@@ -538,9 +536,15 @@ const claudeAdapter: AgentSessionAdapter = {
 
 		const hooks = resolveHookContext(input);
 		if (hooks) {
-			// Merge hooks + provider config directly into ~/.claude/settings.json.
-			// This is the native config file Claude Code always reads — no --settings
-			// flag needed, avoiding priority/conflict issues.
+			// Merge hooks directly into ~/.claude/settings.json. This is the native
+			// config file Claude Code always reads — no --settings flag needed,
+			// avoiding priority/conflict issues.
+			//
+			// Provider config (BASE_URL / AUTH_TOKEN / API_KEY / MODEL) is NOT written
+			// here — it is injected as per-spawn env via buildAgentProviderEnv so that
+			// parallel Claude sessions can each use their own provider. We only strip
+			// any stale provider keys left in settings.json by older versions, so the
+			// per-spawn env stays authoritative.
 			const claudeSettingsPath = join(homedir(), ".claude", "settings.json");
 			const claudeConfigDir = join(homedir(), ".claude");
 
@@ -553,23 +557,7 @@ const claudeAdapter: AgentSessionAdapter = {
 				// File doesn't exist or is invalid — start fresh
 			}
 
-			// Build provider env (BASE_URL + API_KEY for custom providers)
-			const providerEnv: Record<string, string> = {};
-			const providerConfig = getAgentProviderConfig("claude");
-			if (providerConfig) {
-				const anthropicBaseUrl = providerConfig.protocols
-					? getBaseUrlForProtocol(providerConfig.protocols, "anthropic")
-					: undefined;
-				const baseUrl = anthropicBaseUrl || providerConfig.baseUrl;
-				if (baseUrl) {
-					providerEnv.ANTHROPIC_BASE_URL = baseUrl;
-				}
-				if (providerConfig.apiKey) {
-					providerEnv.ANTHROPIC_API_KEY = providerConfig.apiKey;
-				}
-			}
-
-			// Merge: existing settings + hooks + provider env
+			// Merge: existing settings + hooks
 			const hooksConfig = {
 				Stop: [{ hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "claude" }) }] }],
 				SubagentStop: [
@@ -618,19 +606,19 @@ const claudeAdapter: AgentSessionAdapter = {
 
 			currentSettings.hooks = hooksConfig;
 
-			// Merge provider env into existing env (preserve other env vars)
-			if (Object.keys(providerEnv).length > 0) {
-				const existingEnv = (currentSettings.env as Record<string, string> | undefined) ?? {};
-				currentSettings.env = { ...existingEnv, ...providerEnv };
-			} else {
-				// Using official provider — clean up any leftover custom provider env
-				const existingEnv = currentSettings.env as Record<string, string> | undefined;
-				if (existingEnv) {
-					delete existingEnv.ANTHROPIC_BASE_URL;
-					delete existingEnv.ANTHROPIC_API_KEY;
-					if (Object.keys(existingEnv).length === 0) {
-						delete currentSettings.env;
-					}
+			// Strip any stale provider env left by older versions (which wrote provider
+			// config here). Provider config now flows through per-spawn env only.
+			const existingEnv = currentSettings.env as Record<string, string> | undefined;
+			if (existingEnv) {
+				delete existingEnv.ANTHROPIC_BASE_URL;
+				delete existingEnv.ANTHROPIC_API_KEY;
+				delete existingEnv.ANTHROPIC_AUTH_TOKEN;
+				delete existingEnv.ANTHROPIC_MODEL;
+				delete existingEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL;
+				delete existingEnv.ANTHROPIC_DEFAULT_SONNET_MODEL;
+				delete existingEnv.ANTHROPIC_DEFAULT_OPUS_MODEL;
+				if (Object.keys(existingEnv).length === 0) {
+					delete currentSettings.env;
 				}
 			}
 

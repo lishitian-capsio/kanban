@@ -2,8 +2,6 @@
 // It owns process lifecycle, terminal protocol filtering, and summary updates
 // for command-driven agents such as Claude Code, Codex, Gemini, and shell sessions.
 
-import { buildBridgeProxyEnvVars } from "../unified-proxy/network-bridge";
-import { buildAgentProviderEnv } from "../unified-proxy/env-injector";
 import type {
 	RuntimeTaskHookActivity,
 	RuntimeTaskImage,
@@ -19,6 +17,8 @@ import {
 	type SessionMessageJournal,
 } from "../session/session-message-journal";
 import type { SessionMessageListener, SessionMessageSource } from "../session/session-message-source";
+import { buildAgentProviderEnv } from "../unified-proxy/env-injector";
+import { buildBridgeProxyEnvVars } from "../unified-proxy/network-bridge";
 import {
 	type AgentAdapterLaunchInput,
 	type AgentOutputTransitionDetector,
@@ -111,6 +111,12 @@ export interface StartTaskSessionRequest {
 	agentId: AgentAdapterLaunchInput["agentId"];
 	binary: string;
 	args: string[];
+	/**
+	 * Provider selected for this session (provider name = providerId). Picks which
+	 * of the agent's registered providers to inject as env. Falls back to the
+	 * agent's default provider when unset.
+	 */
+	providerId?: string;
 	autonomousModeEnabled?: boolean;
 	cwd: string;
 	prompt: string;
@@ -463,14 +469,10 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 		});
 
 		// Build provider-specific env vars (custom baseUrl/apiKey for non-official providers).
-		const agentProviderEnv = await buildAgentProviderEnv(request.agentId);
+		// The session's selected providerId picks which registered provider to inject.
+		const agentProviderEnv = await buildAgentProviderEnv(request.agentId, request.providerId);
 
-		const env = buildTerminalEnvironment(
-			request.env,
-			launch.env,
-			agentProviderEnv.env,
-			buildBridgeProxyEnvVars(),
-		);
+		const env = buildTerminalEnvironment(request.env, launch.env, agentProviderEnv.env, buildBridgeProxyEnvVars());
 
 		// Adapters can wrap the configured agent binary when they need extra runtime wiring
 		// (for example, Codex uses a wrapper script to watch session logs for hook transitions).
@@ -728,10 +730,7 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 				entry.active.session.write(data);
 			},
 		});
-		const env = buildTerminalEnvironment(
-			request.env,
-			buildBridgeProxyEnvVars(),
-		);
+		const env = buildTerminalEnvironment(request.env, buildBridgeProxyEnvVars());
 		const sessionStartedAt = now();
 
 		let session: PtySession;

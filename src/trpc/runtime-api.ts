@@ -7,19 +7,21 @@ import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { TRPCError } from "@trpc/server";
+import {
+	type AgentProviderConfig,
+	deleteAgentProvider,
+	getAgentProviderConfig,
+	getAllAgentProviderConfigs,
+	getAllAgentProviderSets,
+	saveAgentProvider,
+	setDefaultAgentProvider,
+} from "../agent-sdk/kanban/agent-provider-config";
+import { createAgentProviderService } from "../agent-sdk/kanban/agent-provider-service";
 import { createMcpRuntimeService, type McpRuntimeService } from "../agent-sdk/kanban/mcp-runtime-service";
 import { createKanbanMcpSettingsService } from "../agent-sdk/kanban/mcp-settings-service";
 import { type PiLaunchProfile, resolvePiApiKey, resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
 import { buildPiSystemPrompt } from "../agent-sdk/kanban/pi-system-prompt";
 import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
-import { createAgentProviderService } from "../agent-sdk/kanban/agent-provider-service";
-import {
-	getAgentProviderConfig,
-	getAllAgentProviderConfigs,
-	saveAgentProvider,
-	deleteAgentProvider,
-	type AgentProviderConfig,
-} from "../agent-sdk/kanban/agent-provider-config";
 import { isKanbanClearSlashCommand } from "../agent-sdk/shared/slash-commands";
 import { setRuntimeProxyStateFromConfig } from "../config/proxy-fetch";
 import type { RuntimeConfigState } from "../config/runtime-config";
@@ -34,6 +36,7 @@ import type {
 	RuntimeAgentProviderConfigSaveRequest,
 	RuntimeAgentProviderMutationRequest,
 	RuntimeAgentProviderMutationResponse,
+	RuntimeAgentProviderSetListResponse,
 	RuntimeCommandRunResponse,
 	RuntimeRunUpdateResponse,
 	RuntimeUpdateStatusResponse,
@@ -45,6 +48,7 @@ import {
 	parseAgentProfileSelectRequest,
 	parseAgentProfileUpdateRequest,
 	parseCommandRunRequest,
+	parseFetchRemoteModelsRequest,
 	parseHomeChatThreadCloseRequest,
 	parseHomeChatThreadCreateRequest,
 	parseHomeChatThreadRenameRequest,
@@ -54,7 +58,6 @@ import {
 	parseKanbanMcpSettingsSaveRequest,
 	parseKanbanOauthLoginRequest,
 	parseKanbanProviderModelsRequest,
-	parseFetchRemoteModelsRequest,
 	parseRuntimeConfigSaveRequest,
 	parseShellSessionStartRequest,
 	parseTaskChatAbortRequest,
@@ -374,6 +377,10 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					agentId: resolved.agentId,
 					binary: resolved.binary,
 					args: resolved.args,
+					// Per-session provider selection: the card's agentSettings.providerId
+					// picks which of the agent's registered providers to inject. Falls
+					// back to the agent's default provider when unset.
+					providerId: body.agentSettings?.providerId ?? undefined,
 					autonomousModeEnabled: scopedRuntimeConfig.agentAutonomousModeEnabled,
 					cwd: taskCwd,
 					prompt: body.prompt,
@@ -739,7 +746,9 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					...(body.modelId !== undefined ? { model: body.modelId ?? undefined } : {}),
 					...(body.apiKey !== undefined ? { apiKey: body.apiKey ?? undefined } : {}),
 					...(body.baseUrl !== undefined ? { baseUrl: body.baseUrl ?? undefined } : {}),
-					...(body.reasoningEffort !== undefined ? { reasoning: body.reasoningEffort ? { effort: body.reasoningEffort } : undefined } : {}),
+					...(body.reasoningEffort !== undefined
+						? { reasoning: body.reasoningEffort ? { effort: body.reasoningEffort } : undefined }
+						: {}),
 					...(body.region !== undefined ? { region: body.region ?? undefined } : {}),
 					...(body.gcpProjectId !== undefined || body.gcpRegion !== undefined
 						? { gcp: { projectId: body.gcpProjectId ?? undefined, region: body.gcpRegion ?? undefined } }
@@ -830,7 +839,9 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			if (Array.isArray(data.data)) {
 				models = (data.data as Array<{ id?: string }>).map((m) => m.id).filter(Boolean) as string[];
 			} else if (Array.isArray(data.models)) {
-				models = (data.models as Array<{ id?: string; name?: string }>).map((m) => m.id || m.name).filter(Boolean) as string[];
+				models = (data.models as Array<{ id?: string; name?: string }>)
+					.map((m) => m.id || m.name)
+					.filter(Boolean) as string[];
 			}
 			return { models };
 		},
@@ -934,7 +945,10 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 						const piLaunchConfig = resolvePiLaunchConfig({
 							workspaceProfile: await loadSelectedPiLaunchProfile(workspaceScope),
 						});
-						const homeAgentSystemPrompt = resolvePiHomeAgentSystemPrompt(body.taskId, workspaceScope.workspacePath);
+						const homeAgentSystemPrompt = resolvePiHomeAgentSystemPrompt(
+							body.taskId,
+							workspaceScope.workspacePath,
+						);
 						summary = await piService.startTaskSession({
 							taskId: body.taskId,
 							cwd: workspaceScope.workspacePath,
@@ -1051,31 +1065,42 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			return await deps.runUpdateNow();
 		},
 		listAgentProviderConfigs: async (): Promise<RuntimeAgentProviderConfigListResponse> => {
+			// Back-compat shape: the default provider per agent (single-provider view).
 			return { agents: getAllAgentProviderConfigs() };
+		},
+		listAgentProviders: async (): Promise<RuntimeAgentProviderSetListResponse> => {
+			// Full multi-provider view: every agent's registered providers + default.
+			return { agents: getAllAgentProviderSets() };
 		},
 		saveAgentProviderConfig: async (
 			input: RuntimeAgentProviderConfigSaveRequest,
 		): Promise<RuntimeAgentProviderMutationResponse> => {
+			// Add or update one provider for the agent, keyed by its provider name.
 			await saveAgentProvider(input.agentId, input.config as AgentProviderConfig);
-			return { ok: true, config: getAgentProviderConfig(input.agentId) ?? undefined };
+			return {
+				ok: true,
+				config: getAgentProviderConfig(input.agentId, input.config.provider) ?? undefined,
+			};
 		},
 		addProviderToAgent: async (
-			_input: RuntimeAgentProviderMutationRequest,
+			input: RuntimeAgentProviderMutationRequest,
 		): Promise<RuntimeAgentProviderMutationResponse> => {
-			// No-op in per-agent model.
-			return { ok: true, config: getAgentProviderConfig(_input.agentId) ?? undefined };
+			// Providers are created via saveAgentProviderConfig (which carries the
+			// full config); there is nothing to add from an id alone.
+			return { ok: true, config: getAgentProviderConfig(input.agentId, input.providerId) ?? undefined };
 		},
 		removeProviderFromAgent: async (
-			_input: RuntimeAgentProviderMutationRequest,
+			input: RuntimeAgentProviderMutationRequest,
 		): Promise<RuntimeAgentProviderMutationResponse> => {
-			// No-op in per-agent model.
-			return { ok: true, config: getAgentProviderConfig(_input.agentId) ?? undefined };
+			await deleteAgentProvider(input.agentId, input.providerId);
+			return { ok: true, config: getAgentProviderConfig(input.agentId) ?? undefined };
 		},
 		selectAgentProvider: async (
-			_input: RuntimeAgentProviderMutationRequest,
+			input: RuntimeAgentProviderMutationRequest,
 		): Promise<RuntimeAgentProviderMutationResponse> => {
-			// No-op in per-agent model.
-			return { ok: true, config: getAgentProviderConfig(_input.agentId) ?? undefined };
+			// Set the agent's default provider.
+			await setDefaultAgentProvider(input.agentId, input.providerId);
+			return { ok: true, config: getAgentProviderConfig(input.agentId) ?? undefined };
 		},
 	};
 }
