@@ -46,6 +46,9 @@ describe("AgentProfileEditDialog", () => {
 		container.remove();
 	});
 
+	const hasExactText = (label: string): boolean =>
+		Array.from(document.querySelectorAll("span")).some((el) => el.textContent?.trim() === label);
+
 	it("renders no provider-definition fields (base URL / API key / region / GCP)", () => {
 		act(() => {
 			root.render(
@@ -65,7 +68,7 @@ describe("AgentProfileEditDialog", () => {
 		expect(text.includes("Base URL")).toBe(false);
 		expect(text.includes("API key")).toBe(false);
 		expect(text.includes("GCP project ID")).toBe(false);
-		expect(text.includes("Provider")).toBe(true);
-		expect(text.includes("Model")).toBe(true);
+		expect(hasExactText("Provider")).toBe(true);
+		expect(hasExactText("Model")).toBe(true);
 	});
 });
