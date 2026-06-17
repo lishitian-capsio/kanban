@@ -172,6 +172,21 @@ vi.mock("../../../src/agent-sdk/kanban/agent-provider-config.js", () => ({
 		agentProviderConfigMocks.deleteAgentProvider(agentId, providerId),
 	setDefaultAgentProvider: (agentId: string, providerId: string) =>
 		agentProviderConfigMocks.setDefaultAgentProvider(agentId, providerId),
+	redactAgentProviderSets: (
+		sets: Record<string, { agentId: string; providers: Array<Record<string, unknown>>; defaultProviderId?: string }>,
+	) => {
+		const out: Record<
+			string,
+			{ agentId: string; providers: Array<Record<string, unknown>>; defaultProviderId?: string }
+		> = {};
+		for (const [agentId, set] of Object.entries(sets)) {
+			out[agentId] = {
+				...set,
+				providers: set.providers.map(({ apiKey, ...rest }) => ({ ...rest })),
+			};
+		}
+		return out;
+	},
 }));
 
 // Legacy provider-settings-store is deleted; keep a no-op mock for any stale imports.
