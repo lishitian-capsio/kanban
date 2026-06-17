@@ -1490,6 +1490,7 @@ export function RuntimeSettingsDialog({
 				onOpenChange={setProviderDialogOpen}
 				workspaceId={workspaceId}
 				existingProviderIds={providerCatalogAll.map((p) => p.id)}
+				agentId={providersAgentId}
 				mode={providerDialogMode}
 				initialValues={providerDialogInitialValues}
 				onSubmit={handleProviderDialogSubmit}

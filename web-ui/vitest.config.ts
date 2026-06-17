@@ -15,6 +15,7 @@ export default defineConfig({
 			"@": resolve(__dirname, "src"),
 			"@runtime-agent-catalog": resolve(__dirname, "../src/core/agent-catalog.ts"),
 			"@runtime-kanban-tool-call-display": resolve(__dirname, "../src/agent-sdk/shared/tool-call-display.ts"),
+			"@runtime-provider-protocol": resolve(__dirname, "../src/agent-sdk/kanban/provider-protocol.ts"),
 			"@runtime-home-agent-session": resolve(__dirname, "../src/core/home-agent-session.ts"),
 			"@runtime-shortcuts": resolve(__dirname, "../src/config/shortcut-utils.ts"),
 			"@runtime-safe-uuid": resolve(__dirname, "../src/core/safe-uuid.ts"),

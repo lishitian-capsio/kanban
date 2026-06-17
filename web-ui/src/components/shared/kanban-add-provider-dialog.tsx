@@ -1,3 +1,8 @@
+import {
+	AGENT_PROTOCOL_COMPATIBILITY,
+	PROVIDER_PROTOCOLS,
+	type ProviderProtocol,
+} from "@runtime-provider-protocol";
 import { Check, Eye, EyeOff, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { type KeyboardEvent, type ReactElement, useEffect, useMemo, useState } from "react";
 
@@ -13,7 +18,6 @@ import type {
 import { fetchRemoteProviderModels } from "@/runtime/runtime-config-query";
 import type { RuntimeKanbanProviderCapability } from "@/runtime/types";
 
-type ProviderProtocol = "anthropic" | "openai";
 const PROTOCOL_OPTIONS: readonly { value: ProviderProtocol; label: string; description: string }[] = [
 	{ value: "openai", label: "OpenAI-compatible", description: "OpenAI, Ollama, OpenRouter, most providers" },
 	{ value: "anthropic", label: "Anthropic-compatible", description: "Anthropic, Amazon Bedrock, some proxies" },
@@ -29,6 +33,28 @@ const DEFAULT_API_KEY_FIELD: ApiKeyField = "auth_token";
 const ANTHROPIC_MODEL_TIERS = ["haiku", "sonnet", "opus"] as const;
 type AnthropicModelTier = (typeof ANTHROPIC_MODEL_TIERS)[number];
 type AnthropicDefaultModelsForm = Record<AnthropicModelTier, string>;
+
+/**
+ * Resolve the protocols an agent can actually use. An empty/undefined
+ * compatibility entry (e.g. gemini's independent protocol) is treated as
+ * "no restriction" so every protocol stays selectable.
+ */
+function resolveAllowedProtocols(agentId: string | undefined): ProviderProtocol[] {
+	if (!agentId) {
+		return [...PROVIDER_PROTOCOLS];
+	}
+	const compatible = AGENT_PROTOCOL_COMPATIBILITY[agentId];
+	if (!compatible || compatible.length === 0) {
+		return [...PROVIDER_PROTOCOLS];
+	}
+	return compatible;
+}
+
+/** Pick the default protocol for a new provider, honoring the display order. */
+function pickDefaultProtocol(allowedProtocols: ProviderProtocol[]): ProviderProtocol {
+	const ordered = PROTOCOL_OPTIONS.find((option) => allowedProtocols.includes(option.value));
+	return ordered?.value ?? allowedProtocols[0] ?? "openai";
+}
 
 const CAPABILITY_OPTIONS: readonly RuntimeKanbanProviderCapability[] = [
 	"streaming",
@@ -94,7 +120,10 @@ export interface KanbanProviderDialogInitialValues {
 
 let nextHeaderEntryId = 0;
 
-function createInitialFormState(initialValues?: KanbanProviderDialogInitialValues | null): FormState {
+function createInitialFormState(
+	initialValues: KanbanProviderDialogInitialValues | null | undefined,
+	allowedProtocols: ProviderProtocol[],
+): FormState {
 	const initialHeaders = Object.entries(initialValues?.headers ?? {}).map(([key, value]) => ({
 		...createHeaderEntry(),
 		key,
@@ -116,7 +145,7 @@ function createInitialFormState(initialValues?: KanbanProviderDialogInitialValue
 			baseUrl: initialValues.baseUrl ?? "",
 		}));
 	} else {
-		protocolConfigs = [{ protocol: "openai", baseUrl: initialValues?.baseUrl ?? "" }];
+		protocolConfigs = [{ protocol: pickDefaultProtocol(allowedProtocols), baseUrl: initialValues?.baseUrl ?? "" }];
 	}
 
 	return {
@@ -174,6 +203,7 @@ export function KanbanAddProviderDialog({
 	onOpenChange,
 	workspaceId = null,
 	existingProviderIds,
+	agentId,
 	mode = "add",
 	initialValues = null,
 	onSubmit,
@@ -182,11 +212,25 @@ export function KanbanAddProviderDialog({
 	onOpenChange: (open: boolean) => void;
 	workspaceId?: string | null;
 	existingProviderIds: string[];
+	/**
+	 * The agent the provider is being configured for. Constrains which API
+	 * protocols are selectable to those the agent supports
+	 * (see AGENT_PROTOCOL_COMPATIBILITY). Omit for no constraint.
+	 */
+	agentId?: string;
 	mode?: KanbanProviderDialogMode;
 	initialValues?: KanbanProviderDialogInitialValues | null;
 	onSubmit: (input: AddKanbanProviderInput | UpdateKanbanProviderInput) => Promise<SaveResult>;
 }): ReactElement {
-	const initialForm = useMemo(() => createInitialFormState(initialValues), [initialValues]);
+	const allowedProtocols = useMemo(() => resolveAllowedProtocols(agentId), [agentId]);
+	const visibleProtocolOptions = useMemo(
+		() => PROTOCOL_OPTIONS.filter((option) => allowedProtocols.includes(option.value)),
+		[allowedProtocols],
+	);
+	const initialForm = useMemo(
+		() => createInitialFormState(initialValues, allowedProtocols),
+		[initialValues, allowedProtocols],
+	);
 	const [form, setForm] = useState<FormState>(() => initialForm);
 	const [modelInput, setModelInput] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -493,7 +537,7 @@ export function KanbanAddProviderDialog({
 				<section className="rounded-lg border border-border bg-surface-1 p-3">
 					<p className="mb-2 text-[12px] text-text-secondary">Protocols</p>
 					<div className="flex flex-wrap gap-2 mb-3">
-						{PROTOCOL_OPTIONS.map((option) => {
+						{visibleProtocolOptions.map((option) => {
 							const selected = enabledProtocols.includes(option.value);
 							return (
 								<button

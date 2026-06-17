@@ -244,8 +244,11 @@ export function useRuntimeSettingsKanbanController(
 	options: UseRuntimeSettingsKanbanControllerOptions,
 ): UseRuntimeSettingsKanbanControllerResult {
 	const { open, workspaceId, config, taskKanbanSettings } = options;
-	// Pi is always the primary agent for Settings provider configuration.
-	// Each agent manages its own provider config independently at runtime.
+	// This controller's own reactive state (model picker, OAuth/account, refresh)
+	// is pi-scoped — pi is the only agent with an in-process model registry and
+	// managed OAuth. Per-agent provider CRUD is NOT pinned here: addCustomProvider /
+	// updateCustomProvider take an explicit `agentId` so the Settings → Providers
+	// section can define providers for any agent (claude/codex/gemini/...).
 	const selectedAgentId = "pi" as const;
 	const [providerId, setProviderId] = useState("");
 	const [modelId, setModelId] = useState("");

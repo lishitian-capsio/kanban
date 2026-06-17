@@ -9,6 +9,7 @@ function findButtonByText(container: ParentNode, text: string): HTMLButtonElemen
 		null) as HTMLButtonElement | null;
 }
 
+/** Find a button whose text content contains the given substring (e.g. protocol toggles with a label + description). */
 function findButtonContainingText(container: ParentNode, text: string): HTMLButtonElement | null {
 	return (Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes(text)) ??
 		null) as HTMLButtonElement | null;
@@ -212,6 +213,116 @@ describe("KanbanAddProviderDialog", () => {
 				anthropic: { apiKeyField: "api_key" },
 			}),
 		);
+	});
+
+	it("constrains the protocol options to the selected agent's compatibility (anthropic-only)", async () => {
+		await act(async () => {
+			root.render(
+				<KanbanAddProviderDialog
+					open={true}
+					onOpenChange={() => {}}
+					existingProviderIds={[]}
+					agentId="claude"
+					onSubmit={async () => ({ ok: true })}
+				/>,
+			);
+		});
+
+		// claude → ["anthropic"]: only the Anthropic option is selectable.
+		expect(findButtonContainingText(document.body, "Anthropic-compatible")).toBeInstanceOf(HTMLButtonElement);
+		expect(findButtonContainingText(document.body, "OpenAI-compatible")).toBeNull();
+
+		// The default protocol row defaults to the agent-compatible protocol.
+		const baseUrlInput = Array.from(document.body.querySelectorAll("input")).find(
+			(input) => input.placeholder === "https://api.anthropic.com",
+		) as HTMLInputElement | undefined;
+		expect(baseUrlInput).toBeDefined();
+	});
+
+	it("constrains the protocol options to the selected agent's compatibility (openai-only)", async () => {
+		await act(async () => {
+			root.render(
+				<KanbanAddProviderDialog
+					open={true}
+					onOpenChange={() => {}}
+					existingProviderIds={[]}
+					agentId="codex"
+					onSubmit={async () => ({ ok: true })}
+				/>,
+			);
+		});
+
+		// codex → ["openai"]: only the OpenAI option is selectable.
+		expect(findButtonContainingText(document.body, "OpenAI-compatible")).toBeInstanceOf(HTMLButtonElement);
+		expect(findButtonContainingText(document.body, "Anthropic-compatible")).toBeNull();
+	});
+
+	it("submits the agent-compatible protocol for the selected agent", async () => {
+		const onSubmit = vi.fn(async () => ({ ok: true }));
+
+		await act(async () => {
+			root.render(
+				<KanbanAddProviderDialog
+					open={true}
+					onOpenChange={() => {}}
+					existingProviderIds={[]}
+					agentId="claude"
+					onSubmit={onSubmit}
+				/>,
+			);
+		});
+
+		const inputs = Array.from(document.body.querySelectorAll("input"));
+		const providerIdInput = inputs.find((input) => input.placeholder === "my-provider") as HTMLInputElement | undefined;
+		const providerNameInput = inputs.find((input) => input.placeholder === "My Provider") as
+			| HTMLInputElement
+			| undefined;
+		const baseUrlInput = inputs.find((input) => input.placeholder === "https://api.anthropic.com") as
+			| HTMLInputElement
+			| undefined;
+		const modelInput = inputs.find((input) => input.placeholder === "Type a model ID and press Enter") as
+			| HTMLInputElement
+			| undefined;
+
+		await act(async () => {
+			if (!providerIdInput || !providerNameInput || !baseUrlInput || !modelInput) {
+				return;
+			}
+			setInputValue(providerIdInput, "my-anthropic");
+			setInputValue(providerNameInput, "My Anthropic");
+			setInputValue(baseUrlInput, "https://relay.example.com");
+			setInputValue(modelInput, "claude-opus-4");
+		});
+
+		const saveButton = findButtonByText(document.body, "Add provider");
+		await act(async () => {
+			saveButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			saveButton?.click();
+		});
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				protocols: [{ protocol: "anthropic", baseUrl: "https://relay.example.com" }],
+			}),
+		);
+	});
+
+	it("shows all protocols when the agent has no protocol restrictions", async () => {
+		await act(async () => {
+			root.render(
+				<KanbanAddProviderDialog
+					open={true}
+					onOpenChange={() => {}}
+					existingProviderIds={[]}
+					agentId="gemini"
+					onSubmit={async () => ({ ok: true })}
+				/>,
+			);
+		});
+
+		// gemini → [] (independent protocol): treated as no constraint, both shown.
+		expect(findButtonContainingText(document.body, "OpenAI-compatible")).toBeInstanceOf(HTMLButtonElement);
+		expect(findButtonContainingText(document.body, "Anthropic-compatible")).toBeInstanceOf(HTMLButtonElement);
 	});
 
 	it("updates capability toggle state and submits the selected capabilities", async () => {

@@ -783,6 +783,7 @@ export function KanbanSetupSection({
 				open={isAddProviderDialogOpen}
 				onOpenChange={setIsAddProviderDialogOpen}
 				existingProviderIds={controller.providerCatalog.map((provider) => provider.id)}
+				agentId="pi"
 				mode={providerDialogMode}
 				initialValues={providerDialogMode === "edit" ? selectedProviderEditInitialValues : null}
 				onSubmit={async (input) => {
