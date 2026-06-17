@@ -17,11 +17,7 @@ function record(
 		agentId: "pi",
 		providerId: null,
 		modelId: null,
-		baseUrl: null,
 		reasoningEffort: null,
-		region: null,
-		gcpProjectId: null,
-		gcpRegion: null,
 		...overrides,
 	};
 }

@@ -11,10 +11,7 @@ import type { RuntimeAgentId, RuntimeAgentProfileRecord, RuntimeAgentProfilesDat
 
 /** Fields a caller may patch on an existing profile (identity + agent are fixed). */
 export type AgentProfilePatch = Partial<
-	Pick<
-		RuntimeAgentProfileRecord,
-		"name" | "providerId" | "modelId" | "baseUrl" | "reasoningEffort" | "region" | "gcpProjectId" | "gcpRegion"
-	>
+	Pick<RuntimeAgentProfileRecord, "name" | "providerId" | "modelId" | "reasoningEffort">
 >;
 
 function normalizeName(name: string): string {
