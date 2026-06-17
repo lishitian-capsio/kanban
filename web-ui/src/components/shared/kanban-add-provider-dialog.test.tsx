@@ -59,7 +59,7 @@ describe("KanbanAddProviderDialog", () => {
 		const providerNameInput = inputs.find((input) => input.placeholder === "My Provider") as
 			| HTMLInputElement
 			| undefined;
-		const baseUrlInput = inputs.find((input) => input.placeholder === "https://api.example.com/v1") as
+		const baseUrlInput = inputs.find((input) => input.placeholder === "https://api.openai.com/v1") as
 			| HTMLInputElement
 			| undefined;
 		const modelInput = inputs.find((input) => input.placeholder === "Type a model ID and press Enter") as
@@ -171,7 +171,7 @@ describe("KanbanAddProviderDialog", () => {
 		const providerNameInput = inputs.find((input) => input.placeholder === "My Provider") as
 			| HTMLInputElement
 			| undefined;
-		const baseUrlInput = inputs.find((input) => input.placeholder === "https://api.example.com/v1") as
+		const baseUrlInput = inputs.find((input) => input.placeholder === "https://api.openai.com/v1") as
 			| HTMLInputElement
 			| undefined;
 		const modelInput = inputs.find((input) => input.placeholder === "Type a model ID and press Enter") as
