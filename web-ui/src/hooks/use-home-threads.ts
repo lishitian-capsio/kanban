@@ -15,13 +15,21 @@
 // terminal); registry threads carry a fixed agent chosen at creation.
 
 import { DEFAULT_HOME_THREAD_ID } from "@runtime-home-agent-session";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { notifyError } from "@/components/app-toaster";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeAgentId, RuntimeConfigResponse, RuntimeHomeChatThread } from "@/runtime/types";
 
 const DEFAULT_THREAD_NAME = "Default";
+
+// The initial registry load can fail transiently on restart (the workspace scope
+// is briefly unresolvable while the runtime finishes its boot migrations/locks,
+// or auth is not yet established in --host/passcode mode). The threads are safe
+// server-side, so retry a bounded number of times with a small linear backoff
+// rather than giving up and hiding every thread behind the synthetic Default.
+const HOME_THREADS_LOAD_RETRY_BASE_DELAY_MS = 500;
+const HOME_THREADS_LOAD_MAX_ATTEMPTS = 5;
 
 export interface HomeThread extends RuntimeHomeChatThread {
 	/** True for the synthetic default thread (not a registry entry; not renamable/closable). */
@@ -61,20 +69,30 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 	>({});
 	const [activeThreadIdByWorkspace, setActiveThreadIdByWorkspace] = useState<Record<string, string>>({});
 	const [loadingWorkspaceId, setLoadingWorkspaceId] = useState<string | null>(null);
+	const [loadRetryNonce, setLoadRetryNonce] = useState(0);
+	// Tracks workspaces whose registry load *succeeded*. Using this (instead of the
+	// presence of a `registryThreadsByWorkspace` entry) as the load guard is the
+	// crux of the fix: a failed load no longer writes a poisoning empty entry that
+	// would mask every persisted thread until a full reload.
+	const loadedWorkspacesRef = useRef<Set<string>>(new Set());
+	const loadAttemptsRef = useRef<Map<string, number>>(new Map());
 
 	const selectedAgentId = runtimeProjectConfig?.selectedAgentId ?? null;
 
-	// Load (or reload) the registry threads whenever the workspace becomes available.
+	// Load the registry threads once per workspace (with bounded retry on transient
+	// failure) whenever the workspace becomes available.
 	useEffect(() => {
 		if (!currentProjectId || !runtimeProjectConfig) {
 			return;
 		}
-		if (registryThreadsByWorkspace[currentProjectId]) {
+		if (loadedWorkspacesRef.current.has(currentProjectId)) {
 			return;
 		}
+		const workspaceId = currentProjectId;
 		let cancelled = false;
-		setLoadingWorkspaceId(currentProjectId);
-		void getRuntimeTrpcClient(currentProjectId)
+		let retryTimer: ReturnType<typeof setTimeout> | null = null;
+		setLoadingWorkspaceId(workspaceId);
+		void getRuntimeTrpcClient(workspaceId)
 			.runtime.listHomeThreads.query()
 			.then((response) => {
 				if (cancelled) {
@@ -83,9 +101,11 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 				if (!response.ok) {
 					throw new Error(response.error ?? "Could not load home chat threads.");
 				}
+				loadedWorkspacesRef.current.add(workspaceId);
+				loadAttemptsRef.current.delete(workspaceId);
 				setRegistryThreadsByWorkspace((current) => ({
 					...current,
-					[currentProjectId]: response.threads,
+					[workspaceId]: response.threads,
 				}));
 			})
 			.catch((error) => {
@@ -93,20 +113,29 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 					return;
 				}
 				notifyError(error instanceof Error ? error.message : String(error));
-				setRegistryThreadsByWorkspace((current) => ({
-					...current,
-					[currentProjectId]: [],
-				}));
+				// Do NOT cache an empty list: the threads still exist server-side.
+				// Schedule a bounded retry so a transient boot/auth failure self-heals
+				// instead of permanently hiding every thread behind the Default.
+				const attempts = (loadAttemptsRef.current.get(workspaceId) ?? 0) + 1;
+				loadAttemptsRef.current.set(workspaceId, attempts);
+				if (attempts < HOME_THREADS_LOAD_MAX_ATTEMPTS) {
+					retryTimer = setTimeout(() => {
+						setLoadRetryNonce((nonce) => nonce + 1);
+					}, HOME_THREADS_LOAD_RETRY_BASE_DELAY_MS * attempts);
+				}
 			})
 			.finally(() => {
 				if (!cancelled) {
-					setLoadingWorkspaceId((current) => (current === currentProjectId ? null : current));
+					setLoadingWorkspaceId((current) => (current === workspaceId ? null : current));
 				}
 			});
 		return () => {
 			cancelled = true;
+			if (retryTimer) {
+				clearTimeout(retryTimer);
+			}
 		};
-	}, [currentProjectId, runtimeProjectConfig, registryThreadsByWorkspace]);
+	}, [currentProjectId, runtimeProjectConfig, loadRetryNonce]);
 
 	const threads = useMemo<HomeThread[]>(() => {
 		if (!currentProjectId || !selectedAgentId) {

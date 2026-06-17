@@ -1,5 +1,5 @@
 import { DEFAULT_HOME_THREAD_ID } from "@runtime-home-agent-session";
-import { act, useEffect } from "react";
+import { act, useEffect, useMemo } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -87,6 +87,20 @@ function Harness({ onResult }: { onResult: (result: UseHomeThreadsResult) => voi
 	return null;
 }
 
+// Mirrors the real app, where `runtimeProjectConfig` is a stable reference once
+// loaded (it does not churn on every render). With a stable config there is no
+// effect re-run to incidentally cancel/retry an in-flight load, so a failed
+// initial load is not masked — this is what exposes the restart "threads
+// vanished" bug.
+function StableHarness({ onResult }: { onResult: (result: UseHomeThreadsResult) => void }): null {
+	const config = useMemo(() => createRuntimeConfig(), []);
+	const result = useHomeThreads({ currentProjectId: "workspace-1", runtimeProjectConfig: config });
+	useEffect(() => {
+		onResult(result);
+	});
+	return null;
+}
+
 describe("useHomeThreads", () => {
 	let container: HTMLDivElement;
 	let root: Root;
@@ -140,6 +154,45 @@ describe("useHomeThreads", () => {
 		expect(result.threads[0]).toMatchObject({ id: DEFAULT_HOME_THREAD_ID, agentId: "pi", isDefault: true });
 		expect(result.threads[1]).toMatchObject({ id: "thread-1", agentId: "claude", isDefault: false });
 		expect(result.activeThreadId).toBe(DEFAULT_HOME_THREAD_ID);
+	});
+
+	it("recovers persisted threads after a transient first-load failure (no permanent poisoning)", async () => {
+		// On restart the very first listHomeThreads can fail transiently (workspace
+		// scope not yet resolvable during boot migrations/locks, or auth not yet
+		// established in --host/passcode mode). The backend still has the threads,
+		// so a later attempt succeeds. The hook must NOT cache the failure as an
+		// empty "loaded" result and give up — that hides every persisted thread
+		// behind the synthetic Default for the whole session.
+		vi.useFakeTimers();
+		try {
+			listHomeThreadsQueryMock
+				.mockRejectedValueOnce(new Error("Unknown workspace ID: workspace-1"))
+				.mockResolvedValue({ ok: true, threads: [createThread()] });
+			let latest: UseHomeThreadsResult | null = null;
+
+			await act(async () => {
+				root.render(
+					<StableHarness
+						onResult={(result) => {
+							latest = result;
+						}}
+					/>,
+				);
+				await Promise.resolve();
+				await Promise.resolve();
+			});
+
+			// Let any scheduled retry fire.
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(5000);
+			});
+
+			const result = latest as unknown as UseHomeThreadsResult;
+			expect(listHomeThreadsQueryMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+			expect(result.threads.map((thread) => thread.id)).toEqual([DEFAULT_HOME_THREAD_ID, "thread-1"]);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("creates a thread, auto-selects it, and appends it to the list", async () => {
