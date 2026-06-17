@@ -993,6 +993,8 @@ describe("useRuntimeSettingsKanbanController", () => {
 			baseUrl: "http://localhost:8000/v1",
 			apiKey: "secret-key",
 			model: "qwen2.5-coder:32b",
+			// The full model list must be persisted, not just the default (fdd77).
+			models: ["qwen2.5-coder:32b"],
 		}));
 		expect(fetchKanbanProviderCatalogMock).toHaveBeenLastCalledWith("workspace-1");
 		expect(fetchKanbanProviderModelsMock).toHaveBeenLastCalledWith("workspace-1", "my-provider");

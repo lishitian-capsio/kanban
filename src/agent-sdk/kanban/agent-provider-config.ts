@@ -16,9 +16,18 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { z } from "zod";
+import {
+	runtimeAgentProviderConfigSchema,
+	runtimeProviderProtocolSchema,
+	runtimeReasoningEffortSchema,
+} from "../../core/api-contract";
 import { lockedFileSystem } from "../../fs/locked-file-system";
+import { createLogger } from "../../logging";
 import type { ApiKeyField, ProtocolConfig } from "./provider-protocol";
 import type { AnthropicDefaultModels, ProviderSettingsReasoning } from "./provider-types";
+
+const log = createLogger("agent-provider-config");
 
 // ------------------------------------------------------------------ types
 
@@ -31,8 +40,12 @@ export interface AgentProviderConfig {
 	agentId: string;
 	/** Provider name/id (e.g. "anthropic", "openai", custom name). */
 	provider?: string;
-	/** Selected model id. */
+	/** Selected/default model id. Must be one of `models` when that list is set. */
 	model?: string;
+	/** Full list of models the user configured/fetched for this provider. */
+	models?: string[];
+	/** Remote `/models` discovery endpoint the model list was fetched from. */
+	modelsSourceUrl?: string;
 	/** API key for the provider. */
 	apiKey?: string;
 	/** @deprecated Legacy single baseUrl. Use `protocols[].baseUrl` instead. */
@@ -91,28 +104,60 @@ export function resolveAgentProvidersPath(): string {
 
 let cachedState: AgentProvidersFile | null = null;
 
-/** Coerce one raw on-disk object into a validated AgentProviderConfig. */
+/**
+ * Validated shape of one persisted provider config (sans `agentId`, which is
+ * supplied by the caller). Reuses the wire contract for the shared fields and
+ * tightens the enums it leaves as free strings — notably `reasoning.effort` and
+ * the protocol names — so corrupt on-disk values are caught rather than trusted.
+ */
+const storedProviderConfigSchema = runtimeAgentProviderConfigSchema.omit({ agentId: true }).extend({
+	protocols: z.array(z.object({ protocol: runtimeProviderProtocolSchema, baseUrl: z.string().optional() })).optional(),
+	reasoning: z
+		.object({
+			enabled: z.boolean().optional(),
+			effort: runtimeReasoningEffortSchema.optional(),
+			budgetTokens: z.number().optional(),
+		})
+		.optional(),
+	apiKeyField: z.enum(["auth_token", "api_key"]).optional(),
+	anthropicDefaultModels: z
+		.object({ haiku: z.string().optional(), sonnet: z.string().optional(), opus: z.string().optional() })
+		.optional(),
+});
+
+/**
+ * Lenient variant derived from the strict shape: a single malformed field
+ * (e.g. an unknown `reasoning.effort`) falls back to `undefined` instead of
+ * discarding the whole provider. The strict schema is still run first, purely
+ * to surface *which* field was invalid via a warning — the recovery itself is
+ * never silent.
+ */
+const lenientProviderConfigSchema = z.object(
+	Object.fromEntries(
+		Object.entries(storedProviderConfigSchema.shape).map(([key, schema]) => [
+			key,
+			(schema as z.ZodTypeAny).catch(undefined),
+		]),
+	),
+);
+
+type StoredProviderConfig = z.infer<typeof storedProviderConfigSchema>;
+
+/** Validate one raw on-disk object into an AgentProviderConfig (Zod-backed). */
 function validateConfig(agentId: string, config: Record<string, unknown>): AgentProviderConfig {
-	const c = config as Partial<AgentProviderConfig>;
-	return {
+	const result = storedProviderConfigSchema.safeParse(config);
+	if (result.success) {
+		return { agentId, ...result.data };
+	}
+	log.warn("Dropping invalid field(s) from stored agent provider config", {
 		agentId,
-		provider: typeof c.provider === "string" ? c.provider : undefined,
-		model: typeof c.model === "string" ? c.model : undefined,
-		apiKey: typeof c.apiKey === "string" ? c.apiKey : undefined,
-		baseUrl: typeof c.baseUrl === "string" ? c.baseUrl : undefined,
-		protocols: Array.isArray(c.protocols) ? c.protocols : undefined,
-		apiKeyField: c.apiKeyField === "auth_token" || c.apiKeyField === "api_key" ? c.apiKeyField : undefined,
-		anthropicDefaultModels:
-			c.anthropicDefaultModels && typeof c.anthropicDefaultModels === "object"
-				? c.anthropicDefaultModels
-				: undefined,
-		reasoning: c.reasoning,
-		headers: c.headers,
-		timeout: typeof c.timeout === "number" ? c.timeout : undefined,
-		region: typeof c.region === "string" ? c.region : undefined,
-		aws: c.aws,
-		gcp: c.gcp,
-	};
+		issues: result.error.issues.map((issue) => ({
+			path: issue.path.join(".") || "(root)",
+			code: issue.code,
+			message: issue.message,
+		})),
+	});
+	return { agentId, ...(lenientProviderConfigSchema.parse(config) as StoredProviderConfig) };
 }
 
 /**
@@ -124,6 +169,7 @@ function validateConfig(agentId: string, config: Record<string, unknown>): Agent
  */
 function validateSet(agentId: string, value: unknown): AgentProviderSet | null {
 	if (!value || typeof value !== "object") {
+		log.warn("Skipping malformed agent provider entry (not an object)", { agentId });
 		return null;
 	}
 	const raw = value as Record<string, unknown>;
@@ -157,8 +203,10 @@ function readStore(path: string): AgentProvidersFile {
 			}
 			return { agents: validated };
 		}
+		log.warn("Agent provider store is missing a valid 'agents' object; ignoring", { path });
 		return { agents: {} };
-	} catch {
+	} catch (error) {
+		log.warn("Failed to read agent provider store; ignoring", { path, error });
 		return { agents: {} };
 	}
 }
@@ -220,6 +268,20 @@ function cleanProviderConfig(agentId: string, config: AgentProviderConfig): Agen
 	}
 	if (cleaned.model !== undefined) {
 		cleaned.model = cleaned.model.trim() || undefined;
+	}
+	if (cleaned.modelsSourceUrl !== undefined) {
+		cleaned.modelsSourceUrl = cleaned.modelsSourceUrl.trim() || undefined;
+	}
+	if (cleaned.models !== undefined) {
+		// Trim, drop empties, and de-duplicate while preserving order.
+		const deduped = [...new Set(cleaned.models.map((m) => m.trim()).filter(Boolean))];
+		cleaned.models = deduped.length > 0 ? deduped : undefined;
+	}
+	// Enforce the invariant that the default model is one of `models`.
+	if (cleaned.models && cleaned.models.length > 0) {
+		if (!cleaned.model || !cleaned.models.includes(cleaned.model)) {
+			cleaned.model = cleaned.models[0];
+		}
 	}
 	if (cleaned.apiKey !== undefined) {
 		cleaned.apiKey = cleaned.apiKey.trim() || undefined;

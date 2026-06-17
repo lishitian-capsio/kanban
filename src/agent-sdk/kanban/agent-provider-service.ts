@@ -247,6 +247,8 @@ export function createAgentProviderService() {
 					baseUrl: legacyBaseUrl,
 					supportsBaseUrl: (legacyBaseUrl?.trim().length ?? 0) > 0,
 					protocols: protocolConfigs,
+					models: config.models ?? [],
+					modelsSourceUrl: config.modelsSourceUrl?.trim() || null,
 				});
 			}
 
@@ -268,6 +270,8 @@ export function createAgentProviderService() {
 					baseUrl: defaultBaseUrl,
 					supportsBaseUrl: (defaultBaseUrl?.trim().length ?? 0) > 0,
 					protocols: protocolConfigs,
+					models: [],
+					modelsSourceUrl: null,
 				});
 			}
 
@@ -307,6 +311,14 @@ export function createAgentProviderService() {
 			const allConfigs = Object.values(getAllAgentProviderSets()).flatMap((set) => set.providers);
 			for (const config of allConfigs) {
 				if (config.provider?.trim().toLowerCase() === normalizedProviderId) {
+					// Prefer the persisted model list so a previously fetched/entered
+					// list is served without re-hitting the remote /models endpoint.
+					if (config.models && config.models.length > 0) {
+						return {
+							providerId: normalizedProviderId,
+							models: config.models.map((id) => toRuntimeProviderModel({ id, name: id })),
+						};
+					}
 					const openaiBaseUrl = config.protocols ? getBaseUrlForProtocol(config.protocols, "openai") : undefined;
 					const discoveryBaseUrl = openaiBaseUrl || config.baseUrl;
 					if (discoveryBaseUrl) {

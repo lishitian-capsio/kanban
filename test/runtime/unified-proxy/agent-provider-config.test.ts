@@ -4,6 +4,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createTempDir } from "../../utilities/temp-dir";
 
+// Capture warnings emitted through the logging facade so the observability of
+// invalid/corrupt on-disk data can be asserted.
+const { warnMock } = vi.hoisted(() => ({ warnMock: vi.fn() }));
+vi.mock("../../../src/logging", () => ({
+	createLogger: () => ({
+		debug: () => {},
+		info: () => {},
+		warn: warnMock,
+		error: () => {},
+		child: () => ({ debug: () => {}, info: () => {}, warn: warnMock, error: () => {} }),
+	}),
+}));
+
 // Mock locked-file-system so writes are synchronous and don't need real locking.
 vi.mock("../../../src/fs/locked-file-system", () => ({
 	lockedFileSystem: {
@@ -40,6 +53,7 @@ describe("agent-provider-config", () => {
 		(globalThis as { __testAgentProvidersPath?: string }).__testAgentProvidersPath = path;
 		originalEnv = process.env.KANBAN_AGENT_PROVIDERS_PATH;
 		process.env.KANBAN_AGENT_PROVIDERS_PATH = path;
+		warnMock.mockClear();
 		resetAgentProviderConfigCache();
 	});
 
@@ -294,6 +308,59 @@ describe("agent-provider-config", () => {
 		expect(config!.anthropicDefaultModels).toEqual({ haiku: "h-model", sonnet: "s-model", opus: "o-model" });
 	});
 
+	it("persists the full models list and modelsSourceUrl round-trip", async () => {
+		await saveAgentProvider("pi", {
+			agentId: "pi",
+			provider: "openai",
+			models: ["gpt-5", "gpt-5-mini", "o3"],
+			model: "gpt-5-mini",
+			modelsSourceUrl: "https://api.example.com/v1/models",
+		});
+		resetAgentProviderConfigCache();
+
+		const config = getAgentProviderConfig("pi");
+		expect(config!.models).toEqual(["gpt-5", "gpt-5-mini", "o3"]);
+		expect(config!.model).toBe("gpt-5-mini");
+		expect(config!.modelsSourceUrl).toBe("https://api.example.com/v1/models");
+	});
+
+	it("trims and de-duplicates models, dropping empties", async () => {
+		await saveAgentProvider("pi", {
+			agentId: "pi",
+			provider: "openai",
+			models: ["  gpt-5  ", "gpt-5", "", "  ", "o3"],
+		});
+		resetAgentProviderConfigCache();
+
+		const config = getAgentProviderConfig("pi");
+		expect(config!.models).toEqual(["gpt-5", "o3"]);
+	});
+
+	it("repoints the default model to the first listed model when it is not in the list", async () => {
+		await saveAgentProvider("pi", {
+			agentId: "pi",
+			provider: "openai",
+			models: ["gpt-5", "o3"],
+			model: "stale-model",
+		});
+		resetAgentProviderConfigCache();
+
+		const config = getAgentProviderConfig("pi");
+		expect(config!.model).toBe("gpt-5");
+	});
+
+	it("defaults the model to the first listed model when none is given", async () => {
+		await saveAgentProvider("pi", {
+			agentId: "pi",
+			provider: "openai",
+			models: ["gpt-5", "o3"],
+		});
+		resetAgentProviderConfigCache();
+
+		const config = getAgentProviderConfig("pi");
+		expect(config!.model).toBe("gpt-5");
+	});
+
 	it("stores reasoning settings", async () => {
 		await saveAgentProvider("pi", {
 			agentId: "pi",
@@ -304,5 +371,87 @@ describe("agent-provider-config", () => {
 
 		const config = getAgentProviderConfig("pi");
 		expect(config!.reasoning).toEqual({ enabled: true, effort: "high", budgetTokens: 1000 });
+	});
+
+	it("does not warn for a valid on-disk config", () => {
+		const path = join(temp.path, "agent_providers.json");
+		writeFileSync(
+			path,
+			JSON.stringify({
+				agents: {
+					pi: {
+						agentId: "pi",
+						provider: "openai",
+						model: "gpt-5",
+						reasoning: { effort: "high" },
+					},
+				},
+			}),
+		);
+		resetAgentProviderConfigCache();
+
+		expect(getAgentProviderConfig("pi")!.reasoning).toEqual({ effort: "high" });
+		expect(warnMock).not.toHaveBeenCalled();
+	});
+
+	it("drops an invalid reasoning.effort enum value, keeps the rest, and warns with agentId", () => {
+		const path = join(temp.path, "agent_providers.json");
+		writeFileSync(
+			path,
+			JSON.stringify({
+				agents: {
+					pi: {
+						agentId: "pi",
+						provider: "openai",
+						model: "gpt-5",
+						reasoning: { enabled: true, effort: "ultra", budgetTokens: 1000 },
+					},
+				},
+			}),
+		);
+		resetAgentProviderConfigCache();
+
+		const config = getAgentProviderConfig("pi");
+		// Valid sibling fields survive the bad enum value.
+		expect(config!.provider).toBe("openai");
+		expect(config!.model).toBe("gpt-5");
+		// The malformed reasoning object is dropped rather than trusted.
+		expect(config!.reasoning).toBeUndefined();
+		// And the loss is observable, scoped to the agent.
+		expect(warnMock).toHaveBeenCalled();
+		const [, fields] = warnMock.mock.calls[0] as [string, { agentId: string }];
+		expect(fields.agentId).toBe("pi");
+	});
+
+	it("drops a wrong-typed scalar field, keeps the rest, and warns", () => {
+		const path = join(temp.path, "agent_providers.json");
+		writeFileSync(
+			path,
+			JSON.stringify({
+				agents: {
+					pi: {
+						agentId: "pi",
+						provider: "openai",
+						model: "gpt-5",
+						timeout: "not-a-number",
+					},
+				},
+			}),
+		);
+		resetAgentProviderConfigCache();
+
+		const config = getAgentProviderConfig("pi");
+		expect(config!.provider).toBe("openai");
+		expect(config!.timeout).toBeUndefined();
+		expect(warnMock).toHaveBeenCalled();
+	});
+
+	it("warns when the store file is corrupt JSON", () => {
+		const path = join(temp.path, "agent_providers.json");
+		writeFileSync(path, "not valid json{{{");
+		resetAgentProviderConfigCache();
+
+		expect(getAgentProviderConfig("pi")).toBeNull();
+		expect(warnMock).toHaveBeenCalled();
 	});
 });

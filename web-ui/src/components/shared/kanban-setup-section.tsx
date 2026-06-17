@@ -98,14 +98,18 @@ export function KanbanSetupSection({
 		const fallbackProviderId = controller.providerId.trim();
 		const fallbackProviderName = selectedProviderOption?.label.replace(/\s+\(custom\)$/i, "") || fallbackProviderId;
 		const modelIds = controller.providerModels.map((model) => model.id);
-		const normalizedModelIds =
+		const fallbackModelIds =
 			modelIds.length > 0 ? modelIds : controller.modelId.trim().length > 0 ? [controller.modelId.trim()] : [];
+		// Prefer the provider's persisted model list so the edit dialog echoes
+		// exactly what was saved; fall back to the live runtime list otherwise.
+		const normalizedModelIds = selectedProvider?.models?.length ? selectedProvider.models : fallbackModelIds;
 		return {
 			providerId: selectedProvider?.id ?? fallbackProviderId,
 			name: selectedProvider?.name ?? fallbackProviderName,
 			baseUrl: controller.baseUrl.trim() || selectedProvider?.baseUrl?.trim() || "",
 			models: normalizedModelIds,
 			defaultModelId: controller.modelId.trim() || selectedProvider?.defaultModelId?.trim() || "",
+			modelsSourceUrl: selectedProvider?.modelsSourceUrl ?? "",
 		};
 	}, [
 		canEditSelectedProvider,

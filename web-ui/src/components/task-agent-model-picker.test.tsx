@@ -30,7 +30,7 @@ function createProvider(
 	enabled: boolean,
 	defaultModelId: string | null = null,
 ): RuntimeKanbanProviderCatalogItem {
-	return { id, name, oauthSupported: false, enabled, defaultModelId, baseUrl: null, supportsBaseUrl: false, protocols: [{ protocol: "openai" }] };
+	return { id, name, oauthSupported: false, enabled, defaultModelId, baseUrl: null, supportsBaseUrl: false, protocols: [{ protocol: "openai" }], models: [], modelsSourceUrl: null };
 }
 
 function createTaskAgentSettings(settings?: RuntimeTaskAgentSettings): RuntimeTaskAgentSettings | undefined {

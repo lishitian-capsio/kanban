@@ -707,6 +707,8 @@ export function useRuntimeSettingsKanbanController(
 					apiKey: input.apiKey?.trim() || undefined,
 					baseUrl: input.baseUrl?.trim() || undefined,
 					model: input.defaultModelId?.trim() || undefined,
+					models: input.models.length > 0 ? input.models : undefined,
+					modelsSourceUrl: input.modelsSourceUrl?.trim() || undefined,
 					protocols: input.protocols?.map((p) => ({
 						protocol: p.protocol,
 						baseUrl: p.baseUrl?.trim() || undefined,
@@ -822,6 +824,10 @@ export function useRuntimeSettingsKanbanController(
 					...(input.apiKey !== undefined ? { apiKey: input.apiKey?.trim() || undefined } : {}),
 					...(input.baseUrl !== undefined ? { baseUrl: input.baseUrl?.trim() || undefined } : {}),
 					...(input.defaultModelId !== undefined ? { model: input.defaultModelId?.trim() || undefined } : {}),
+					...(input.models !== undefined ? { models: input.models.length > 0 ? input.models : undefined } : {}),
+					...(input.modelsSourceUrl !== undefined
+						? { modelsSourceUrl: input.modelsSourceUrl?.trim() || undefined }
+						: {}),
 					...(input.protocols !== undefined
 						? {
 								protocols: input.protocols.map((p) => ({

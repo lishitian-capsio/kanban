@@ -469,7 +469,8 @@ export function RuntimeSettingsDialog({
 			defaultModelId: provider.defaultModelId ?? "",
 			protocols: provider.protocols.map((p) => p.protocol),
 			protocolConfigs: provider.protocols.map((p) => ({ protocol: p.protocol, baseUrl: p.baseUrl })),
-			models: [],
+			models: provider.models,
+			modelsSourceUrl: provider.modelsSourceUrl ?? "",
 		});
 		setProviderDialogOpen(true);
 	}, []);

@@ -1232,6 +1232,10 @@ export const runtimeKanbanProviderCatalogItemSchema = z.object({
 	supportsBaseUrl: z.boolean(),
 	env: z.array(z.string()).optional(),
 	protocols: z.array(runtimeProtocolConfigSchema).default([]),
+	/** The provider's persisted model list (so edit dialogs can echo it). */
+	models: z.array(z.string()).default([]),
+	/** Persisted remote `/models` discovery endpoint, if any. */
+	modelsSourceUrl: z.string().nullable().default(null),
 });
 export type RuntimeKanbanProviderCatalogItem = z.infer<typeof runtimeKanbanProviderCatalogItemSchema>;
 
@@ -1288,6 +1292,10 @@ export const runtimeAgentProviderConfigSchema = z.object({
 	agentId: z.string(),
 	provider: z.string().optional(),
 	model: z.string().optional(),
+	/** Full list of models the user configured/fetched for this provider. */
+	models: z.array(z.string()).optional(),
+	/** Remote `/models` discovery endpoint the model list was fetched from. */
+	modelsSourceUrl: z.string().optional(),
 	apiKey: z.string().optional(),
 	baseUrl: z.string().optional(),
 	protocols: z
