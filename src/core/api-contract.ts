@@ -1216,6 +1216,13 @@ export const runtimeKanbanProviderCatalogItemSchema = z.object({
 	modelsSourceUrl: z.string().nullable().default(null),
 	/** Persisted Anthropic-protocol settings (so edit dialogs can echo them). */
 	anthropic: runtimeAnthropicProviderSettingsSchema.optional(),
+	/**
+	 * Non-secret, partially-masked preview of the configured API key (e.g.
+	 * `sk-ab••••••wxyz`), so the edit dialog can let the user confirm *which*
+	 * key is set without the full secret ever leaving the runtime. `null` when
+	 * no key is configured.
+	 */
+	apiKeyPreview: z.string().nullable().default(null),
 });
 export type RuntimeKanbanProviderCatalogItem = z.infer<typeof runtimeKanbanProviderCatalogItemSchema>;
 

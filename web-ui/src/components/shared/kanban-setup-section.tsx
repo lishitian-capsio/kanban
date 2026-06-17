@@ -110,6 +110,7 @@ export function KanbanSetupSection({
 			models: normalizedModelIds,
 			defaultModelId: controller.modelId.trim() || selectedProvider?.defaultModelId?.trim() || "",
 			modelsSourceUrl: selectedProvider?.modelsSourceUrl ?? "",
+			apiKeyPreview: selectedProvider?.apiKeyPreview ?? null,
 		};
 	}, [
 		canEditSelectedProvider,

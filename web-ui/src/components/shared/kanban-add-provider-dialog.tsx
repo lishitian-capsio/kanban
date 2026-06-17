@@ -1,3 +1,4 @@
+import { maskApiKey } from "@runtime-api-key-mask";
 import {
 	AGENT_PROTOCOL_COMPATIBILITY,
 	isOfficialLoginProviderId,
@@ -103,6 +104,13 @@ export interface KanbanProviderDialogInitialValues {
 	name: string;
 	baseUrl?: string;
 	apiKey?: string;
+	/**
+	 * Non-secret, partially-masked preview of the already-saved API key (e.g.
+	 * `sk-ab••••••wxyz`). Lets the edit dialog show *which* key is set without
+	 * the full secret; the real key is never sent to the frontend. `null`/absent
+	 * when no key is configured (or in add mode).
+	 */
+	apiKeyPreview?: string | null;
 	protocols?: ProviderProtocol[];
 	protocolConfigs?: Array<{ protocol: ProviderProtocol; baseUrl?: string }>;
 	modelsSourceUrl?: string;
@@ -248,6 +256,7 @@ export function KanbanAddProviderDialog({
 	const [error, setError] = useState<string | null>(null);
 	const [isSaving, setIsSaving] = useState(false);
 	const [showApiKey, setShowApiKey] = useState(false);
+	const [apiKeyFocused, setApiKeyFocused] = useState(false);
 	const [isFetchingModels, setIsFetchingModels] = useState(false);
 
 	useEffect(() => {
@@ -257,6 +266,7 @@ export function KanbanAddProviderDialog({
 			setError(null);
 			setIsSaving(false);
 			setShowApiKey(false);
+			setApiKeyFocused(false);
 			setIsFetchingModels(false);
 			return;
 		}
@@ -265,6 +275,7 @@ export function KanbanAddProviderDialog({
 		setError(null);
 		setIsSaving(false);
 		setShowApiKey(false);
+		setApiKeyFocused(false);
 		setIsFetchingModels(false);
 	}, [initialForm, open]);
 
@@ -343,6 +354,25 @@ export function KanbanAddProviderDialog({
 			}),
 		[draftModels, form.apiKey, form.baseUrl, form.defaultModelId, form.headers, form.modelsSourceUrl, form.timeoutMs],
 	);
+	// --- API key field display -------------------------------------------------
+	// The real saved key never reaches the frontend. In edit mode we instead get a
+	// masked preview (head/tail visible) so the user can confirm *which* key is
+	// set; `form.apiKey` stays empty until they actually type a replacement.
+	const existingKeyPreview = mode === "edit" ? initialValues?.apiKeyPreview?.trim() || null : null;
+	// Resting state with nothing typed yet: surface the saved key's masked preview.
+	const showingExistingKeyPreview = existingKeyPreview !== null && form.apiKey.length === 0 && !apiKeyFocused;
+	// Reveal the real characters only while editing (focused) or when the user
+	// explicitly toggled the eye open — and only for a value the frontend holds.
+	const revealApiKey = (showApiKey || apiKeyFocused) && form.apiKey.length > 0;
+	const apiKeyInputValue = showingExistingKeyPreview
+		? existingKeyPreview
+		: revealApiKey
+			? form.apiKey
+			: maskApiKey(form.apiKey);
+	// The eye toggle only makes sense when there is a frontend-held value to
+	// reveal — the saved key's preview is already as visible as it can get.
+	const canToggleApiKey = form.apiKey.length > 0;
+	const apiKeyPlaceholder = existingKeyPreview !== null ? "Leave blank to keep the current key" : "Optional";
 	const canSubmit =
 		normalizedProviderId.length > 0 &&
 		form.name.trim().length > 0 &&
@@ -642,13 +672,17 @@ export function KanbanAddProviderDialog({
 					<p className="mb-1 text-[12px] text-text-secondary">API key</p>
 					<div className="relative">
 						<input
-							type={showApiKey ? "text" : "password"}
-							value={form.apiKey}
+							type="text"
+							autoComplete="off"
+							spellCheck={false}
+							value={apiKeyInputValue}
 							onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
-							placeholder="Optional"
+							onFocus={() => setApiKeyFocused(true)}
+							onBlur={() => setApiKeyFocused(false)}
+							placeholder={apiKeyPlaceholder}
 							aria-invalid={fieldErrors.apiKey ? true : undefined}
 							className={cn(
-								"h-8 w-full rounded-md border bg-surface-2 px-2 pr-9 text-[13px] text-text-primary placeholder:text-text-tertiary focus:outline-none",
+								"h-8 w-full rounded-md border bg-surface-2 px-2 pr-9 font-mono text-[13px] text-text-primary placeholder:font-sans placeholder:text-text-tertiary focus:outline-none",
 								fieldErrors.apiKey
 									? "border-status-red focus:border-status-red"
 									: "border-border focus:border-border-focus",
@@ -657,6 +691,7 @@ export function KanbanAddProviderDialog({
 						<Button
 							variant="ghost"
 							size="sm"
+							disabled={!canToggleApiKey}
 							icon={showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
 							className="absolute right-1 top-1/2 -translate-y-1/2"
 							aria-label={showApiKey ? "Hide API key" : "Show API key"}

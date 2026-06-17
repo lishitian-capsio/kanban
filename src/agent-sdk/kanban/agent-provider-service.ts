@@ -20,6 +20,7 @@ import type {
 	RuntimeKanbanProviderSettings,
 	RuntimeReasoningEffort,
 } from "../../core/api-contract";
+import { maskApiKey } from "../../core/api-key-mask";
 import { createLogger } from "../../logging";
 import { type GeneratedProvider, getBundledModels } from "../ai/models";
 import {
@@ -237,6 +238,7 @@ export function createAgentProviderService() {
 					config.baseUrl?.trim() ||
 					getBaseUrlForProtocol(protocolConfigs, protocolConfigs[0]?.protocol ?? "openai") ||
 					null;
+				const apiKey = config.apiKey?.trim() || "";
 
 				providers.push({
 					id: providerName,
@@ -250,6 +252,8 @@ export function createAgentProviderService() {
 					models: config.models ?? [],
 					modelsSourceUrl: config.modelsSourceUrl?.trim() || null,
 					anthropic: config.anthropic,
+					// Masked, non-secret hint only — the full key never leaves the runtime.
+					apiKeyPreview: apiKey.length > 0 ? maskApiKey(apiKey) : null,
 				});
 			}
 
@@ -273,6 +277,7 @@ export function createAgentProviderService() {
 					protocols: protocolConfigs,
 					models: [],
 					modelsSourceUrl: null,
+					apiKeyPreview: null,
 				});
 			}
 

@@ -498,6 +498,7 @@ export function RuntimeSettingsDialog({
 			models: provider.models,
 			modelsSourceUrl: provider.modelsSourceUrl ?? "",
 			anthropic: provider.anthropic,
+			apiKeyPreview: provider.apiKeyPreview,
 		});
 		setProviderDialogOpen(true);
 	}, []);
