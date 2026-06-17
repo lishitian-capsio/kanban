@@ -106,7 +106,7 @@ function buildDirectOverrideEnv(
 	if (config.apiKey) {
 		const apiKeyEnvVar =
 			resolved.matchedProtocol === "anthropic"
-				? resolveAnthropicApiKeyEnvVar(config.apiKeyField)
+				? resolveAnthropicApiKeyEnvVar(config.anthropic?.apiKeyField)
 				: resolved.apiKeyEnvVar;
 		env[apiKeyEnvVar] = config.apiKey;
 	}
@@ -116,7 +116,7 @@ function buildDirectOverrideEnv(
 		if (config.model) {
 			env.ANTHROPIC_MODEL = config.model;
 		}
-		const defaults = config.anthropicDefaultModels;
+		const defaults = config.anthropic?.defaultModels;
 		if (defaults?.haiku) {
 			env.ANTHROPIC_DEFAULT_HAIKU_MODEL = defaults.haiku;
 		}

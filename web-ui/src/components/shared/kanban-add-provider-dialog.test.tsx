@@ -9,6 +9,11 @@ function findButtonByText(container: ParentNode, text: string): HTMLButtonElemen
 		null) as HTMLButtonElement | null;
 }
 
+function findButtonContainingText(container: ParentNode, text: string): HTMLButtonElement | null {
+	return (Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes(text)) ??
+		null) as HTMLButtonElement | null;
+}
+
 function setInputValue(input: HTMLInputElement, value: string): void {
 	const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value");
 	descriptor?.set?.call(input, value);
@@ -138,6 +143,75 @@ describe("KanbanAddProviderDialog", () => {
 
 		expect(document.activeElement).toBe(headerKeyInput);
 		expect(headerKeyInput?.value).toBe("Authorization");
+	});
+
+	it("hides Anthropic settings until the Anthropic protocol is enabled, then submits the chosen apiKeyField", async () => {
+		const onSubmit = vi.fn(async () => ({ ok: true }));
+
+		await act(async () => {
+			root.render(
+				<KanbanAddProviderDialog open={true} onOpenChange={() => {}} existingProviderIds={[]} onSubmit={onSubmit} />,
+			);
+		});
+
+		// Default protocol is OpenAI → no Anthropic settings section.
+		expect(findButtonContainingText(document.body, "x-api-key")).toBeNull();
+
+		// Enable the Anthropic protocol.
+		const anthropicProtocolButton = findButtonContainingText(document.body, "Anthropic-compatible");
+		expect(anthropicProtocolButton).toBeInstanceOf(HTMLButtonElement);
+		await act(async () => {
+			anthropicProtocolButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			anthropicProtocolButton?.click();
+		});
+
+		// The Anthropic settings section now exposes both key-header options,
+		// defaulting to auth_token.
+		const authTokenOption = findButtonContainingText(document.body, "Authorization (Bearer)");
+		const apiKeyOption = findButtonContainingText(document.body, "x-api-key");
+		expect(authTokenOption?.getAttribute("aria-checked")).toBe("true");
+		expect(apiKeyOption?.getAttribute("aria-checked")).toBe("false");
+
+		await act(async () => {
+			apiKeyOption?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			apiKeyOption?.click();
+		});
+		expect(apiKeyOption?.getAttribute("aria-checked")).toBe("true");
+
+		const inputs = Array.from(document.body.querySelectorAll("input"));
+		const providerIdInput = inputs.find((input) => input.placeholder === "my-provider") as HTMLInputElement | undefined;
+		const providerNameInput = inputs.find((input) => input.placeholder === "My Provider") as
+			| HTMLInputElement
+			| undefined;
+		const baseUrlInput = inputs.find((input) => input.placeholder === "https://api.anthropic.com") as
+			| HTMLInputElement
+			| undefined;
+		const modelInput = inputs.find((input) => input.placeholder === "Type a model ID and press Enter") as
+			| HTMLInputElement
+			| undefined;
+
+		await act(async () => {
+			if (!providerIdInput || !providerNameInput || !baseUrlInput || !modelInput) {
+				return;
+			}
+			setInputValue(providerIdInput, "my-relay");
+			setInputValue(providerNameInput, "My Relay");
+			setInputValue(baseUrlInput, "https://relay.example.com");
+			setInputValue(modelInput, "claude-sonnet-4-6");
+		});
+
+		const saveButton = findButtonByText(document.body, "Add provider");
+		await act(async () => {
+			saveButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			saveButton?.click();
+		});
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				providerId: "my-relay",
+				anthropic: { apiKeyField: "api_key" },
+			}),
+		);
 	});
 
 	it("updates capability toggle state and submits the selected capabilities", async () => {

@@ -1134,6 +1134,19 @@ export const runtimeProtocolConfigSchema = z.object({
 });
 export type RuntimeProtocolConfig = z.infer<typeof runtimeProtocolConfigSchema>;
 
+/**
+ * Anthropic-protocol-specific provider settings. Only meaningful for providers
+ * that speak the Anthropic protocol; namespaced rather than flattened so they
+ * aren't carried as dead fields on every provider config.
+ */
+export const runtimeAnthropicProviderSettingsSchema = z.object({
+	apiKeyField: z.enum(["auth_token", "api_key"]).optional(),
+	defaultModels: z
+		.object({ haiku: z.string().optional(), sonnet: z.string().optional(), opus: z.string().optional() })
+		.optional(),
+});
+export type RuntimeAnthropicProviderSettings = z.infer<typeof runtimeAnthropicProviderSettingsSchema>;
+
 export const runtimeKanbanProviderCatalogItemSchema = z.object({
 	id: z.string(),
 	name: z.string(),
@@ -1148,6 +1161,8 @@ export const runtimeKanbanProviderCatalogItemSchema = z.object({
 	models: z.array(z.string()).default([]),
 	/** Persisted remote `/models` discovery endpoint, if any. */
 	modelsSourceUrl: z.string().nullable().default(null),
+	/** Persisted Anthropic-protocol settings (so edit dialogs can echo them). */
+	anthropic: runtimeAnthropicProviderSettingsSchema.optional(),
 });
 export type RuntimeKanbanProviderCatalogItem = z.infer<typeof runtimeKanbanProviderCatalogItemSchema>;
 
@@ -1225,6 +1240,8 @@ export const runtimeAgentProviderConfigSchema = z.object({
 			budgetTokens: z.number().optional(),
 		})
 		.optional(),
+	/** Anthropic-protocol-specific settings (key header + per-tier model overrides). */
+	anthropic: runtimeAnthropicProviderSettingsSchema.optional(),
 	headers: z.record(z.string()).optional(),
 	timeout: z.number().optional(),
 	region: z.string().optional(),

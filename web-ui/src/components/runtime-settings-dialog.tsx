@@ -471,6 +471,7 @@ export function RuntimeSettingsDialog({
 			protocolConfigs: provider.protocols.map((p) => ({ protocol: p.protocol, baseUrl: p.baseUrl })),
 			models: provider.models,
 			modelsSourceUrl: provider.modelsSourceUrl ?? "",
+			anthropic: provider.anthropic,
 		});
 		setProviderDialogOpen(true);
 	}, []);

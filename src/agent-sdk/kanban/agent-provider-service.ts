@@ -249,6 +249,7 @@ export function createAgentProviderService() {
 					protocols: protocolConfigs,
 					models: config.models ?? [],
 					modelsSourceUrl: config.modelsSourceUrl?.trim() || null,
+					anthropic: config.anthropic,
 				});
 			}
 

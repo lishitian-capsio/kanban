@@ -5,7 +5,11 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
-import type { AddKanbanProviderInput, UpdateKanbanProviderInput } from "@/hooks/use-runtime-settings-kanban-controller";
+import type {
+	AddKanbanProviderInput,
+	AnthropicProviderSettingsInput,
+	UpdateKanbanProviderInput,
+} from "@/hooks/use-runtime-settings-kanban-controller";
 import { fetchRemoteProviderModels } from "@/runtime/runtime-config-query";
 import type { RuntimeKanbanProviderCapability } from "@/runtime/types";
 
@@ -14,6 +18,17 @@ const PROTOCOL_OPTIONS: readonly { value: ProviderProtocol; label: string; descr
 	{ value: "openai", label: "OpenAI-compatible", description: "OpenAI, Ollama, OpenRouter, most providers" },
 	{ value: "anthropic", label: "Anthropic-compatible", description: "Anthropic, Amazon Bedrock, some proxies" },
 ];
+
+type ApiKeyField = "auth_token" | "api_key";
+const API_KEY_FIELD_OPTIONS: readonly { value: ApiKeyField; label: string; description: string }[] = [
+	{ value: "auth_token", label: "Authorization (Bearer)", description: "ANTHROPIC_AUTH_TOKEN — most relays/gateways" },
+	{ value: "api_key", label: "x-api-key", description: "ANTHROPIC_API_KEY — official api.anthropic.com" },
+];
+const DEFAULT_API_KEY_FIELD: ApiKeyField = "auth_token";
+
+const ANTHROPIC_MODEL_TIERS = ["haiku", "sonnet", "opus"] as const;
+type AnthropicModelTier = (typeof ANTHROPIC_MODEL_TIERS)[number];
+type AnthropicDefaultModelsForm = Record<AnthropicModelTier, string>;
 
 const CAPABILITY_OPTIONS: readonly RuntimeKanbanProviderCapability[] = [
 	"streaming",
@@ -45,6 +60,10 @@ interface FormState {
 	timeoutMs: string;
 	headers: HeaderEntry[];
 	capabilities: RuntimeKanbanProviderCapability[];
+	/** Anthropic-only: which header the key is sent under. */
+	apiKeyField: ApiKeyField;
+	/** Anthropic-only: per-tier model overrides (ANTHROPIC_DEFAULT_*_MODEL). */
+	anthropicDefaultModels: AnthropicDefaultModelsForm;
 }
 
 interface SaveResult {
@@ -67,6 +86,10 @@ export interface KanbanProviderDialogInitialValues {
 	timeoutMs?: number | null;
 	headers?: Record<string, string>;
 	capabilities?: RuntimeKanbanProviderCapability[];
+	anthropic?: {
+		apiKeyField?: ApiKeyField;
+		defaultModels?: { haiku?: string; sonnet?: string; opus?: string };
+	};
 }
 
 let nextHeaderEntryId = 0;
@@ -107,6 +130,34 @@ function createInitialFormState(initialValues?: KanbanProviderDialogInitialValue
 		timeoutMs: initialValues?.timeoutMs ? String(initialValues.timeoutMs) : "",
 		headers: initialHeaders,
 		capabilities: initialValues?.capabilities?.length ? initialValues.capabilities : ["streaming", "tools"],
+		apiKeyField: initialValues?.anthropic?.apiKeyField ?? DEFAULT_API_KEY_FIELD,
+		anthropicDefaultModels: {
+			haiku: initialValues?.anthropic?.defaultModels?.haiku ?? "",
+			sonnet: initialValues?.anthropic?.defaultModels?.sonnet ?? "",
+			opus: initialValues?.anthropic?.defaultModels?.opus ?? "",
+		},
+	};
+}
+
+/**
+ * Build the Anthropic-protocol payload from form state, or `undefined` when the
+ * Anthropic protocol isn't enabled. Trims and drops empty model overrides so an
+ * untouched section doesn't persist empty strings.
+ */
+function buildAnthropicPayload(form: FormState): AnthropicProviderSettingsInput | undefined {
+	if (!form.protocolConfigs.some((config) => config.protocol === "anthropic")) {
+		return undefined;
+	}
+	const defaultModels: { haiku?: string; sonnet?: string; opus?: string } = {};
+	for (const tier of ANTHROPIC_MODEL_TIERS) {
+		const value = form.anthropicDefaultModels[tier].trim();
+		if (value) {
+			defaultModels[tier] = value;
+		}
+	}
+	return {
+		apiKeyField: form.apiKeyField,
+		...(Object.keys(defaultModels).length > 0 ? { defaultModels } : {}),
 	};
 }
 
@@ -185,6 +236,8 @@ export function KanbanAddProviderDialog({
 	const hasModelsSource = form.modelsSourceUrl.trim().length > 0;
 	const enabledProtocols = form.protocolConfigs.map((c) => c.protocol);
 	const hasAtLeastOneBaseUrl = form.protocolConfigs.some((c) => c.baseUrl.trim().length > 0);
+	const anthropicEnabled = enabledProtocols.includes("anthropic");
+	const anthropicPayload = useMemo(() => buildAnthropicPayload(form), [form]);
 
 	const hasChangedProviderConfiguration = useMemo(() => {
 		const normalizedHeaders = Object.fromEntries(
@@ -205,9 +258,11 @@ export function KanbanAddProviderDialog({
 			JSON.stringify(draftModels) !== JSON.stringify(initialForm.models) ||
 			JSON.stringify(form.capabilities) !== JSON.stringify(initialForm.capabilities) ||
 			JSON.stringify(normalizedHeaders) !== JSON.stringify(initialHeaders) ||
+			JSON.stringify(anthropicPayload) !== JSON.stringify(buildAnthropicPayload(initialForm)) ||
 			form.apiKey.trim().length > 0
 		);
 	}, [
+		anthropicPayload,
 		draftModels,
 		form.apiKey,
 		form.capabilities,
@@ -404,6 +459,9 @@ export function KanbanAddProviderDialog({
 						)
 							? { protocols: protocolConfigsPayload }
 							: {}),
+						...(JSON.stringify(anthropicPayload) !== JSON.stringify(buildAnthropicPayload(initialForm))
+							? { anthropic: anthropicPayload }
+							: {}),
 					} satisfies UpdateKanbanProviderInput)
 				: ({
 						providerId: normalizedProviderId,
@@ -417,6 +475,7 @@ export function KanbanAddProviderDialog({
 						modelsSourceUrl: nextModelsSourceUrl,
 						capabilities: form.capabilities.length > 0 ? form.capabilities : undefined,
 						protocols: protocolConfigsPayload,
+						anthropic: anthropicPayload,
 					} satisfies AddKanbanProviderInput);
 		const result = await onSubmit(payload);
 		setIsSaving(false);
@@ -544,6 +603,71 @@ export function KanbanAddProviderDialog({
 						/>
 					</div>
 				</section>
+
+				{anthropicEnabled ? (
+					<section className="rounded-lg border border-border bg-surface-1 p-3">
+						<p className="mb-2 text-[12px] text-text-secondary">Anthropic settings</p>
+						<div className="mb-3">
+							<p className="mb-1.5 text-[11px] text-text-tertiary">API key header</p>
+							<div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Anthropic API key header">
+								{API_KEY_FIELD_OPTIONS.map((option) => {
+									const selected = form.apiKeyField === option.value;
+									return (
+										<button
+											key={option.value}
+											type="button"
+											role="radio"
+											aria-checked={selected}
+											onClick={() => setForm((current) => ({ ...current, apiKeyField: option.value }))}
+											className={cn(
+												"flex flex-col items-start rounded-md border px-3 py-2 text-left transition-colors",
+												selected
+													? "border-accent bg-accent/5 text-text-primary"
+													: "border-border bg-surface-2 text-text-secondary hover:border-border-bright hover:text-text-primary",
+											)}
+										>
+											<span className="text-[13px] font-medium">{option.label}</span>
+											<span className="text-[11px] text-text-tertiary">{option.description}</span>
+										</button>
+									);
+								})}
+							</div>
+						</div>
+						<div>
+							<p className="mb-1.5 text-[11px] text-text-tertiary">Default model overrides (optional)</p>
+							<div className="grid gap-2 md:grid-cols-3">
+								{ANTHROPIC_MODEL_TIERS.map((tier) => (
+									<div key={tier} className="min-w-0">
+										<label
+											htmlFor={`anthropic-model-${tier}`}
+											className="mb-1 block text-[11px] capitalize text-text-tertiary"
+										>
+											{tier}
+										</label>
+										<input
+											id={`anthropic-model-${tier}`}
+											value={form.anthropicDefaultModels[tier]}
+											onChange={(event) =>
+												setForm((current) => ({
+													...current,
+													anthropicDefaultModels: {
+														...current.anthropicDefaultModels,
+														[tier]: event.target.value,
+													},
+												}))
+											}
+											placeholder={`ANTHROPIC_DEFAULT_${tier.toUpperCase()}_MODEL`}
+											className="h-8 w-full rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
+										/>
+									</div>
+								))}
+							</div>
+							<p className="mt-1 text-[12px] text-text-tertiary">
+								Map Claude's haiku/sonnet/opus tiers to your provider's model IDs.
+							</p>
+						</div>
+					</section>
+				) : null}
 
 				<section className="rounded-lg border border-border bg-surface-1 p-3">
 					<p className="mb-1 text-[12px] text-text-secondary">Model source URL</p>

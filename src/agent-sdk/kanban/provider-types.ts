@@ -11,6 +11,22 @@ export interface AnthropicDefaultModels {
 	opus?: string;
 }
 
+/**
+ * Anthropic-protocol-specific provider settings.
+ *
+ * These only have meaning when a provider speaks the Anthropic protocol (claude,
+ * droid, kiro, …). They are deliberately grouped into their own namespace rather
+ * than sitting as flat top-level fields on the generic provider config — setting
+ * them on a non-Anthropic provider is meaningless, so the type makes that scope
+ * explicit instead of silently carrying dead data.
+ */
+export interface AnthropicProviderSettings {
+	/** Which header the Anthropic-protocol key is sent under (defaults to auth_token). */
+	apiKeyField?: ApiKeyField;
+	/** Optional per-tier Anthropic model overrides (ANTHROPIC_DEFAULT_*_MODEL). */
+	defaultModels?: AnthropicDefaultModels;
+}
+
 // ------------------------------------------------------------------ types
 
 export interface ProviderSettingsReasoning {
@@ -34,10 +50,8 @@ export interface ProviderSettings {
 	/** @deprecated Legacy single baseUrl. Use `protocols[].baseUrl` instead. Kept for migration compatibility. */
 	baseUrl?: string;
 	protocols?: ProtocolConfig[];
-	/** Which header the Anthropic-protocol key is sent under (defaults to auth_token). */
-	apiKeyField?: ApiKeyField;
-	/** Optional per-tier Anthropic model overrides (ANTHROPIC_DEFAULT_*_MODEL). */
-	anthropicDefaultModels?: AnthropicDefaultModels;
+	/** Anthropic-protocol-specific settings (key header + model overrides). */
+	anthropic?: AnthropicProviderSettings;
 	reasoning?: ProviderSettingsReasoning;
 	auth?: ProviderSettingsAuth;
 	aws?: Record<string, unknown>;

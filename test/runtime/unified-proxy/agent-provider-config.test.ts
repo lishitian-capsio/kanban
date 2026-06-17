@@ -294,18 +294,59 @@ describe("agent-provider-config", () => {
 		expect(config!.baseUrl).toBe("https://api.example.com");
 	});
 
-	it("stores apiKeyField and anthropicDefaultModels round-trip", async () => {
+	it("stores anthropic settings (apiKeyField + defaultModels) round-trip", async () => {
 		await saveAgentProvider("claude", {
 			agentId: "claude",
 			provider: "anthropic",
-			apiKeyField: "api_key",
-			anthropicDefaultModels: { haiku: "h-model", sonnet: "s-model", opus: "o-model" },
+			anthropic: {
+				apiKeyField: "api_key",
+				defaultModels: { haiku: "h-model", sonnet: "s-model", opus: "o-model" },
+			},
 		});
 		resetAgentProviderConfigCache();
 
 		const config = getAgentProviderConfig("claude");
-		expect(config!.apiKeyField).toBe("api_key");
-		expect(config!.anthropicDefaultModels).toEqual({ haiku: "h-model", sonnet: "s-model", opus: "o-model" });
+		expect(config!.anthropic).toEqual({
+			apiKeyField: "api_key",
+			defaultModels: { haiku: "h-model", sonnet: "s-model", opus: "o-model" },
+		});
+	});
+
+	it("trims and drops empty anthropic default model overrides on save", async () => {
+		await saveAgentProvider("claude", {
+			agentId: "claude",
+			provider: "anthropic",
+			anthropic: { apiKeyField: "auth_token", defaultModels: { haiku: "  h-model  ", sonnet: "", opus: "   " } },
+		});
+		resetAgentProviderConfigCache();
+
+		const config = getAgentProviderConfig("claude");
+		expect(config!.anthropic).toEqual({ apiKeyField: "auth_token", defaultModels: { haiku: "h-model" } });
+	});
+
+	it("migrates legacy flat apiKeyField/anthropicDefaultModels into the anthropic namespace on read", async () => {
+		const path = join(temp.path, "agent_providers.json");
+		writeFileSync(
+			path,
+			JSON.stringify({
+				agents: {
+					claude: {
+						agentId: "claude",
+						provider: "anthropic",
+						apiKeyField: "api_key",
+						anthropicDefaultModels: { sonnet: "legacy-sonnet" },
+					},
+				},
+			}),
+		);
+		resetAgentProviderConfigCache();
+
+		const config = getAgentProviderConfig("claude");
+		expect(config!.anthropic).toEqual({ apiKeyField: "api_key", defaultModels: { sonnet: "legacy-sonnet" } });
+		// The flat legacy fields are not surfaced on the in-memory config.
+		const raw = config as unknown as Record<string, unknown>;
+		expect(raw.apiKeyField).toBeUndefined();
+		expect(raw.anthropicDefaultModels).toBeUndefined();
 	});
 
 	it("persists the full models list and modelsSourceUrl round-trip", async () => {

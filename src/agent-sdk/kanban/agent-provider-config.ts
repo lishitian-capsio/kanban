@@ -24,8 +24,8 @@ import {
 } from "../../core/api-contract";
 import { lockedFileSystem } from "../../fs/locked-file-system";
 import { createLogger } from "../../logging";
-import type { ApiKeyField, ProtocolConfig } from "./provider-protocol";
-import type { AnthropicDefaultModels, ProviderSettingsReasoning } from "./provider-types";
+import type { ProtocolConfig } from "./provider-protocol";
+import type { AnthropicProviderSettings, ProviderSettingsReasoning } from "./provider-types";
 
 const log = createLogger("agent-provider-config");
 
@@ -52,10 +52,13 @@ export interface AgentProviderConfig {
 	baseUrl?: string;
 	/** Per-protocol configuration with independent base URLs. */
 	protocols?: ProtocolConfig[];
-	/** Which header the Anthropic-protocol key is sent under (defaults to auth_token). */
-	apiKeyField?: ApiKeyField;
-	/** Optional per-tier Anthropic model overrides (ANTHROPIC_DEFAULT_*_MODEL). */
-	anthropicDefaultModels?: AnthropicDefaultModels;
+	/**
+	 * Anthropic-protocol-specific settings (key header + per-tier model
+	 * overrides). Only meaningful when the provider speaks the Anthropic
+	 * protocol; grouped here rather than flattened onto the generic config so
+	 * the scope is explicit and non-Anthropic providers don't carry dead fields.
+	 */
+	anthropic?: AnthropicProviderSettings;
 	/** Reasoning/thinking settings. */
 	reasoning?: ProviderSettingsReasoning;
 	/** Custom HTTP headers to include in requests. */
@@ -119,11 +122,34 @@ const storedProviderConfigSchema = runtimeAgentProviderConfigSchema.omit({ agent
 			budgetTokens: z.number().optional(),
 		})
 		.optional(),
-	apiKeyField: z.enum(["auth_token", "api_key"]).optional(),
-	anthropicDefaultModels: z
-		.object({ haiku: z.string().optional(), sonnet: z.string().optional(), opus: z.string().optional() })
-		.optional(),
+	// `anthropic` is inherited from the wire schema, which already validates
+	// `apiKeyField` as a strict enum — no further tightening needed here.
 });
+
+/**
+ * Fold the pre-namespace on-disk shape (flat top-level `apiKeyField` /
+ * `anthropicDefaultModels`) into the `anthropic` namespace. Older stores — and
+ * any hand-edited `agent_providers.json` — used the flat fields; lifting them on
+ * read keeps those configs working with no migration step or data loss. An
+ * explicit `anthropic` object always wins over the legacy fields.
+ */
+function liftLegacyAnthropicFields(config: Record<string, unknown>): Record<string, unknown> {
+	const legacyApiKeyField = config.apiKeyField;
+	const legacyDefaultModels = config.anthropicDefaultModels;
+	if (legacyApiKeyField === undefined && legacyDefaultModels === undefined) {
+		return config;
+	}
+	const { apiKeyField: _apiKeyField, anthropicDefaultModels: _anthropicDefaultModels, ...rest } = config;
+	const existingAnthropic = (config.anthropic as Record<string, unknown> | undefined) ?? {};
+	return {
+		...rest,
+		anthropic: {
+			...(legacyApiKeyField !== undefined ? { apiKeyField: legacyApiKeyField } : {}),
+			...(legacyDefaultModels !== undefined ? { defaultModels: legacyDefaultModels } : {}),
+			...existingAnthropic,
+		},
+	};
+}
 
 /**
  * Lenient variant derived from the strict shape: a single malformed field
@@ -144,7 +170,8 @@ const lenientProviderConfigSchema = z.object(
 type StoredProviderConfig = z.infer<typeof storedProviderConfigSchema>;
 
 /** Validate one raw on-disk object into an AgentProviderConfig (Zod-backed). */
-function validateConfig(agentId: string, config: Record<string, unknown>): AgentProviderConfig {
+function validateConfig(agentId: string, rawConfig: Record<string, unknown>): AgentProviderConfig {
+	const config = liftLegacyAnthropicFields(rawConfig);
 	const result = storedProviderConfigSchema.safeParse(config);
 	if (result.success) {
 		return { agentId, ...result.data };
@@ -310,6 +337,25 @@ function cleanProviderConfig(agentId: string, config: AgentProviderConfig): Agen
 		}
 		cleaned.reasoning =
 			r.enabled === undefined && r.effort === undefined && r.budgetTokens === undefined ? undefined : r;
+	}
+	if (cleaned.anthropic) {
+		const apiKeyField = cleaned.anthropic.apiKeyField;
+		const rawModels = cleaned.anthropic.defaultModels;
+		const defaultModels = rawModels
+			? Object.fromEntries(
+					Object.entries(rawModels)
+						.map(([tier, value]) => [tier, value?.trim() || undefined] as const)
+						.filter(([, value]) => value !== undefined),
+				)
+			: undefined;
+		const hasDefaultModels = defaultModels && Object.keys(defaultModels).length > 0;
+		cleaned.anthropic =
+			apiKeyField === undefined && !hasDefaultModels
+				? undefined
+				: {
+						...(apiKeyField !== undefined ? { apiKeyField } : {}),
+						...(hasDefaultModels ? { defaultModels } : {}),
+					};
 	}
 	return cleaned;
 }

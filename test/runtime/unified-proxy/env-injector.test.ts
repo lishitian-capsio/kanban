@@ -81,7 +81,7 @@ describe("env-injector: buildAgentProviderEnv", () => {
 		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
 			agentId: "claude",
 			provider: "anthropic",
-			apiKeyField: "api_key",
+			anthropic: { apiKeyField: "api_key" },
 			protocols: [{ protocol: "anthropic", baseUrl: "https://api.anthropic.com" }],
 			apiKey: "sk-ant-official",
 		});
@@ -117,10 +117,12 @@ describe("env-injector: buildAgentProviderEnv", () => {
 			provider: "custom",
 			baseUrl: "https://relay.example.com",
 			apiKey: "sk-relay",
-			anthropicDefaultModels: {
-				haiku: "relay-haiku",
-				sonnet: "relay-sonnet",
-				opus: "relay-opus",
+			anthropic: {
+				defaultModels: {
+					haiku: "relay-haiku",
+					sonnet: "relay-sonnet",
+					opus: "relay-opus",
+				},
 			},
 		});
 

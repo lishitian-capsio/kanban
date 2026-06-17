@@ -70,6 +70,13 @@ export interface ProtocolConfigInput {
 	baseUrl?: string;
 }
 
+/** Anthropic-protocol-specific settings collected by the form (only when the
+ * Anthropic protocol is enabled). */
+export interface AnthropicProviderSettingsInput {
+	apiKeyField?: "auth_token" | "api_key";
+	defaultModels?: { haiku?: string; sonnet?: string; opus?: string };
+}
+
 export interface AddKanbanProviderInput {
 	providerId: string;
 	name: string;
@@ -82,6 +89,7 @@ export interface AddKanbanProviderInput {
 	modelsSourceUrl?: string | null;
 	capabilities?: RuntimeKanbanProviderCapability[];
 	protocols?: ProtocolConfigInput[];
+	anthropic?: AnthropicProviderSettingsInput;
 }
 
 export interface UpdateKanbanProviderInput {
@@ -96,6 +104,7 @@ export interface UpdateKanbanProviderInput {
 	modelsSourceUrl?: string | null;
 	capabilities?: RuntimeKanbanProviderCapability[];
 	protocols?: ProtocolConfigInput[];
+	anthropic?: AnthropicProviderSettingsInput;
 }
 
 export interface UseRuntimeSettingsKanbanControllerResult {
@@ -713,6 +722,7 @@ export function useRuntimeSettingsKanbanController(
 						protocol: p.protocol,
 						baseUrl: p.baseUrl?.trim() || undefined,
 					})),
+					anthropic: input.anthropic,
 					headers: input.headers,
 					timeout: input.timeoutMs,
 				};
@@ -836,6 +846,7 @@ export function useRuntimeSettingsKanbanController(
 								})),
 							}
 						: {}),
+					...(input.anthropic !== undefined ? { anthropic: input.anthropic } : {}),
 					...(input.headers !== undefined ? { headers: input.headers ?? undefined } : {}),
 					...(input.timeoutMs !== undefined ? { timeout: input.timeoutMs ?? undefined } : {}),
 				};
