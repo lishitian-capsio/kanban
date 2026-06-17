@@ -22,11 +22,7 @@ function record(
 		agentId: "pi",
 		providerId: "anthropic",
 		modelId: "claude-sonnet-4",
-		baseUrl: null,
 		reasoningEffort: null,
-		region: null,
-		gcpProjectId: null,
-		gcpRegion: null,
 		...overrides,
 	};
 }
@@ -89,11 +85,7 @@ describe("agent-profile-store", () => {
 				agentId: "pi",
 				providerId: "openai",
 				modelId: "gpt-5",
-				baseUrl: "https://example.test/v1",
 				reasoningEffort: "high",
-				region: "us-east-1",
-				gcpProjectId: "proj",
-				gcpRegion: "us-central1",
 			});
 		});
 

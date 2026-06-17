@@ -19,7 +19,7 @@ import {
 import { createAgentProviderService } from "../agent-sdk/kanban/agent-provider-service";
 import { createMcpRuntimeService, type McpRuntimeService } from "../agent-sdk/kanban/mcp-runtime-service";
 import { createKanbanMcpSettingsService } from "../agent-sdk/kanban/mcp-settings-service";
-import { type PiLaunchProfile, resolvePiApiKey, resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
+import { type PiLaunchProfile, resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
 import { buildPiSystemPrompt } from "../agent-sdk/kanban/pi-system-prompt";
 import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
 import { isKanbanClearSlashCommand } from "../agent-sdk/shared/slash-commands";
@@ -152,14 +152,8 @@ function createAgentProfileId(): string {
 	return crypto.randomUUID().replaceAll("-", "").slice(0, 8);
 }
 
-/**
- * Project a committed (secret-free) profile record onto the wire summary, deriving
- * `apiKeyConfigured` from the machine-home secret store (env or saved settings by
- * providerId) — never from the committed record itself.
- */
 function toAgentProfileSummary(record: RuntimeAgentProfileRecord): RuntimeAgentProfile {
-	const apiKeyConfigured = record.providerId ? resolvePiApiKey(record.providerId) !== null : false;
-	return { ...record, apiKeyConfigured };
+	return record;
 }
 
 function buildAgentProfileMutationResponse(
@@ -188,7 +182,6 @@ async function loadSelectedPiLaunchProfile(scope: RuntimeTrpcWorkspaceScope): Pr
 		return {
 			providerId: selected.providerId,
 			modelId: selected.modelId,
-			baseUrl: selected.baseUrl,
 			reasoningEffort: selected.reasoningEffort,
 		};
 	} catch {
@@ -691,23 +684,6 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		createAgentProfile: async (workspaceScope, input): Promise<RuntimeAgentProfileMutationResponse> => {
 			const body = parseAgentProfileCreateRequest(input);
 			const providerId = body.providerId?.trim() || null;
-			// Secrets (API key) + the coherent provider config go to the per-agent config store.
-			if (providerId) {
-				const agentConfig: AgentProviderConfig = {
-					agentId: body.agentId,
-					provider: providerId,
-					model: body.modelId ?? undefined,
-					apiKey: body.apiKey ?? undefined,
-					baseUrl: body.baseUrl ?? undefined,
-					reasoning: body.reasoningEffort ? { effort: body.reasoningEffort } : undefined,
-					region: body.region ?? undefined,
-					gcp:
-						body.gcpProjectId !== undefined || body.gcpRegion !== undefined
-							? { projectId: body.gcpProjectId ?? undefined, region: body.gcpRegion ?? undefined }
-							: undefined,
-				};
-				await agentProviderService.saveAgentProvider(body.agentId, agentConfig);
-			}
 			const id = createAgentProfileId();
 			const record: RuntimeAgentProfileRecord = {
 				id,
@@ -715,11 +691,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				agentId: body.agentId,
 				providerId,
 				modelId: body.modelId?.trim() || null,
-				baseUrl: body.baseUrl?.trim() || null,
 				reasoningEffort: body.reasoningEffort ?? null,
-				region: body.region?.trim() || null,
-				gcpProjectId: body.gcpProjectId?.trim() || null,
-				gcpRegion: body.gcpRegion?.trim() || null,
 			};
 			const data = await mutateWorkspaceAgentProfiles(workspaceScope.workspaceId, (current) => {
 				const created = createAgentProfile(current, record);
@@ -735,36 +707,11 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			if (!existing) {
 				throw new TRPCError({ code: "NOT_FOUND", message: `Agent profile "${body.id}" not found.` });
 			}
-			const effectiveProviderId =
-				body.providerId !== undefined ? body.providerId?.trim() || null : existing.providerId;
-			if (effectiveProviderId) {
-				const existingAgentConfig = getAgentProviderConfig(existing.agentId);
-				const agentConfig: AgentProviderConfig = {
-					...(existingAgentConfig ?? { agentId: existing.agentId }),
-					agentId: existing.agentId,
-					provider: effectiveProviderId,
-					...(body.modelId !== undefined ? { model: body.modelId ?? undefined } : {}),
-					...(body.apiKey !== undefined ? { apiKey: body.apiKey ?? undefined } : {}),
-					...(body.baseUrl !== undefined ? { baseUrl: body.baseUrl ?? undefined } : {}),
-					...(body.reasoningEffort !== undefined
-						? { reasoning: body.reasoningEffort ? { effort: body.reasoningEffort } : undefined }
-						: {}),
-					...(body.region !== undefined ? { region: body.region ?? undefined } : {}),
-					...(body.gcpProjectId !== undefined || body.gcpRegion !== undefined
-						? { gcp: { projectId: body.gcpProjectId ?? undefined, region: body.gcpRegion ?? undefined } }
-						: {}),
-				};
-				await agentProviderService.saveAgentProvider(existing.agentId, agentConfig);
-			}
 			const patch: AgentProfilePatch = {};
 			if (body.name !== undefined) patch.name = body.name;
 			if (body.providerId !== undefined) patch.providerId = body.providerId?.trim() || null;
 			if (body.modelId !== undefined) patch.modelId = body.modelId?.trim() || null;
-			if (body.baseUrl !== undefined) patch.baseUrl = body.baseUrl?.trim() || null;
 			if (body.reasoningEffort !== undefined) patch.reasoningEffort = body.reasoningEffort;
-			if (body.region !== undefined) patch.region = body.region?.trim() || null;
-			if (body.gcpProjectId !== undefined) patch.gcpProjectId = body.gcpProjectId?.trim() || null;
-			if (body.gcpRegion !== undefined) patch.gcpRegion = body.gcpRegion?.trim() || null;
 			const data = await mutateWorkspaceAgentProfiles(workspaceScope.workspaceId, (cur) =>
 				updateAgentProfile(cur, body.id, patch),
 			);

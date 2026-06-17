@@ -81,7 +81,6 @@ describe.sequential("agent profiles integration", () => {
 				expect(profile?.agentId).toBe("pi");
 				expect(profile?.providerId).toBe("openai");
 				expect(profile?.modelId).toBe("gpt-5");
-				expect(profile?.baseUrl).toBe("https://api.openai.test/v1");
 				// The migrated profile is selected for the pi agent.
 				expect(data.selectedByAgent.pi).toBe(profile?.id);
 				// Secrets never land in the committed profile record.
@@ -108,11 +107,7 @@ describe.sequential("agent profiles integration", () => {
 						agentId: "pi",
 						providerId: "anthropic",
 						modelId: "claude-sonnet-4",
-						baseUrl: null,
 						reasoningEffort: "high",
-						region: null,
-						gcpProjectId: null,
-						gcpRegion: null,
 					});
 					return selectAgentProfile(created, "pi", "anthropic-default");
 				});

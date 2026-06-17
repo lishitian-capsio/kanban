@@ -99,10 +99,6 @@ export function buildDefaultProfileFromProviderSettings(
 		agentId: identity.agentId,
 		providerId,
 		modelId: config?.model?.trim() || null,
-		baseUrl: config?.baseUrl?.trim() || null,
 		reasoningEffort: toReasoningEffort(config?.reasoning?.effort),
-		region: config?.region?.trim() || null,
-		gcpProjectId: config?.gcp?.projectId?.trim() || null,
-		gcpRegion: config?.gcp?.region?.trim() || null,
 	};
 }
