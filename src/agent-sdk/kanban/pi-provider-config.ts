@@ -99,13 +99,41 @@ export function resolvePiModel(
 		return { provider, modelId: id, model: genericModel };
 	}
 
-	// Final fallback: use default
-	const fallbackModel = getBundledModel(PI_DEFAULT_PROVIDER_ID as GeneratedProvider, PI_DEFAULT_MODEL_ID);
+	// Final fallback: use default.
+	// `getBundledModel` is typed non-null but returns `undefined` for an unknown
+	// id; the default should always exist in the bundled registry, but guard it
+	// so a future missing default fails with a clear error here instead of an
+	// opaque crash when this model is passed into `new Agent({ model })`.
+	const fallbackModel = assertResolvedPiModel(
+		getBundledModel(PI_DEFAULT_PROVIDER_ID as GeneratedProvider, PI_DEFAULT_MODEL_ID),
+		PI_DEFAULT_PROVIDER_ID,
+		PI_DEFAULT_MODEL_ID,
+	);
 	return {
 		provider: PI_DEFAULT_PROVIDER_ID,
 		modelId: PI_DEFAULT_MODEL_ID,
 		model: fallbackModel,
 	};
+}
+
+/**
+ * Guard the result of a bundled-model lookup. `getBundledModel` is typed to
+ * return a non-null `Model` but actually returns `undefined` when the id is not
+ * in the registry. Passing that `undefined` into `new Agent({ model })` crashes
+ * later on a property read with no useful context. This converts that into a
+ * clear, actionable error at the resolution site.
+ */
+export function assertResolvedPiModel(
+	model: Model<Api> | undefined | null,
+	provider: string,
+	modelId: string,
+): Model<Api> {
+	if (!model) {
+		throw new Error(
+			`pi model "${provider}/${modelId}" is missing from the bundled model registry (models.json)`,
+		);
+	}
+	return model;
 }
 
 /**
