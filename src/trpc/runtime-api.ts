@@ -13,6 +13,7 @@ import {
 	getAgentProviderConfig,
 	getAllAgentProviderConfigs,
 	getAllAgentProviderSets,
+	redactAgentProviderSets,
 	saveAgentProvider,
 	setDefaultAgentProvider,
 } from "../agent-sdk/kanban/agent-provider-config";
@@ -1016,8 +1017,8 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			return { agents: getAllAgentProviderConfigs() };
 		},
 		listAgentProviders: async (): Promise<RuntimeAgentProviderSetListResponse> => {
-			// Full multi-provider view: every agent's registered providers + default.
-			return { agents: getAllAgentProviderSets() };
+			// Full multi-provider view: every agent's registered providers + default, secret-free.
+			return { agents: redactAgentProviderSets(getAllAgentProviderSets()) };
 		},
 		saveAgentProviderConfig: async (
 			input: RuntimeAgentProviderConfigSaveRequest,

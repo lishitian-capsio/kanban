@@ -372,6 +372,20 @@ export function getAllAgentProviderSets(): Record<string, AgentProviderSet> {
 	return { ...state.agents };
 }
 
+/** Return provider sets with every `apiKey` stripped — safe to send over the wire. */
+export function redactAgentProviderSets(
+	sets: Record<string, AgentProviderSet>,
+): Record<string, AgentProviderSet> {
+	const out: Record<string, AgentProviderSet> = {};
+	for (const [agentId, set] of Object.entries(sets)) {
+		out[agentId] = {
+			...set,
+			providers: set.providers.map(({ apiKey, ...rest }) => ({ ...rest })),
+		};
+	}
+	return out;
+}
+
 /** Reset the in-memory cache (useful for tests). */
 export function resetAgentProviderConfigCache(): void {
 	cachedState = null;
