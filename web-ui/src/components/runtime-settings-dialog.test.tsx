@@ -106,8 +106,9 @@ vi.mock("@/components/shared/account-organization-section", () => ({
 	AccountOrganizationSection: () => null,
 }));
 
-vi.mock("@/components/shared/agent-provider-selector", () => ({
-	AgentProviderSelector: () => null,
+vi.mock("@/components/ui/tooltip", () => ({
+	TooltipProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+	Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
 vi.mock("@/hooks/use-runtime-settings-kanban-controller", () => ({
@@ -222,6 +223,11 @@ describe("RuntimeSettingsDialog", () => {
 	let previousActEnvironment: boolean | undefined;
 
 	beforeEach(() => {
+		// jsdom doesn't implement Element.scrollTo, which handleNavSelect calls when
+		// jumping between settings sections.
+		if (typeof Element.prototype.scrollTo !== "function") {
+			Element.prototype.scrollTo = () => {};
+		}
 		resetLayoutCustomizationsMock.mockReset();
 		oauthSignInOnSavedRef.onSaved = null;
 		window.localStorage.clear();
@@ -370,6 +376,45 @@ describe("RuntimeSettingsDialog", () => {
 		expect(handleOpenChange).toHaveBeenCalledWith(false);
 		expect(window.localStorage.getItem("kanban.theme")).toBe("graphite");
 		expect(document.documentElement.getAttribute("data-theme")).toBe("graphite");
+	});
+
+	it("links each agent row to the Providers tab with that agent selected", async () => {
+		await act(async () => {
+			root.render(
+				<RuntimeSettingsDialog
+					open={true}
+					workspaceId={"workspace-1"}
+					initialConfig={savedKanbanOauthConfig}
+					onOpenChange={() => {}}
+				/>,
+			);
+		});
+
+		// Each General-section agent row (pi + claude) exposes a single provider-management
+		// entry. With no provider configured yet it reads "Configure".
+		const configureButtons = Array.from(document.body.querySelectorAll("button")).filter(
+			(button) => button.textContent?.trim() === "Configure",
+		);
+		expect(configureButtons.length).toBe(2);
+
+		// Add/edit/default now live solely in the Providers tab — the agent rows no longer
+		// carry their own "Add Provider" action, so it appears exactly once.
+		const addProviderButtons = Array.from(document.body.querySelectorAll("button")).filter(
+			(button) => button.textContent?.trim() === "Add Provider",
+		);
+		expect(addProviderButtons.length).toBe(1);
+
+		// The Providers tab defaults to the main (pi) agent, so the Claude tab is inactive.
+		const claudeTab = findButtonByText(document.body, "Claude Code");
+		expect(claudeTab).toBeInstanceOf(HTMLButtonElement);
+		expect(claudeTab?.className).not.toContain("border-border-bright");
+
+		// Clicking Claude's row entry jumps to the Providers tab with Claude pre-selected.
+		await act(async () => {
+			configureButtons[1]?.click();
+		});
+
+		expect(claudeTab?.className).toContain("border-border-bright");
 	});
 
 	it("forwards account OAuth sign-in saves to the dialog onSaved callback", async () => {

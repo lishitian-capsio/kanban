@@ -27,7 +27,6 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccountOrganizationSection } from "@/components/shared/account-organization-section";
-import { AgentProviderSelector } from "@/components/shared/agent-provider-selector";
 import {
 	KanbanAddProviderDialog,
 	type KanbanProviderDialogInitialValues,
@@ -44,6 +43,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Dialog, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Tooltip } from "@/components/ui/tooltip";
 import { TASK_GIT_BASE_REF_PROMPT_VARIABLE, type TaskGitAction } from "@/git-actions/build-task-git-action-prompt";
 import type { AddKanbanProviderInput, UpdateKanbanProviderInput } from "@/hooks/use-runtime-settings-kanban-controller";
 import { useRuntimeSettingsKanbanController } from "@/hooks/use-runtime-settings-kanban-controller";
@@ -174,13 +174,13 @@ function getNextShortcutLabel(shortcuts: RuntimeProjectShortcut[], baseLabel: st
 function AgentRow({
 	agent,
 	disabled,
-	workspaceId,
-	onAddProvider,
+	currentProviderName,
+	onManageProviders,
 }: {
 	agent: RuntimeSettingsAgentRowModel;
 	disabled: boolean;
-	workspaceId: string | null;
-	onAddProvider?: () => void;
+	currentProviderName: string | null;
+	onManageProviders: (agentId: RuntimeAgentId) => void;
 }): React.ReactElement {
 	const installUrl = getRuntimeAgentCatalogEntry(agent.id)?.installUrl;
 	const isNativeKanban = agent.id === "pi";
@@ -222,12 +222,18 @@ function AgentRow({
 					Install
 				</Button>
 			) : (
-				<AgentProviderSelector
-					agentId={agent.id}
-					workspaceId={workspaceId}
-					controlsDisabled={disabled}
-					onAddProvider={onAddProvider}
-				/>
+				<Tooltip content={`Manage providers for ${agent.label} in the Providers tab`}>
+					<Button
+						size="sm"
+						variant="ghost"
+						disabled={disabled}
+						icon={<Key size={12} />}
+						onClick={() => onManageProviders(agent.id)}
+						className="ml-auto shrink-0"
+					>
+						<span className="max-w-[140px] truncate">{currentProviderName ?? "Configure"}</span>
+					</Button>
+				</Tooltip>
 			)}
 		</div>
 	);
@@ -748,6 +754,17 @@ export function RuntimeSettingsDialog({
 		}, 600);
 	}, []);
 
+	// Jump from a General-section agent row to the Providers tab with that agent
+	// pre-selected. The Providers tab is the single surface for add/edit/default;
+	// the agent rows are read-only "current provider" indicators that link here.
+	const handleManageProviders = useCallback(
+		(agentId: RuntimeAgentId) => {
+			setProvidersAgentId(agentId);
+			handleNavSelect("providers");
+		},
+		[handleNavSelect],
+	);
+
 	const handleCopyVariableToken = (token: string) => {
 		void (async () => {
 			try {
@@ -885,8 +902,8 @@ export function RuntimeSettingsDialog({
 								key={agent.id}
 								agent={agent}
 								disabled={controlsDisabled}
-								workspaceId={workspaceId}
-								onAddProvider={handleOpenAddProviderDialog}
+								currentProviderName={providerSetsByAgent[agent.id]?.defaultProviderId ?? null}
+								onManageProviders={handleManageProviders}
 							/>
 						))}
 						{config === null ? (
