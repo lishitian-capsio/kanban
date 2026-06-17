@@ -28,18 +28,16 @@ afterEach(() => {
 });
 
 describe("resolvePiLaunchConfig with a selected profile (workspace layer)", () => {
-	it("uses the profile's provider/model/baseUrl/reasoning when no override is given", () => {
+	it("uses the profile's provider/model/reasoning when no override is given", () => {
 		const config = resolvePiLaunchConfig({
 			workspaceProfile: {
 				providerId: "openai",
 				modelId: "gpt-5",
-				baseUrl: "https://example.test/v1",
 				reasoningEffort: "high",
 			},
 		});
 		expect(config.providerId).toBe("openai");
 		expect(config.modelId).toBe("gpt-5");
-		expect(config.baseUrl).toBe("https://example.test/v1");
 		expect(config.reasoningEffort).toBe("high");
 	});
 
@@ -48,7 +46,7 @@ describe("resolvePiLaunchConfig with a selected profile (workspace layer)", () =
 			providerIdOverride: "anthropic",
 			modelIdOverride: "claude-sonnet-4",
 			reasoningEffortOverride: "low",
-			workspaceProfile: { providerId: "openai", modelId: "gpt-5", baseUrl: null, reasoningEffort: "high" },
+			workspaceProfile: { providerId: "openai", modelId: "gpt-5", reasoningEffort: "high" },
 		});
 		expect(config.providerId).toBe("anthropic");
 		expect(config.modelId).toBe("claude-sonnet-4");
@@ -64,5 +62,15 @@ describe("resolvePiLaunchConfig with a selected profile (workspace layer)", () =
 	it("ignores a null/empty profile and falls back to defaults", () => {
 		const config = resolvePiLaunchConfig({ workspaceProfile: null });
 		expect(config.providerId).toBe("anthropic");
+	});
+
+	it("ignores any base URL not present on the provider config (profiles can't override base URL)", () => {
+		// No provider config written → temp store is empty.
+		const config = resolvePiLaunchConfig({
+			workspaceProfile: { providerId: "anthropic", modelId: "claude-sonnet-4-20250514", reasoningEffort: null },
+		});
+		// Base URL comes from the bundled model / provider config, never from the profile.
+		expect(config.providerId).toBe("anthropic");
+		expect(config.modelId).toBe("claude-sonnet-4-20250514");
 	});
 });

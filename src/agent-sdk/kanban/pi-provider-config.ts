@@ -27,7 +27,6 @@ export interface PiLaunchConfig {
 /**
  * Resolve a model from the omp bundled model registry.
  * Falls back to a generic model descriptor if not found.
- * When a custom baseUrl is provided, it overrides the model's baseUrl.
  */
 export function resolvePiModel(
 	providerId?: string | null,
@@ -112,11 +111,11 @@ export function resolvePiModel(
  * Non-secret launch config contributed by the workspace's currently selected agent
  * profile. This is the new "workspace layer" in the resolution chain; it never carries
  * secrets (the API key still comes from the machine-home settings store by providerId).
+ * Base URL is NOT part of the profile — it resolves solely from the provider config.
  */
 export interface PiLaunchProfile {
 	providerId?: string | null;
 	modelId?: string | null;
-	baseUrl?: string | null;
 	reasoningEffort?: RuntimeReasoningEffort | null;
 }
 
@@ -142,7 +141,7 @@ export function resolvePiLaunchConfig(input?: {
 
 	let providerId = input?.providerIdOverride?.trim() || profile?.providerId?.trim() || null;
 	let modelId = input?.modelIdOverride?.trim() || profile?.modelId?.trim() || null;
-	let baseUrl = profile?.baseUrl?.trim() || null;
+	let baseUrl: string | null = null;
 	let reasoningEffort = input?.reasoningEffortOverride ?? profile?.reasoningEffort ?? null;
 
 	// Fill any still-missing values from per-agent provider config.
