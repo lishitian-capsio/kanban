@@ -1,0 +1,19 @@
+{
+  "id": "6e0b4",
+  "title": "去掉 pi 的 profile 层，折叠进 per-agent provider",
+  "prompt": "架构决定：彻底移除 agent profile / launch profile 层，把它的职责并入 per-agent named-provider 模型（『每个 agent 一组 named provider + 一个默认；按 session 选一个』）。profile 是冗余的第二选择层。\n\n背景事实：\n- profile schema runtimeAgentProfileRecordSchema（src/core/api-contract.ts:229-240）拷贝了 provider 的非密字段（providerId/modelId/baseUrl/reasoningEffort/region/gcp）——它不引用 provider，而是重复其字段 → model/baseUrl/reasoning 双存。\n- 存储 src/state/agent-profile-store.ts（sharded 于 <repo>/.kanban/workspaces/<id>/agent-profiles/<id>.json + agent-profile-selection.json）；CRUD tRPC 在 runtime-api.ts；一次性迁移在 workspace-state.ts:1023-1054；只为 pi 接线（仅 resolvePiLaunchConfig 消费，CLI agent 不用）。\n\n任务：\n1. 移除 profile 数据层：agent-profile-store/registry/selection、api-contract 里的 profile schema、profile 的 tRPC CRUD、以及 profile 迁移代码。\n2. 移除 resolvePiLaunchConfig（src/agent-sdk/kanban/pi-provider-config.ts）里的 profile 解析档 → 优先级变为 session override > provider > defaults。注意：优先级的清晰分步与单测由后续任务 c95ff 收尾，本任务只负责删掉 profile 那一档并保持可编译。\n3. 保留唯一有价值的能力——committed/工作区级、secret-free 的配置——改成 provider 上的一个标记/属性（machine-home 带密钥 vs 工作区提交不带密钥），而非单独的 profile 概念 + selection store。secrets 仍只留在 machine-home agent_providers.json。\n4. 移除前端 agent-profiles 组件层（web-ui/src/components/agent-profiles/**）。composer 切换 provider 的具体语义由任务 dca79 实现；本任务负责拆掉 profile 控件、并为 provider 控制留好接入点。\n5. 一次性迁移：把已有的 profile 选择落成对应的 provider 选择/标记，不丢用户既有配置。\n\n边界：不要统一 pi 与 CLI/terminal agent 的底层 provider 解析机制（两者机制本就不同，有意为之）。本任务依赖 dfc1f（同改 pi-provider-config.ts）先完成。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781667568330,
+  "updatedAt": 1781681529405,
+  "column": "trash",
+  "rank": "a3K",
+  "dependsOn": []
+}

@@ -1,0 +1,19 @@
+{
+  "id": "58812",
+  "title": "CLI agent provider 增加「Official login」默认档(选中时不注入 env)",
+  "prompt": "目标:为 CLI agent(claude/codex/droid/gemini/opencode 等外部二进制 agent)的 provider 模型增加一个显式的「Official login」第一档,作为默认。语义:\n\n- 「Official login」= 使用 agent 自己的官方登录态(如 claude code 的 ~/.claude Anthropic 账号 OAuth、codex 的 ChatGPT 登录),零配置即可跑。\n- 选中 Official login 时,启动该 agent 的 session **完全不注入任何 provider env**(不调用/跳过 buildAgentProviderEnv 的注入),也**不通过 hooks 写/改 settings.json 里的 provider 字段** —— 必须保证不会盖掉 agent 自己的官方登录。\n- 只有选择「自定义 provider」时才走现有的 env 注入(ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN 等)。\n- 对 CLI agent,Official login 应是默认档(用户没配任何自定义 provider 时,就是它)。\n\n重要边界与已知落点(请先调研确认,不要照抄):\n- 这一档**只对 CLI agent 成立**,pi(主 agent,in-process omp,必须从 registry 拿 model 对象 + OAuth)没有「官方登录」概念,不要给 pi 加这一档,也不要试图统一 pi 与 CLI 的 provider 机制(这是已锁定的设计决定)。\n- per-agent provider 集合 + default 的存储:Settings→Providers 面板是唯一的 add/edit/set-default 入口;General 里 agent 行只读显示当前 provider。Official login 需要作为一个可选项出现在这套选择 UI 里(无需用户先建 provider 即可选中)。\n- claude 的 env 注入有**两条写入路径**:env-injector(per-spawn env)+ adapter 的 hooks 块(仍会写 settings.json,只是 strip 掉过期 provider key)。Official login 档必须让**两条路径都不写 provider** —— 这是最容易出 bug 的地方(历史上踩过 settings.json 串味 / 盖掉官方登录的坑)。\n- 注意 legacy 单 provider 配置在 read 时迁移的逻辑,Official login 不要破坏迁移。\n\n交付:先进入 plan mode 输出方案(契约 schema 怎么表达 Official 档、两条 env 路径如何短路、默认如何落、UI 如何呈现、迁移兼容),与现有 per-agent provider/protocol 单一真相的设计保持一致;经确认后再实现。包含必要的单测。GATE:web:typecheck 必须干净。不要随意改与本任务无关的预存测试失败。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781685568280,
+  "updatedAt": 1781690739984,
+  "column": "trash",
+  "rank": "a31",
+  "dependsOn": []
+}

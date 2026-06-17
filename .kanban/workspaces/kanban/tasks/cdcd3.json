@@ -1,0 +1,19 @@
+{
+  "id": "cdcd3",
+  "title": "退役 Crystallize(过度设计):删后端+前端+tRPC+契约",
+  "prompt": "决策:Crystallize(把 home 聊天结晶成 vault 文档)是过度设计,退役掉。理由:kanban agent 本来就读得到聊天上下文,也能用 vault doc create 直接落文档,'结晶'无非用户说一句'记成需求'agent 自己写,不需要专门的功能。保持 vault 干净。\n\n要删干净(先全仓 grep 'crystalliz'(大小写、Crystallize/crystallizeChatToDoc 都覆盖)定位所有引用点,按下面清单逐处移除):\n1) 后端引擎:src/vault/crystallize.ts(B4 加的)整文件删除。\n2) tRPC:src/trpc/workspace-api.ts + src/trpc/app-router.ts 里的 crystallizeChatToDoc(或类似名)端点删除。\n3) 契约:src/core/api-contract.ts 里的 runtime*Crystallize* request/response schema 删除(注意这会 gate web:typecheck,删完前后端要一起对齐编译通过)。\n4) 前端:web-ui/src/components/vault/crystallize/**(crystallize-button / crystallize-dialog / use-crystallize.ts 等)整目录删除;以及它在 home 侧边栏头部(HomeThreadBar 附近)的入口/调用点移除。\n5) 清理一切残留 import、类型引用、测试。\n\n约束与验证:\n- 遵守 AGENTS.md(无 inline import、无 any、不为了消类型错误降级依赖)。\n- 这是删除/退役任务,删之前先看清楚每个引用点确认确实是 crystallize 专属、不是被别处复用的通用代码(尤其 vault doc store 的 create 路径要保留——退役的只是 crystallize 这层封装,不是文档创建本身)。\n- 门槛:web:typecheck 通过;相关 vitest/前端测试通过或一并删除其针对 crystallize 的用例。\n- 不要动 vault 文档 CRUD、link 引擎、search、saved-views 这些其它 vault 能力。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781510996161,
+  "updatedAt": 1781681529404,
+  "column": "trash",
+  "rank": "a3P",
+  "dependsOn": []
+}

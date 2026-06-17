@@ -5,6 +5,10 @@
   "startInPlanMode": false,
   "autoReviewEnabled": false,
   "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
   "baseRef": "main",
   "createdAt": 1781156033753,
   "updatedAt": 1781171115058,

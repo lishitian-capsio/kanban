@@ -1,0 +1,19 @@
+{
+  "id": "6c6c9",
+  "title": "Vault类型即skill ①:引擎扫 _types/ 发现类型 + 迁移种子类型",
+  "prompt": "方向(已锁):vault 文档类型 = skill。每种类型是一篇自治文档 .kanban/files/docs/_types/<Type>.md —— frontmatter 是类型元数据,正文是'怎么写这种类型文档'的自治 prompt。类型改为数据驱动,不再硬编码。参照现在流行的 skill 模型(SKILL.md:frontmatter name/description + 正文指令 + 渐进式披露)。\n\n这是第①步:引擎层。\n要做:\n1) 在 src/vault 引擎层支持从 docs/_types/*.md 扫描发现类型定义。一篇 _types 文档解析为:frontmatter = { name/类型id, description(一句'何时用我'), icon?, statusEnum?, defaultFrontmatter? 等元数据 },body = 该类型的自治 authoring prompt(原样保留 markdown)。复用现有 parseVaultDocument / gray-matter,不要新造解析。\n2) 把现在硬编码在 src/vault/vault-types.ts 的 4 个类型(requirement / customer / decision / note)迁成种子 _types/*.md 文档:元数据照搬现有 VaultTypeDefinition,body 写一段简洁的自治 prompt(requirement=客户面问题陈述怎么写、decision/note 各自怎么写;customer 也给一段)。种子落地方式:在 prepareRepoRuntimeHome 里做一次幂等迁移(参考已有 migrate* 的 cheap-precheck + workspace-dir-lock 模式:_types/ 已存在就跳过)。\n3) 类型发现要类型无关、permissive:_types 里有什么类型就认什么;vaultTypeRegistry 从'代码常量'变成'读 _types 得到的结果'(可保留一个内存缓存)。注意别破坏现有依赖 vaultTypeRegistry 的调用点(store 校验、前端类型列表来源等)——先 grep 出所有 reader 再改,保持它们拿到等价数据。\n4) 测试:vitest 覆盖 _types 解析(frontmatter+body 往返)、种子迁移幂等、扫描跳过坏文件。保持 vault 引擎不引入 agent-sdk import 以便 vitest 可测。\n\n约束:遵守 AGENTS.md(无 any、无 inline import、复用 SDK/既有 helper)。这是后续 ②CLI vault type list/show、③改 append-system-prompt、④接管开关 的地基。先 plan mode 出方案(_types 文档 schema + 迁移点 + 受影响的 reader 清单)再动手。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781672321857,
+  "updatedAt": 1781681529405,
+  "column": "trash",
+  "rank": "a3B",
+  "dependsOn": []
+}

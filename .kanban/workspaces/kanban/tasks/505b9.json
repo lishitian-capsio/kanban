@@ -1,0 +1,19 @@
+{
+  "id": "505b9",
+  "title": "修复:终端类 agent(claude/codex 等)任务在 review 点 commit / auto-commit 报 \"Task chat sessi…",
+  "prompt": "Bug 现象:\nreview 栏里一个由 claude(终端类 CLI agent)跑完、处于 awaiting_review 的任务,点击「commit」或启用了 auto-commit 时,会反复弹出错误 \"Task chat session is not running.\",auto-commit 一直循环重试,无法完成提交。实测任务 f3f56(agentId=claude)可稳定复现;它的 agent 进程其实还活着,只是 UI/commit 通道认为没有运行中的会话。\n\n初步定位(请用 systematic-debugging 技能先确认,再动手):\n- 「agent commit」与聊天发送都走 src/trpc/runtime-api.ts 的 sendTaskChatMessage,它只调用 deps.getScopedPiTaskSessionService(workspaceScope)(即只问 pi 的会话服务),失败时返回 'Task chat session is not running.'(约 runtime-api.ts:912,另见 590/616)。\n- 但终端类 agent(claude/codex/droid/kiro/gemini/opencode)的会话由 src/terminal/session-manager.ts 的 TerminalSessionManager 管理,不在 pi 服务里。因此对这些 agent 的任务,sendTaskChatMessage / rebindPersistedTaskSession 永远找不到会话 → 必然报 'not running'。\n- 对比参考:读取路径 getTaskChatMessages 已经有「pi 没有会话时回退到 terminal manager」的逻辑(见 AGENTS.md 中相关说明),但发送 / agent-commit 路径疑似没有做等价回退。\n- web-ui 侧 onAgentCommitTask(见 web-ui/src/components/card-detail-view.tsx:653/678)就是触发这条 agent 驱动提交的入口。\n\n要求:\n1) 先确认根因:agent-commit / 聊天发送 / auto-commit 对终端类 agent 是否确实没有走 TerminalSessionManager。把复现与定位写进 plan。\n2) 修复方向(自行评估最优解,不要破坏 pi 路径):让 commit / auto-commit / 聊天发送在 agent 为终端类时路由到 TerminalSessionManager(与 getTaskChatMessages 的回退保持一致),或抽出一个 agent 无关的会话路由层。\n3) auto-commit 失败时不应无限循环重试刷错误;失败要有可见且不刷屏的错误反馈(评估退避 / 单次失败即停并提示)。\n4) 同时核对:agent 进程仍存活但运行时重启后丢失会话跟踪(UI 显示 not running)是否也需要 rebind/重连终端会话,顺带修掉或在 plan 里说明为何不在本任务范围。\n\n约束:遵守 AGENTS.md 的 TypeScript 原则(无 any、SDK/registry 为准、无 inline import、无 git stash——见仓库 tribal knowledge)。给可纯函数化的路由 / 重试逻辑加 vitest 测试。门禁至少跑通 web:typecheck。不要顺手提交(NEVER commit unless asked)。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781490363338,
+  "updatedAt": 1781511129115,
+  "column": "trash",
+  "rank": "a3V",
+  "dependsOn": []
+}

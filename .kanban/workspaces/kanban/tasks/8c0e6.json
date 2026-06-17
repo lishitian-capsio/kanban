@@ -1,0 +1,18 @@
+{
+  "id": "8c0e6",
+  "title": "[Vault FE-adv] 客户锚点 + 聊天结晶入口",
+  "prompt": "实施 .plan/docs/files-as-knowledge-vault.md 的前端里程碑 D（客户锚点）+ F（结晶）。客户：type:Customer 文档 + 需求里的 customer picker（frontmatter/wikilink 指向客户文档），在 Customer 文档上显示反向链接（哪些需求挂了它），客户材料作附件挂其名下。结晶：在 home 侧边栏给「把这段对话提炼成需求/决策/纪要落进 vault」的入口，调 B4 的后端 crystallize（先「整条线程 / 最近 N 条」，消息区间选择后续再做）。依赖 FE-core 与 B4，基于 main。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781236486172,
+  "updatedAt": 1781244831024,
+  "column": "trash",
+  "rank": "a3n",
+  "dependsOn": []
+}

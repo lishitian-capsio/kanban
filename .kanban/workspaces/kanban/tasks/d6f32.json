@@ -1,0 +1,19 @@
+{
+  "id": "d6f32",
+  "title": "修复 web-ui crypto.randomUUID 在非安全上下文崩溃(任务连线等)",
+  "prompt": "Bug 现象:\n通过明文 HTTP + 局域网 IP / 远程主机(如 http://192.168.x.x:port、SSH 隧道/远程机器)访问 web-ui 时,『为两个任务连线』(创建任务依赖)会抛 'crypto.randomUUID is not a function',整个 app 进入 'Kanban hit an unexpected UI error' 的错误边界。localhost/HTTPS 下不复现。\n\n根因(请用 systematic-debugging 技能先确认再动手):\n- crypto.randomUUID() 是 Web Crypto API,只在【安全上下文 secure context】(https 或 http://localhost / 127.0.0.1)才被浏览器暴露。明文 HTTP + 非 localhost 源(LAN IP / 远程 host)下 window.crypto.randomUUID 为 undefined → 调用即 'is not a function'。\n- Kanban 常被部署在 headless remote Linux,经 LAN host / SSH 隧道用明文 HTTP 访问,所以稳定触发。\n- 连线(依赖)路径在前端用 crypto.randomUUID() 生成 dependency id,因此恰好在这一步崩;但其它任何在非安全上下文调用 crypto.randomUUID 的地方都有同样隐患。\n\n要做:\n1) 先用 systematic-debugging 复现并定位:在 web-ui 全量 grep 'crypto.randomUUID'(以及 'randomUUID'),列出所有调用点,把复现与定位写进 plan。\n2) 引入一个统一的安全 UUID 生成工具(如 web-ui/src/lib 或既有 utils 下新增 generateId()/safeRandomUUID()):优先用原生 crypto.randomUUID,在不可用(非安全上下文/旧环境)时回退。优先评估直接用已成熟的 'uuid' 包(v4)或 nanoid 作为回退,而不是手搓——遵守 AGENTS.md『优先评估成熟三方包降低维护成本』。把所有调用点改为走这个工具。\n3) 确认连线/创建依赖、以及其它受影响功能在明文 HTTP + 非 localhost 源下恢复正常。\n4) 评估是否还有非 randomUUID 的 secure-context-only API(如 crypto.subtle)在前端关键路径被用到;若有,在 plan 里记录(不一定本任务修,但要点出)。\n\n验收:\n- 在模拟非安全上下文(明文 HTTP + 非 localhost,或测试里 stub 掉 crypto.randomUUID 为 undefined)下创建任务依赖不再报错;app 不进错误边界。\n- web:typecheck 通过;给新的 id 生成工具加 vitest 单测(覆盖 randomUUID 缺失时的回退分支)。\n- 按 run/verify 技能尽量人工确认连线在该环境下可用(无法完全模拟远程时,至少说明已验证的范围)。\n\n约束:遵守 AGENTS.md 的 web-ui 规范与 TypeScript 原则(无 any、无 inline import、复用三方包/既有 helper)。不要顺手 commit(NEVER commit unless asked)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781508557333,
+  "updatedAt": 1781511129115,
+  "column": "trash",
+  "rank": "a3Q",
+  "dependsOn": []
+}

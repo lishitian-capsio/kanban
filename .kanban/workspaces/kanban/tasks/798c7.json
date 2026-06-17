@@ -1,0 +1,18 @@
+{
+  "id": "798c7",
+  "title": "输入框内联 profile 选择器 + 编辑器（即时生效）",
+  "prompt": "在 Kanban agent（侧边栏/home 聊天）输入框旁新增「配置 profile」内联入口：针对【当前 thread 所选 agent】，展示其 profile 库、可切换/新建/复制/编辑/删除 profile，切换或保存即时生效，不需进 settings、不需重启会话。\n\n核心心智模型（已与产品方拍板）：\n- 配置单位 = agent；每个 agent 有一个 profile 库（可多份命名配置），选了哪个 agent 就管哪个 agent 的 profile。\n- 作用域：每个 agent 一个「当前选中 profile」，全局生效（本任务不做 per-thread profile 覆盖）。\n- 「即时生效」靠 profile 接入的解析链：切换/保存后下一条消息即用新值。\n\n依赖：本任务依赖前置任务 6c49b（profile 库地基：存储 + tRPC CRUD + 解析接入）。直接消费其 tRPC（list/create/update/delete/select profile）。\n\n现状（已调研，供 UI 参考）：\n- 输入框已有雏形：kanban-chat-composer.tsx + kanban-chat-model-selector.tsx 已有内联 model + reasoning effort 选择器（现为 task 级）。本任务把它扩成完整的 profile 选择器 + 编辑面板。\n- home 聊天是 per-thread agentId（home-thread-bar.tsx / use-home-threads.ts）；面板作用于 activeThread.agentId 对应的 agent 的 profile 库。\n- profile 可编辑项按 agent 实际支持动态显示：model、reasoning、baseURL、API Key/OAuth、AWS/GCP、MCP 等。\n\n实现要点：\n- 输入框处紧凑入口（popover/内联面板）：① profile 下拉(切换=改该 agent 当前选中 profile，即时生效)；② 编辑当前 profile 字段；③ 新建/复制/重命名/删除 profile。\n- 全部走 6c49b 的 tRPC；复用 SDK/适配层真实类型（PiLaunchConfig、omp model registry、runtimeReasoningEffortSchema），禁止本地重定义。\n- 遵循 web-ui 设计系统（Tailwind v4 tokens、Radix、lucide、src/components/ui 原语），暗色主题。\n- 本任务【不】删除 settings 旧配置区（由后续依赖任务处理）。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781241863408,
+  "updatedAt": 1781251466493,
+  "column": "trash",
+  "rank": "a3dV",
+  "dependsOn": []
+}

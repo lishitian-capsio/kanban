@@ -1,0 +1,19 @@
+{
+  "id": "f3f56",
+  "title": "Vault: 让 doc 类型自描述 agent 指引(去硬编码 append-system-prompt)",
+  "prompt": "目标:把 Kanban 侧边栏 agent 系统提示里对 vault 文档类型的指引从硬编码 requirement 改成由每个 doc 类型自描述、运行时组合。这是 vault 演进主线:vault 本身即扩展机制,doc 类型 = 扩展单元,每种类型自带自己的 agent 指引。\n\n现状(已确认):\n- src/prompts/append-system-prompt.ts 里把 requirement 的路由/状态枚举/示例写死了(见 Requirements 段落)。\n- src/vault/vault-types.ts 已注册 requirement / customer / decision / note 四种类型,但 VaultTypeDefinition 只有 label/icon/statusEnum/defaultFrontmatter,没有 agent 指引字段。\n\n要做:\n1) 在 VaultTypeDefinition(src/vault/vault-types.ts)上新增可选的 agent 指引元数据,例如 agentGuidance:{ summary:string; routing?:{ verbs:string[]; intent:string }[] } 之类——字段形状由你设计,目标是让一种类型能完整声明:它是什么、frontmatter 关键字段、以及用户用什么说法(中英文)时该路由到哪个 vault doc 子命令。给 requirement 填上等价于现在硬编码内容的指引;customer/decision/note 各填一份简短指引。\n2) 在 append-system-prompt.ts 里删掉 requirement 专属硬编码段落,改为遍历 vaultTypeRegistry 在运行时拼出 'Knowledge vault documents' 段落(通用说明 + 每种类型的指引)。保持现有 vault doc CLI 命令参考段落不变。\n3) 没有任何已注册带指引的类型时,要优雅降级(段落退化为通用 vault doc 说明,不报错)。\n4) 保持类型无关:不要再在 prompt 层出现对单一类型的 if 分支。\n\n约束:遵守 AGENTS.md 的 TypeScript 原则(无 any、SDK/registry 为准、无 inline import)。先 plan mode 给出 VaultTypeDefinition 指引字段的设计 + prompt 拼装方案再动手。给引擎纯函数加 vitest 测试(指引组合的拼装逻辑应可独立测试,保持 vault 引擎不引入 agent-sdk import 以便 vitest 可测)。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781489015110,
+  "updatedAt": 1781511129115,
+  "column": "trash",
+  "rank": "a3Y",
+  "dependsOn": []
+}

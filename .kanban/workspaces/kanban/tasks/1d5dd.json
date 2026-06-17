@@ -1,0 +1,19 @@
+{
+  "id": "1d5dd",
+  "title": "web-ui 新建任务对话框接入新的 per-agent provider 模型",
+  "prompt": "问题:web-ui 的「新建任务」对话框还没接上新的 per-agent provider 模型 —— agent / provider 选择没反映现在的 per-agent provider 集合(选不了 provider,或还停在旧选项)。\n\n目标:让新建任务对话框按当前 provider 模型呈现 agent + provider 选择,和系统其它地方(Settings→Providers、session 启动时的 provider 选择)保持一致的单一真相。\n\n要求:\n- 对话框里选定 agent 后,provider 选项应来自**该 agent 的 provider 集合 + default**(per-agent provider 模型,providerId = provider 名),而不是旧的/全局的列表;默认选中该 agent 的 default provider。\n- 数据要实时反映当前已配置的 provider(新加/改过的 provider 要能立即出现,不要因为缓存停在旧值)。\n- 现在 task 只携带 agentId,provider 是 session 启动时通过 agentSettings.providerId → buildAgentProviderEnv 选的。请先调研并在 plan 里给出结论:**新建时选的 provider 是落到 task 上(新增字段,需动 wire contract)还是沿用启动时 lazy 选**;与现有「selectedAgentId 不在 create 时 stamp、保持 lazy」的取向对齐,倾向最小侵入。无论哪种,用户在对话框里选的 provider 必须真正作用到该任务启动的 session。\n- 注意正在并行进行的任务 58812(给 CLI agent 加「Official login」默认档):这个 provider 选择器应当能自然容纳 Official login 档(即当 58812 落地后,Official login 会作为一个可选 provider 出现),不要写死成「必须选一个自定义 provider」。pi 与 CLI agent 的 provider 机制不同,选择器要兼容两者。\n\n交付:先 plan(provider 选择落点 + 数据来源 + UI 呈现 + 与 58812 的衔接),确认后实现,含必要单测。GATE:web:typecheck 干净。不要改与本任务无关的预存测试失败。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781690309955,
+  "updatedAt": 1781690943698,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}

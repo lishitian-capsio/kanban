@@ -1,0 +1,19 @@
+{
+  "id": "ada59",
+  "title": "修复 vault 编辑器:文字重影 + 工具栏图标异常",
+  "prompt": "Bug:vault 文档编辑器(@uiw/react-md-editor,web-ui/src/components/vault/editor/,doc-editor / doc-preview)有两个视觉问题:\n1) **重影**:打开任意文档,编辑区出现文字/内容重影(double image / ghosting),与具体文档内容无关——一进编辑器就有。\n2) **工具栏图标异常**:编辑器工具栏的图标显示有问题(缺失/错位/串成乱码等)。\n\n背景与排查方向(设计文档 .plan/docs/files-as-knowledge-vault.md 已把这块列为已知风险):\n- @uiw/react-md-editor 自带一套 CSS(@uiw/react-md-editor/markdown-editor.css 之类)和自带图标字体/SVG。重影很可能来自:它自带 CSS 与我们的 dark token/全局样式叠加冲突、textarea 与高亮 overlay 两层错位(react-md-editor 的编辑态本就是 textarea + 语法高亮层叠加,行高/字体/padding 不一致就会重影)、或同一文档被渲染两次。\n- 工具栏图标问题很可能是它自带图标资源(CSS/字体)没被正确引入或被我们的样式覆盖;设计约定是约束到 dark token、预览委托给 KanbanMarkdownContent。\n\n要做:\n1) 先复现并定位根因(建议用 run 技能起 web-ui,打开 Files→Vault→任一 requirement 文档进编辑器观察)。区分重影是 CSS 叠加 / 两层错位 / 重复渲染哪一种。\n2) 修复重影:对齐编辑层与高亮层的 font-family/font-size/line-height/letter-spacing/padding;确认 @uiw/react-md-editor 的必需 CSS 被正确导入且只导入一次,且我们的全局/dark token 覆盖没有破坏它的内部布局。\n3) 修复工具栏图标:确保图标资源正确加载、不被覆盖;若与 dark theme 冲突,按 AGENTS.md 约束到 dark token(不要 dark: 前缀)。\n4) 不要破坏既有约定:预览仍委托 KanbanMarkdownContent;frontmatter 与正文分开编辑的边界不变。\n5) 验证:web:typecheck 通过;按 run/verify 技能起应用人工确认重影消失、图标正常、亮/暗不串色。\n\n约束:遵守 AGENTS.md 的 web-ui 规范(Tailwind v4 + 设计 token、Radix、lucide、ui primitives、始终 dark theme)。优先用 Tailwind/cn 条件类,inline style 只用于真正动态值;能用 globals.css 表达不了的复杂选择器再写 CSS。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781490139294,
+  "updatedAt": 1781511129115,
+  "column": "trash",
+  "rank": "a3U",
+  "dependsOn": []
+}

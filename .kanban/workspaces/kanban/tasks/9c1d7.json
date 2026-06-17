@@ -1,0 +1,18 @@
+{
+  "id": "9c1d7",
+  "title": "[Vault CUT] 退役分片需求存储 + 清旧需求 UI（协调切割，gate 最后）",
+  "prompt": "实施 .plan/docs/files-as-knowledge-vault.md 的里程碑 B6 + 前端 G —— 一次协调的后端+前端切割，务必最后做、且在 B5 迁移已落地并验证后。后端：删除 requirement-store/requirement-versions/requirement-task-link-mutations/requirement-mutations/commands/requirement.ts，裁剪 api-contract 里的 requirement version/link/status 旧类型（按设计文档的次序：先删 version/link 类型——只有被删的版本历史组件依赖它们——再收窄 status 枚举，必要时保留一个投影 RuntimeRequirementItem 过渡）。前端：删除 web-ui/src/components/requirements/** 与 state/requirements-state.ts。全程保持 web:typecheck 绿（这是 gate 检查），契约改动约波及 ~12 个 web-ui 文件，按序切割。依赖 B5 与 FE-core，基于 main。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781236487212,
+  "updatedAt": 1781244831024,
+  "column": "trash",
+  "rank": "a3o",
+  "dependsOn": []
+}

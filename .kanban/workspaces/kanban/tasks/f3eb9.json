@@ -1,0 +1,19 @@
+{
+  "id": "f3eb9",
+  "title": "[provider] 会话↔provider 绑定持久化 + resume 重注 + 中途改",
+  "prompt": "背景：会话现在只持久化 agentSessionId(src/core/api-contract.ts 的 RuntimeTaskSessionSummary)，不记录它是用哪个 provider 启动的。产品决定：会话要绑定所选 provider，重启/resume 时重注同一个，并支持中途切换 provider。\n\n任务：\n1. RuntimeTaskSessionSummary 增加 providerId（与 agentSessionId 同处），落盘到 sessions.json（src/state/workspace-state.ts）。起会话时记录所选 providerId。\n2. resume/重启：src/terminal/session-manager.ts + src/terminal/agent-session-adapters.ts 在恢复会话时，用记录的 providerId 重新解析并注入同一 provider 的 env（而不是当前默认）。\n3. 中途改 provider：提供一条路径=用 --resume <同一 agentSessionId> + 新 provider 的 env 重新拉起子进程（env 只能 spawn 时定，故必须重启进程；对话经 resume 接续，当前轮会被打断重来）。后端暴露『切换会话 provider』的操作。\n\n依赖：先做『每 agent 多 provider 池 + 会话级选中』。\n验收：会话记录 providerId 并在重启后重注同一 provider；切换 provider 触发 --resume 重拉且对话接续；单测/集成测试覆盖绑定与 resume 重注。不要动 .kanban/ 运行时数据。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781489143931,
+  "updatedAt": 1781511129115,
+  "column": "trash",
+  "rank": "a3Z",
+  "dependsOn": []
+}

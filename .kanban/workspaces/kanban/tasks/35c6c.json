@@ -1,0 +1,18 @@
+{
+  "id": "35c6c",
+  "title": "[Vault B5] 需求 → vault 文档迁移（migrateRequirementsToVaultDocs）",
+  "prompt": "实施 .plan/docs/files-as-knowledge-vault.md 的里程碑 B5。在 prepareRepoRuntimeHome 加 migrateRequirementsToVaultDocs：把现有需求（分片 requirement-store，含 single-file 回退源）迁成 docs/requirement/<slug>-<id>.md，frontmatter 放 status/priority/customer，旧 draft/active/done/archived → 问题状态映射（done→已澄清等，有意操作）。集成测试：seed 旧分片+single-file → 跑迁移 → 断言 docs/requirement/*.md 内容/状态重映射/related_tasks，旧分片目录已删；再跑一次断言幂等（docs/requirement/ 守卫防重跑）。注意别弄丢现有 2-3 条需求。本任务只迁移、不删旧存储代码（删除在退役任务做）。依赖 B3，基于 main。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781236484050,
+  "updatedAt": 1781244831024,
+  "column": "trash",
+  "rank": "a3r",
+  "dependsOn": []
+}

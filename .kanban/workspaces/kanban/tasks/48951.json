@@ -1,0 +1,19 @@
+{
+  "id": "48951",
+  "title": "代理 bypass 支持正则匹配规则",
+  "prompt": "背景：昨天的 feat(proxy) commit 7df3b92（src/config/proxy-fetch.ts）把 globalThis.fetch 做了 monkey-patch，进程内所有出站请求默认都走代理，只有命中 NO_PROXY 列表或 loopback 的 host 才 bypass。当前 bypass 判定在 src/config/proxy-env.ts 的 shouldBypassProxy()，只支持 NO_PROXY 风格匹配：host 完全相等或子域后缀匹配（boundary-aware），外加 '*' 通配和 loopback。\n\n问题：境内 provider 端点（如 aliyun-token-plan 的 https://token-plan.cn-beijing.maas.aliyuncs.com）被强制走境外代理，代理连不上境内域名，导致 /models 发现请求一直 'Unable to connect' / socket closed，返回 0 模型并疯狂重试刷屏。这类端点本应直连。\n\n目标：在现有 NO_PROXY 后缀匹配基础上，**新增一种正则方式**来配置 proxy bypass，让用户可以用正则灵活指定哪些 host 直连不走代理。\n\n要求：\n1. 扩展 bypass 规则，支持正则模式（例如约定以 're:' 前缀的条目、或 /pattern/ 形式，按当前代码风格选最自然的一种并保持可读）。正则对 host 做匹配；无效正则要安全跳过且不抛错、不影响其它条目。\n2. 与现有的等值/子域后缀匹配、'*'、loopback、IPv6 bracket 处理共存，保持向后兼容（旧 NO_PROXY 字符串行为不变）。\n3. 把新能力贯通到配置与 UI：代理设置里应能配置这些 bypass 规则（参考 trpc/runtime-api.ts saveConfig 和 web-ui 代理设置面板），并保证 applyProxyToProcessEnv / proxy-fetch 的 holder 更新链路在改配置后即时生效，无需重启。\n4. 遵循 AGENTS.md 的 TypeScript 与代码质量规范（无 any、纯函数保持可测）。为 shouldBypassProxy 的正则分支补充单元测试，覆盖：匹配命中、未命中、无效正则被忽略、与后缀规则混用。\n5. 顺带确认/验证：把境内 aliyun MaaS 域名用正则规则加入 bypass 后，发现请求能直连成功、刷屏停止。\n\n不要改动 wire contract 中无关部分；改动应聚焦在 proxy-env.ts / proxy-fetch.ts、配置保存路径与对应的代理设置 UI。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781228640933,
+  "updatedAt": 1781244831023,
+  "column": "trash",
+  "rank": "a3w",
+  "dependsOn": []
+}

@@ -1,0 +1,19 @@
+{
+  "id": "5feaa",
+  "title": "测试任务",
+  "prompt": "这是一个测试任务，用于验证 Kanban 任务创建流程。无需修改代码；如果后续启动该任务，请检查任务环境并在总结中说明流程是否正常。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "codex",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781689954364,
+  "updatedAt": 1781690739984,
+  "column": "trash",
+  "rank": "a3",
+  "dependsOn": []
+}

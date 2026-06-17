@@ -1,0 +1,19 @@
+{
+  "id": "10e02",
+  "title": "健壮性: agent provider config 读盘 Zod 校验",
+  "prompt": "validateConfig 从磁盘读 agent provider 配置时只做手工 coerce，非法值静默丢弃，reasoning.effort 等枚举不校验（src/agent-sdk/kanban/agent-provider-config.ts:94-164）。任务：改用 Zod schema 校验读盘数据（可复用/对齐 api-contract 里的 runtimeAgentProviderConfigSchema），非法/损坏数据要可观测（按 src/logging facade 记 warn，含 agentId 字段），而非静默吞掉；reasoning.effort 等枚举要校验。注意：本任务与『models 丢失 + modelsSourceUrl』(fdd77) 同改 agent-provider-config.ts，故依赖其先完成以免冲突。仅校验/可观测，不改解析机制。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781667032238,
+  "updatedAt": 1781681529405,
+  "column": "trash",
+  "rank": "a3J",
+  "dependsOn": []
+}

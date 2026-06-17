@@ -1,0 +1,19 @@
+{
+  "id": "0a9a9",
+  "title": "Vault类型即skill ②:CLI vault type list / show(渐进式披露两级)",
+  "prompt": "方向(已锁):vault 类型 = skill,定义在 docs/_types/<Type>.md(frontmatter 元数据 + 正文=自治 authoring prompt)。依赖第①步(引擎能扫 _types/ 发现类型)。\n\n这是第②步:CLI,对应 skill 渐进式披露的两级。\n要做:\n1) 在 src/commands/vault.ts 加子命令:\n   - 'vault type list' —— 输出轻索引:每种类型的 name + description(+ 必要元数据如 statusEnum),不含正文。对应 skill 平时只暴露 name/description。\n   - 'vault type show --type <type>' —— 输出该类型的完整定义:元数据 + 正文(自治 authoring prompt 全文)。对应 skill 被调用时才加载全文。\n   都输出 JSON(沿用本仓 CLI 全 JSON 的风格)。\n2) 数据来源走第①步的引擎发现接口,不要在 CLI 里重新解析 _types。\n3) 注意 commander 嵌套子命令共享 --project-path 时要用 this.optsWithGlobals()(AGENTS.md 有记录),用 function 不用箭头函数。\n4) 测试:临时仓库里放两篇 _types 文档,断言 list 只给索引、show 给全文;--project-path 解析正确。\n\n约束:遵守 AGENTS.md(无 any、无 inline import)。这是给 kanban agent 用的'查类型怎么写'的手——③改 append-system-prompt 会让 agent 写文档前先调 vault type show。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781672331724,
+  "updatedAt": 1781681529405,
+  "column": "trash",
+  "rank": "a39",
+  "dependsOn": []
+}

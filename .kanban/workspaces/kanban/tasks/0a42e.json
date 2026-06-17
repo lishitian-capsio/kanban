@@ -1,0 +1,19 @@
+{
+  "id": "0a42e",
+  "title": "[provider] 前端：新建会话处的 provider 选择器",
+  "prompt": "背景：web-ui/src/components/shared/agent-provider-selector.tsx 目前只是【只读展示】当前 provider 名 + 一个跳设置的『Add Provider』按钮，没接进『新建会话』流。产品决定：新建 agent 会话时要能从该 agent 已登记的 provider 列表里【下拉选】一个（不手填名），选中的 providerId 随起会话传给后端(agentSettings.providerId)。\n\n任务（前端）：\n1. 把 agent-provider-selector 从只读升级为真正的下拉选择器：列出该 agent 在 Settings 里登记的 provider（名称继承登记项，不手填），可选中，并保留『+ 新增 provider』入口。\n2. 接进新建会话流：home 侧边栏 composer（参考 task-agent-model-picker.tsx / kanban-agent-chat-panel.tsx 的 modelControlSlot 模式）与任务创建路径，把选中的 providerId 通过 startTaskSession 的 agentSettings.providerId 带下去。\n3. 已绑定 provider 的会话要回显当前所用 provider；支持切换（调后端『切换会话 provider』）。\n\n依赖：先做『每 agent 多 provider 池 + 会话级选中（后端）』(需要按 providerId 的 list 与起会话参数)。\n验收：新建 claude 会话能选 provider 并生效；切换可触发后端重注；web:typecheck + 相关组件测试通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781489153658,
+  "updatedAt": 1781511129115,
+  "column": "trash",
+  "rank": "a3T",
+  "dependsOn": []
+}
