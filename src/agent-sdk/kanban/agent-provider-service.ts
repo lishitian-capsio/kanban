@@ -20,6 +20,7 @@ import type {
 	RuntimeKanbanProviderSettings,
 	RuntimeReasoningEffort,
 } from "../../core/api-contract";
+import { createLogger } from "../../logging";
 import { type GeneratedProvider, getBundledModels } from "../ai/models";
 import {
 	type AgentProviderConfig,
@@ -34,6 +35,8 @@ import {
 	getDefaultProtocolsForProvider,
 	type ProtocolConfig,
 } from "./provider-protocol";
+
+const log = createLogger("agent-provider");
 
 // ------------------------------------------------------------------ helpers
 
@@ -148,14 +151,17 @@ async function fetchModelsFromEndpoint(baseUrl: string, apiKey?: string): Promis
 			});
 
 			if (!response.ok && response.status >= 500 && attempt < maxAttempts) {
-				console.warn(
-					`[kanban] /models endpoint returned ${response.status} for ${modelsUrl}, retrying (${attempt}/${maxAttempts})...`,
-				);
+				log.warn("/models endpoint returned an error, retrying", {
+					status: response.status,
+					modelsUrl,
+					attempt,
+					maxAttempts,
+				});
 				await new Promise((r) => setTimeout(r, 1000 * attempt));
 				continue;
 			}
 			if (!response.ok) {
-				console.warn(`[kanban] /models endpoint returned ${response.status} for ${modelsUrl}`);
+				log.warn("/models endpoint returned an error", { status: response.status, modelsUrl });
 				return [];
 			}
 
@@ -165,17 +171,11 @@ async function fetchModelsFromEndpoint(baseUrl: string, apiKey?: string): Promis
 				.sort((a, b) => a.name.localeCompare(b.name));
 		} catch (error) {
 			if (attempt < maxAttempts) {
-				console.warn(
-					`[kanban] /models endpoint fetch failed for ${modelsUrl}, retrying (${attempt}/${maxAttempts}):`,
-					error instanceof Error ? error.message : error,
-				);
+				log.warn("/models endpoint fetch failed, retrying", { modelsUrl, attempt, maxAttempts, error });
 				await new Promise((r) => setTimeout(r, 1000 * attempt));
 				continue;
 			}
-			console.warn(
-				`[kanban] /models endpoint fetch failed for ${modelsUrl} after ${maxAttempts} attempts:`,
-				error instanceof Error ? error.message : error,
-			);
+			log.warn("/models endpoint fetch failed after all attempts", { modelsUrl, maxAttempts, error });
 			return [];
 		}
 	}

@@ -21,6 +21,9 @@ import type {
 	RuntimeReasoningEffort,
 	RuntimeTaskAgentSettings,
 } from "@/runtime/types";
+import { createLogger } from "@/utils/logger";
+
+const log = createLogger("models");
 
 // ---------------------------------------------------------------------------
 // Hook: manages fetch state for Kanban provider catalog + model lists
@@ -113,7 +116,7 @@ export function useTaskAgentModelPicker({
 				}
 			})
 			.catch((error) => {
-				console.warn(`[kanban] Failed to load models for provider "${effectiveProviderId}":`, error instanceof Error ? error.message : error);
+				log.warn("Failed to load models for provider", { providerId: effectiveProviderId, error });
 				if (!cancelled) {
 					setProviderModels([]);
 				}

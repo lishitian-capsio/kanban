@@ -3,6 +3,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchRuntimeConfig, saveRuntimeConfig } from "@/runtime/runtime-config-query";
 import type { RuntimeAgentId, RuntimeConfigResponse, RuntimeProjectShortcut } from "@/runtime/types";
 import { useTrpcQuery } from "@/runtime/use-trpc-query";
+import { createLogger } from "@/utils/logger";
+
+const log = createLogger("settings");
 
 export interface UseRuntimeConfigResult {
 	config: RuntimeConfigResponse | null;
@@ -70,14 +73,14 @@ export function useRuntimeConfig(
 		const message = configQuery.error?.message ?? "Unknown runtime config load error.";
 		const errorKey = `${scopeLabel}:${message}`;
 		if (lastLoggedErrorKeyRef.current !== errorKey) {
-			console.warn(`[kanban][settings] runtime.getConfig failed for scope ${scopeLabel}: ${message}`);
+			log.warn("runtime.getConfig failed", { scope: scopeLabel, error: message });
 			lastLoggedErrorKeyRef.current = errorKey;
 		}
 		if (didRetryAfterInitialErrorRef.current) {
 			return;
 		}
 		didRetryAfterInitialErrorRef.current = true;
-		console.warn(`[kanban][settings] Retrying runtime.getConfig once for scope ${scopeLabel}.`);
+		log.warn("Retrying runtime.getConfig once", { scope: scopeLabel });
 		void configQuery.refetch();
 	}, [configQuery.data, configQuery.error, configQuery.isError, configQuery.refetch, open, workspaceId]);
 

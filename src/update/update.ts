@@ -2,6 +2,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { buildSubprocessProxyEnv } from "../config/proxy-fetch";
+import { createLogger } from "../logging";
+
+const log = createLogger("update");
 
 export enum UpdatePackageManager {
 	NPM = "npm",
@@ -589,8 +592,8 @@ export function runPendingAutoUpdateOnShutdown(options?: {
 	const pendingUpdate = pendingShutdownAutoUpdate;
 	pendingShutdownAutoUpdate = null;
 
-	const log = options?.log ?? console.log;
-	log(`New version ${pendingUpdate.latestVersion} detected. Refreshing cached Kanban for next launch.`);
+	const emit = options?.log ?? ((message: string) => log.info(message));
+	emit(`New version ${pendingUpdate.latestVersion} detected. Refreshing cached Kanban for next launch.`);
 
 	const spawnUpdate = options?.spawnUpdate ?? spawnDetachedUpdate;
 	spawnUpdate(pendingUpdate.command, pendingUpdate.args);

@@ -22,6 +22,9 @@ import { getTerminalController } from "@/terminal/terminal-controller-registry";
 import { getTerminalGeometry } from "@/terminal/terminal-geometry-registry";
 import type { SendTerminalInputOptions } from "@/terminal/terminal-input";
 import type { BoardCard } from "@/types";
+import { createLogger } from "@/utils/logger";
+
+const log = createLogger("task-sessions");
 
 interface UseTaskSessionsInput {
 	currentProjectId: string | null;
@@ -249,14 +252,15 @@ export function useTaskSessions({ currentProjectId, setSessions }: UseTaskSessio
 				const trpcClient = getRuntimeTrpcClient(currentProjectId);
 				const payload = await trpcClient.workspace.deleteWorktree.mutate({ taskId });
 				if (!payload.ok) {
-					const message = payload.error ?? "Could not clean up task workspace.";
-					console.error(`[cleanupTaskWorkspace] ${message}`);
+					log.error("cleanupTaskWorkspace failed", {
+						taskId,
+						error: payload.error ?? "Could not clean up task workspace.",
+					});
 					return null;
 				}
 				return payload;
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				console.error(`[cleanupTaskWorkspace] ${message}`);
+				log.error("cleanupTaskWorkspace failed", { taskId, error });
 				return null;
 			}
 		},

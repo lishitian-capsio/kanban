@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { Command, Option } from "commander";
 import ora, { type Ora } from "ora";
 import packageJson from "../package.json" with { type: "json" };
+import { printLine } from "./cli-output";
 import { registerFileCommand } from "./commands/file";
 import { registerHooksCommand } from "./commands/hooks";
 import { registerTaskCommand } from "./commands/task";
@@ -18,6 +19,7 @@ import {
 	installGracefulShutdownHandlers,
 	shouldSuppressImmediateDuplicateShutdownSignals,
 } from "./core/graceful-shutdown";
+import { configureLogging, createLogger } from "./logging";
 import {
 	buildKanbanRuntimeUrl,
 	clearKanbanRuntimeTls,
@@ -38,6 +40,8 @@ import type { RuntimeStateHub } from "./server/runtime-state-hub";
 import { captureNodeException, flushNodeTelemetry } from "./telemetry/sentry-node.js";
 import type { TerminalSessionManager } from "./terminal/session-manager";
 import { runOnDemandUpdate } from "./update/update";
+
+const cliLog = createLogger("cli");
 
 interface CliOptions {
 	noOpen: boolean;
@@ -296,21 +300,20 @@ async function tryOpenExistingServer(options: { noOpen: boolean; shouldAutoOpenB
 	const projectUrl = workspaceId
 		? buildKanbanRuntimeUrl(`/${encodeURIComponent(workspaceId)}`)
 		: getKanbanRuntimeOrigin();
-	console.log(`Kanban already running at ${getKanbanRuntimeOrigin()}`);
+	printLine(`Kanban already running at ${getKanbanRuntimeOrigin()}`);
 	if (!options.noOpen && options.shouldAutoOpenBrowser) {
 		try {
 			const { openInBrowser } = await import("./server/browser.js");
 			openInBrowser(projectUrl, {
 				warn: (message) => {
-					console.warn(message);
+					cliLog.warn(message);
 				},
 			});
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			console.warn(`Could not open browser automatically: ${message}`);
+			cliLog.warn("Could not open browser automatically", { error });
 		}
 	}
-	console.log(`Project URL: ${projectUrl}`);
+	printLine(`Project URL: ${projectUrl}`);
 	return true;
 }
 
@@ -388,11 +391,12 @@ async function startServer(): Promise<{
 	// the holder is seeded from config during workspace-registry init and updated
 	// on every settings save.
 	const strippedProxy = installProxyFetch();
-	console.log("[proxy-fetch] installed global fetch proxy interceptor");
+	const proxyLog = createLogger("proxy-fetch");
+	proxyLog.info("installed global fetch proxy interceptor");
 	if (strippedProxy.https || strippedProxy.http) {
-		console.log(
-			`[proxy-fetch] cleared inherited proxy env (${strippedProxy.https ?? strippedProxy.http}); in-process routing now follows Kanban proxy settings`,
-		);
+		proxyLog.info("cleared inherited proxy env; in-process routing now follows Kanban proxy settings", {
+			clearedProxy: strippedProxy.https ?? strippedProxy.http,
+		});
 	}
 
 	// Start the network bridge for CLI agent sessions. The bridge is a lightweight
@@ -401,7 +405,9 @@ async function startServer(): Promise<{
 	// effect immediately without restarting sessions.
 	const { startNetworkBridge, stopNetworkBridge } = await import("./unified-proxy/network-bridge.js");
 	const networkBridge = startNetworkBridge();
-	console.log(`[network-bridge] started at ${networkBridge.url} — CLI agent sessions will route through it`);
+	createLogger("network-bridge").info("started — CLI agent sessions will route through it", {
+		url: networkBridge.url,
+	});
 	/*
 		Server-only modules are loaded lazily because task-oriented subcommands like
 		`kanban task create` and `kanban hooks ingest` do not need the runtime server.
@@ -468,7 +474,7 @@ async function startServer(): Promise<{
 		workspaceRegistry,
 		runtimeStateHub: runtimeHub,
 		warn: (message) => {
-			console.warn(`[kanban] ${message}`);
+			cliLog.warn(message);
 		},
 		ensureTerminalManagerForWorkspace: workspaceRegistry.ensureTerminalManagerForWorkspace,
 		resolveInteractiveShellCommand,
@@ -529,7 +535,7 @@ async function startServer(): Promise<{
 		await shutdownRuntimeServer({
 			workspaceRegistry,
 			warn: (message) => {
-				console.warn(`[kanban] ${message}`);
+				cliLog.warn(message);
 			},
 			closeRuntimeServer: close,
 			skipSessionCleanup: options?.skipSessionCleanup ?? false,
@@ -559,7 +565,7 @@ async function startServerWithAutoPortRetry(options: CliOptions): Promise<Awaite
 			const currentPort = getKanbanRuntimePort();
 			const retryPort = await findAvailableRuntimePort(currentPort + 1);
 			setKanbanRuntimePort(retryPort);
-			console.warn(`Runtime port ${currentPort} became busy during startup, retrying on ${retryPort}.`);
+			cliLog.warn("Runtime port became busy during startup, retrying", { currentPort, retryPort });
 		}
 	}
 }
@@ -567,7 +573,7 @@ async function startServerWithAutoPortRetry(options: CliOptions): Promise<Awaite
 async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolean): Promise<void> {
 	if (options.host) {
 		setKanbanRuntimeHost(options.host);
-		console.log(`Binding to host ${options.host}.`);
+		printLine(`Binding to host ${options.host}.`);
 	}
 
 	const [{ openInBrowser }, { autoUpdateOnStartup, runPendingAutoUpdateOnShutdown }] = await Promise.all([
@@ -577,12 +583,12 @@ async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolea
 
 	const selectedPort = await applyRuntimePortOption(options.port);
 	if (selectedPort !== null) {
-		console.log(`Using runtime port ${selectedPort}.`);
+		printLine(`Using runtime port ${selectedPort}.`);
 	}
 
 	const tlsResult = await resolveRuntimeTls(options);
 	if (tlsResult.enabled) {
-		console.log(`HTTPS enabled on ${getKanbanRuntimeOrigin()}`);
+		printLine(`HTTPS enabled on ${getKanbanRuntimeOrigin()}`);
 	}
 
 	// Handle passcode generation for remote mode — deferred until after TLS
@@ -591,12 +597,12 @@ async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolea
 	if (isKanbanRemoteHost()) {
 		if (options.noPasscode) {
 			disablePasscode();
-			console.log("Passcode authentication disabled (--no-passcode). Ensure you have your own auth layer.");
+			printLine("Passcode authentication disabled (--no-passcode). Ensure you have your own auth layer.");
 		} else {
 			const passcode = generatePasscode();
 			generateInternalToken();
 			// NOTE: passcode is printed ONLY here and never stored in logs or env.
-			console.log(`\n🔐 Remote access passcode: ${passcode}\n\nShare this with users who need access.\n`);
+			printLine(`\n🔐 Remote access passcode: ${passcode}\n\nShare this with users who need access.\n`);
 		}
 	}
 
@@ -617,20 +623,19 @@ async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolea
 		}
 		throw error;
 	}
-	console.log(`Kanban running at ${runtime.url}`);
+	printLine(`Kanban running at ${runtime.url}`);
 	if (!options.noOpen && shouldAutoOpenBrowser) {
 		try {
 			openInBrowser(runtime.url, {
 				warn: (message) => {
-					console.warn(message);
+					cliLog.warn(message);
 				},
 			});
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			console.warn(`Could not open browser automatically: ${message}`);
+			cliLog.warn("Could not open browser automatically", { error });
 		}
 	}
-	console.log("Press Ctrl+C to stop.");
+	printLine("Press Ctrl+C to stop.");
 
 	let isShuttingDown = false;
 	const shutdownIndicator = createShutdownIndicator();
@@ -641,7 +646,7 @@ async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolea
 		isShuttingDown = true;
 		runPendingAutoUpdateOnShutdown();
 		if (options.skipShutdownCleanup) {
-			console.warn("Skipping shutdown task cleanup for this instance.");
+			cliLog.warn("Skipping shutdown task cleanup for this instance.");
 		}
 		await runtime.shutdown({
 			skipSessionCleanup: options.skipShutdownCleanup,
@@ -670,16 +675,15 @@ async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolea
 		onShutdownError: (error) => {
 			shutdownIndicator.stop("failed");
 			captureNodeException(error, { area: "shutdown" });
-			const message = error instanceof Error ? error.message : String(error);
-			console.error(`Shutdown failed: ${message}`);
+			cliLog.error("Shutdown failed", { error });
 		},
 		onTimeout: (delayMs) => {
 			shutdownIndicator.stop("interrupted");
-			console.error(`Forced exit after shutdown timeout (${delayMs}ms).`);
+			cliLog.error("Forced exit after shutdown timeout", { delayMs });
 		},
 		onSecondSignal: (signal) => {
 			shutdownIndicator.stop("interrupted");
-			console.error(`Forced exit on second signal: ${signal}`);
+			cliLog.error("Forced exit on second signal", { signal });
 		},
 		suppressImmediateDuplicateSignals: shouldSuppressImmediateDuplicateShutdownSignals(),
 	});
@@ -691,7 +695,7 @@ async function runUpdateCommand(): Promise<void> {
 	});
 
 	if (result.status === "updated" || result.status === "already_up_to_date" || result.status === "cache_refreshed") {
-		console.log(result.message);
+		printLine(result.message);
 		return;
 	}
 
@@ -731,7 +735,7 @@ function createProgram(invocationArgs: string[]): Command {
 		.command("mcp")
 		.description("Deprecated compatibility command.")
 		.action(() => {
-			console.warn("Deprecated. Please uninstall Kanban MCP.");
+			cliLog.warn("Deprecated. Please uninstall Kanban MCP.");
 		});
 
 	program
@@ -765,6 +769,7 @@ function createProgram(invocationArgs: string[]): Command {
 }
 
 async function run(): Promise<void> {
+	configureLogging();
 	const argv = process.argv.slice(2);
 	const program = createProgram(argv);
 	await program.parseAsync(argv, { from: "user" });
@@ -777,7 +782,6 @@ async function run(): Promise<void> {
 void run().catch(async (error) => {
 	captureNodeException(error, { area: "startup" });
 	await flushNodeTelemetry();
-	const message = error instanceof Error ? error.message : String(error);
-	console.error(`Failed to start Kanban: ${message}`);
+	cliLog.error("Failed to start Kanban", { error });
 	process.exit(1);
 });

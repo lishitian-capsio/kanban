@@ -26,6 +26,9 @@ import type {
 	RuntimeTaskAgentSettings,
 } from "@/runtime/types";
 import { isLocalhostAccess } from "@/utils/localhost-detection";
+import { createLogger } from "@/utils/logger";
+
+const log = createLogger("models");
 
 interface UseRuntimeSettingsKanbanControllerOptions {
 	open: boolean;
@@ -490,7 +493,7 @@ export function useRuntimeSettingsKanbanController(
 					setProviderModels(nextModels);
 				}
 			} catch (error) {
-				console.warn(`[kanban] Failed to load models for provider "${nextProviderId}":`, error instanceof Error ? error.message : error);
+				log.warn("Failed to load models for provider", { providerId: nextProviderId, error });
 				if (providerModelsRequestIdRef.current === requestId) {
 					setProviderModels([]);
 					showAppToast({
