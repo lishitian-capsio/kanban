@@ -7,6 +7,7 @@
 import type { ReactElement } from "react";
 import { useCallback, useMemo, useState } from "react";
 
+import { SessionProviderControl } from "@/components/agent-providers/session-provider-control";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
 import { KanbanAgentChatPanel } from "@/components/detail-panels/kanban-agent-chat-panel";
 import { HomeThreadBar } from "@/components/home-agent/home-thread-bar";
@@ -54,6 +55,10 @@ export function useHomeSidebarAgentPanel({
 	const isMobile = useIsMobile();
 	const terminalThemeColors = useTerminalThemeColors();
 	const [sessionSummaries, setSessionSummaries] = useState<Record<string, RuntimeTaskSessionSummary>>({});
+	// Per-thread session provider override (keyed by the thread's task id). Picking a
+	// provider in the composer pins it for that one thread's next session launch; it
+	// never changes the agent default and never touches another thread's session.
+	const [providerOverrideByTaskId, setProviderOverrideByTaskId] = useState<Record<string, string>>({});
 	const upsertSessionSummary = useCallback((summary: RuntimeTaskSessionSummary) => {
 		setSessionSummaries((currentSessions) => {
 			const previousSummary = currentSessions[summary.taskId] ?? null;
@@ -114,9 +119,14 @@ export function useHomeSidebarAgentPanel({
 	const latestHomeTaskChatMessage = selectLatestTaskChatMessageForTask(taskId, latestTaskChatMessage);
 
 	const handleSendHomeKanbanChatMessage = useCallback(
-		async (messageTaskId: string, text: string, options?: { mode?: "act" | "plan" }) =>
-			await sendTaskChatMessage(messageTaskId, text, options),
-		[sendTaskChatMessage],
+		async (messageTaskId: string, text: string, options?: { mode?: "act" | "plan" }) => {
+			const providerId = providerOverrideByTaskId[messageTaskId];
+			return await sendTaskChatMessage(messageTaskId, text, {
+				...options,
+				...(providerId ? { providerId } : {}),
+			});
+		},
+		[providerOverrideByTaskId, sendTaskChatMessage],
 	);
 
 	const handleLoadHomeKanbanChatMessages = useCallback(
@@ -152,6 +162,16 @@ export function useHomeSidebarAgentPanel({
 				showComposerModeToggle={false}
 				workspaceId={currentProjectId}
 				runtimeConfig={runtimeProjectConfig}
+				modelControlSlot={
+					<SessionProviderControl
+						workspaceId={currentProjectId}
+						agentId={activeAgentId}
+						selectedProviderId={providerOverrideByTaskId[taskId] ?? null}
+						onSelectProvider={(providerId) =>
+							setProviderOverrideByTaskId((previous) => ({ ...previous, [taskId]: providerId }))
+						}
+					/>
+				}
 				onSendMessage={handleSendHomeKanbanChatMessage}
 				onCancelTurn={handleCancelHomeKanbanChatTurn}
 				onLoadMessages={handleLoadHomeKanbanChatMessages}

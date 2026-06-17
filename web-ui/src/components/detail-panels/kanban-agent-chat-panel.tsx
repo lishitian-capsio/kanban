@@ -70,6 +70,10 @@ export interface KanbanAgentChatPanelProps {
 	showComposerModeToggle?: boolean;
 	workspaceId?: string | null;
 	runtimeConfig?: RuntimeConfigResponse | null;
+	// When set, replaces the composer's bare model selector with a richer control
+	// (e.g. the home sidebar's session provider switch). This panel stays agnostic
+	// about what the slot does — the owner builds and wires it.
+	modelControlSlot?: ReactElement | null;
 	taskKanbanSettings?: RuntimeTaskAgentSettings;
 	taskHasExplicitKanbanSettings?: boolean;
 	onKanbanSettingsSaved?: () => void;
@@ -109,6 +113,7 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 			showComposerModeToggle = true,
 			workspaceId = null,
 			runtimeConfig = null,
+			modelControlSlot = null,
 			taskKanbanSettings,
 			taskHasExplicitKanbanSettings = false,
 			onKanbanSettingsSaved,
@@ -464,6 +469,7 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 						warningMessage={summary?.warningMessage ?? null}
 						attachmentWarningMessage={attachmentWarningMessage}
 						workspaceId={workspaceId}
+						modelControlSlot={modelControlSlot}
 					/>
 				</div>
 				{showActionFooter ? (

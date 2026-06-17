@@ -788,6 +788,12 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 						}
 					} else {
 						const piLaunchConfig = resolvePiLaunchConfig({
+							// Per-session provider override from the composer's provider switch.
+							// It outranks the committed-provider/store layers, so this session
+							// launches with the chosen provider (and that provider's
+							// model/baseUrl/apiKey) without touching the agent default or any
+							// other running session.
+							providerIdOverride: body.providerId ?? undefined,
 							committedProvider: await loadSelectedCommittedProvider(workspaceScope),
 						});
 						const homeAgentSystemPrompt = resolvePiHomeAgentSystemPrompt(

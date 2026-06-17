@@ -20,6 +20,8 @@ export interface KanbanChatActionResult {
 export interface SendKanbanChatMessageOptions {
 	mode?: RuntimeTaskSessionMode;
 	images?: RuntimeTaskImage[];
+	// Per-session provider override applied only if this message starts the session.
+	providerId?: string;
 }
 
 interface UseKanbanChatRuntimeActionsInput {
@@ -57,6 +59,7 @@ export function useKanbanChatRuntimeActions({
 					text,
 					...(options?.images && options.images.length > 0 ? { images: options.images } : {}),
 					...(options?.mode ? { mode: options.mode } : {}),
+					...(options?.providerId ? { providerId: options.providerId } : {}),
 				});
 				if (!payload.ok) {
 					return { ok: false, message: payload.error ?? "Task chat message failed." };

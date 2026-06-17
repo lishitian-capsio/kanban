@@ -46,6 +46,35 @@ function writePiStore(config: { provider?: string; model?: string; baseUrl?: str
 	resetAgentProviderConfigCache();
 }
 
+/** Write a multi-provider pi set (providers[] + default) to the store. */
+function writePiStoreSet(set: {
+	defaultProviderId: string;
+	providers: Array<{ provider: string; model?: string; baseUrl?: string; reasoningEffort?: string; apiKey?: string }>;
+}): void {
+	const path = join(temp.path, "agent_providers.json");
+	writeFileSync(
+		path,
+		JSON.stringify({
+			agents: {
+				pi: {
+					agentId: "pi",
+					defaultProviderId: set.defaultProviderId,
+					providers: set.providers.map((p) => ({
+						agentId: "pi",
+						provider: p.provider,
+						model: p.model,
+						baseUrl: p.baseUrl,
+						apiKey: p.apiKey,
+						reasoning: p.reasoningEffort ? { effort: p.reasoningEffort } : undefined,
+					})),
+				},
+			},
+		}),
+		"utf8",
+	);
+	resetAgentProviderConfigCache();
+}
+
 beforeEach(() => {
 	temp = createTempDir("pi-launch-layers-");
 	process.env.KANBAN_AGENT_PROVIDERS_PATH = join(temp.path, "agent_providers.json");
@@ -79,17 +108,34 @@ describe("resolvePiLaunchConfig — store layer (machine-home provider settings)
 		expect(config.reasoningEffort).toBe("medium");
 	});
 
-	it("fills only the unresolved core fields, leaving profile values intact", () => {
+	it("fills only the unresolved core fields, leaving committed-provider values intact", () => {
 		writePiStore({ provider: "openai", model: "gpt-5", baseUrl: "https://store.test/v1" });
 
+		// The committed provider selects the same provider the store holds; the
+		// store then fills the model + baseUrl it left unset. (The store is read for
+		// the resolved provider, so the model/baseUrl always belong to it.)
+		const config = resolvePiLaunchConfig({
+			committedProvider: { providerId: "openai", modelId: null, baseUrl: null },
+		});
+
+		expect(config.providerId).toBe("openai");
+		expect(config.modelId).toBe("gpt-5");
+		expect(config.baseUrl).toBe("https://store.test/v1");
+	});
+
+	it("does not borrow a different provider's model when the selected provider is absent from the store", () => {
+		writePiStore({ provider: "openai", model: "gpt-5", baseUrl: "https://store.test/v1" });
+
+		// The committed provider selects a provider the store does not have, so the
+		// store contributes nothing — the model falls through to the built-in default
+		// rather than mis-pairing the selected provider with openai's model.
 		const config = resolvePiLaunchConfig({
 			committedProvider: { providerId: "anthropic", modelId: null, baseUrl: null },
 		});
 
-		// provider came from the profile; model + baseUrl filled from the store.
 		expect(config.providerId).toBe("anthropic");
-		expect(config.modelId).toBe("gpt-5");
-		expect(config.baseUrl).toBe("https://store.test/v1");
+		expect(config.modelId).toBe(PI_DEFAULT_MODEL_ID);
+		expect(config.baseUrl).toBeNull();
 	});
 });
 
@@ -157,10 +203,10 @@ describe("resolvePiLaunchConfig — store-reasoning gate quirk", () => {
 	});
 
 	it("applies the store reasoningEffort when a core field still needs the store", () => {
-		writePiStore({ model: "store-model", reasoningEffort: "high" });
+		writePiStore({ provider: "openai", model: "store-model", reasoningEffort: "high" });
 
-		// modelId is unresolved, so the store layer is consulted and its
-		// reasoningEffort is filled in the same pass.
+		// modelId is unresolved, so the store layer is consulted for the selected
+		// provider and its reasoningEffort is filled in the same pass.
 		const config = resolvePiLaunchConfig({
 			committedProvider: {
 				providerId: "openai",
@@ -204,5 +250,79 @@ describe("resolvePiLaunchConfig — empty-string and missing-value handling", ()
 
 		expect(config.providerId).toBe(PI_DEFAULT_PROVIDER_ID);
 		expect(config.modelId).toBe(PI_DEFAULT_MODEL_ID);
+	});
+});
+
+describe("resolvePiLaunchConfig — provider-aware store layer (multi-provider set)", () => {
+	// A provider-only session override (no model/baseUrl) must pull the model and
+	// base URL from the *overridden* provider's stored config, not from the agent's
+	// default provider. This is what lets the home composer switch providers by name
+	// alone and still launch with that provider's own model + endpoint.
+	it("resolves model + baseUrl from the OVERRIDE provider, not the default", () => {
+		writePiStoreSet({
+			defaultProviderId: "anthropic",
+			providers: [
+				{ provider: "anthropic", model: "claude-x", baseUrl: "https://anthropic.test/v1" },
+				{ provider: "openai", model: "gpt-5", baseUrl: "https://openai.test/v1" },
+			],
+		});
+
+		const config = resolvePiLaunchConfig({ providerIdOverride: "openai" });
+
+		expect(config.providerId).toBe("openai");
+		expect(config.modelId).toBe("gpt-5");
+		expect(config.baseUrl).toBe("https://openai.test/v1");
+	});
+
+	it("resolves the default provider's model + baseUrl when there is no override", () => {
+		writePiStoreSet({
+			defaultProviderId: "anthropic",
+			providers: [
+				{ provider: "anthropic", model: "claude-x", baseUrl: "https://anthropic.test/v1" },
+				{ provider: "openai", model: "gpt-5", baseUrl: "https://openai.test/v1" },
+			],
+		});
+
+		const config = resolvePiLaunchConfig({});
+
+		expect(config.providerId).toBe("anthropic");
+		expect(config.modelId).toBe("claude-x");
+		expect(config.baseUrl).toBe("https://anthropic.test/v1");
+	});
+
+	it("injects the OVERRIDE provider's API key, not the default provider's", () => {
+		// Custom provider names map to env vars that can't exist (the hyphen makes an
+		// invalid shell identifier), so the store fallback — the path under test — is
+		// always exercised regardless of ambient env.
+		writePiStoreSet({
+			defaultProviderId: "prov-default",
+			providers: [
+				{ provider: "prov-default", model: "model-a", apiKey: "default-key" },
+				{ provider: "prov-override", model: "model-b", apiKey: "override-key" },
+			],
+		});
+
+		const config = resolvePiLaunchConfig({ providerIdOverride: "prov-override" });
+
+		expect(config.providerId).toBe("prov-override");
+		expect(config.apiKey).toBe("override-key");
+	});
+
+	it("a committed-provider selection also steers the store lookup to that provider", () => {
+		writePiStoreSet({
+			defaultProviderId: "anthropic",
+			providers: [
+				{ provider: "anthropic", model: "claude-x", baseUrl: "https://anthropic.test/v1" },
+				{ provider: "openai", model: "gpt-5", baseUrl: "https://openai.test/v1" },
+			],
+		});
+
+		const config = resolvePiLaunchConfig({
+			committedProvider: { providerId: "openai", modelId: null, baseUrl: null },
+		});
+
+		expect(config.providerId).toBe("openai");
+		expect(config.modelId).toBe("gpt-5");
+		expect(config.baseUrl).toBe("https://openai.test/v1");
 	});
 });

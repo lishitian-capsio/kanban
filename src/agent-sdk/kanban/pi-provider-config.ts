@@ -199,11 +199,19 @@ function resolveCommittedProviderLayer(provider: PiCommittedProvider | null): Pi
  * Layer 3 — the user's saved per-agent provider settings (machine-home store).
  * Returns an all-`null` layer when the store is unavailable, throws, or has no
  * pi config, so callers never need a try/catch of their own.
+ *
+ * `providerId` is the provider already resolved by the higher-priority layers
+ * (override/profile). When set, the store is read for *that* provider, so its
+ * model/baseUrl come from the provider being switched to — not the agent's
+ * default. When `null`, the agent's default provider is used (the original
+ * behavior). This is what makes a provider-only session override correct: the
+ * caller passes a `providerIdOverride` with no model/baseUrl and still launches
+ * with the chosen provider's own model + endpoint.
  */
-function resolveStoreLayer(): PiLaunchLayer {
+function resolveStoreLayer(providerId: string | null): PiLaunchLayer {
 	const empty: PiLaunchLayer = { providerId: null, modelId: null, baseUrl: null, reasoningEffort: null };
 	try {
-		const agentConfig = getAgentProviderConfig("pi");
+		const agentConfig = getAgentProviderConfig("pi", providerId ?? undefined);
 		if (!agentConfig) {
 			return empty;
 		}
@@ -249,9 +257,12 @@ export function resolvePiLaunchConfig(input?: PiLaunchInput): PiLaunchConfig {
 	let baseUrl = override.baseUrl ?? committed.baseUrl;
 	let reasoningEffort = override.reasoningEffort ?? committed.reasoningEffort;
 
-	// Layer 3 (machine-home store): only when a core field still needs it.
+	// Layer 3 (machine-home store): only when a core field still needs it. The
+	// store is read for the provider resolved so far (override/committed-provider),
+	// so a provider-only switch pulls that provider's model/baseUrl rather than the
+	// agent default's.
 	if (providerId === null || modelId === null || baseUrl === null) {
-		const store = resolveStoreLayer();
+		const store = resolveStoreLayer(providerId);
 		providerId ??= store.providerId;
 		modelId ??= store.modelId;
 		baseUrl ??= store.baseUrl;

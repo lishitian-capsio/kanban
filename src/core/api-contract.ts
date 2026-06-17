@@ -1581,6 +1581,13 @@ export const runtimeTaskChatSendRequestSchema = z.object({
 	text: z.string(),
 	images: z.array(runtimeTaskImageSchema).optional(),
 	mode: runtimeTaskSessionModeSchema.optional(),
+	/**
+	 * Per-session provider override (the name of a provider already registered for
+	 * the agent). Applied only when this message lazily starts the session, so it
+	 * pins the launch provider for this one session without changing the agent's
+	 * default or any other running session. Ignored once the session is live.
+	 */
+	providerId: z.string().optional(),
 });
 export type RuntimeTaskChatSendRequest = z.infer<typeof runtimeTaskChatSendRequestSchema>;
 
