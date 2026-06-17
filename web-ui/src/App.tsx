@@ -236,6 +236,14 @@ export default function App(): ReactElement {
 		},
 	});
 
+	// Vault is a workspace-level, cross-task knowledge surface; it has no place inside a
+	// single task's work view. Collapse it on entering a task so its open state never dangles.
+	useEffect(() => {
+		if (selectedCard) {
+			setIsVaultOpen(false);
+		}
+	}, [selectedCard]);
+
 	useEffect(() => {
 		replaceWorkspaceMetadata(workspaceMetadata);
 	}, [workspaceMetadata]);
@@ -897,7 +905,7 @@ export default function App(): ReactElement {
 						isOpeningWorkspace={isOpeningWorkspace}
 						onToggleGitHistory={hasNoProjects ? undefined : handleToggleGitHistory}
 						isGitHistoryOpen={isGitHistoryOpen}
-						onToggleVault={hasNoProjects ? undefined : handleToggleVault}
+						onToggleVault={hasNoProjects || selectedCard ? undefined : handleToggleVault}
 						isVaultOpen={isVaultOpen}
 						hideProjectDependentActions={shouldHideProjectDependentTopBarActions}
 					/>
