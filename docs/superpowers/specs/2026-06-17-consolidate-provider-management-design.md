@@ -156,9 +156,10 @@ behavior.
   - An old-shape profile shard (with `baseUrl`/`region`/`gcp*`) loads and round-trips
     without those fields.
   - Registry create/update ops reject / ignore the removed fields.
-- **Backend (Bun round-trip):** `resolvePiLaunchConfig` resolves base URL / region / GCP
-  from the provider config and ignores any profile-level values — the pi service can't be
-  imported under vitest.
+- **Backend (vitest):** `resolvePiLaunchConfig` resolves base URL from the provider config
+  and ignores any profile-level value — covered by the existing
+  `test/runtime/pi-launch-config-profile.test.ts` (it imports the resolver directly; only
+  the full pi *service* is un-importable under vitest, not this pure resolver).
 - **Frontend:**
   - The profile edit dialog renders no credential / base-URL / region / GCP fields.
   - A Settings provider row's Delete calls `removeProviderFromAgent`; Set-default calls
