@@ -1,37 +1,19 @@
 // Create/edit form for a single agent config profile.
 //
 // `profile === null` puts the dialog in create mode (and auto-suggests a name);
-// otherwise it edits that profile. Which fields render is driven by the chosen
-// provider: managed-OAuth providers hide base URL / API key (their credentials
-// live in the global provider settings, not the profile record), and Vertex
-// exposes the GCP project/region + region fields the record carries.
+// otherwise it edits that profile. A profile is a reference-only record:
+// Name, Provider (select), Model, and Reasoning effort. Credential fields
+// (base URL / API key / region / GCP) live in the global provider settings.
 import { useEffect, useMemo, useRef, useState } from "react";
-
+import { useAgentProfileModelData } from "@/components/agent-profiles/use-agent-profile-model-data";
 import { KanbanChatModelSelector } from "@/components/detail-panels/kanban-chat-model-selector";
 import { buildKanbanSelectedModelButtonText } from "@/components/detail-panels/kanban-model-picker-options";
-import { useAgentProfileModelData } from "@/components/agent-profiles/use-agent-profile-model-data";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
-import type { AgentProfileActionResult, AgentProfileCreateInput } from "@/hooks/use-agent-profiles";
 import { buildNewProfileName } from "@/hooks/agent-profile-utils";
-import type {
-	RuntimeAgentProfile,
-	RuntimeAgentProfileUpdateRequest,
-	RuntimeReasoningEffort,
-} from "@/runtime/types";
-
-// Providers whose credentials are managed via OAuth in the global provider
-// settings; the profile record can't carry a base URL or API key for them.
-const MANAGED_OAUTH_PROVIDER_IDS = new Set(["cline", "oca", "openai-codex"]);
-
-function isManagedOauthProvider(providerId: string): boolean {
-	return MANAGED_OAUTH_PROVIDER_IDS.has(providerId.trim().toLowerCase());
-}
-
-function isVertexProvider(providerId: string): boolean {
-	return providerId.trim().toLowerCase() === "vertex";
-}
+import type { AgentProfileActionResult, AgentProfileCreateInput } from "@/hooks/use-agent-profiles";
+import type { RuntimeAgentProfile, RuntimeAgentProfileUpdateRequest, RuntimeReasoningEffort } from "@/runtime/types";
 
 interface FieldLabelProps {
 	label: string;
@@ -70,11 +52,6 @@ interface DraftState {
 	providerId: string;
 	modelId: string;
 	reasoningEffort: RuntimeReasoningEffort | "";
-	baseUrl: string;
-	apiKey: string;
-	region: string;
-	gcpProjectId: string;
-	gcpRegion: string;
 }
 
 function profileToDraft(profile: RuntimeAgentProfile | null, fallbackName: string): DraftState {
@@ -83,11 +60,6 @@ function profileToDraft(profile: RuntimeAgentProfile | null, fallbackName: strin
 		providerId: profile?.providerId ?? "",
 		modelId: profile?.modelId ?? "",
 		reasoningEffort: profile?.reasoningEffort ?? "",
-		baseUrl: profile?.baseUrl ?? "",
-		apiKey: "",
-		region: profile?.region ?? "",
-		gcpProjectId: profile?.gcpProjectId ?? "",
-		gcpRegion: profile?.gcpRegion ?? "",
 	};
 }
 
@@ -133,8 +105,6 @@ export function AgentProfileEditDialog({
 		return options;
 	}, [draft.providerId, modelData.providerCatalog]);
 
-	const managedOauth = isManagedOauthProvider(draft.providerId);
-	const vertex = isVertexProvider(draft.providerId);
 	const selectedModelSupportsReasoningEffort = modelData.reasoningEnabledModelIds.includes(draft.modelId);
 
 	const selectedModelButtonText = buildKanbanSelectedModelButtonText({
@@ -158,7 +128,6 @@ export function AgentProfileEditDialog({
 			providerId: nextProviderId,
 			modelId: catalogDefault,
 			reasoningEffort: "",
-			baseUrl: "",
 		}));
 	};
 
@@ -174,37 +143,9 @@ export function AgentProfileEditDialog({
 			const providerId = draft.providerId.trim() || null;
 			const modelId = draft.modelId.trim() || null;
 			const reasoningEffort = draft.reasoningEffort || null;
-			const baseUrl = managedOauth ? null : draft.baseUrl.trim() || null;
-			const region = vertex ? draft.region.trim() || null : null;
-			const gcpProjectId = vertex ? draft.gcpProjectId.trim() || null : null;
-			const gcpRegion = vertex ? draft.gcpRegion.trim() || null : null;
-			const enteredApiKey = managedOauth ? "" : draft.apiKey.trim();
-
 			const result = isEditMode
-				? await onUpdate({
-						id: profile.id,
-						name: trimmedName,
-						providerId,
-						modelId,
-						reasoningEffort,
-						baseUrl,
-						region,
-						gcpProjectId,
-						gcpRegion,
-						...(enteredApiKey.length > 0 ? { apiKey: enteredApiKey } : {}),
-					})
-				: await onCreate({
-						name: trimmedName,
-						providerId,
-						modelId,
-						reasoningEffort,
-						baseUrl,
-						region,
-						gcpProjectId,
-						gcpRegion,
-						...(enteredApiKey.length > 0 ? { apiKey: enteredApiKey } : {}),
-						select: true,
-					});
+				? await onUpdate({ id: profile.id, name: trimmedName, providerId, modelId, reasoningEffort })
+				: await onCreate({ name: trimmedName, providerId, modelId, reasoningEffort, select: true });
 			if (result.ok) {
 				onOpenChange(false);
 			}
@@ -266,72 +207,6 @@ export function AgentProfileEditDialog({
 						triggerVariant="default"
 					/>
 				</Field>
-
-				{managedOauth ? (
-					<p className="rounded-md border border-border bg-surface-2 px-2 py-1.5 text-[11px] text-text-tertiary">
-						This provider signs in with OAuth. Manage its account in Settings; the profile only pins the model
-						and reasoning effort.
-					</p>
-				) : (
-					<>
-						<Field label="Base URL" hint="Leave blank to use the provider default.">
-							<input
-								type="text"
-								value={draft.baseUrl}
-								placeholder="https://api.example.com/v1"
-								onChange={(event) => update("baseUrl", event.target.value)}
-								className={TEXT_INPUT_CLASS}
-							/>
-						</Field>
-						<Field
-							label="API key"
-							hint={
-								profile?.apiKeyConfigured
-									? "A key is configured. Enter a new one to replace it."
-									: "Stored securely on this machine, never committed."
-							}
-						>
-							<input
-								type="password"
-								value={draft.apiKey}
-								autoComplete="off"
-								placeholder={profile?.apiKeyConfigured ? "••••••••" : "sk-…"}
-								onChange={(event) => update("apiKey", event.target.value)}
-								className={TEXT_INPUT_CLASS}
-							/>
-						</Field>
-					</>
-				)}
-
-				{vertex ? (
-					<>
-						<Field label="GCP project ID">
-							<input
-								type="text"
-								value={draft.gcpProjectId}
-								onChange={(event) => update("gcpProjectId", event.target.value)}
-								className={TEXT_INPUT_CLASS}
-							/>
-						</Field>
-						<Field label="GCP region">
-							<input
-								type="text"
-								value={draft.gcpRegion}
-								placeholder="us-east5"
-								onChange={(event) => update("gcpRegion", event.target.value)}
-								className={TEXT_INPUT_CLASS}
-							/>
-						</Field>
-						<Field label="Region">
-							<input
-								type="text"
-								value={draft.region}
-								onChange={(event) => update("region", event.target.value)}
-								className={TEXT_INPUT_CLASS}
-							/>
-						</Field>
-					</>
-				) : null}
 			</DialogBody>
 			<DialogFooter>
 				<Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>

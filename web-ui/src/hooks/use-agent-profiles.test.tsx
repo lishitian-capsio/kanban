@@ -24,17 +24,14 @@ vi.mock("@/components/app-toaster", () => ({
 	notifyError: notifyErrorMock,
 }));
 
-function profile(overrides: Partial<RuntimeAgentProfile> & Pick<RuntimeAgentProfile, "id" | "name">): RuntimeAgentProfile {
+function profile(
+	overrides: Partial<RuntimeAgentProfile> & Pick<RuntimeAgentProfile, "id" | "name">,
+): RuntimeAgentProfile {
 	return {
 		agentId: "pi",
 		providerId: "anthropic",
 		modelId: "claude-sonnet-4-6",
-		baseUrl: null,
 		reasoningEffort: null,
-		region: null,
-		gcpProjectId: null,
-		gcpRegion: null,
-		apiKeyConfigured: false,
 		...overrides,
 	};
 }

@@ -52,9 +52,8 @@ export function buildNewProfileName(existingNames: readonly string[]): string {
 }
 
 /**
- * Builds the create payload for duplicating a profile. The API key is a machine-home
- * secret keyed by providerId, so the copy reuses the same provider (and therefore the
- * same stored key) without ever round-tripping the secret through the client.
+ * Builds the create payload for duplicating a profile. Profiles are reference-only
+ * records (no credentials), so the duplicate copies only the provider/model selection.
  */
 export function duplicateProfileCreateInput(
 	source: RuntimeAgentProfile,
@@ -65,11 +64,7 @@ export function duplicateProfileCreateInput(
 		name,
 		providerId: source.providerId,
 		modelId: source.modelId,
-		baseUrl: source.baseUrl,
 		reasoningEffort: source.reasoningEffort,
-		region: source.region,
-		gcpProjectId: source.gcpProjectId,
-		gcpRegion: source.gcpRegion,
 		select: true,
 	};
 }
