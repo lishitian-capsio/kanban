@@ -3,7 +3,7 @@ import { act, createContext, useContext } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RuntimeSettingsDialog } from "@/components/runtime-settings-dialog";
+import { isDefaultProvider, RuntimeSettingsDialog } from "@/components/runtime-settings-dialog";
 import type { RuntimeConfigResponse } from "@/runtime/types";
 
 /*
@@ -151,6 +151,9 @@ vi.mock("@/runtime/use-runtime-config", () => ({
 vi.mock("@/runtime/runtime-config-query", () => ({
 	openFileOnHost: vi.fn(async () => undefined),
 	fetchKanbanProviderCatalog: vi.fn(async () => []),
+	fetchAgentProviderSets: vi.fn(async () => ({ agents: {} })),
+	removeProviderFromAgent: vi.fn(async () => ({ ok: true })),
+	selectAgentProvider: vi.fn(async () => ({ ok: true })),
 }));
 
 vi.mock("@/utils/notification-permission", () => ({
@@ -390,5 +393,31 @@ describe("RuntimeSettingsDialog", () => {
 		});
 
 		expect(handleSaved).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("isDefaultProvider", () => {
+	it("returns true when providerId matches defaultProviderId", () => {
+		expect(isDefaultProvider("anthropic", "anthropic")).toBe(true);
+	});
+
+	it("returns false when providerId does not match defaultProviderId", () => {
+		expect(isDefaultProvider("openai", "anthropic")).toBe(false);
+	});
+
+	it("returns false when defaultProviderId is null", () => {
+		expect(isDefaultProvider("anthropic", null)).toBe(false);
+	});
+
+	it("returns false when defaultProviderId is undefined", () => {
+		expect(isDefaultProvider("anthropic", undefined)).toBe(false);
+	});
+
+	it("returns false when defaultProviderId is an empty string", () => {
+		expect(isDefaultProvider("anthropic", "")).toBe(false);
+	});
+
+	it("returns false when providerId is an empty string even if default matches", () => {
+		expect(isDefaultProvider("", "")).toBe(false);
 	});
 });

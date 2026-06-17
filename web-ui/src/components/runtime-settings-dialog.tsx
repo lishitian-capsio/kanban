@@ -45,11 +45,24 @@ import { cn } from "@/components/ui/cn";
 import { Dialog, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { TASK_GIT_BASE_REF_PROMPT_VARIABLE, type TaskGitAction } from "@/git-actions/build-task-git-action-prompt";
+import type { AddKanbanProviderInput, UpdateKanbanProviderInput } from "@/hooks/use-runtime-settings-kanban-controller";
 import { useRuntimeSettingsKanbanController } from "@/hooks/use-runtime-settings-kanban-controller";
 import { previewThemeId, readStoredThemeId, saveThemeId, THEME_GROUPS, THEMES, type ThemeId } from "@/hooks/use-theme";
 import { useLayoutCustomizations } from "@/resize/layout-customizations";
-import { fetchKanbanProviderCatalog, openFileOnHost } from "@/runtime/runtime-config-query";
-import type { RuntimeAgentId, RuntimeConfigResponse, RuntimeKanbanProviderCatalogItem, RuntimeProjectShortcut } from "@/runtime/types";
+import {
+	fetchAgentProviderSets,
+	fetchKanbanProviderCatalog,
+	openFileOnHost,
+	removeProviderFromAgent,
+	selectAgentProvider,
+} from "@/runtime/runtime-config-query";
+import type {
+	RuntimeAgentId,
+	RuntimeAgentProviderSet,
+	RuntimeConfigResponse,
+	RuntimeKanbanProviderCatalogItem,
+	RuntimeProjectShortcut,
+} from "@/runtime/types";
 import { useRuntimeConfig } from "@/runtime/use-runtime-config";
 import {
 	type BrowserNotificationPermission,
@@ -95,7 +108,15 @@ export type RuntimeSettingsSection = "shortcuts";
 
 const SETTINGS_AGENT_ORDER: readonly RuntimeAgentId[] = ["pi", "claude", "codex", "droid", "kiro"];
 
-type SettingsNavId = "general" | "account" | "providers" | "proxy" | "git-prompts" | "notifications" | "appearance" | "project";
+type SettingsNavId =
+	| "general"
+	| "account"
+	| "providers"
+	| "proxy"
+	| "git-prompts"
+	| "notifications"
+	| "appearance"
+	| "project";
 
 const SETTINGS_NAV_ITEMS: ReadonlyArray<{
 	id: SettingsNavId;
@@ -112,6 +133,11 @@ const SETTINGS_NAV_ITEMS: ReadonlyArray<{
 	{ id: "appearance", label: "Appearance", icon: <Palette size={16} /> },
 	{ id: "project", label: "Project", icon: <FolderOpen size={16} /> },
 ];
+
+/** Pure helper: returns true when the given provider id matches the agent's default. */
+export function isDefaultProvider(providerId: string, defaultProviderId: string | null | undefined): boolean {
+	return typeof defaultProviderId === "string" && defaultProviderId.length > 0 && providerId === defaultProviderId;
+}
 
 function getShortcutIconOption(icon: string | undefined): RuntimeShortcutIconOption {
 	return getRuntimeShortcutPickerOption(icon);
@@ -377,7 +403,8 @@ export function RuntimeSettingsDialog({
 	// ── Providers dialog state ──────────────────────────────────────────────
 	const [providerDialogOpen, setProviderDialogOpen] = useState(false);
 	const [providerDialogMode, setProviderDialogMode] = useState<"add" | "edit">("add");
-	const [providerDialogInitialValues, setProviderDialogInitialValues] = useState<KanbanProviderDialogInitialValues | null>(null);
+	const [providerDialogInitialValues, setProviderDialogInitialValues] =
+		useState<KanbanProviderDialogInitialValues | null>(null);
 	const controlsDisabled = isLoading || isSaving || config === null;
 	const commitPromptTemplateDefault = config?.commitPromptTemplateDefault ?? "";
 	const openPrPromptTemplateDefault = config?.openPrPromptTemplateDefault ?? "";
@@ -409,11 +436,29 @@ export function RuntimeSettingsDialog({
 	const [providerCatalogAll, setProviderCatalogAll] = useState<RuntimeKanbanProviderCatalogItem[]>([]);
 	const reloadProviderCatalog = useCallback(() => {
 		if (!open) return;
-		void fetchKanbanProviderCatalog(workspaceId).then(setProviderCatalogAll).catch(() => setProviderCatalogAll([]));
+		void fetchKanbanProviderCatalog(workspaceId)
+			.then(setProviderCatalogAll)
+			.catch(() => setProviderCatalogAll([]));
 	}, [open, workspaceId]);
 	useEffect(() => {
 		reloadProviderCatalog();
 	}, [reloadProviderCatalog]);
+
+	// ── Per-agent provider sets ───────────────────────────────────────────────
+	const [providersAgentId, setProvidersAgentId] = useState<RuntimeAgentId>("pi");
+	const [providerSetsByAgent, setProviderSetsByAgent] = useState<Record<string, RuntimeAgentProviderSet>>({});
+	const reloadProviderSets = useCallback(() => {
+		if (!open) return;
+		void fetchAgentProviderSets(workspaceId)
+			.then((res) => setProviderSetsByAgent(res.agents))
+			.catch(() => setProviderSetsByAgent({}));
+	}, [open, workspaceId]);
+	useEffect(() => {
+		reloadProviderSets();
+	}, [reloadProviderSets]);
+	const selectedAgentSet = providerSetsByAgent[providersAgentId] ?? null;
+	const selectedAgentProviders = selectedAgentSet?.providers ?? [];
+	const selectedAgentDefaultId = selectedAgentSet?.defaultProviderId ?? null;
 
 	const handleOpenEditProviderDialog = useCallback((provider: RuntimeKanbanProviderCatalogItem) => {
 		setProviderDialogMode("edit");
@@ -461,21 +506,38 @@ export function RuntimeSettingsDialog({
 		config,
 	});
 	const handleProviderDialogSubmit = useCallback(
-		async (input: import("@/hooks/use-runtime-settings-kanban-controller").AddKanbanProviderInput | import("@/hooks/use-runtime-settings-kanban-controller").UpdateKanbanProviderInput) => {
+		async (input: AddKanbanProviderInput | UpdateKanbanProviderInput) => {
 			try {
 				if (providerDialogMode === "add") {
-					await agentSettings.addCustomProvider(input as import("@/hooks/use-runtime-settings-kanban-controller").AddKanbanProviderInput);
+					await agentSettings.addCustomProvider(input as AddKanbanProviderInput, providersAgentId);
 				} else {
-					await agentSettings.updateCustomProvider(input as import("@/hooks/use-runtime-settings-kanban-controller").UpdateKanbanProviderInput);
+					await agentSettings.updateCustomProvider(input as UpdateKanbanProviderInput, providersAgentId);
 				}
 				reloadProviderCatalog();
+				reloadProviderSets();
 				return { ok: true };
 			} catch (error) {
 				return { ok: false, message: error instanceof Error ? error.message : String(error) };
 			}
 		},
-		[agentSettings, providerDialogMode, reloadProviderCatalog],
+		[agentSettings, providerDialogMode, providersAgentId, reloadProviderCatalog, reloadProviderSets],
 	);
+	const handleDeleteProvider = useCallback(
+		async (providerId: string) => {
+			await removeProviderFromAgent(workspaceId, { agentId: providersAgentId, providerId });
+			reloadProviderSets();
+			reloadProviderCatalog();
+		},
+		[providersAgentId, reloadProviderCatalog, reloadProviderSets, workspaceId],
+	);
+	const handleSetDefaultProvider = useCallback(
+		async (providerId: string) => {
+			await selectAgentProvider(workspaceId, { agentId: providersAgentId, providerId });
+			reloadProviderSets();
+		},
+		[providersAgentId, reloadProviderSets, workspaceId],
+	);
+
 	// The slim Account section only manages managed-provider OAuth + account/org/credits;
 	// per-agent provider/model/MCP config now lives inline in the home chat composer.
 	const showAccountSection = agentSettings.isOauthProviderSelected;
@@ -895,45 +957,95 @@ export function RuntimeSettingsDialog({
 					</div>
 					<div className="rounded-lg border border-border bg-surface-0 px-4 py-3 mb-4">
 						<p className="text-text-secondary text-[13px] mt-0 mb-3">
-							Configure providers for the Pi agent. Each provider defines an API endpoint and available models.
+							Configure providers per agent. Each provider defines an API endpoint, models, and credentials.
 						</p>
+						<div className="flex flex-wrap gap-1.5 mb-3">
+							{displayedAgents.map((a) => (
+								<button
+									key={a.id}
+									type="button"
+									onClick={() => setProvidersAgentId(a.id)}
+									className={cn(
+										"h-7 px-2.5 rounded-md text-[12px] border",
+										a.id === providersAgentId
+											? "bg-surface-3 border-border-bright text-text-primary"
+											: "bg-surface-1 border-border text-text-secondary hover:bg-surface-2",
+									)}
+								>
+									{a.label}
+								</button>
+							))}
+						</div>
 						<div className="flex flex-col gap-1">
-							{providerCatalogAll.length === 0 ? (
-								<p className="text-text-tertiary text-[13px] py-2">No providers configured. Click "Add Provider" to get started.</p>
+							{selectedAgentProviders.length === 0 ? (
+								<p className="text-text-tertiary text-[13px] py-2">
+									No providers configured for this agent. Click &quot;Add Provider&quot; to get started.
+								</p>
 							) : (
-								providerCatalogAll.map((provider) => (
-									<div
-										key={provider.id}
-										className="flex items-center justify-between gap-3 py-2 px-2 rounded hover:bg-surface-1"
-									>
-										<div className="min-w-0 flex-1">
-											<div className="flex items-center gap-2">
-												<span className="text-[13px] text-text-primary font-medium">{provider.name}</span>
-												<span className="text-[11px] text-text-tertiary font-mono">{provider.id}</span>
+								selectedAgentProviders.map((provider) => {
+									const providerId = provider.provider ?? "";
+									if (!providerId) return null;
+									const isDefault = isDefaultProvider(providerId, selectedAgentDefaultId);
+									return (
+										<div
+											key={providerId}
+											className="flex items-center justify-between gap-3 py-2 px-2 rounded hover:bg-surface-1"
+										>
+											<div className="min-w-0 flex-1">
+												<div className="flex items-center gap-2">
+													<span className="text-[13px] text-text-primary font-medium">{providerId}</span>
+													{isDefault ? (
+														<span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-status-green/10 text-status-green">
+															Default
+														</span>
+													) : null}
+												</div>
+												{provider.model ? (
+													<p className="text-text-secondary text-[11px] mt-0.5 m-0 truncate">
+														Model: {provider.model}
+													</p>
+												) : null}
+												{provider.baseUrl ? (
+													<p className="text-text-tertiary text-[10px] mt-0.5 m-0 truncate">
+														{provider.baseUrl}
+													</p>
+												) : null}
 											</div>
-											{provider.defaultModelId ? (
-												<p className="text-text-secondary text-[11px] mt-0.5 m-0 truncate">
-													Default model: {provider.defaultModelId}
-												</p>
-											) : null}
-											{provider.protocols.length > 0 ? (
-												<p className="text-text-tertiary text-[10px] mt-0.5 m-0">
-													{provider.protocols.map((p) => p.protocol).join(", ")}
-												</p>
-											) : null}
+											<div className="flex items-center gap-1.5 shrink-0">
+												{!isDefault ? (
+													<Button
+														size="sm"
+														variant="ghost"
+														onClick={() => void handleSetDefaultProvider(providerId)}
+													>
+														Set default
+													</Button>
+												) : null}
+												<Button
+													size="sm"
+													variant="ghost"
+													icon={<Pencil size={12} />}
+													onClick={() => {
+														const catalogItem = providerCatalogAll.find((p) => p.id === providerId);
+														if (catalogItem) {
+															handleOpenEditProviderDialog(catalogItem);
+														}
+													}}
+												>
+													Edit
+												</Button>
+												<Button
+													size="sm"
+													variant="ghost"
+													icon={<Trash2 size={12} />}
+													onClick={() => void handleDeleteProvider(providerId)}
+												>
+													Delete
+												</Button>
+											</div>
 										</div>
-										<div className="flex items-center gap-1.5 shrink-0">
-											<Button
-												size="sm"
-												variant="ghost"
-												icon={<Pencil size={12} />}
-												onClick={() => handleOpenEditProviderDialog(provider)}
-											>
-												Edit
-											</Button>
-										</div>
-									</div>
-								))
+									);
+								})
 							)}
 						</div>
 						<div className="mt-3 pt-3 border-t border-border">
