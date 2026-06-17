@@ -4,7 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionProviderControl } from "./session-provider-control";
 
-const providerSet = {
+type MockProviderSet = {
+	providers: { agentId: string; provider?: string; model?: string }[];
+	defaultProviderId: string | null;
+	isLoading: boolean;
+	reload: () => void;
+};
+
+const defaultProviderSet: MockProviderSet = {
 	providers: [
 		{ agentId: "pi", provider: "anthropic", model: "claude-x" },
 		{ agentId: "pi", provider: "openai", model: "gpt-5" },
@@ -14,9 +21,12 @@ const providerSet = {
 	reload: () => {},
 };
 
+// Mutable holder so individual tests can drive the hook's return value.
+let currentSet: MockProviderSet = defaultProviderSet;
+
 vi.mock("@/hooks/use-agent-provider-set", () => ({
 	providerIdOfConfig: (config: { provider?: string }) => (config.provider ?? "").trim(),
-	useAgentProviderSet: () => providerSet,
+	useAgentProviderSet: () => currentSet,
 }));
 
 describe("SessionProviderControl", () => {
@@ -24,6 +34,7 @@ describe("SessionProviderControl", () => {
 	let root: Root;
 
 	beforeEach(() => {
+		currentSet = defaultProviderSet;
 		container = document.createElement("div");
 		document.body.appendChild(container);
 		root = createRoot(container);
@@ -115,5 +126,69 @@ describe("SessionProviderControl", () => {
 			openaiItem?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 		});
 		expect(onSelectProvider).toHaveBeenCalledWith("openai");
+	});
+
+	it("does not offer official login for pi", () => {
+		act(() => {
+			root.render(
+				<SessionProviderControl
+					workspaceId="ws"
+					agentId="pi"
+					selectedProviderId={null}
+					onSelectProvider={() => {}}
+				/>,
+			);
+		});
+		act(() => {
+			trigger().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+			trigger().dispatchEvent(new MouseEvent("click", { bubbles: true }));
+		});
+		const labels = Array.from(document.querySelectorAll('[role="menuitem"]')).map((i) => i.textContent ?? "");
+		expect(labels.some((l) => /official login/i.test(l))).toBe(false);
+	});
+
+	describe("CLI agent with no providers", () => {
+		beforeEach(() => {
+			currentSet = { providers: [], defaultProviderId: null, isLoading: false, reload: () => {} };
+		});
+
+		it("shows official login as the active default in the trigger", () => {
+			act(() => {
+				root.render(
+					<SessionProviderControl
+						workspaceId="ws"
+						agentId="claude"
+						selectedProviderId={null}
+						onSelectProvider={() => {}}
+					/>,
+				);
+			});
+			expect(trigger().textContent).toContain("Official login");
+		});
+
+		it("offers official login and emits the sentinel on pick", () => {
+			const onSelectProvider = vi.fn();
+			act(() => {
+				root.render(
+					<SessionProviderControl
+						workspaceId="ws"
+						agentId="claude"
+						selectedProviderId={null}
+						onSelectProvider={onSelectProvider}
+					/>,
+				);
+			});
+			act(() => {
+				trigger().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+				trigger().dispatchEvent(new MouseEvent("click", { bubbles: true }));
+			});
+			const menuItems = Array.from(document.querySelectorAll('[role="menuitem"]')) as HTMLElement[];
+			const officialItem = menuItems.find((item) => /official login/i.test(item.textContent ?? ""));
+			expect(officialItem).toBeTruthy();
+			act(() => {
+				officialItem?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+			});
+			expect(onSelectProvider).toHaveBeenCalledWith("official");
+		});
 	});
 });

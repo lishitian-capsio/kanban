@@ -6,6 +6,12 @@ import * as RadixPopover from "@radix-ui/react-popover";
 import * as RadixSelect from "@radix-ui/react-select";
 import * as RadixSwitch from "@radix-ui/react-switch";
 import { getRuntimeAgentCatalogEntry, getRuntimeLaunchSupportedAgentCatalog } from "@runtime-agent-catalog";
+import {
+	agentSupportsOfficialLogin,
+	isOfficialLoginProviderId,
+	OFFICIAL_LOGIN_LABEL,
+	OFFICIAL_LOGIN_PROVIDER_ID,
+} from "@runtime-provider-protocol";
 import { areRuntimeProjectShortcutsEqual } from "@runtime-shortcuts";
 import {
 	Bell,
@@ -187,6 +193,14 @@ function AgentRow({
 	const isInstalled = agent.installed === true;
 	const isInstallStatusPending = !isNativeKanban && agent.installed === null;
 
+	// CLI agents default to their own native login ("official login") when no
+	// custom provider is the default; surface that instead of "Configure".
+	const displayProviderName =
+		agentSupportsOfficialLogin(agent.id) &&
+		(currentProviderName === null || isOfficialLoginProviderId(currentProviderName))
+			? OFFICIAL_LOGIN_LABEL
+			: currentProviderName;
+
 	return (
 		<div className="flex items-center justify-between gap-3 py-1.5">
 			<div className="flex items-start gap-2 min-w-0">
@@ -231,7 +245,7 @@ function AgentRow({
 						onClick={() => onManageProviders(agent.id)}
 						className="ml-auto shrink-0"
 					>
-						<span className="max-w-[140px] truncate">{currentProviderName ?? "Configure"}</span>
+						<span className="max-w-[140px] truncate">{displayProviderName ?? "Configure"}</span>
 					</Button>
 				</Tooltip>
 			)}
@@ -465,6 +479,12 @@ export function RuntimeSettingsDialog({
 	const selectedAgentSet = providerSetsByAgent[providersAgentId] ?? null;
 	const selectedAgentProviders = selectedAgentSet?.providers ?? [];
 	const selectedAgentDefaultId = selectedAgentSet?.defaultProviderId ?? null;
+	// CLI agents offer "official login" (their own native account, no override) as
+	// a first-class, always-present option that is the default when no custom
+	// provider is the default.
+	const selectedAgentSupportsOfficial = agentSupportsOfficialLogin(providersAgentId);
+	const officialIsDefault =
+		isOfficialLoginProviderId(selectedAgentDefaultId) || (selectedAgentSupportsOfficial && !selectedAgentDefaultId);
 
 	const handleOpenEditProviderDialog = useCallback((provider: RuntimeKanbanProviderCatalogItem) => {
 		setProviderDialogMode("edit");
@@ -996,10 +1016,42 @@ export function RuntimeSettingsDialog({
 							))}
 						</div>
 						<div className="flex flex-col gap-1">
+							{selectedAgentSupportsOfficial ? (
+								<div className="flex items-center justify-between gap-3 py-2 px-2 rounded hover:bg-surface-1">
+									<div className="min-w-0 flex-1">
+										<div className="flex items-center gap-2">
+											<span className="text-[13px] text-text-primary font-medium">
+												{OFFICIAL_LOGIN_LABEL}
+											</span>
+											{officialIsDefault ? (
+												<span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-status-green/10 text-status-green">
+													Default
+												</span>
+											) : null}
+										</div>
+										<p className="text-text-secondary text-[11px] mt-0.5 m-0 truncate">
+											Use the agent&apos;s own login — no provider override.
+										</p>
+									</div>
+									<div className="flex items-center gap-1.5 shrink-0">
+										{!officialIsDefault ? (
+											<Button
+												size="sm"
+												variant="ghost"
+												onClick={() => void handleSetDefaultProvider(OFFICIAL_LOGIN_PROVIDER_ID)}
+											>
+												Set default
+											</Button>
+										) : null}
+									</div>
+								</div>
+							) : null}
 							{selectedAgentProviders.length === 0 ? (
-								<p className="text-text-tertiary text-[13px] py-2">
-									No providers configured for this agent. Click &quot;Add Provider&quot; to get started.
-								</p>
+								selectedAgentSupportsOfficial ? null : (
+									<p className="text-text-tertiary text-[13px] py-2">
+										No providers configured for this agent. Click &quot;Add Provider&quot; to get started.
+									</p>
+								)
 							) : (
 								selectedAgentProviders.map((provider) => {
 									const providerId = provider.provider ?? "";

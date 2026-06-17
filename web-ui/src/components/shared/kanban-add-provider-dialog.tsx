@@ -1,4 +1,9 @@
-import { AGENT_PROTOCOL_COMPATIBILITY, PROVIDER_PROTOCOLS, type ProviderProtocol } from "@runtime-provider-protocol";
+import {
+	AGENT_PROTOCOL_COMPATIBILITY,
+	isOfficialLoginProviderId,
+	PROVIDER_PROTOCOLS,
+	type ProviderProtocol,
+} from "@runtime-provider-protocol";
 import { Check, Eye, EyeOff, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { type KeyboardEvent, type ReactElement, useEffect, useMemo, useState } from "react";
 import { MAX_TIMEOUT_MS, MIN_TIMEOUT_MS, validateProviderForm } from "@/components/shared/provider-form-validation";
@@ -273,6 +278,9 @@ export function KanbanAddProviderDialog({
 		}
 		return existingProviderIds.some((providerId) => providerId.trim().toLowerCase() === normalizedProviderId);
 	}, [existingProviderIds, initialForm.providerId, mode, normalizedProviderId]);
+	// "official" is reserved for the official-login option; a stored provider may
+	// not shadow it. Mirrors the backend guard in saveAgentProvider.
+	const reservedProviderId = isOfficialLoginProviderId(normalizedProviderId);
 	const normalizedPendingModel = modelInput.trim().replace(/,$/, "");
 	const draftModels = useMemo(() => {
 		if (!normalizedPendingModel || form.models.includes(normalizedPendingModel)) {
@@ -341,6 +349,7 @@ export function KanbanAddProviderDialog({
 		hasBaseUrl &&
 		(hasManualModels || hasModelsSource) &&
 		!duplicateProviderId &&
+		!reservedProviderId &&
 		!fieldErrors.hasBlockingErrors &&
 		(mode === "add" || hasChangedProviderConfiguration);
 
@@ -611,6 +620,10 @@ export function KanbanAddProviderDialog({
 							</p>
 							{duplicateProviderId ? (
 								<p className="mt-1 text-[12px] text-status-red">This provider ID already exists.</p>
+							) : reservedProviderId ? (
+								<p className="mt-1 text-[12px] text-status-red">
+									&quot;{normalizedProviderId}&quot; is reserved for official login.
+								</p>
 							) : null}
 						</div>
 						<div className="min-w-0">

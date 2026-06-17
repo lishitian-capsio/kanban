@@ -23,6 +23,38 @@ export interface ProtocolConfig {
 	baseUrl?: string;
 }
 
+// ------------------------------------------------------------------ official login
+
+/**
+ * Reserved provider id representing "official login": a CLI agent uses its own
+ * native login state (e.g. claude's `~/.claude` Anthropic OAuth, codex's ChatGPT
+ * login) and Kanban injects NO provider env and writes NO provider keys. It is
+ * not a stored provider record — it is the explicit *absence* of an override,
+ * and it is the default for CLI agents that have no custom provider configured.
+ *
+ * Selecting it must never fall through to a custom default; see
+ * `buildAgentProviderEnv`. The id is reserved: a custom provider may not be
+ * named so as to shadow it.
+ */
+export const OFFICIAL_LOGIN_PROVIDER_ID = "official";
+
+/** Human-facing label for the official-login option in the provider pickers. */
+export const OFFICIAL_LOGIN_LABEL = "Official login";
+
+/** Whether a provider id (any casing/whitespace) refers to the official-login sentinel. */
+export function isOfficialLoginProviderId(id: string | null | undefined): boolean {
+	return (id ?? "").trim().toLowerCase() === OFFICIAL_LOGIN_PROVIDER_ID;
+}
+
+/**
+ * Whether an agent supports the official-login option. CLI agents do; the main
+ * in-process agent (`pi`) has no native login concept and must never be offered
+ * it.
+ */
+export function agentSupportsOfficialLogin(agentId: string): boolean {
+	return agentId.trim().toLowerCase() !== "pi";
+}
+
 // Agent → supported protocols
 export const AGENT_PROTOCOL_COMPATIBILITY: Record<string, ProviderProtocol[]> = {
 	claude: ["anthropic"],
@@ -80,10 +112,7 @@ export function extractProtocolList(configs: ProtocolConfig[]): ProviderProtocol
 /**
  * Look up the `baseUrl` for a specific protocol in a `ProtocolConfig[]`.
  */
-export function getBaseUrlForProtocol(
-	configs: ProtocolConfig[],
-	protocol: ProviderProtocol,
-): string | undefined {
+export function getBaseUrlForProtocol(configs: ProtocolConfig[], protocol: ProviderProtocol): string | undefined {
 	const match = configs.find((c) => c.protocol === protocol);
 	return match?.baseUrl?.trim() || undefined;
 }
@@ -95,10 +124,7 @@ export function getBaseUrlForProtocol(
  *   - legacy `string[]` (e.g. `["openai"]`) → each gets `baseUrl: legacyBaseUrl`
  *   - `undefined` / invalid → `getDefaultProtocolsForProvider(id)` with `legacyBaseUrl`
  */
-export function normalizeProtocols(
-	raw: unknown,
-	legacyBaseUrl?: string,
-): ProtocolConfig[] {
+export function normalizeProtocols(raw: unknown, legacyBaseUrl?: string): ProtocolConfig[] {
 	// Already ProtocolConfig[]
 	if (Array.isArray(raw) && raw.length > 0 && isProtocolConfig(raw[0])) {
 		return raw as ProtocolConfig[];
@@ -264,10 +290,7 @@ export function resolveAnthropicApiKeyEnvVar(
 /**
  * Check if an agent is compatible with a provider's protocol configs.
  */
-export function isAgentCompatibleWithProvider(
-	agentId: string,
-	providerProtocolConfigs: ProtocolConfig[],
-): boolean {
+export function isAgentCompatibleWithProvider(agentId: string, providerProtocolConfigs: ProtocolConfig[]): boolean {
 	const agentProtocols = AGENT_PROTOCOL_COMPATIBILITY[agentId] ?? [];
 	if (agentProtocols.length === 0) {
 		return true; // no restrictions (e.g., gemini)

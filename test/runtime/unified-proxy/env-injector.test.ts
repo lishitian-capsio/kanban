@@ -26,10 +26,13 @@ vi.mock("node:os", async (importOriginal) => {
 // Mock the agent-provider-config module.
 const agentProviderMocks = vi.hoisted(() => ({
 	getAgentProviderConfig: vi.fn(),
+	getAgentProviderSet: vi.fn(),
 }));
 
 vi.mock("../../../src/agent-sdk/kanban/agent-provider-config", () => ({
 	getAgentProviderConfig: agentProviderMocks.getAgentProviderConfig,
+	getAgentProviderSet: agentProviderMocks.getAgentProviderSet,
+	normalizeProviderId: (id: string | undefined | null) => (id ?? "").trim().toLowerCase(),
 }));
 
 import { buildAgentProviderEnv } from "../../../src/unified-proxy/env-injector";
@@ -37,6 +40,8 @@ import { buildAgentProviderEnv } from "../../../src/unified-proxy/env-injector";
 describe("env-injector: buildAgentProviderEnv", () => {
 	beforeEach(() => {
 		agentProviderMocks.getAgentProviderConfig.mockReset();
+		agentProviderMocks.getAgentProviderSet.mockReset();
+		agentProviderMocks.getAgentProviderSet.mockReturnValue(null);
 		if (existsSync(mockClaudeDir)) {
 			rmSync(mockClaudeDir, { recursive: true });
 		}
@@ -279,6 +284,47 @@ describe("env-injector: buildAgentProviderEnv", () => {
 				ANTHROPIC_BASE_URL: "https://api.anthropic.com",
 				ANTHROPIC_AUTH_TOKEN: "sk-default",
 			});
+		});
+
+		it("injects NO env when official login is selected, even with a custom default provider", async () => {
+			// The agent has a custom default provider, but the session explicitly
+			// selected official login — we must NOT fall through to the custom default.
+			const result = await buildAgentProviderEnv("claude", "official");
+			expect(result.usesCustomProvider).toBe(false);
+			expect(result.env).toEqual({});
+			// The fallback chain must not even be consulted.
+			expect(agentProviderMocks.getAgentProviderConfig).not.toHaveBeenCalled();
+		});
+	});
+
+	describe("official login", () => {
+		it("injects NO env when the agent's default provider is the official sentinel", async () => {
+			// providerId omitted → resolve from the set's default, which is "official".
+			agentProviderMocks.getAgentProviderSet.mockReturnValue({
+				agentId: "claude",
+				providers: [
+					{ agentId: "claude", provider: "my-relay", baseUrl: "https://relay.local/v1", apiKey: "sk-relay" },
+				],
+				defaultProviderId: "official",
+			});
+			// Even if something asked the config store, it would return the relay; assert we don't.
+			agentProviderMocks.getAgentProviderConfig.mockReturnValue({
+				agentId: "claude",
+				provider: "my-relay",
+				baseUrl: "https://relay.local/v1",
+				apiKey: "sk-relay",
+			});
+
+			const result = await buildAgentProviderEnv("claude");
+			expect(result.usesCustomProvider).toBe(false);
+			expect(result.env).toEqual({});
+			expect(agentProviderMocks.getAgentProviderConfig).not.toHaveBeenCalled();
+		});
+
+		it("treats the sentinel case-insensitively / trimmed", async () => {
+			const result = await buildAgentProviderEnv("claude", "  Official  ");
+			expect(result.env).toEqual({});
+			expect(result.usesCustomProvider).toBe(false);
 		});
 	});
 });

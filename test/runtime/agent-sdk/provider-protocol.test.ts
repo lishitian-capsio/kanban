@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+	agentSupportsOfficialLogin,
 	collapseToAgentProtocol,
 	extractProtocolList,
 	getAgentProtocols,
 	getBaseUrlForProtocol,
 	getDefaultProtocolsForProvider,
 	isAgentCompatibleWithProvider,
+	isOfficialLoginProviderId,
 	normalizeProtocols,
 	normalizeProtocolsForProvider,
+	OFFICIAL_LOGIN_PROVIDER_ID,
 	type ProtocolConfig,
 	type ProviderProtocol,
 	resolveAnthropicApiKeyEnvVar,
@@ -249,7 +252,10 @@ describe("provider-protocol", () => {
 		it("drops a second, never-used protocol for a single-protocol agent", () => {
 			// codex only speaks openai — the anthropic entry is dead config.
 			expect(
-				collapseToAgentProtocol("codex", configs(["openai", "https://o.example.com"], ["anthropic", "https://a.example.com"])),
+				collapseToAgentProtocol(
+					"codex",
+					configs(["openai", "https://o.example.com"], ["anthropic", "https://a.example.com"]),
+				),
 			).toEqual({ protocol: "openai", baseUrl: "https://o.example.com" });
 		});
 
@@ -278,7 +284,11 @@ describe("provider-protocol", () => {
 
 		it("prefers the per-protocol baseUrl over the legacy scalar", () => {
 			expect(
-				collapseToAgentProtocol("claude", configs(["anthropic", "https://proto.example.com"]), "https://legacy.example.com"),
+				collapseToAgentProtocol(
+					"claude",
+					configs(["anthropic", "https://proto.example.com"]),
+					"https://legacy.example.com",
+				),
 			).toEqual({ protocol: "anthropic", baseUrl: "https://proto.example.com" });
 		});
 
@@ -302,6 +312,29 @@ describe("provider-protocol", () => {
 				{ protocol: "anthropic" },
 			];
 			expect(extractProtocolList(configs)).toEqual(["openai", "anthropic"]);
+		});
+	});
+
+	describe("official login", () => {
+		it("recognizes the sentinel id regardless of casing/whitespace", () => {
+			expect(isOfficialLoginProviderId(OFFICIAL_LOGIN_PROVIDER_ID)).toBe(true);
+			expect(isOfficialLoginProviderId("  Official  ")).toBe(true);
+			expect(isOfficialLoginProviderId("OFFICIAL")).toBe(true);
+		});
+
+		it("does not match other ids or empty values", () => {
+			expect(isOfficialLoginProviderId("anthropic")).toBe(false);
+			expect(isOfficialLoginProviderId("")).toBe(false);
+			expect(isOfficialLoginProviderId(null)).toBe(false);
+			expect(isOfficialLoginProviderId(undefined)).toBe(false);
+		});
+
+		it("supports official login for CLI agents but not pi", () => {
+			expect(agentSupportsOfficialLogin("claude")).toBe(true);
+			expect(agentSupportsOfficialLogin("codex")).toBe(true);
+			expect(agentSupportsOfficialLogin("gemini")).toBe(true);
+			expect(agentSupportsOfficialLogin("pi")).toBe(false);
+			expect(agentSupportsOfficialLogin("  PI  ")).toBe(false);
 		});
 	});
 });

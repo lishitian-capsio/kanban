@@ -6,7 +6,14 @@
 // owner keeps the selection per-thread and passes it only when the session next
 // starts. It is select-only: providers are defined, edited, and defaulted in
 // Settings → Agent, never here.
+
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import {
+	agentSupportsOfficialLogin,
+	isOfficialLoginProviderId,
+	OFFICIAL_LOGIN_LABEL,
+	OFFICIAL_LOGIN_PROVIDER_ID,
+} from "@runtime-provider-protocol";
 import { Check, ChevronDown, Server } from "lucide-react";
 import { type ReactElement, useState } from "react";
 
@@ -40,11 +47,31 @@ export function SessionProviderControl({
 		return null;
 	}
 
-	// The effective selection: the explicit per-session pick, else the agent default.
-	const effectiveProviderId = selectedProviderId?.trim() || defaultProviderId || "";
-	const triggerLabel = isLoading ? "Loading providers…" : effectiveProviderId || "No provider";
+	// CLI agents can run on their own native login ("official login"); the main
+	// agent (pi) cannot and is never offered it.
+	const supportsOfficial = agentSupportsOfficialLogin(agentId);
+
+	// The effective selection: the explicit per-session pick, else the agent
+	// default, else official login for CLI agents with no configured default.
+	const effectiveProviderId =
+		selectedProviderId?.trim() || defaultProviderId || (supportsOfficial ? OFFICIAL_LOGIN_PROVIDER_ID : "");
+	const officialIsActive = isOfficialLoginProviderId(effectiveProviderId);
+	// Official is the (implicit or explicit) default when it's the stored default
+	// or when a CLI agent has no stored default at all.
+	const officialIsDefault = isOfficialLoginProviderId(defaultProviderId) || (supportsOfficial && !defaultProviderId);
+
+	const triggerLabel = isLoading
+		? "Loading providers…"
+		: officialIsActive
+			? OFFICIAL_LOGIN_LABEL
+			: effectiveProviderId || "No provider";
 
 	const close = (): void => setOpen(false);
+
+	const selectProvider = (providerId: string): void => {
+		onSelectProvider(providerId);
+		close();
+	};
 
 	return (
 		<DropdownMenu.Root open={open} onOpenChange={setOpen}>
@@ -71,10 +98,32 @@ export function SessionProviderControl({
 					<div className="px-1.5 py-1 text-[11px] font-medium uppercase tracking-[0.02em] text-text-tertiary">
 						Provider for this session
 					</div>
+					{supportsOfficial ? (
+						<DropdownMenu.Item
+							className={cn(
+								"flex cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-1.5 text-[13px] outline-none data-[highlighted]:bg-surface-3",
+								officialIsActive ? "text-text-primary" : "text-text-secondary",
+							)}
+							onSelect={(event) => {
+								event.preventDefault();
+								selectProvider(OFFICIAL_LOGIN_PROVIDER_ID);
+							}}
+						>
+							<Check size={14} className={cn("shrink-0", officialIsActive ? "text-accent" : "opacity-0")} />
+							<span className="min-w-0 flex-1 truncate">{OFFICIAL_LOGIN_LABEL}</span>
+							{officialIsDefault ? (
+								<span className="shrink-0 rounded-sm bg-surface-3 px-1 py-0.5 text-[10px] uppercase tracking-[0.02em] text-text-tertiary">
+									Default
+								</span>
+							) : null}
+						</DropdownMenu.Item>
+					) : null}
 					{providers.length === 0 ? (
-						<div className="px-1.5 py-1.5 text-[13px] text-text-tertiary">
-							{isLoading ? "Loading…" : "No providers — add one in Settings → Agent"}
-						</div>
+						supportsOfficial ? null : (
+							<div className="px-1.5 py-1.5 text-[13px] text-text-tertiary">
+								{isLoading ? "Loading…" : "No providers — add one in Settings → Agent"}
+							</div>
+						)
 					) : (
 						providers.map((provider) => {
 							const providerId = providerIdOfConfig(provider);

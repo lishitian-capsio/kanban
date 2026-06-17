@@ -173,6 +173,31 @@ describe("agent-provider-config", () => {
 		expect(getAgentProviderSet("claude")!.defaultProviderId).toBe("anthropic");
 	});
 
+	it("accepts the official-login sentinel as a default and survives a read round-trip", async () => {
+		await saveAgentProvider("claude", { agentId: "claude", provider: "anthropic" });
+		await saveAgentProvider("claude", { agentId: "claude", provider: "my-relay" });
+		// Switch the agent's default to official login (no custom provider matches it).
+		await setDefaultAgentProvider("claude", "official");
+		resetAgentProviderConfigCache();
+
+		const set = getAgentProviderSet("claude");
+		// Custom providers are untouched; the default is the sentinel and reconcileSet
+		// must not overwrite it with providers[0].
+		expect(set!.providers).toHaveLength(2);
+		expect(set!.defaultProviderId).toBe("official");
+		// No provider record matches the sentinel, so the default config resolves to null.
+		expect(getAgentProviderConfig("claude")).toBeNull();
+	});
+
+	it("rejects saving a custom provider whose name shadows the official-login id", async () => {
+		await expect(saveAgentProvider("claude", { agentId: "claude", provider: "Official" })).rejects.toThrow(
+			/reserved/i,
+		);
+		resetAgentProviderConfigCache();
+		// Nothing was persisted for the agent.
+		expect(getAgentProviderSet("claude")).toBeNull();
+	});
+
 	it("deletes a single provider and re-points the default", async () => {
 		await saveAgentProvider("claude", { agentId: "claude", provider: "anthropic" });
 		await saveAgentProvider("claude", { agentId: "claude", provider: "my-relay" });
@@ -302,7 +327,9 @@ describe("agent-provider-config", () => {
 		resetAgentProviderConfigCache();
 
 		// On disk: the endpoint lives only in `protocols[]`, not a top-level baseUrl.
-		const raw = JSON.parse(readFileSync((globalThis as { __testAgentProvidersPath?: string }).__testAgentProvidersPath!, "utf8"));
+		const raw = JSON.parse(
+			readFileSync((globalThis as { __testAgentProvidersPath?: string }).__testAgentProvidersPath!, "utf8"),
+		);
 		const stored = raw.agents.codex.providers[0];
 		expect(stored.protocols).toEqual([{ protocol: "openai", baseUrl: "https://api.example.com" }]);
 		expect(stored.baseUrl).toBeUndefined();
@@ -320,7 +347,10 @@ describe("agent-provider-config", () => {
 			path,
 			JSON.stringify({
 				agents: {
-					claude: { providers: [{ provider: "anthropic", baseUrl: "https://relay.local" }], defaultProviderId: "anthropic" },
+					claude: {
+						providers: [{ provider: "anthropic", baseUrl: "https://relay.local" }],
+						defaultProviderId: "anthropic",
+					},
 				},
 			}),
 		);

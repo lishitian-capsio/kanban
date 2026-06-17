@@ -16,9 +16,15 @@
 // Auth-gateway translation (when an extra provider speaks a different protocol)
 // is planned for later.
 
-import { type AgentProviderConfig, getAgentProviderConfig } from "../agent-sdk/kanban/agent-provider-config";
+import {
+	type AgentProviderConfig,
+	getAgentProviderConfig,
+	getAgentProviderSet,
+	normalizeProviderId,
+} from "../agent-sdk/kanban/agent-provider-config";
 import {
 	AGENT_PROTOCOL_COMPATIBILITY,
+	isOfficialLoginProviderId,
 	type ProtocolConfig,
 	type ProviderProtocol,
 	resolveAnthropicApiKeyEnvVar,
@@ -49,6 +55,17 @@ export interface AgentProviderEnv {
  * are incompatible with the agent.
  */
 export async function buildAgentProviderEnv(agentId: string, providerId?: string): Promise<AgentProviderEnv> {
+	// Official login: the agent uses its own native login (e.g. claude's
+	// ~/.claude OAuth). Inject NO provider env and — crucially — never fall
+	// through to a custom default, which would clobber the official session.
+	// This applies both when official is explicitly selected for the session and
+	// when it is the agent's default (an unmatched sentinel defaultProviderId).
+	const effectiveProviderId =
+		providerId !== undefined ? normalizeProviderId(providerId) : getAgentProviderSet(agentId)?.defaultProviderId;
+	if (isOfficialLoginProviderId(effectiveProviderId)) {
+		return { env: {}, usesCustomProvider: false };
+	}
+
 	// Selected provider, falling back to the agent's default when the selection
 	// is missing or unknown.
 	const config =

@@ -24,7 +24,12 @@ import {
 } from "../../core/api-contract";
 import { lockedFileSystem } from "../../fs/locked-file-system";
 import { createLogger } from "../../logging";
-import { collapseToAgentProtocol, type ProtocolConfig } from "./provider-protocol";
+import {
+	collapseToAgentProtocol,
+	isOfficialLoginProviderId,
+	OFFICIAL_LOGIN_PROVIDER_ID,
+	type ProtocolConfig,
+} from "./provider-protocol";
 import type { AnthropicProviderSettings, ProviderSettingsReasoning } from "./provider-types";
 
 const log = createLogger("agent-provider-config");
@@ -307,8 +312,12 @@ function reconcileSet(set: AgentProviderSet): AgentProviderSet {
 		return { agentId: set.agentId, providers: [], defaultProviderId: undefined };
 	}
 	const ids = providers.map(providerIdOf);
+	// The official-login sentinel is a valid default even though no provider
+	// record matches it (it means "use the agent's native login, no override").
 	const defaultProviderId =
-		set.defaultProviderId && ids.includes(set.defaultProviderId) ? set.defaultProviderId : ids[0];
+		set.defaultProviderId && (isOfficialLoginProviderId(set.defaultProviderId) || ids.includes(set.defaultProviderId))
+			? set.defaultProviderId
+			: ids[0];
 	return { agentId: set.agentId, providers, defaultProviderId };
 }
 
@@ -416,6 +425,12 @@ export async function saveAgentProvider(agentId: string, config: AgentProviderCo
 	const cleaned = cleanProviderConfig(id, config);
 	const cleanedId = providerIdOf(cleaned);
 
+	// The official-login id is reserved for the "use the agent's native login"
+	// sentinel and must not be shadowed by a stored provider.
+	if (isOfficialLoginProviderId(cleanedId)) {
+		throw new Error(`Provider name "${OFFICIAL_LOGIN_PROVIDER_ID}" is reserved for official login`);
+	}
+
 	const existing = state.agents[id];
 	const providers = existing ? existing.providers.filter((p) => providerIdOf(p) !== cleanedId) : [];
 	providers.push(cleaned);
@@ -466,7 +481,9 @@ export async function setDefaultAgentProvider(agentId: string, providerId: strin
 		return;
 	}
 	const targetId = normalizeProviderId(providerId);
-	if (!existing.providers.some((p) => providerIdOf(p) === targetId)) {
+	// The official-login sentinel is accepted even though no provider matches it;
+	// any other id must name an existing provider.
+	if (!isOfficialLoginProviderId(targetId) && !existing.providers.some((p) => providerIdOf(p) === targetId)) {
 		return;
 	}
 	state.agents[id] = reconcileSet({ ...existing, defaultProviderId: targetId });

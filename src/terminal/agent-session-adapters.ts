@@ -545,6 +545,11 @@ const claudeAdapter: AgentSessionAdapter = {
 			// parallel Claude sessions can each use their own provider. We only strip
 			// any stale provider keys left in settings.json by older versions, so the
 			// per-spawn env stays authoritative.
+			//
+			// This stripping is also what makes "official login" (the default for CLI
+			// agents) safe: on official login buildAgentProviderEnv injects no provider
+			// env, and the strip below clears any lingering provider keys, so Claude's
+			// own ~/.claude account login is never clobbered.
 			const claudeSettingsPath = join(homedir(), ".claude", "settings.json");
 			const claudeConfigDir = join(homedir(), ".claude");
 

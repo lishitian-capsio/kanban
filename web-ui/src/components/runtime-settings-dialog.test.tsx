@@ -390,12 +390,20 @@ describe("RuntimeSettingsDialog", () => {
 			);
 		});
 
-		// Each General-section agent row (pi + claude) exposes a single provider-management
-		// entry. With no provider configured yet it reads "Configure".
+		// Each General-section agent row exposes a single provider-management entry.
+		// pi (the main agent) has no official-login concept, so with no provider
+		// configured its entry reads "Configure".
 		const configureButtons = Array.from(document.body.querySelectorAll("button")).filter(
 			(button) => button.textContent?.trim() === "Configure",
 		);
-		expect(configureButtons.length).toBe(2);
+		expect(configureButtons.length).toBe(1);
+
+		// CLI agents default to their own native login, so Claude's row reads
+		// "Official login" rather than "Configure".
+		const officialButtons = Array.from(document.body.querySelectorAll("button")).filter(
+			(button) => button.textContent?.trim() === "Official login",
+		);
+		expect(officialButtons.length).toBe(1);
 
 		// Add/edit/default now live solely in the Providers tab — the agent rows no longer
 		// carry their own "Add Provider" action, so it appears exactly once.
@@ -411,7 +419,7 @@ describe("RuntimeSettingsDialog", () => {
 
 		// Clicking Claude's row entry jumps to the Providers tab with Claude pre-selected.
 		await act(async () => {
-			configureButtons[1]?.click();
+			officialButtons[0]?.click();
 		});
 
 		expect(claudeTab?.className).toContain("border-border-bright");
