@@ -1,11 +1,7 @@
-import {
-	AGENT_PROTOCOL_COMPATIBILITY,
-	PROVIDER_PROTOCOLS,
-	type ProviderProtocol,
-} from "@runtime-provider-protocol";
+import { AGENT_PROTOCOL_COMPATIBILITY, PROVIDER_PROTOCOLS, type ProviderProtocol } from "@runtime-provider-protocol";
 import { Check, Eye, EyeOff, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { type KeyboardEvent, type ReactElement, useEffect, useMemo, useState } from "react";
-
+import { MAX_TIMEOUT_MS, MIN_TIMEOUT_MS, validateProviderForm } from "@/components/shared/provider-form-validation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
@@ -200,6 +196,14 @@ function createHeaderEntry(): HeaderEntry {
 	};
 }
 
+/** Inline, field-level validation message rendered beneath an input. */
+function FieldError({ message }: { message?: string }): ReactElement | null {
+	if (!message) {
+		return null;
+	}
+	return <p className="mt-1 text-[12px] text-status-red">{message}</p>;
+}
+
 export function KanbanAddProviderDialog({
 	open,
 	onOpenChange,
@@ -318,14 +322,26 @@ export function KanbanAddProviderDialog({
 		form.timeoutMs,
 		initialForm,
 	]);
+	const fieldErrors = useMemo(
+		() =>
+			validateProviderForm({
+				baseUrl: form.baseUrl,
+				apiKey: form.apiKey,
+				modelsSourceUrl: form.modelsSourceUrl,
+				timeoutMs: form.timeoutMs,
+				models: draftModels,
+				defaultModelId: form.defaultModelId,
+				headers: form.headers,
+			}),
+		[draftModels, form.apiKey, form.baseUrl, form.defaultModelId, form.headers, form.modelsSourceUrl, form.timeoutMs],
+	);
 	const canSubmit =
 		normalizedProviderId.length > 0 &&
 		form.name.trim().length > 0 &&
 		hasBaseUrl &&
 		(hasManualModels || hasModelsSource) &&
 		!duplicateProviderId &&
-		(form.timeoutMs.trim().length === 0 ||
-			(Number.isInteger(Number(form.timeoutMs)) && Number(form.timeoutMs) > 0)) &&
+		!fieldErrors.hasBlockingErrors &&
 		(mode === "add" || hasChangedProviderConfiguration);
 
 	const addModel = (rawValue: string) => {
@@ -510,7 +526,9 @@ export function KanbanAddProviderDialog({
 							<span
 								className={cn(
 									"inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider",
-									form.protocol === "anthropic" ? "bg-orange-500/10 text-orange-500" : "bg-blue-500/10 text-blue-500",
+									form.protocol === "anthropic"
+										? "bg-orange-500/10 text-orange-500"
+										: "bg-blue-500/10 text-blue-500",
 								)}
 							>
 								{form.protocol}
@@ -548,8 +566,16 @@ export function KanbanAddProviderDialog({
 						<input
 							value={form.baseUrl}
 							onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
-							placeholder={form.protocol === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1"}
-							className="h-8 flex-1 rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
+							placeholder={
+								form.protocol === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1"
+							}
+							aria-invalid={fieldErrors.baseUrl ? true : undefined}
+							className={cn(
+								"h-8 flex-1 rounded-md border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:outline-none",
+								fieldErrors.baseUrl
+									? "border-status-red focus:border-status-red"
+									: "border-border focus:border-border-focus",
+							)}
 						/>
 						<Button
 							variant="ghost"
@@ -564,6 +590,7 @@ export function KanbanAddProviderDialog({
 					<p className="mt-1 text-[12px] text-text-tertiary">
 						Base URL for the {form.protocol} endpoint. Click "Fetch models" to auto-populate.
 					</p>
+					<FieldError message={fieldErrors.baseUrl} />
 				</section>
 
 				<section className="rounded-lg border border-border bg-surface-1 p-3">
@@ -606,7 +633,13 @@ export function KanbanAddProviderDialog({
 							value={form.apiKey}
 							onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
 							placeholder="Optional"
-							className="h-8 w-full rounded-md border border-border bg-surface-2 px-2 pr-9 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
+							aria-invalid={fieldErrors.apiKey ? true : undefined}
+							className={cn(
+								"h-8 w-full rounded-md border bg-surface-2 px-2 pr-9 text-[13px] text-text-primary placeholder:text-text-tertiary focus:outline-none",
+								fieldErrors.apiKey
+									? "border-status-red focus:border-status-red"
+									: "border-border focus:border-border-focus",
+							)}
 						/>
 						<Button
 							variant="ghost"
@@ -617,6 +650,7 @@ export function KanbanAddProviderDialog({
 							onClick={() => setShowApiKey((current) => !current)}
 						/>
 					</div>
+					<FieldError message={fieldErrors.apiKey} />
 				</section>
 
 				{anthropicEnabled ? (
@@ -690,11 +724,18 @@ export function KanbanAddProviderDialog({
 						value={form.modelsSourceUrl}
 						onChange={(event) => setForm((current) => ({ ...current, modelsSourceUrl: event.target.value }))}
 						placeholder="https://api.example.com/v1/models"
-						className="h-8 w-full rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
+						aria-invalid={fieldErrors.modelsSourceUrl ? true : undefined}
+						className={cn(
+							"h-8 w-full rounded-md border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:outline-none",
+							fieldErrors.modelsSourceUrl
+								? "border-status-red focus:border-status-red"
+								: "border-border focus:border-border-focus",
+						)}
 					/>
 					<p className="mt-1 text-[12px] text-text-tertiary">
 						Optional. If set, the SDK can fetch models from a compatible `/models` endpoint.
 					</p>
+					<FieldError message={fieldErrors.modelsSourceUrl} />
 				</section>
 
 				<section className="rounded-lg border border-border bg-surface-1 p-3">
@@ -747,6 +788,7 @@ export function KanbanAddProviderDialog({
 								</option>
 							))}
 						</NativeSelect>
+						<FieldError message={fieldErrors.defaultModelId} />
 					</section>
 				) : null}
 
@@ -782,8 +824,18 @@ export function KanbanAddProviderDialog({
 								onChange={(event) => setForm((current) => ({ ...current, timeoutMs: event.target.value }))}
 								placeholder="30000"
 								inputMode="numeric"
-								className="h-8 w-full rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
+								aria-invalid={fieldErrors.timeoutMs ? true : undefined}
+								className={cn(
+									"h-8 w-full rounded-md border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:outline-none",
+									fieldErrors.timeoutMs
+										? "border-status-red focus:border-status-red"
+										: "border-border focus:border-border-focus",
+								)}
 							/>
+							<p className="mt-1 text-[12px] text-text-tertiary">
+								Optional. Between {MIN_TIMEOUT_MS.toLocaleString()} and {MAX_TIMEOUT_MS.toLocaleString()} ms.
+							</p>
+							<FieldError message={fieldErrors.timeoutMs} />
 						</div>
 						<div className="min-w-0">
 							<div className="mb-1 flex items-center justify-between">
@@ -803,48 +855,68 @@ export function KanbanAddProviderDialog({
 								</Button>
 							</div>
 							<div className="space-y-2">
-								{form.headers.map((entry, index) => (
-									<div key={entry.id} className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
-										<input
-											value={entry.key}
-											onChange={(event) =>
-												setForm((current) => ({
-													...current,
-													headers: current.headers.map((header, headerIndex) =>
-														headerIndex === index ? { ...header, key: event.target.value } : header,
-													),
-												}))
-											}
-											placeholder="Header name"
-											className="h-8 rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
-										/>
-										<input
-											value={entry.value}
-											onChange={(event) =>
-												setForm((current) => ({
-													...current,
-													headers: current.headers.map((header, headerIndex) =>
-														headerIndex === index ? { ...header, value: event.target.value } : header,
-													),
-												}))
-											}
-											placeholder="Header value"
-											className="h-8 rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
-										/>
-										<Button
-											variant="ghost"
-											size="sm"
-											icon={<Trash2 size={14} />}
-											aria-label="Remove header"
-											onClick={() =>
-												setForm((current) => ({
-													...current,
-													headers: current.headers.filter((_, headerIndex) => headerIndex !== index),
-												}))
-											}
-										/>
-									</div>
-								))}
+								{form.headers.map((entry, index) => {
+									const headerError = fieldErrors.headers[entry.id];
+									return (
+										<div key={entry.id}>
+											<div className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+												<input
+													value={entry.key}
+													onChange={(event) =>
+														setForm((current) => ({
+															...current,
+															headers: current.headers.map((header, headerIndex) =>
+																headerIndex === index ? { ...header, key: event.target.value } : header,
+															),
+														}))
+													}
+													placeholder="Header name"
+													aria-invalid={headerError?.key ? true : undefined}
+													className={cn(
+														"h-8 rounded-md border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:outline-none",
+														headerError?.key
+															? "border-status-red focus:border-status-red"
+															: "border-border focus:border-border-focus",
+													)}
+												/>
+												<input
+													value={entry.value}
+													onChange={(event) =>
+														setForm((current) => ({
+															...current,
+															headers: current.headers.map((header, headerIndex) =>
+																headerIndex === index
+																	? { ...header, value: event.target.value }
+																	: header,
+															),
+														}))
+													}
+													placeholder="Header value"
+													aria-invalid={headerError?.value ? true : undefined}
+													className={cn(
+														"h-8 rounded-md border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:outline-none",
+														headerError?.value
+															? "border-status-red focus:border-status-red"
+															: "border-border focus:border-border-focus",
+													)}
+												/>
+												<Button
+													variant="ghost"
+													size="sm"
+													icon={<Trash2 size={14} />}
+													aria-label="Remove header"
+													onClick={() =>
+														setForm((current) => ({
+															...current,
+															headers: current.headers.filter((_, headerIndex) => headerIndex !== index),
+														}))
+													}
+												/>
+											</div>
+											<FieldError message={headerError?.key ?? headerError?.value} />
+										</div>
+									);
+								})}
 							</div>
 						</div>
 					</div>

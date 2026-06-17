@@ -49,12 +49,112 @@ describe("KanbanAddProviderDialog", () => {
 		}
 	});
 
+	async function fillRequiredFields(overrides: { baseUrl?: string } = {}): Promise<void> {
+		const inputs = Array.from(document.body.querySelectorAll("input"));
+		const providerIdInput = inputs.find((input) => input.placeholder === "my-provider") as HTMLInputElement;
+		const providerNameInput = inputs.find((input) => input.placeholder === "My Provider") as HTMLInputElement;
+		const baseUrlInput = inputs.find(
+			(input) => input.placeholder === "https://api.openai.com/v1",
+		) as HTMLInputElement;
+		const modelInput = inputs.find(
+			(input) => input.placeholder === "Type a model ID and press Enter",
+		) as HTMLInputElement;
+		await act(async () => {
+			setInputValue(providerIdInput, "my-provider");
+			setInputValue(providerNameInput, "My Provider");
+			setInputValue(baseUrlInput, overrides.baseUrl ?? "http://localhost:8000/v1");
+			setInputValue(modelInput, "qwen2.5-coder:32b");
+		});
+	}
+
+	it("shows an inline error and blocks save for an invalid base URL", async () => {
+		const onSubmit = vi.fn(async () => ({ ok: true }));
+		await act(async () => {
+			root.render(
+				<KanbanAddProviderDialog
+					open={true}
+					onOpenChange={() => {}}
+					existingProviderIds={[]}
+					onSubmit={onSubmit}
+				/>,
+			);
+		});
+
+		await fillRequiredFields({ baseUrl: "not a url" });
+
+		expect(document.body.textContent).toContain("Enter a valid http(s) URL.");
+		const saveButton = findButtonByText(document.body, "Add provider");
+		expect(saveButton?.disabled).toBe(true);
+	});
+
+	it("shows an inline error and blocks save for an out-of-range timeout", async () => {
+		const onSubmit = vi.fn(async () => ({ ok: true }));
+		await act(async () => {
+			root.render(
+				<KanbanAddProviderDialog
+					open={true}
+					onOpenChange={() => {}}
+					existingProviderIds={[]}
+					onSubmit={onSubmit}
+				/>,
+			);
+		});
+
+		await fillRequiredFields();
+
+		const timeoutInput = Array.from(document.body.querySelectorAll("input")).find(
+			(input) => input.placeholder === "30000",
+		) as HTMLInputElement;
+		await act(async () => {
+			setInputValue(timeoutInput, "5");
+		});
+
+		expect(document.body.textContent).toMatch(/Timeout must be between/);
+		expect(findButtonByText(document.body, "Add provider")?.disabled).toBe(true);
+	});
+
+	it("shows an inline error and blocks save for an invalid custom header name", async () => {
+		const onSubmit = vi.fn(async () => ({ ok: true }));
+		await act(async () => {
+			root.render(
+				<KanbanAddProviderDialog
+					open={true}
+					onOpenChange={() => {}}
+					existingProviderIds={[]}
+					onSubmit={onSubmit}
+				/>,
+			);
+		});
+
+		await fillRequiredFields();
+
+		const addHeaderButton = findButtonByText(document.body, "Add");
+		await act(async () => {
+			addHeaderButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			addHeaderButton?.click();
+		});
+		const headerKeyInput = Array.from(document.body.querySelectorAll("input")).find(
+			(input) => input.placeholder === "Header name",
+		) as HTMLInputElement;
+		await act(async () => {
+			setInputValue(headerKeyInput, "Bad Header");
+		});
+
+		expect(document.body.textContent).toMatch(/Invalid header name/);
+		expect(findButtonByText(document.body, "Add provider")?.disabled).toBe(true);
+	});
+
 	it("enables save when the user types a model without pressing Enter", async () => {
 		const onSubmit = vi.fn(async () => ({ ok: true }));
 
 		await act(async () => {
 			root.render(
-				<KanbanAddProviderDialog open={true} onOpenChange={() => {}} existingProviderIds={[]} onSubmit={onSubmit} />,
+				<KanbanAddProviderDialog
+					open={true}
+					onOpenChange={() => {}}
+					existingProviderIds={[]}
+					onSubmit={onSubmit}
+				/>,
 			);
 		});
 
@@ -155,7 +255,12 @@ describe("KanbanAddProviderDialog", () => {
 
 		await act(async () => {
 			root.render(
-				<KanbanAddProviderDialog open={true} onOpenChange={() => {}} existingProviderIds={[]} onSubmit={onSubmit} />,
+				<KanbanAddProviderDialog
+					open={true}
+					onOpenChange={() => {}}
+					existingProviderIds={[]}
+					onSubmit={onSubmit}
+				/>,
 			);
 		});
 
@@ -184,7 +289,9 @@ describe("KanbanAddProviderDialog", () => {
 		expect(apiKeyOption?.getAttribute("aria-checked")).toBe("true");
 
 		const inputs = Array.from(document.body.querySelectorAll("input"));
-		const providerIdInput = inputs.find((input) => input.placeholder === "my-provider") as HTMLInputElement | undefined;
+		const providerIdInput = inputs.find((input) => input.placeholder === "my-provider") as
+			| HTMLInputElement
+			| undefined;
 		const providerNameInput = inputs.find((input) => input.placeholder === "My Provider") as
 			| HTMLInputElement
 			| undefined;
@@ -285,7 +392,9 @@ describe("KanbanAddProviderDialog", () => {
 		});
 
 		const inputs = Array.from(document.body.querySelectorAll("input"));
-		const providerIdInput = inputs.find((input) => input.placeholder === "my-provider") as HTMLInputElement | undefined;
+		const providerIdInput = inputs.find((input) => input.placeholder === "my-provider") as
+			| HTMLInputElement
+			| undefined;
 		const providerNameInput = inputs.find((input) => input.placeholder === "My Provider") as
 			| HTMLInputElement
 			| undefined;
@@ -342,7 +451,12 @@ describe("KanbanAddProviderDialog", () => {
 
 		await act(async () => {
 			root.render(
-				<KanbanAddProviderDialog open={true} onOpenChange={() => {}} existingProviderIds={[]} onSubmit={onSubmit} />,
+				<KanbanAddProviderDialog
+					open={true}
+					onOpenChange={() => {}}
+					existingProviderIds={[]}
+					onSubmit={onSubmit}
+				/>,
 			);
 		});
 
