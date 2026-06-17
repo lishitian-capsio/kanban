@@ -21,6 +21,7 @@ import { saveWorkspaceState, WorkspaceStateConflictError } from "../state/worksp
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { SavedViewStore } from "../vault/saved-view-store";
 import { VaultDocumentStore } from "../vault/vault-document-store";
+import { VaultSettingsStore } from "../vault/vault-settings-store";
 import { buildVaultLinkIndex } from "../vault/vault-link-index";
 import { searchVaultDocuments } from "../vault/vault-search";
 import {
@@ -477,6 +478,15 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 				void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
 			}
 			return { deleted };
+		},
+		getVaultSettings: async (workspaceScope) => {
+			const settings = await new VaultSettingsStore(workspaceScope.workspacePath).get();
+			return { settings };
+		},
+		updateVaultSettings: async (workspaceScope, input) => {
+			const settings = await new VaultSettingsStore(workspaceScope.workspacePath).set({ managed: input.managed });
+			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
+			return { settings };
 		},
 		saveState: async (workspaceScope, input) => {
 			try {

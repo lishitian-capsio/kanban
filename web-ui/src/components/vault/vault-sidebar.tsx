@@ -5,6 +5,7 @@ import { cn } from "@/components/ui/cn";
 import { Kbd } from "@/components/ui/kbd";
 
 import type { VaultTypeView } from "./data/vault-type-registry";
+import { VaultManagedToggle } from "./vault-managed-toggle";
 
 /** Which surface the vault is showing: a document type's views, or the binary file library. */
 export type VaultSelection = { kind: "type"; type: string } | { kind: "files" };
@@ -47,11 +48,17 @@ export function VaultSidebar({
 	selection,
 	onSelect,
 	onOpenSearch,
+	managed,
+	onManagedChange,
+	managedDisabled = false,
 }: {
 	types: VaultTypeView[];
 	selection: VaultSelection;
 	onSelect: (selection: VaultSelection) => void;
 	onOpenSearch: () => void;
+	managed: boolean;
+	onManagedChange: (next: boolean) => void;
+	managedDisabled?: boolean;
 }): React.ReactElement {
 	return (
 		<aside className="flex w-[240px] shrink-0 flex-col gap-4 border-r border-border bg-surface-1 px-3 py-4">
@@ -89,6 +96,14 @@ export function VaultSidebar({
 					active={selection.kind === "files"}
 					onClick={() => onSelect({ kind: "files" })}
 				/>
+			</div>
+			<div className="mt-auto flex flex-col gap-1 border-t border-border pt-3">
+				<span className="px-2.5 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
+					Management
+				</span>
+				<div className="px-2.5">
+					<VaultManagedToggle managed={managed} onChange={onManagedChange} disabled={managedDisabled} />
+				</div>
 			</div>
 		</aside>
 	);

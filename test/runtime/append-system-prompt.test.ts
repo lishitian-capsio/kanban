@@ -155,6 +155,25 @@ describe("renderAppendSystemPrompt", () => {
 
 		expect(rendered).toContain("- `note`. Create with `kanban vault doc create --type note`.");
 	});
+
+	it("does not inject the takeover guidance when vault management is off (default)", () => {
+		const rendered = renderAppendSystemPrompt("kanban");
+		expect(rendered).not.toContain("Proactive vault management is ENABLED");
+		expect(rendered).not.toContain("you are authorized to proactively");
+	});
+
+	it("does not inject the takeover guidance when vaultManaged is explicitly false", () => {
+		const rendered = renderAppendSystemPrompt("kanban", { vaultManaged: false });
+		expect(rendered).not.toContain("Proactive vault management is ENABLED");
+	});
+
+	it("injects the takeover guidance when vaultManaged is true", () => {
+		const rendered = renderAppendSystemPrompt("kanban", { vaultManaged: true, vaultTypes: SAMPLE_VAULT_TYPES });
+		expect(rendered).toContain("Proactive vault management is ENABLED");
+		expect(rendered).toContain("you are authorized to proactively");
+		// It still points the agent at the per-type authoring prompts rather than hardcoding a flow.
+		expect(rendered).toContain("kanban vault type show --type <type>");
+	});
 });
 
 describe("resolveHomeAgentAppendSystemPrompt", () => {

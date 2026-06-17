@@ -510,6 +510,38 @@ export const runtimeVaultSearchResponseSchema = z.object({
 export type RuntimeVaultSearchResponse = z.infer<typeof runtimeVaultSearchResponseSchema>;
 
 // ---------------------------------------------------------------------------
+// Vault settings
+//
+// Workspace-level vault preferences. `managed` is the vault-takeover switch: when
+// false (the default), the sidebar agent only reads/writes vault documents under
+// an explicit instruction — it never acts on its own. When true, the agent is
+// authorized to proactively create and maintain vault documents at appropriate
+// moments, following each type's self-governing authoring prompt. The setting is
+// repo-scoped and committed alongside the docs (`<repo>/.kanban/files/
+// settings.json`), so it travels with the vault.
+// ---------------------------------------------------------------------------
+
+export const runtimeVaultSettingsSchema = z.object({
+	managed: z.boolean().default(false),
+});
+export type RuntimeVaultSettings = z.infer<typeof runtimeVaultSettingsSchema>;
+
+export const runtimeVaultSettingsGetResponseSchema = z.object({
+	settings: runtimeVaultSettingsSchema,
+});
+export type RuntimeVaultSettingsGetResponse = z.infer<typeof runtimeVaultSettingsGetResponseSchema>;
+
+export const runtimeVaultSettingsUpdateRequestSchema = z.object({
+	managed: z.boolean(),
+});
+export type RuntimeVaultSettingsUpdateRequest = z.infer<typeof runtimeVaultSettingsUpdateRequestSchema>;
+
+export const runtimeVaultSettingsUpdateResponseSchema = z.object({
+	settings: runtimeVaultSettingsSchema,
+});
+export type RuntimeVaultSettingsUpdateResponse = z.infer<typeof runtimeVaultSettingsUpdateResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // Vault saved views & filter expressions
 //
 // A *view* is a saved way of looking at one document type: an optional filter

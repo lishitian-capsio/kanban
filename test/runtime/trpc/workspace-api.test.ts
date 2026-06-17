@@ -490,3 +490,46 @@ describe("createWorkspaceApi vault documents", () => {
 		expect(none.results).toEqual([]);
 	});
 });
+
+describe("createWorkspaceApi vault settings", () => {
+	let repoPath: string;
+	let broadcastRuntimeWorkspaceStateUpdated: ReturnType<typeof vi.fn>;
+
+	function createApi() {
+		broadcastRuntimeWorkspaceStateUpdated = vi.fn();
+		return createWorkspaceApi({
+			ensureTerminalManagerForWorkspace: vi.fn(
+				async () => ({ loadTaskSessionMessages: vi.fn(async () => []) }) as never,
+			),
+			broadcastRuntimeWorkspaceStateUpdated: broadcastRuntimeWorkspaceStateUpdated as never,
+			broadcastRuntimeProjectsUpdated: vi.fn(),
+			buildWorkspaceStateSnapshot: vi.fn(),
+		});
+	}
+
+	const scope = () => ({ workspaceId: "workspace-1", workspacePath: repoPath });
+
+	beforeEach(async () => {
+		repoPath = await mkdtemp(join(tmpdir(), "kanban-workspace-api-vault-settings-"));
+	});
+
+	afterEach(async () => {
+		await rm(repoPath, { recursive: true, force: true });
+	});
+
+	it("defaults to unmanaged, then round-trips an update and broadcasts", async () => {
+		const api = createApi();
+
+		expect((await api.getVaultSettings(scope())).settings).toEqual({ managed: false });
+
+		const updated = await api.updateVaultSettings(scope(), { managed: true });
+		expect(updated.settings).toEqual({ managed: true });
+		expect(broadcastRuntimeWorkspaceStateUpdated).toHaveBeenCalledWith("workspace-1", repoPath);
+
+		expect((await api.getVaultSettings(scope())).settings).toEqual({ managed: true });
+
+		const reverted = await api.updateVaultSettings(scope(), { managed: false });
+		expect(reverted.settings).toEqual({ managed: false });
+		expect((await api.getVaultSettings(scope())).settings).toEqual({ managed: false });
+	});
+});

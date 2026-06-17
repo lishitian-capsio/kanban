@@ -8,6 +8,7 @@ import { resolveKanbanCommandParts } from "../core/kanban-command";
 import { buildShellCommandLine } from "../core/shell";
 import { resolveRepoPathForWorkspaceId } from "../state/workspace-state";
 import { detectAutoUpdateInstallation, UpdatePackageManager } from "../update/update";
+import { VaultSettingsStore } from "../vault/vault-settings-store";
 import { VaultTypeRegistry } from "../vault/vault-type-registry";
 import type { VaultTypeDefinition } from "../vault/vault-types";
 
@@ -32,6 +33,13 @@ export interface RenderAppendSystemPromptOptions {
 	 * which renders the type-agnostic "no types defined" guidance.
 	 */
 	vaultTypes?: readonly VaultTypeDefinition[];
+	/**
+	 * The workspace's vault-takeover switch (see `RuntimeVaultSettings.managed`).
+	 * When false (the default), the agent only touches the vault under an explicit
+	 * instruction. When true, we inject a "proactive management" directive that
+	 * authorizes the agent to create/maintain vault documents on its own initiative.
+	 */
+	vaultManaged?: boolean;
 }
 
 const APPEND_PROMPT_AGENT_IDS: readonly RuntimeAgentId[] = ["claude", "codex", "droid", "kiro", "gemini", "opencode"];
@@ -108,6 +116,28 @@ ${typeLines}
 Each type is self-governing: it carries its own authoring prompt describing which frontmatter fields to set, what the body should contain, and how its status flows. Before you create or update a document of a given type, FIRST run \`${kanbanCommand} vault type show --type <type>\` to read that type's full authoring prompt, then write the document exactly as that prompt instructs. The list above intentionally omits those rules — load them on demand for the type you are about to write.`;
 }
 
+/**
+ * Render the optional "proactive vault management" directive injected only when the
+ * workspace's vault-takeover switch is ON. By default Kanban treats the vault like
+ * the board — the agent acts on it only under an explicit instruction. This block
+ * flips that posture: it authorizes the agent to maintain the vault on its own
+ * initiative, while deliberately NOT hardcoding a procedure — what to write and when
+ * is governed by each type's self-describing authoring prompt (`vault type show`).
+ * Returns an empty string when the switch is off, so OFF injects nothing.
+ */
+function renderVaultManagedDirective(managed: boolean, kanbanCommand: string): string {
+	if (!managed) {
+		return "";
+	}
+	return `# Proactive vault management is ENABLED
+
+For this workspace, vault management has been handed to you: you are authorized to proactively create and maintain knowledge-vault documents, not only when explicitly told to. At appropriate moments — for example when a conversation surfaces a durable fact, decision, requirement, or other knowledge that matches a document type — you may create or update the relevant vault document yourself, without waiting for an explicit request.
+
+This authorization is scoped to the vault only. It does NOT make you a coding agent: never edit workspace code or files, and continue to redirect implementation work to Kanban tasks.
+
+Do not invent a fixed routine. Let each document type govern what you write: before creating or updating a document of a given type, run \`${kanbanCommand} vault type show --type <type>\` and follow that type's authoring prompt. Prefer updating an existing document over creating a duplicate (use \`${kanbanCommand} vault doc list\` and \`${kanbanCommand} vault doc show\` to check first). Keep changes proportionate and relevant; when in doubt about a large or destructive change, ask the user first.`;
+}
+
 export function resolveAppendSystemPromptCommandPrefix(
 	options: ResolveAppendSystemPromptCommandPrefixOptions = {},
 ): string {
@@ -165,6 +195,8 @@ export function renderAppendSystemPrompt(commandPrefix: string, options: RenderA
 	const kanbanCommand = commandPrefix.trim() || DEFAULT_COMMAND_PREFIX;
 	const selectedAgentId = options.agentId ?? null;
 	const vaultTypesSection = renderVaultDocumentTypesSection(options.vaultTypes ?? [], kanbanCommand);
+	const vaultManagedDirective = renderVaultManagedDirective(options.vaultManaged ?? false, kanbanCommand);
+	const vaultManagedBlock = vaultManagedDirective ? `\n${vaultManagedDirective}\n` : "";
 	return `# Kanban Sidebar
 
 You are the Kanban sidebar agent for this workspace. Help the user interact with their Kanban board directly from this side panel. When the user asks to add tasks, create tasks, break work down, link tasks, or start tasks, prefer using the Kanban CLI yourself instead of describing manual steps.
@@ -187,7 +219,7 @@ If the user asks you to write code, fix a bug, implement a feature, refactor, or
 - If a task command fails because the runtime is unavailable, tell the user to start Kanban in that workspace first with \`${kanbanCommand}\`, then retry the task command.
 
 ${vaultTypesSection}
-
+${vaultManagedBlock}
 # Command Prefix
 
 Use this prefix for every Kanban command in this session:
@@ -452,6 +484,28 @@ async function loadVaultTypesForHomeSession(taskId: string): Promise<readonly Va
 	}
 }
 
+/**
+ * Load the workspace's vault-takeover switch for the home session encoded in
+ * `taskId`. Mirrors {@link loadVaultTypesForHomeSession}: resolves the repo path
+ * from the parsed workspace id and degrades to `false` — never throws — when the
+ * workspace is unknown or the read fails, so prompt rendering always succeeds.
+ */
+async function loadVaultManagedForHomeSession(taskId: string): Promise<boolean> {
+	const parts = parseHomeAgentSessionId(taskId);
+	if (!parts) {
+		return false;
+	}
+	try {
+		const repoPath = await resolveRepoPathForWorkspaceId(parts.workspaceId);
+		if (!repoPath) {
+			return false;
+		}
+		return (await new VaultSettingsStore(repoPath).get()).managed;
+	} catch {
+		return false;
+	}
+}
+
 export async function resolveHomeAgentAppendSystemPrompt(
 	taskId: string,
 	options: ResolveAppendSystemPromptCommandPrefixOptions = {},
@@ -459,9 +513,13 @@ export async function resolveHomeAgentAppendSystemPrompt(
 	if (!isHomeAgentSessionId(taskId)) {
 		return null;
 	}
-	const vaultTypes = await loadVaultTypesForHomeSession(taskId);
+	const [vaultTypes, vaultManaged] = await Promise.all([
+		loadVaultTypesForHomeSession(taskId),
+		loadVaultManagedForHomeSession(taskId),
+	]);
 	return renderAppendSystemPrompt(resolveAppendSystemPromptCommandPrefix(options), {
 		agentId: resolveHomeAgentId(taskId),
 		vaultTypes,
+		vaultManaged,
 	});
 }

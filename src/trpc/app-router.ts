@@ -117,6 +117,9 @@ import type {
 	RuntimeVaultDocumentUpdateResponse,
 	RuntimeVaultSearchRequest,
 	RuntimeVaultSearchResponse,
+	RuntimeVaultSettingsGetResponse,
+	RuntimeVaultSettingsUpdateRequest,
+	RuntimeVaultSettingsUpdateResponse,
 	RuntimeVaultViewCreateRequest,
 	RuntimeVaultViewCreateResponse,
 	RuntimeVaultViewDeleteRequest,
@@ -249,6 +252,9 @@ import {
 	runtimeVaultDocumentUpdateResponseSchema,
 	runtimeVaultSearchRequestSchema,
 	runtimeVaultSearchResponseSchema,
+	runtimeVaultSettingsGetResponseSchema,
+	runtimeVaultSettingsUpdateRequestSchema,
+	runtimeVaultSettingsUpdateResponseSchema,
 	runtimeVaultViewCreateRequestSchema,
 	runtimeVaultViewCreateResponseSchema,
 	runtimeVaultViewDeleteRequestSchema,
@@ -503,6 +509,11 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeVaultViewDeleteRequest,
 		) => Promise<RuntimeVaultViewDeleteResponse>;
+		getVaultSettings: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeVaultSettingsGetResponse>;
+		updateVaultSettings: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultSettingsUpdateRequest,
+		) => Promise<RuntimeVaultSettingsUpdateResponse>;
 		notifyStateUpdated: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeWorkspaceStateNotifyResponse>;
 		saveState: (
 			scope: RuntimeTrpcWorkspaceScope,
@@ -975,6 +986,15 @@ export const runtimeAppRouter = t.router({
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.deleteView(ctx.workspaceScope, input);
 			}),
+			getVaultSettings: workspaceProcedure.output(runtimeVaultSettingsGetResponseSchema).query(async ({ ctx }) => {
+				return await ctx.workspaceApi.getVaultSettings(ctx.workspaceScope);
+			}),
+			updateVaultSettings: workspaceProcedure
+				.input(runtimeVaultSettingsUpdateRequestSchema)
+				.output(runtimeVaultSettingsUpdateResponseSchema)
+				.mutation(async ({ ctx, input }) => {
+					return await ctx.workspaceApi.updateVaultSettings(ctx.workspaceScope, input);
+				}),
 		notifyStateUpdated: workspaceProcedure
 			.output(runtimeWorkspaceStateNotifyResponseSchema)
 			.mutation(async ({ ctx }) => {
