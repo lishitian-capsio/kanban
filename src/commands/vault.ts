@@ -5,6 +5,8 @@ import type { Command } from "commander";
 import type { RuntimeVaultDocument, RuntimeVaultFrontmatterValue } from "../core/api-contract";
 import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import { VaultDocumentStore } from "../vault/vault-document-store";
+import { VaultTypeRegistry } from "../vault/vault-type-registry";
+import type { VaultTypeDefinition } from "../vault/vault-types";
 import {
 	createRuntimeTrpcClient,
 	type JsonRecord,
@@ -78,6 +80,61 @@ async function resolveStore(
 		repoPath: workspace.repoPath,
 		workspaceId: workspace.workspaceId,
 	};
+}
+
+async function resolveTypeRegistry(
+	projectPath: string | undefined,
+	cwd: string,
+): Promise<{ registry: VaultTypeRegistry; repoPath: string }> {
+	const workspace = await resolveRuntimeWorkspace(projectPath, cwd, { autoCreateIfMissing: true });
+	return { registry: new VaultTypeRegistry(workspace.repoPath), repoPath: workspace.repoPath };
+}
+
+/**
+ * The light "index" tier of a type — the metadata a picker or the agent's
+ * type-discovery step needs to decide *which* type, deliberately WITHOUT the
+ * authoring prompt (`body`). Mirrors how a skill exposes only name/description
+ * until it is actually loaded.
+ */
+function formatTypeIndexRecord(definition: VaultTypeDefinition): JsonRecord {
+	const record: JsonRecord = { type: definition.type, label: definition.label };
+	if (definition.description !== undefined) {
+		record.description = definition.description;
+	}
+	if (definition.icon !== undefined) {
+		record.icon = definition.icon;
+	}
+	if (definition.statusEnum) {
+		record.statusEnum = [...definition.statusEnum];
+	}
+	return record;
+}
+
+/** The full type definition, including the authoring prompt (`body`) — the "loaded" tier. */
+function formatTypeDefinitionRecord(definition: VaultTypeDefinition): JsonRecord {
+	const record: JsonRecord = { ...formatTypeIndexRecord(definition), slugField: definition.slugField };
+	if (definition.defaultFrontmatter) {
+		record.defaultFrontmatter = definition.defaultFrontmatter;
+	}
+	record.body = definition.body;
+	return record;
+}
+
+async function listTypes(input: { cwd: string; projectPath?: string }): Promise<JsonRecord> {
+	const { registry, repoPath } = await resolveTypeRegistry(input.projectPath, input.cwd);
+	const types = (await registry.list())
+		.sort((left, right) => left.type.localeCompare(right.type))
+		.map(formatTypeIndexRecord);
+	return { ok: true, workspacePath: repoPath, types, count: types.length };
+}
+
+async function showType(input: { cwd: string; type: string; projectPath?: string }): Promise<JsonRecord> {
+	const { registry, repoPath } = await resolveTypeRegistry(input.projectPath, input.cwd);
+	const definition = await registry.get(input.type);
+	if (!definition) {
+		throw new Error(`Vault type "${input.type}" was not found in workspace ${repoPath}.`);
+	}
+	return { ok: true, workspacePath: repoPath, definition: formatTypeDefinitionRecord(definition) };
 }
 
 async function resolveBody(body: string | undefined, bodyFile: string | undefined): Promise<string | undefined> {
@@ -175,6 +232,29 @@ export function registerVaultCommand(program: Command): void {
 	const vault = program
 		.command("vault")
 		.description("Manage the Kanban knowledge vault (git-committed markdown documents under docs/).");
+
+	const type = vault
+		.command("type")
+		.description("Inspect the vault's document types (data-driven, from docs/_types/).");
+
+	type
+		.command("list")
+		.description("List document types as a light index (name + description + metadata, no authoring prompt).")
+		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
+		.action(async (options: { projectPath?: string }) => {
+			await runVaultCommand(async () => await listTypes({ cwd: process.cwd(), projectPath: options.projectPath }));
+		});
+
+	type
+		.command("show")
+		.description("Show a type's full definition: metadata + the self-governing authoring prompt (body).")
+		.requiredOption("--type <type>", "Type id (e.g. requirement).")
+		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
+		.action(async (options: { type: string; projectPath?: string }) => {
+			await runVaultCommand(
+				async () => await showType({ cwd: process.cwd(), type: options.type, projectPath: options.projectPath }),
+			);
+		});
 
 	const doc = vault.command("doc").description("Create, read, update, and delete vault documents.");
 
