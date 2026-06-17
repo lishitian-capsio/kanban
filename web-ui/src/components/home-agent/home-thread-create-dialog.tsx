@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { Check } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/components/ui/cn";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
-import { NativeSelect } from "@/components/ui/native-select";
+import { isNativeAgentSelected } from "@/runtime/native-agent";
 import type { RuntimeAgentDefinition, RuntimeAgentId } from "@/runtime/types";
 
 interface HomeThreadCreateDialogProps {
@@ -20,24 +22,38 @@ export function HomeThreadCreateDialog({
 	defaultAgentId,
 	onCreate,
 }: HomeThreadCreateDialogProps): React.ReactElement {
+	// The native/main agent (pi) is always running and singular, so threads can
+	// only be created for the additional CLI agents.
+	const selectableAgents = useMemo(() => agents.filter((agent) => !isNativeAgentSelected(agent.id)), [agents]);
+
+	// Fall back to the first selectable agent when the incoming default is the
+	// native agent (or otherwise not selectable), so the form never opens with a
+	// hidden or empty selection.
+	const resolvedDefaultAgentId = useMemo<RuntimeAgentId | null>(() => {
+		if (selectableAgents.some((agent) => agent.id === defaultAgentId)) {
+			return defaultAgentId;
+		}
+		return selectableAgents[0]?.id ?? null;
+	}, [selectableAgents, defaultAgentId]);
+
 	const [name, setName] = useState("");
-	const [agentId, setAgentId] = useState<RuntimeAgentId>(defaultAgentId);
+	const [agentId, setAgentId] = useState<RuntimeAgentId | null>(resolvedDefaultAgentId);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	// Reset the form each time the dialog opens.
 	useEffect(() => {
 		if (open) {
 			setName("");
-			setAgentId(defaultAgentId);
+			setAgentId(resolvedDefaultAgentId);
 			setIsSubmitting(false);
 		}
-	}, [open, defaultAgentId]);
+	}, [open, resolvedDefaultAgentId]);
 
 	const trimmedName = name.trim();
-	const canSubmit = trimmedName.length > 0 && !isSubmitting;
+	const canSubmit = trimmedName.length > 0 && !isSubmitting && agentId !== null;
 
 	const handleSubmit = async () => {
-		if (!canSubmit) {
+		if (!canSubmit || agentId === null) {
 			return;
 		}
 		setIsSubmitting(true);
@@ -71,21 +87,35 @@ export function HomeThreadCreateDialog({
 						className="h-8 rounded-md border border-border-bright bg-surface-2 px-2 text-[13px] text-text-primary focus:border-border-focus focus:outline-none"
 					/>
 				</label>
-				<label htmlFor="home-thread-agent" className="flex flex-col gap-1 text-[13px] text-text-secondary">
+				<div className="flex flex-col gap-1.5 text-[13px] text-text-secondary">
 					Agent
-					<NativeSelect
-						id="home-thread-agent"
-						fill
-						value={agentId}
-						onChange={(event) => setAgentId(event.target.value as RuntimeAgentId)}
-					>
-						{agents.map((agent) => (
-							<option key={agent.id} value={agent.id}>
-								{agent.label}
-							</option>
-						))}
-					</NativeSelect>
-				</label>
+					{selectableAgents.length === 0 ? (
+						<p className="text-[12px] text-text-tertiary">No additional agents are available.</p>
+					) : (
+						<div className="flex flex-wrap gap-1.5">
+							{selectableAgents.map((agent) => {
+								const selected = agent.id === agentId;
+								return (
+									<button
+										key={agent.id}
+										type="button"
+										aria-pressed={selected}
+										onClick={() => setAgentId(agent.id)}
+										className={cn(
+											"inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-1 text-[13px] transition-colors",
+											selected
+												? "border-accent bg-accent/15 text-text-primary"
+												: "border-border-bright bg-surface-2 text-text-secondary hover:bg-surface-3 hover:text-text-primary",
+										)}
+									>
+										{selected ? <Check size={14} className="text-accent" /> : null}
+										{agent.label}
+									</button>
+								);
+							})}
+						</div>
+					)}
+				</div>
 			</DialogBody>
 			<DialogFooter>
 				<Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
