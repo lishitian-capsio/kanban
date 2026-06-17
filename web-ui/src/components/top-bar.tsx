@@ -8,9 +8,8 @@ import {
 	ChevronDown,
 	CircleArrowDown,
 	Command,
-	Files,
 	GitBranch,
-	ListChecks,
+	Library,
 	Menu,
 	Play,
 	Plus,
@@ -299,10 +298,8 @@ export function TopBar({
 	isTerminalLoading,
 	onToggleGitHistory,
 	isGitHistoryOpen,
-	onToggleRequirements,
-	isRequirementsOpen,
-	onToggleFiles,
-	isFilesOpen,
+	onToggleVault,
+	isVaultOpen,
 	onOpenSettings,
 	showDebugButton,
 	onOpenDebugDialog,
@@ -338,10 +335,8 @@ export function TopBar({
 	isTerminalLoading?: boolean;
 	onToggleGitHistory?: () => void;
 	isGitHistoryOpen?: boolean;
-	onToggleRequirements?: () => void;
-	isRequirementsOpen?: boolean;
-	onToggleFiles?: () => void;
-	isFilesOpen?: boolean;
+	onToggleVault?: () => void;
+	isVaultOpen?: boolean;
 	onOpenSettings?: (section?: SettingsSection) => void;
 	showDebugButton?: boolean;
 	onOpenDebugDialog?: () => void;
@@ -523,28 +518,16 @@ export function TopBar({
 									onGitPush={onGitPush}
 								/>
 							) : null}
-							{!hideProjectDependentActions && onToggleRequirements ? (
+							{!hideProjectDependentActions && onToggleVault ? (
 								<Button
-									variant={isRequirementsOpen ? "primary" : "default"}
+									variant={isVaultOpen ? "primary" : "default"}
 									size="sm"
-									icon={<ListChecks size={14} />}
-									onClick={onToggleRequirements}
-									className={cn("shrink-0", isRequirementsOpen ? "ring-1 ring-accent" : "kb-navbar-btn")}
-									title="Requirements"
+									icon={<Library size={14} />}
+									onClick={onToggleVault}
+									className={cn("shrink-0", isVaultOpen ? "ring-1 ring-accent" : "kb-navbar-btn")}
+									title="Vault"
 								>
-									Requirements
-								</Button>
-							) : null}
-							{!hideProjectDependentActions && onToggleFiles ? (
-								<Button
-									variant={isFilesOpen ? "primary" : "default"}
-									size="sm"
-									icon={<Files size={14} />}
-									onClick={onToggleFiles}
-									className={cn("shrink-0", isFilesOpen ? "ring-1 ring-accent" : "kb-navbar-btn")}
-									title="Files"
-								>
-									Files
+									Vault
 								</Button>
 							) : null}
 						</>

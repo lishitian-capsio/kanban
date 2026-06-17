@@ -90,16 +90,14 @@ export default function App(): ReactElement {
 	const [homeSidebarSection, setHomeSidebarSection] = useState<"projects" | "agent">("projects");
 	const [isClearTrashDialogOpen, setIsClearTrashDialogOpen] = useState(false);
 	const [isGitHistoryOpen, setIsGitHistoryOpen] = useState(false);
-	const [isRequirementsOpen, setIsRequirementsOpen] = useState(false);
-	const [isFilesOpen, setIsFilesOpen] = useState(false);
+	const [isVaultOpen, setIsVaultOpen] = useState(false);
 	const [pendingTaskStartAfterEditId, setPendingTaskStartAfterEditId] = useState<string | null>(null);
 	const taskEditorResetRef = useRef<() => void>(() => {});
 	const lastStreamErrorRef = useRef<string | null>(null);
 	const handleProjectSwitchStart = useCallback(() => {
 		setCanPersistWorkspaceState(false);
 		setIsGitHistoryOpen(false);
-		setIsRequirementsOpen(false);
-		setIsFilesOpen(false);
+		setIsVaultOpen(false);
 		setPendingTaskStartAfterEditId(null);
 		taskEditorResetRef.current();
 	}, []);
@@ -558,28 +556,18 @@ export default function App(): ReactElement {
 		if (hasNoProjects) {
 			return;
 		}
-		setIsRequirementsOpen(false);
-		setIsFilesOpen(false);
+		setIsVaultOpen(false);
 		setIsGitHistoryOpen((current) => !current);
 	}, [hasNoProjects]);
 	const handleCloseGitHistory = useCallback(() => {
 		setIsGitHistoryOpen(false);
 	}, []);
-	const handleToggleRequirements = useCallback(() => {
+	const handleToggleVault = useCallback(() => {
 		if (hasNoProjects) {
 			return;
 		}
 		setIsGitHistoryOpen(false);
-		setIsFilesOpen(false);
-		setIsRequirementsOpen((current) => !current);
-	}, [hasNoProjects]);
-	const handleToggleFiles = useCallback(() => {
-		if (hasNoProjects) {
-			return;
-		}
-		setIsGitHistoryOpen(false);
-		setIsRequirementsOpen(false);
-		setIsFilesOpen((current) => !current);
+		setIsVaultOpen((current) => !current);
 	}, [hasNoProjects]);
 
 	const {
@@ -909,10 +897,8 @@ export default function App(): ReactElement {
 						isOpeningWorkspace={isOpeningWorkspace}
 						onToggleGitHistory={hasNoProjects ? undefined : handleToggleGitHistory}
 						isGitHistoryOpen={isGitHistoryOpen}
-						onToggleRequirements={hasNoProjects ? undefined : handleToggleRequirements}
-						isRequirementsOpen={isRequirementsOpen}
-						onToggleFiles={hasNoProjects ? undefined : handleToggleFiles}
-						isFilesOpen={isFilesOpen}
+						onToggleVault={hasNoProjects ? undefined : handleToggleVault}
+						isVaultOpen={isVaultOpen}
 						hideProjectDependentActions={shouldHideProjectDependentTopBarActions}
 					/>
 					<div className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden">
@@ -946,11 +932,8 @@ export default function App(): ReactElement {
 							) : (
 								<div className="flex flex-1 flex-col min-h-0 min-w-0">
 									<div className="flex flex-1 min-h-0 min-w-0">
-										{isFilesOpen || isRequirementsOpen ? (
-											<VaultView
-												workspaceId={currentProjectId}
-												initialView={isFilesOpen ? "files" : "requirements"}
-											/>
+										{isVaultOpen ? (
+											<VaultView workspaceId={currentProjectId} initialView="requirements" />
 										) : isGitHistoryOpen ? (
 											<GitHistoryView
 												workspaceId={currentProjectId}
