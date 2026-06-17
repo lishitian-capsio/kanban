@@ -27,6 +27,7 @@ export interface PiLaunchConfig {
 /**
  * Resolve a model from the omp bundled model registry.
  * Falls back to a generic model descriptor if not found.
+ * When a custom baseUrl is provided, it overrides the model's baseUrl.
  */
 export function resolvePiModel(
 	providerId?: string | null,
@@ -98,8 +99,16 @@ export function resolvePiModel(
 		return { provider, modelId: id, model: genericModel };
 	}
 
-	// Final fallback: use default
-	const fallbackModel = getBundledModel(PI_DEFAULT_PROVIDER_ID as GeneratedProvider, PI_DEFAULT_MODEL_ID);
+	// Final fallback: use default.
+	// `getBundledModel` is typed non-null but returns `undefined` for an unknown
+	// id; the default should always exist in the bundled registry, but guard it
+	// so a future missing default fails with a clear error here instead of an
+	// opaque crash when this model is passed into `new Agent({ model })`.
+	const fallbackModel = assertResolvedPiModel(
+		getBundledModel(PI_DEFAULT_PROVIDER_ID as GeneratedProvider, PI_DEFAULT_MODEL_ID),
+		PI_DEFAULT_PROVIDER_ID,
+		PI_DEFAULT_MODEL_ID,
+	);
 	return {
 		provider: PI_DEFAULT_PROVIDER_ID,
 		modelId: PI_DEFAULT_MODEL_ID,
@@ -108,15 +117,112 @@ export function resolvePiModel(
 }
 
 /**
+ * Guard the result of a bundled-model lookup. `getBundledModel` is typed to
+ * return a non-null `Model` but actually returns `undefined` when the id is not
+ * in the registry. Passing that `undefined` into `new Agent({ model })` crashes
+ * later on a property read with no useful context. This converts that into a
+ * clear, actionable error at the resolution site.
+ */
+export function assertResolvedPiModel(
+	model: Model<Api> | undefined | null,
+	provider: string,
+	modelId: string,
+): Model<Api> {
+	if (!model) {
+		throw new Error(
+			`pi model "${provider}/${modelId}" is missing from the bundled model registry (models.json)`,
+		);
+	}
+	return model;
+}
+
+/**
  * Non-secret launch config contributed by the workspace's currently selected agent
  * profile. This is the new "workspace layer" in the resolution chain; it never carries
  * secrets (the API key still comes from the machine-home settings store by providerId).
- * Base URL is NOT part of the profile — it resolves solely from the provider config.
  */
 export interface PiLaunchProfile {
 	providerId?: string | null;
 	modelId?: string | null;
 	reasoningEffort?: RuntimeReasoningEffort | null;
+}
+
+export interface PiLaunchInput {
+	providerIdOverride?: string | null;
+	modelIdOverride?: string | null;
+	reasoningEffortOverride?: RuntimeReasoningEffort | null;
+	workspaceProfile?: PiLaunchProfile | null;
+}
+
+/**
+ * One source's contribution to the launch config. `null` means "this source did
+ * not supply this field" — it never carries empty strings, so merging is a plain
+ * nullish-coalescing fold (first non-null wins, highest-priority source first).
+ */
+interface PiLaunchLayer {
+	providerId: string | null;
+	modelId: string | null;
+	baseUrl: string | null;
+	reasoningEffort: RuntimeReasoningEffort | null;
+}
+
+/** Trim a possibly-null string and collapse empty/whitespace-only values to `null`. */
+function normalizeOptional(value?: string | null): string | null {
+	const trimmed = value?.trim();
+	return trimmed ? trimmed : null;
+}
+
+/**
+ * Layer 1 — explicit per-session overrides (the card's `agentSettings`). There is
+ * no per-session override for `baseUrl`, so it is always absent at this layer.
+ */
+function resolveOverrideLayer(input: PiLaunchInput): PiLaunchLayer {
+	return {
+		providerId: normalizeOptional(input.providerIdOverride),
+		modelId: normalizeOptional(input.modelIdOverride),
+		baseUrl: null,
+		reasoningEffort: input.reasoningEffortOverride ?? null,
+	};
+}
+
+/**
+ * Layer 2 — the workspace's selected agent profile (always secret-free). A profile
+ * is a pure reference: it never carries a base URL, so this layer never contributes
+ * one — base URL resolves solely from the provider config (Layer 3).
+ */
+function resolveProfileLayer(profile: PiLaunchProfile | null): PiLaunchLayer {
+	return {
+		providerId: normalizeOptional(profile?.providerId),
+		modelId: normalizeOptional(profile?.modelId),
+		baseUrl: null,
+		reasoningEffort: profile?.reasoningEffort ?? null,
+	};
+}
+
+/**
+ * Layer 3 — the user's saved per-agent provider settings (machine-home store).
+ * Returns an all-`null` layer when the store is unavailable, throws, or has no
+ * pi config, so callers never need a try/catch of their own.
+ */
+function resolveStoreLayer(): PiLaunchLayer {
+	const empty: PiLaunchLayer = { providerId: null, modelId: null, baseUrl: null, reasoningEffort: null };
+	try {
+		const agentConfig = getAgentProviderConfig("pi");
+		if (!agentConfig) {
+			return empty;
+		}
+		return {
+			providerId: normalizeOptional(agentConfig.provider),
+			modelId: normalizeOptional(agentConfig.model),
+			baseUrl: normalizeOptional(agentConfig.baseUrl),
+			// The store value is not validated against the effort enum here, matching
+			// historical behavior — it is cast and passed through as-is.
+			reasoningEffort: normalizeOptional(agentConfig.reasoning?.effort) as RuntimeReasoningEffort | null,
+		};
+	} catch {
+		// Config layer unavailable.
+		return empty;
+	}
 }
 
 /**
@@ -128,47 +234,43 @@ export interface PiLaunchProfile {
  *   3. the user's saved provider settings (machine-home Settings store),
  *   4. built-in defaults.
  *
+ * The store layer is consulted only when a *core* field (provider/model/baseUrl)
+ * is still unresolved after the override and profile layers, and its
+ * `reasoningEffort` is filled in that same pass. Note that base URL is supplied
+ * *only* by the store (neither the per-session override nor the profile carries
+ * one), so in practice the store is always consulted and its reasoningEffort is
+ * applied whenever override/profile did not already set one.
+ *
  * Secrets are never part of the profile: the API key is resolved separately from the
  * machine-home store (by providerId), so committed profile records stay secret-free.
  */
-export function resolvePiLaunchConfig(input?: {
-	providerIdOverride?: string | null;
-	modelIdOverride?: string | null;
-	reasoningEffortOverride?: RuntimeReasoningEffort | null;
-	workspaceProfile?: PiLaunchProfile | null;
-}): PiLaunchConfig {
-	const profile = input?.workspaceProfile ?? null;
+export function resolvePiLaunchConfig(input?: PiLaunchInput): PiLaunchConfig {
+	const override = resolveOverrideLayer(input ?? {});
+	const profile = resolveProfileLayer(input?.workspaceProfile ?? null);
 
-	let providerId = input?.providerIdOverride?.trim() || profile?.providerId?.trim() || null;
-	let modelId = input?.modelIdOverride?.trim() || profile?.modelId?.trim() || null;
-	let baseUrl: string | null = null;
-	let reasoningEffort = input?.reasoningEffortOverride ?? profile?.reasoningEffort ?? null;
+	// Layers 1 + 2 (in-memory): override wins, then the profile.
+	let providerId = override.providerId ?? profile.providerId;
+	let modelId = override.modelId ?? profile.modelId;
+	let baseUrl = override.baseUrl ?? profile.baseUrl;
+	let reasoningEffort = override.reasoningEffort ?? profile.reasoningEffort;
 
-	// Fill any still-missing values from per-agent provider config.
-	if (!providerId || !modelId || !baseUrl) {
-		try {
-			const agentConfig = getAgentProviderConfig("pi");
-			if (agentConfig) {
-				providerId = providerId || agentConfig.provider?.trim() || null;
-				modelId = modelId || agentConfig.model?.trim() || null;
-				baseUrl = baseUrl || agentConfig.baseUrl?.trim() || null;
-				if (!reasoningEffort) {
-					reasoningEffort = (agentConfig.reasoning?.effort?.trim() as RuntimeReasoningEffort) || null;
-				}
-			}
-		} catch {
-			// Config layer unavailable
-		}
+	// Layer 3 (machine-home store): only when a core field still needs it.
+	if (providerId === null || modelId === null || baseUrl === null) {
+		const store = resolveStoreLayer();
+		providerId ??= store.providerId;
+		modelId ??= store.modelId;
+		baseUrl ??= store.baseUrl;
+		reasoningEffort ??= store.reasoningEffort;
 	}
 
-	const resolvedProviderId = providerId || PI_DEFAULT_PROVIDER_ID;
-	const resolvedModelId = modelId || PI_DEFAULT_MODEL_ID;
-	const apiKey = resolvePiApiKey(resolvedProviderId);
+	// Layer 4 (built-in defaults): provider/model only — baseUrl/reasoning stay null.
+	const resolvedProviderId = providerId ?? PI_DEFAULT_PROVIDER_ID;
+	const resolvedModelId = modelId ?? PI_DEFAULT_MODEL_ID;
 
 	return {
 		providerId: resolvedProviderId,
 		modelId: resolvedModelId,
-		apiKey,
+		apiKey: resolvePiApiKey(resolvedProviderId),
 		baseUrl,
 		reasoningEffort,
 	};
