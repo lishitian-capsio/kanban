@@ -373,9 +373,7 @@ export function getAllAgentProviderSets(): Record<string, AgentProviderSet> {
 }
 
 /** Return provider sets with every `apiKey` stripped — safe to send over the wire. */
-export function redactAgentProviderSets(
-	sets: Record<string, AgentProviderSet>,
-): Record<string, AgentProviderSet> {
+export function redactAgentProviderSets(sets: Record<string, AgentProviderSet>): Record<string, AgentProviderSet> {
 	const out: Record<string, AgentProviderSet> = {};
 	for (const [agentId, set] of Object.entries(sets)) {
 		out[agentId] = {
