@@ -24,7 +24,7 @@ import {
 } from "../../core/api-contract";
 import { lockedFileSystem } from "../../fs/locked-file-system";
 import { createLogger } from "../../logging";
-import type { ProtocolConfig } from "./provider-protocol";
+import { collapseToAgentProtocol, type ProtocolConfig } from "./provider-protocol";
 import type { AnthropicProviderSettings, ProviderSettingsReasoning } from "./provider-types";
 
 const log = createLogger("agent-provider-config");
@@ -48,9 +48,18 @@ export interface AgentProviderConfig {
 	modelsSourceUrl?: string;
 	/** API key for the provider. */
 	apiKey?: string;
-	/** @deprecated Legacy single baseUrl. Use `protocols[].baseUrl` instead. */
+	/**
+	 * @deprecated Read-time backward-compat mirror only. The endpoint's single
+	 * source of truth is `protocols[0].baseUrl`; this field is re-derived from it
+	 * on read and is never persisted. Do not write to it.
+	 */
 	baseUrl?: string;
-	/** Per-protocol configuration with independent base URLs. */
+	/**
+	 * The protocol this provider speaks for this agent, with its base URL — the
+	 * single source of truth for the endpoint. A per-agent provider speaks exactly
+	 * one protocol (the resolver only ever injects one), so this is kept to a
+	 * single entry; the array shape is retained for the wire contract.
+	 */
 	protocols?: ProtocolConfig[];
 	/**
 	 * Anthropic-protocol-specific settings (key header + per-tier model
@@ -169,12 +178,25 @@ const lenientProviderConfigSchema = z.object(
 
 type StoredProviderConfig = z.infer<typeof storedProviderConfigSchema>;
 
+/**
+ * Collapse a config's protocol fields to the single-protocol invariant: exactly
+ * one `protocols` entry (the one this agent uses) and a `baseUrl` re-derived from
+ * it as a read-time backward-compat mirror. Folds a legacy scalar `baseUrl` (and
+ * any extra, never-used protocols on older stores) into that single entry. This
+ * runs on every read so all in-memory configs are uniform and downstream readers
+ * never see the dual baseUrl/protocols paths.
+ */
+function normalizeProtocolFields(agentId: string, config: AgentProviderConfig): AgentProviderConfig {
+	const single = collapseToAgentProtocol(agentId, config.protocols, config.baseUrl);
+	return { ...config, protocols: [single], baseUrl: single.baseUrl };
+}
+
 /** Validate one raw on-disk object into an AgentProviderConfig (Zod-backed). */
 function validateConfig(agentId: string, rawConfig: Record<string, unknown>): AgentProviderConfig {
 	const config = liftLegacyAnthropicFields(rawConfig);
 	const result = storedProviderConfigSchema.safeParse(config);
 	if (result.success) {
-		return { agentId, ...result.data };
+		return normalizeProtocolFields(agentId, { agentId, ...result.data });
 	}
 	log.warn("Dropping invalid field(s) from stored agent provider config", {
 		agentId,
@@ -184,7 +206,10 @@ function validateConfig(agentId: string, rawConfig: Record<string, unknown>): Ag
 			message: issue.message,
 		})),
 	});
-	return { agentId, ...(lenientProviderConfigSchema.parse(config) as StoredProviderConfig) };
+	return normalizeProtocolFields(agentId, {
+		agentId,
+		...(lenientProviderConfigSchema.parse(config) as StoredProviderConfig),
+	});
 }
 
 /**
@@ -316,20 +341,13 @@ function cleanProviderConfig(agentId: string, config: AgentProviderConfig): Agen
 	if (cleaned.baseUrl !== undefined) {
 		cleaned.baseUrl = cleaned.baseUrl.trim() || undefined;
 	}
-	if (cleaned.protocols) {
-		cleaned.protocols = cleaned.protocols.map((c) => {
-			const trimmed: ProtocolConfig = { protocol: c.protocol };
-			if (c.baseUrl) {
-				const v = c.baseUrl.trim();
-				if (v) trimmed.baseUrl = v;
-			}
-			return trimmed;
-		});
-		const firstBaseUrl = cleaned.protocols[0]?.baseUrl;
-		if (firstBaseUrl && !cleaned.baseUrl) {
-			cleaned.baseUrl = firstBaseUrl;
-		}
-	}
+	// A per-agent provider speaks exactly one protocol. Collapse to that single
+	// protocol — the source of truth for the endpoint — folding in any legacy
+	// scalar baseUrl, and drop the scalar baseUrl from what we persist (it is
+	// re-derived from `protocols[0]` on read). This is the single write path; no
+	// dual-write.
+	cleaned.protocols = [collapseToAgentProtocol(agentId, cleaned.protocols, cleaned.baseUrl)];
+	cleaned.baseUrl = undefined;
 	if (cleaned.reasoning) {
 		const r = { ...cleaned.reasoning };
 		if (typeof r.effort === "string") {

@@ -149,6 +149,56 @@ export function normalizeProtocolsForProvider(
 	}));
 }
 
+/**
+ * Compatible protocols for an agent. An empty list means "no restriction"
+ * (e.g. gemini speaks its own protocol). Unknown agents are unrestricted.
+ */
+export function getAgentProtocols(agentId: string): ProviderProtocol[] {
+	return AGENT_PROTOCOL_COMPATIBILITY[agentId.trim().toLowerCase()] ?? [];
+}
+
+/**
+ * Collapse a per-agent provider's protocol config(s) to the SINGLE protocol the
+ * agent will actually use at runtime.
+ *
+ * Providers are stored per-agent and {@link resolveProtocolEnvVars} only ever
+ * injects one protocol (the first the agent is compatible with), so a per-agent
+ * provider speaks exactly one protocol — storing more is dead config. This picks
+ * that one protocol deterministically and folds the legacy scalar `baseUrl` into
+ * it when no per-protocol URL is present, so `protocols[]` stays the single
+ * source of truth for the endpoint and `baseUrl` is only ever a read-time
+ * migration input.
+ *
+ * Selection mirrors the resolver:
+ *   - restricted agent: the first compatible protocol present, else the agent's
+ *     primary protocol;
+ *   - unrestricted agent: the first protocol present, else `"openai"`.
+ */
+export function collapseToAgentProtocol(
+	agentId: string,
+	protocols: ProtocolConfig[] | undefined,
+	legacyBaseUrl?: string,
+): ProtocolConfig {
+	const agentProtocols = getAgentProtocols(agentId);
+	const present = protocols ?? [];
+	const presentNames = extractProtocolList(present);
+
+	const chosen: ProviderProtocol =
+		agentProtocols.length > 0
+			? (agentProtocols.find((p) => presentNames.includes(p)) ?? agentProtocols[0] ?? "openai")
+			: (presentNames[0] ?? "openai");
+
+	// Prefer the chosen protocol's own URL; otherwise carry any configured URL
+	// (e.g. when coercing a mis-declared legacy protocol) and finally the legacy
+	// scalar baseUrl, so the user's endpoint is never silently dropped.
+	const baseUrl =
+		getBaseUrlForProtocol(present, chosen) ??
+		present.find((c) => c.baseUrl?.trim())?.baseUrl?.trim() ??
+		legacyBaseUrl?.trim() ??
+		undefined;
+	return baseUrl ? { protocol: chosen, baseUrl } : { protocol: chosen };
+}
+
 // ------------------------------------------------------------------ resolvers
 
 /**

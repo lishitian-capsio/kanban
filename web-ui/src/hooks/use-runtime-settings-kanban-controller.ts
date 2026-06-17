@@ -107,6 +107,24 @@ export interface UpdateKanbanProviderInput {
 	anthropic?: AnthropicProviderSettingsInput;
 }
 
+/**
+ * Build the write-path `protocols[]` (the single source of truth for the
+ * endpoint) from a provider input. Prefers an explicit `protocols`; otherwise
+ * folds a legacy scalar `baseUrl` into a single entry. The protocol guess here is
+ * only a placeholder — the backend coerces it to the owning agent's protocol on
+ * save. Never emits a top-level `baseUrl` (no dual-write).
+ */
+function protocolsFromProviderInput(input: {
+	protocols?: ProtocolConfigInput[];
+	baseUrl?: string;
+}): Array<{ protocol: string; baseUrl?: string }> | undefined {
+	if (input.protocols) {
+		return input.protocols.map((p) => ({ protocol: p.protocol, baseUrl: p.baseUrl?.trim() || undefined }));
+	}
+	const legacyBaseUrl = input.baseUrl?.trim();
+	return legacyBaseUrl ? [{ protocol: "openai", baseUrl: legacyBaseUrl }] : undefined;
+}
+
 export interface UseRuntimeSettingsKanbanControllerResult {
 	currentProviderSettings: RuntimeKanbanProviderSettings;
 	providerId: string;
@@ -717,14 +735,12 @@ export function useRuntimeSettingsKanbanController(
 					agentId,
 					provider: input.providerId,
 					apiKey: input.apiKey?.trim() || undefined,
-					baseUrl: input.baseUrl?.trim() || undefined,
+					// The endpoint lives in `protocols[].baseUrl` (single source of truth);
+					// the legacy scalar `baseUrl` is no longer written.
 					model: input.defaultModelId?.trim() || undefined,
 					models: input.models.length > 0 ? input.models : undefined,
 					modelsSourceUrl: input.modelsSourceUrl?.trim() || undefined,
-					protocols: input.protocols?.map((p) => ({
-						protocol: p.protocol,
-						baseUrl: p.baseUrl?.trim() || undefined,
-					})),
+					protocols: protocolsFromProviderInput(input),
 					anthropic: input.anthropic,
 					headers: input.headers,
 					timeout: input.timeoutMs,
@@ -830,24 +846,21 @@ export function useRuntimeSettingsKanbanController(
 				} catch {
 					// If fetch fails, start from empty.
 				}
+				// Drop any stale legacy scalar baseUrl carried by the fetched config —
+				// the endpoint's single source of truth is `protocols[].baseUrl`.
+				const { baseUrl: _legacyBaseUrl, ...existingRest } = existingConfig ?? { agentId };
 				const mergedConfig: RuntimeAgentProviderConfig = {
-					...(existingConfig ?? { agentId }),
+					...existingRest,
 					agentId,
 					provider: input.providerId,
 					...(input.apiKey !== undefined ? { apiKey: input.apiKey?.trim() || undefined } : {}),
-					...(input.baseUrl !== undefined ? { baseUrl: input.baseUrl?.trim() || undefined } : {}),
 					...(input.defaultModelId !== undefined ? { model: input.defaultModelId?.trim() || undefined } : {}),
 					...(input.models !== undefined ? { models: input.models.length > 0 ? input.models : undefined } : {}),
 					...(input.modelsSourceUrl !== undefined
 						? { modelsSourceUrl: input.modelsSourceUrl?.trim() || undefined }
 						: {}),
-					...(input.protocols !== undefined
-						? {
-								protocols: input.protocols.map((p) => ({
-									protocol: p.protocol,
-									baseUrl: p.baseUrl?.trim() || undefined,
-								})),
-							}
+					...(input.protocols !== undefined || input.baseUrl !== undefined
+						? { protocols: protocolsFromProviderInput(input) }
 						: {}),
 					...(input.anthropic !== undefined ? { anthropic: input.anthropic } : {}),
 					...(input.headers !== undefined ? { headers: input.headers ?? undefined } : {}),

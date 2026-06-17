@@ -987,15 +987,19 @@ describe("useRuntimeSettingsKanbanController", () => {
 			).toEqual({ ok: true });
 		});
 
+		// The endpoint is written only on `protocols[]` (single source of truth); a
+		// legacy scalar `baseUrl` input folds into it and is never written top-level.
 		expect(saveAgentProviderConfigMock).toHaveBeenCalledWith("workspace-1", "pi", expect.objectContaining({
 			agentId: "pi",
 			provider: "my-provider",
-			baseUrl: "http://localhost:8000/v1",
+			protocols: [{ protocol: "openai", baseUrl: "http://localhost:8000/v1" }],
 			apiKey: "secret-key",
 			model: "qwen2.5-coder:32b",
 			// The full model list must be persisted, not just the default (fdd77).
 			models: ["qwen2.5-coder:32b"],
 		}));
+		const savedConfig = saveAgentProviderConfigMock.mock.calls.at(-1)?.[2] as Record<string, unknown>;
+		expect(savedConfig).not.toHaveProperty("baseUrl");
 		expect(fetchKanbanProviderCatalogMock).toHaveBeenLastCalledWith("workspace-1");
 		expect(fetchKanbanProviderModelsMock).toHaveBeenLastCalledWith("workspace-1", "my-provider");
 		expect(requireSnapshot(latestSnapshot).providerId).toBe("my-provider");

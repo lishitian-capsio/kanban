@@ -70,16 +70,14 @@ interface HeaderEntry {
 	value: string;
 }
 
-interface ProtocolConfigRow {
-	protocol: ProviderProtocol;
-	baseUrl: string;
-}
-
 interface FormState {
 	providerId: string;
 	name: string;
 	apiKey: string;
-	protocolConfigs: ProtocolConfigRow[];
+	/** The single protocol this provider speaks for the owning agent. */
+	protocol: ProviderProtocol;
+	/** The endpoint URL for that protocol — the single source of truth. */
+	baseUrl: string;
 	modelsSourceUrl: string;
 	models: string[];
 	defaultModelId: string;
@@ -120,6 +118,25 @@ export interface KanbanProviderDialogInitialValues {
 
 let nextHeaderEntryId = 0;
 
+/**
+ * Resolve the single protocol + base URL to echo into the form. A per-agent
+ * provider speaks exactly one protocol; we read it from the (single) stored
+ * protocol config, falling back to the legacy scalar baseUrl, and finally to the
+ * default protocol the owning agent allows. No per-protocol-tab duplication.
+ */
+function resolveInitialProtocol(
+	initialValues: KanbanProviderDialogInitialValues | null | undefined,
+	allowedProtocols: ProviderProtocol[],
+): { protocol: ProviderProtocol; baseUrl: string } {
+	const fromConfig = initialValues?.protocolConfigs?.[0];
+	const candidate = fromConfig?.protocol ?? initialValues?.protocols?.[0];
+	const baseUrl = fromConfig?.baseUrl ?? initialValues?.baseUrl ?? "";
+	return {
+		protocol: candidate ?? pickDefaultProtocol(allowedProtocols),
+		baseUrl,
+	};
+}
+
 function createInitialFormState(
 	initialValues: KanbanProviderDialogInitialValues | null | undefined,
 	allowedProtocols: ProviderProtocol[],
@@ -130,29 +147,14 @@ function createInitialFormState(
 		value,
 	}));
 	const initialModels = [...new Set(initialValues?.models?.map((model) => model.trim()).filter(Boolean) ?? [])];
-
-	// Build protocolConfigs from initialValues
-	let protocolConfigs: ProtocolConfigRow[];
-	if (initialValues?.protocolConfigs?.length) {
-		protocolConfigs = initialValues.protocolConfigs.map((config) => ({
-			protocol: config.protocol,
-			baseUrl: config.baseUrl ?? "",
-		}));
-	} else if (initialValues?.protocols?.length) {
-		// Legacy: protocols as string[], use baseUrl for each
-		protocolConfigs = initialValues.protocols.map((p) => ({
-			protocol: p,
-			baseUrl: initialValues.baseUrl ?? "",
-		}));
-	} else {
-		protocolConfigs = [{ protocol: pickDefaultProtocol(allowedProtocols), baseUrl: initialValues?.baseUrl ?? "" }];
-	}
+	const { protocol, baseUrl } = resolveInitialProtocol(initialValues, allowedProtocols);
 
 	return {
 		providerId: initialValues?.providerId ?? "",
 		name: initialValues?.name ?? "",
 		apiKey: initialValues?.apiKey ?? "",
-		protocolConfigs,
+		protocol,
+		baseUrl,
 		modelsSourceUrl: initialValues?.modelsSourceUrl ?? "",
 		models: initialModels,
 		defaultModelId: initialValues?.defaultModelId?.trim() || initialModels[0] || "",
@@ -174,7 +176,7 @@ function createInitialFormState(
  * untouched section doesn't persist empty strings.
  */
 function buildAnthropicPayload(form: FormState): AnthropicProviderSettingsInput | undefined {
-	if (!form.protocolConfigs.some((config) => config.protocol === "anthropic")) {
+	if (form.protocol !== "anthropic") {
 		return undefined;
 	}
 	const defaultModels: { haiku?: string; sonnet?: string; opus?: string } = {};
@@ -227,6 +229,7 @@ export function KanbanAddProviderDialog({
 		() => PROTOCOL_OPTIONS.filter((option) => allowedProtocols.includes(option.value)),
 		[allowedProtocols],
 	);
+	const protocolLocked = allowedProtocols.length === 1;
 	const initialForm = useMemo(
 		() => createInitialFormState(initialValues, allowedProtocols),
 		[initialValues, allowedProtocols],
@@ -237,7 +240,6 @@ export function KanbanAddProviderDialog({
 	const [isSaving, setIsSaving] = useState(false);
 	const [showApiKey, setShowApiKey] = useState(false);
 	const [isFetchingModels, setIsFetchingModels] = useState(false);
-	const [fetchingProtocolIndex, setFetchingProtocolIndex] = useState<number | null>(null);
 
 	useEffect(() => {
 		if (open) {
@@ -247,7 +249,6 @@ export function KanbanAddProviderDialog({
 			setIsSaving(false);
 			setShowApiKey(false);
 			setIsFetchingModels(false);
-			setFetchingProtocolIndex(null);
 			return;
 		}
 		setForm(initialForm);
@@ -256,7 +257,6 @@ export function KanbanAddProviderDialog({
 		setIsSaving(false);
 		setShowApiKey(false);
 		setIsFetchingModels(false);
-		setFetchingProtocolIndex(null);
 	}, [initialForm, open]);
 
 	const normalizedProviderId = useMemo(
@@ -278,9 +278,8 @@ export function KanbanAddProviderDialog({
 	}, [form.models, normalizedPendingModel]);
 	const hasManualModels = draftModels.length > 0;
 	const hasModelsSource = form.modelsSourceUrl.trim().length > 0;
-	const enabledProtocols = form.protocolConfigs.map((c) => c.protocol);
-	const hasAtLeastOneBaseUrl = form.protocolConfigs.some((c) => c.baseUrl.trim().length > 0);
-	const anthropicEnabled = enabledProtocols.includes("anthropic");
+	const hasBaseUrl = form.baseUrl.trim().length > 0;
+	const anthropicEnabled = form.protocol === "anthropic";
 	const anthropicPayload = useMemo(() => buildAnthropicPayload(form), [form]);
 
 	const hasChangedProviderConfiguration = useMemo(() => {
@@ -294,8 +293,8 @@ export function KanbanAddProviderDialog({
 		);
 		return (
 			form.name.trim() !== initialForm.name.trim() ||
-			JSON.stringify(form.protocolConfigs.map((c) => ({ protocol: c.protocol, baseUrl: c.baseUrl.trim() }))) !==
-				JSON.stringify(initialForm.protocolConfigs.map((c) => ({ protocol: c.protocol, baseUrl: c.baseUrl.trim() }))) ||
+			form.protocol !== initialForm.protocol ||
+			form.baseUrl.trim() !== initialForm.baseUrl.trim() ||
 			form.modelsSourceUrl.trim() !== initialForm.modelsSourceUrl.trim() ||
 			form.defaultModelId.trim() !== initialForm.defaultModelId.trim() ||
 			form.timeoutMs.trim() !== initialForm.timeoutMs.trim() ||
@@ -309,20 +308,20 @@ export function KanbanAddProviderDialog({
 		anthropicPayload,
 		draftModels,
 		form.apiKey,
+		form.baseUrl,
 		form.capabilities,
 		form.defaultModelId,
 		form.headers,
 		form.modelsSourceUrl,
 		form.name,
-		form.protocolConfigs,
+		form.protocol,
 		form.timeoutMs,
 		initialForm,
 	]);
 	const canSubmit =
 		normalizedProviderId.length > 0 &&
 		form.name.trim().length > 0 &&
-		form.protocolConfigs.length > 0 &&
-		hasAtLeastOneBaseUrl &&
+		hasBaseUrl &&
 		(hasManualModels || hasModelsSource) &&
 		!duplicateProviderId &&
 		(form.timeoutMs.trim().length === 0 ||
@@ -383,45 +382,19 @@ export function KanbanAddProviderDialog({
 		}));
 	};
 
-	const toggleProtocol = (protocol: ProviderProtocol) => {
-		setForm((current) => {
-			const index = current.protocolConfigs.findIndex((c) => c.protocol === protocol);
-			if (index >= 0) {
-				// Don't allow removing the last protocol
-				if (current.protocolConfigs.length <= 1) return current;
-				return {
-					...current,
-					protocolConfigs: current.protocolConfigs.filter((_, i) => i !== index),
-				};
-			}
-			return {
-				...current,
-				protocolConfigs: [...current.protocolConfigs, { protocol, baseUrl: "" }],
-			};
-		});
+	const selectProtocol = (protocol: ProviderProtocol) => {
+		setForm((current) => (current.protocol === protocol ? current : { ...current, protocol }));
 	};
 
-	const updateProtocolBaseUrl = (index: number, baseUrl: string) => {
-		setForm((current) => ({
-			...current,
-			protocolConfigs: current.protocolConfigs.map((config, i) =>
-				i === index ? { ...config, baseUrl } : config,
-			),
-		}));
-	};
-
-	const handleFetchModels = async (protocolIndex: number) => {
-		const protocolConfig = form.protocolConfigs[protocolIndex];
-		if (!protocolConfig) return;
-		const baseUrl = protocolConfig.baseUrl.trim();
+	const handleFetchModels = async () => {
+		const baseUrl = form.baseUrl.trim();
 		if (!baseUrl || isFetchingModels) return;
 		setIsFetchingModels(true);
-		setFetchingProtocolIndex(protocolIndex);
 		setError(null);
 		try {
 			const result = await fetchRemoteProviderModels(workspaceId, {
 				baseUrl,
-				protocol: protocolConfig.protocol,
+				protocol: form.protocol,
 				apiKey: form.apiKey.trim() || undefined,
 			});
 			if (result.models.length === 0) {
@@ -437,7 +410,6 @@ export function KanbanAddProviderDialog({
 			setError(`Failed to fetch models: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`);
 		} finally {
 			setIsFetchingModels(false);
-			setFetchingProtocolIndex(null);
 		}
 	};
 
@@ -454,20 +426,24 @@ export function KanbanAddProviderDialog({
 		const nextDefaultModelId = form.defaultModelId.trim() || draftModels[0] || null;
 		const nextModelsSourceUrl = form.modelsSourceUrl.trim() || null;
 
-		// Build protocol configs for submission
-		const protocolConfigsPayload = form.protocolConfigs.map((config) => ({
-			protocol: config.protocol,
-			...(config.baseUrl.trim() ? { baseUrl: config.baseUrl.trim() } : {}),
-		}));
-		// Legacy baseUrl: first protocol's baseUrl
-		const legacyBaseUrl = form.protocolConfigs.find((c) => c.baseUrl.trim())?.baseUrl.trim() || undefined;
+		// A per-agent provider speaks exactly one protocol; the base URL lives on it
+		// (the single source of truth). No legacy scalar baseUrl is written.
+		const trimmedBaseUrl = form.baseUrl.trim();
+		const protocolConfigsPayload = [
+			{ protocol: form.protocol, ...(trimmedBaseUrl ? { baseUrl: trimmedBaseUrl } : {}) },
+		];
+		const initialProtocolPayload = [
+			{
+				protocol: initialForm.protocol,
+				...(initialForm.baseUrl.trim() ? { baseUrl: initialForm.baseUrl.trim() } : {}),
+			},
+		];
 
 		const payload =
 			mode === "edit"
 				? ({
 						providerId: normalizedProviderId,
 						...(form.name.trim() !== initialForm.name.trim() ? { name: form.name.trim() } : {}),
-						...(legacyBaseUrl ? { baseUrl: legacyBaseUrl } : {}),
 						...(form.apiKey.trim().length > 0 ? { apiKey: form.apiKey.trim() } : {}),
 						...(JSON.stringify(normalizedHeaders) !==
 						JSON.stringify(
@@ -494,13 +470,7 @@ export function KanbanAddProviderDialog({
 						...(JSON.stringify(form.capabilities) !== JSON.stringify(initialForm.capabilities)
 							? { capabilities: form.capabilities.length > 0 ? form.capabilities : [] }
 							: {}),
-						...(JSON.stringify(protocolConfigsPayload) !==
-						JSON.stringify(
-							initialForm.protocolConfigs.map((c) => ({
-								protocol: c.protocol,
-								...(c.baseUrl.trim() ? { baseUrl: c.baseUrl.trim() } : {}),
-							})),
-						)
+						...(JSON.stringify(protocolConfigsPayload) !== JSON.stringify(initialProtocolPayload)
 							? { protocols: protocolConfigsPayload }
 							: {}),
 						...(JSON.stringify(anthropicPayload) !== JSON.stringify(buildAnthropicPayload(initialForm))
@@ -510,7 +480,6 @@ export function KanbanAddProviderDialog({
 				: ({
 						providerId: normalizedProviderId,
 						name: form.name.trim(),
-						baseUrl: legacyBaseUrl,
 						apiKey: form.apiKey.trim() || null,
 						headers: normalizedHeaders,
 						timeoutMs: nextTimeoutMs,
@@ -535,63 +504,65 @@ export function KanbanAddProviderDialog({
 			<DialogHeader title={mode === "edit" ? "Edit provider" : "Add provider"} />
 			<DialogBody className="space-y-4">
 				<section className="rounded-lg border border-border bg-surface-1 p-3">
-					<p className="mb-2 text-[12px] text-text-secondary">Protocols</p>
-					<div className="flex flex-wrap gap-2 mb-3">
-						{visibleProtocolOptions.map((option) => {
-							const selected = enabledProtocols.includes(option.value);
-							return (
-								<button
-									key={option.value}
-									type="button"
-									onClick={() => toggleProtocol(option.value)}
-									className={cn(
-										"flex flex-col items-start rounded-md border px-3 py-2 text-left transition-colors",
-										selected
-											? "border-accent bg-accent/5 text-text-primary"
-											: "border-border bg-surface-2 text-text-secondary hover:border-border-bright hover:text-text-primary",
-									)}
-								>
-									<span className="text-[13px] font-medium">{option.label}</span>
-									<span className="text-[11px] text-text-tertiary">{option.description}</span>
-								</button>
-							);
-						})}
-					</div>
-					{form.protocolConfigs.map((config, index) => (
-						<div key={config.protocol} className="flex items-center gap-2 mb-2">
+					<p className="mb-2 text-[12px] text-text-secondary">Protocol</p>
+					{protocolLocked ? (
+						<div className="mb-3 flex items-center gap-2">
 							<span
 								className={cn(
-									"inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider shrink-0",
-									config.protocol === "anthropic"
-										? "bg-orange-500/10 text-orange-500"
-										: "bg-blue-500/10 text-blue-500",
+									"inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider",
+									form.protocol === "anthropic" ? "bg-orange-500/10 text-orange-500" : "bg-blue-500/10 text-blue-500",
 								)}
 							>
-								{config.protocol}
+								{form.protocol}
 							</span>
-							<input
-								value={config.baseUrl}
-								onChange={(event) => updateProtocolBaseUrl(index, event.target.value)}
-								placeholder={
-									config.protocol === "anthropic"
-										? "https://api.anthropic.com"
-										: "https://api.openai.com/v1"
-								}
-								className="h-8 flex-1 rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
-							/>
-							<Button
-								variant="ghost"
-								size="sm"
-								icon={<RefreshCw size={14} />}
-								disabled={!config.baseUrl.trim() || isFetchingModels}
-								onClick={() => void handleFetchModels(index)}
-							>
-								{isFetchingModels && fetchingProtocolIndex === index ? "Fetching..." : "Fetch models"}
-							</Button>
+							<span className="text-[12px] text-text-tertiary">
+								{PROTOCOL_OPTIONS.find((option) => option.value === form.protocol)?.description}
+							</span>
 						</div>
-					))}
+					) : (
+						<div className="mb-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Provider protocol">
+							{visibleProtocolOptions.map((option) => {
+								const selected = form.protocol === option.value;
+								return (
+									<button
+										key={option.value}
+										type="button"
+										role="radio"
+										aria-checked={selected}
+										onClick={() => selectProtocol(option.value)}
+										className={cn(
+											"flex flex-col items-start rounded-md border px-3 py-2 text-left transition-colors",
+											selected
+												? "border-accent bg-accent/5 text-text-primary"
+												: "border-border bg-surface-2 text-text-secondary hover:border-border-bright hover:text-text-primary",
+										)}
+									>
+										<span className="text-[13px] font-medium">{option.label}</span>
+										<span className="text-[11px] text-text-tertiary">{option.description}</span>
+									</button>
+								);
+							})}
+						</div>
+					)}
+					<div className="flex items-center gap-2">
+						<input
+							value={form.baseUrl}
+							onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
+							placeholder={form.protocol === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1"}
+							className="h-8 flex-1 rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
+						/>
+						<Button
+							variant="ghost"
+							size="sm"
+							icon={<RefreshCw size={14} />}
+							disabled={!form.baseUrl.trim() || isFetchingModels}
+							onClick={() => void handleFetchModels()}
+						>
+							{isFetchingModels ? "Fetching..." : "Fetch models"}
+						</Button>
+					</div>
 					<p className="mt-1 text-[12px] text-text-tertiary">
-						Each protocol can have its own base URL. Click "Fetch models" to auto-populate.
+						Base URL for the {form.protocol} endpoint. Click "Fetch models" to auto-populate.
 					</p>
 				</section>
 

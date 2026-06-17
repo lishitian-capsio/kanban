@@ -277,6 +277,60 @@ describe("agent-provider-config", () => {
 		expect(config!.protocols).toEqual([{ protocol: "anthropic", baseUrl: "https://anthropic.example.com" }]);
 	});
 
+	it("collapses a per-agent provider to its single protocol, dropping never-used ones", async () => {
+		// codex only ever speaks openai — the second protocol is dead config.
+		await saveAgentProvider("codex", {
+			agentId: "codex",
+			provider: "my-relay",
+			protocols: [
+				{ protocol: "openai", baseUrl: "https://o.example.com" },
+				{ protocol: "anthropic", baseUrl: "https://a.example.com" },
+			],
+		});
+		resetAgentProviderConfigCache();
+
+		const config = getAgentProviderConfig("codex");
+		expect(config!.protocols).toEqual([{ protocol: "openai", baseUrl: "https://o.example.com" }]);
+	});
+
+	it("folds a legacy scalar baseUrl into protocols and never persists it (read-time mirror only)", async () => {
+		await saveAgentProvider("codex", {
+			agentId: "codex",
+			provider: "openai",
+			baseUrl: "https://api.example.com",
+		});
+		resetAgentProviderConfigCache();
+
+		// On disk: the endpoint lives only in `protocols[]`, not a top-level baseUrl.
+		const raw = JSON.parse(readFileSync((globalThis as { __testAgentProvidersPath?: string }).__testAgentProvidersPath!, "utf8"));
+		const stored = raw.agents.codex.providers[0];
+		expect(stored.protocols).toEqual([{ protocol: "openai", baseUrl: "https://api.example.com" }]);
+		expect(stored.baseUrl).toBeUndefined();
+
+		// On read: baseUrl is re-derived from protocols[0] for backward-compat readers.
+		const config = getAgentProviderConfig("codex");
+		expect(config!.baseUrl).toBe("https://api.example.com");
+		expect(config!.protocols).toEqual([{ protocol: "openai", baseUrl: "https://api.example.com" }]);
+	});
+
+	it("migrates a legacy single-baseUrl config (no protocols) on read", async () => {
+		// Hand-write a pre-protocols on-disk config.
+		const path = (globalThis as { __testAgentProvidersPath?: string }).__testAgentProvidersPath!;
+		writeFileSync(
+			path,
+			JSON.stringify({
+				agents: {
+					claude: { providers: [{ provider: "anthropic", baseUrl: "https://relay.local" }], defaultProviderId: "anthropic" },
+				},
+			}),
+		);
+		resetAgentProviderConfigCache();
+
+		const config = getAgentProviderConfig("claude");
+		expect(config!.protocols).toEqual([{ protocol: "anthropic", baseUrl: "https://relay.local" }]);
+		expect(config!.baseUrl).toBe("https://relay.local");
+	});
+
 	it("trims whitespace from string fields on save", async () => {
 		await saveAgentProvider("pi", {
 			agentId: "pi",

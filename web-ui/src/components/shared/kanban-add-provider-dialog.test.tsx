@@ -97,15 +97,19 @@ describe("KanbanAddProviderDialog", () => {
 			saveButton?.click();
 		});
 
+		// The endpoint is carried only on `protocols[]` (single source of truth) —
+		// the legacy scalar `baseUrl` is no longer part of the write payload.
 		expect(onSubmit).toHaveBeenCalledWith(
 			expect.objectContaining({
 				providerId: "my-provider",
 				name: "My Provider",
-				baseUrl: "http://localhost:8000/v1",
+				protocols: [{ protocol: "openai", baseUrl: "http://localhost:8000/v1" }],
 				models: ["qwen2.5-coder:32b"],
 				defaultModelId: "qwen2.5-coder:32b",
 			}),
 		);
+		const submitted = (onSubmit.mock.calls[0] as unknown[])?.[0] as Record<string, unknown>;
+		expect(submitted).not.toHaveProperty("baseUrl");
 	});
 
 	it("keeps the header key input focused while typing", async () => {
@@ -228,11 +232,12 @@ describe("KanbanAddProviderDialog", () => {
 			);
 		});
 
-		// claude → ["anthropic"]: only the Anthropic option is selectable.
-		expect(findButtonContainingText(document.body, "Anthropic-compatible")).toBeInstanceOf(HTMLButtonElement);
+		// claude → ["anthropic"]: a single compatible protocol locks the choice,
+		// so neither chooser button is rendered.
+		expect(findButtonContainingText(document.body, "Anthropic-compatible")).toBeNull();
 		expect(findButtonContainingText(document.body, "OpenAI-compatible")).toBeNull();
 
-		// The default protocol row defaults to the agent-compatible protocol.
+		// The base URL field reflects the locked anthropic protocol.
 		const baseUrlInput = Array.from(document.body.querySelectorAll("input")).find(
 			(input) => input.placeholder === "https://api.anthropic.com",
 		) as HTMLInputElement | undefined;
@@ -252,9 +257,16 @@ describe("KanbanAddProviderDialog", () => {
 			);
 		});
 
-		// codex → ["openai"]: only the OpenAI option is selectable.
-		expect(findButtonContainingText(document.body, "OpenAI-compatible")).toBeInstanceOf(HTMLButtonElement);
+		// codex → ["openai"]: a single compatible protocol locks the choice, so
+		// neither chooser button is rendered.
+		expect(findButtonContainingText(document.body, "OpenAI-compatible")).toBeNull();
 		expect(findButtonContainingText(document.body, "Anthropic-compatible")).toBeNull();
+
+		// The base URL field reflects the locked openai protocol.
+		const baseUrlInput = Array.from(document.body.querySelectorAll("input")).find(
+			(input) => input.placeholder === "https://api.openai.com/v1",
+		) as HTMLInputElement | undefined;
+		expect(baseUrlInput).toBeDefined();
 	});
 
 	it("submits the agent-compatible protocol for the selected agent", async () => {

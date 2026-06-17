@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+	collapseToAgentProtocol,
 	extractProtocolList,
+	getAgentProtocols,
 	getBaseUrlForProtocol,
 	getDefaultProtocolsForProvider,
 	isAgentCompatibleWithProvider,
@@ -219,6 +221,77 @@ describe("provider-protocol", () => {
 		it("returns undefined when baseUrl is empty", () => {
 			const configs: ProtocolConfig[] = [{ protocol: "openai", baseUrl: "  " }];
 			expect(getBaseUrlForProtocol(configs, "openai")).toBeUndefined();
+		});
+	});
+
+	describe("getAgentProtocols", () => {
+		it("returns the agent's compatible protocols", () => {
+			expect(getAgentProtocols("claude")).toEqual(["anthropic"]);
+			expect(getAgentProtocols("codex")).toEqual(["openai"]);
+			expect(getAgentProtocols("opencode")).toEqual(["openai", "anthropic"]);
+		});
+
+		it("returns [] for unrestricted and unknown agents (case-insensitive)", () => {
+			expect(getAgentProtocols("gemini")).toEqual([]);
+			expect(getAgentProtocols("UNKNOWN")).toEqual([]);
+			expect(getAgentProtocols("Claude")).toEqual(["anthropic"]);
+		});
+	});
+
+	describe("collapseToAgentProtocol", () => {
+		it("keeps the agent's single protocol with its base URL", () => {
+			expect(collapseToAgentProtocol("claude", configs(["anthropic", "https://a.example.com"]))).toEqual({
+				protocol: "anthropic",
+				baseUrl: "https://a.example.com",
+			});
+		});
+
+		it("drops a second, never-used protocol for a single-protocol agent", () => {
+			// codex only speaks openai — the anthropic entry is dead config.
+			expect(
+				collapseToAgentProtocol("codex", configs(["openai", "https://o.example.com"], ["anthropic", "https://a.example.com"])),
+			).toEqual({ protocol: "openai", baseUrl: "https://o.example.com" });
+		});
+
+		it("picks the agent's primary protocol when the provider speaks none of them", () => {
+			// claude provider only configured openai → coerce to anthropic (claude's protocol).
+			expect(collapseToAgentProtocol("claude", configs(["openai", "https://o.example.com"]))).toEqual({
+				protocol: "anthropic",
+				baseUrl: "https://o.example.com",
+			});
+		});
+
+		it("lets a multi-protocol agent keep the single protocol it was given", () => {
+			// opencode supports both; a provider configured anthropic-only stays anthropic.
+			expect(collapseToAgentProtocol("opencode", configs(["anthropic", "https://a.example.com"]))).toEqual({
+				protocol: "anthropic",
+				baseUrl: "https://a.example.com",
+			});
+		});
+
+		it("folds a legacy scalar baseUrl into the chosen protocol when no protocols are set", () => {
+			expect(collapseToAgentProtocol("pi", undefined, "https://legacy.example.com")).toEqual({
+				protocol: "openai",
+				baseUrl: "https://legacy.example.com",
+			});
+		});
+
+		it("prefers the per-protocol baseUrl over the legacy scalar", () => {
+			expect(
+				collapseToAgentProtocol("claude", configs(["anthropic", "https://proto.example.com"]), "https://legacy.example.com"),
+			).toEqual({ protocol: "anthropic", baseUrl: "https://proto.example.com" });
+		});
+
+		it("returns a protocol with no baseUrl when none is available", () => {
+			expect(collapseToAgentProtocol("codex", [])).toEqual({ protocol: "openai" });
+		});
+
+		it("defaults an unrestricted agent to the first present protocol, else openai", () => {
+			expect(collapseToAgentProtocol("gemini", configs(["anthropic", "https://a.example.com"]))).toEqual({
+				protocol: "anthropic",
+				baseUrl: "https://a.example.com",
+			});
+			expect(collapseToAgentProtocol("gemini", [])).toEqual({ protocol: "openai" });
 		});
 	});
 
