@@ -15,7 +15,7 @@ import { createTempDir } from "../utilities/temp-dir";
 //
 // Resolution chain (highest priority first):
 //   1. explicit per-session overrides (`*Override`),
-//   2. the workspace's selected agent profile (`workspaceProfile`),
+//   2. the workspace's selected committed provider (`committedProvider`),
 //   3. the user's saved per-agent provider settings (machine-home store),
 //   4. built-in defaults.
 //
@@ -26,12 +26,7 @@ let temp: { path: string; cleanup: () => void };
 const previousPath = process.env.KANBAN_AGENT_PROVIDERS_PATH;
 
 /** Write a single pi provider config to the store the resolver reads from. */
-function writePiStore(config: {
-	provider?: string;
-	model?: string;
-	baseUrl?: string;
-	reasoningEffort?: string;
-}): void {
+function writePiStore(config: { provider?: string; model?: string; baseUrl?: string; reasoningEffort?: string }): void {
 	const path = join(temp.path, "agent_providers.json");
 	writeFileSync(
 		path,
@@ -88,7 +83,7 @@ describe("resolvePiLaunchConfig — store layer (machine-home provider settings)
 		writePiStore({ provider: "openai", model: "gpt-5", baseUrl: "https://store.test/v1" });
 
 		const config = resolvePiLaunchConfig({
-			workspaceProfile: { providerId: "anthropic", modelId: null },
+			committedProvider: { providerId: "anthropic", modelId: null, baseUrl: null },
 		});
 
 		// provider came from the profile; model + baseUrl filled from the store.
@@ -105,13 +100,13 @@ describe("resolvePiLaunchConfig — priority ordering", () => {
 		const overrideWins = resolvePiLaunchConfig({
 			providerIdOverride: "override-provider",
 			modelIdOverride: "override-model",
-			workspaceProfile: { providerId: "profile-provider", modelId: "profile-model" },
+			committedProvider: { providerId: "profile-provider", modelId: "profile-model" },
 		});
 		expect(overrideWins.providerId).toBe("override-provider");
 		expect(overrideWins.modelId).toBe("override-model");
 
 		const profileWins = resolvePiLaunchConfig({
-			workspaceProfile: { providerId: "profile-provider", modelId: "profile-model" },
+			committedProvider: { providerId: "profile-provider", modelId: "profile-model" },
 		});
 		expect(profileWins.providerId).toBe("profile-provider");
 		expect(profileWins.modelId).toBe("profile-model");
@@ -121,51 +116,44 @@ describe("resolvePiLaunchConfig — priority ordering", () => {
 		expect(storeWins.modelId).toBe("store-model");
 	});
 
-	it("takes base URL from the store; a profile cannot supply or override it", () => {
+	it("a set profile baseUrl wins over the store baseUrl", () => {
 		writePiStore({ baseUrl: "https://store.test/v1" });
 
-		// The profile is a pure reference (no base URL field), so even a fully-set
-		// profile cannot override the store's base URL.
 		const config = resolvePiLaunchConfig({
-			workspaceProfile: { providerId: "openai", modelId: "gpt-5" },
+			committedProvider: { providerId: "openai", modelId: "gpt-5", baseUrl: "https://profile.test/v1" },
 		});
 
-		expect(config.baseUrl).toBe("https://store.test/v1");
+		expect(config.baseUrl).toBe("https://profile.test/v1");
 	});
 
 	it("reasoning override (nullish) beats profile reasoning", () => {
 		const config = resolvePiLaunchConfig({
 			reasoningEffortOverride: "low",
-			workspaceProfile: { providerId: "openai", modelId: "gpt-5", reasoningEffort: "high" },
+			committedProvider: { providerId: "openai", modelId: "gpt-5", reasoningEffort: "high" },
 		});
 
 		expect(config.reasoningEffort).toBe("low");
 	});
 });
 
-describe("resolvePiLaunchConfig — store reasoning", () => {
-	// Base URL is supplied only by the store (neither the override nor the profile
-	// carries one), so a core field is always unresolved after the override and
-	// profile layers and the store is always consulted. Its reasoningEffort is
-	// filled in that same pass whenever override/profile did not already set one.
-	it("applies the store reasoningEffort when override/profile leave it unset", () => {
+describe("resolvePiLaunchConfig — store-reasoning gate quirk", () => {
+	// The store layer (including its reasoningEffort) is consulted only when a
+	// core field (provider/model/baseUrl) is still unresolved after the override
+	// and profile layers. So when override/profile already supply all three core
+	// fields, the store's reasoningEffort is NOT applied.
+	it("ignores the store reasoningEffort when provider/model/baseUrl are all already resolved", () => {
 		writePiStore({ provider: "store-provider", model: "store-model", reasoningEffort: "high" });
 
 		const config = resolvePiLaunchConfig({
-			workspaceProfile: { providerId: "openai", modelId: "gpt-5", reasoningEffort: null },
+			committedProvider: {
+				providerId: "openai",
+				modelId: "gpt-5",
+				baseUrl: "https://profile.test/v1",
+				reasoningEffort: null,
+			},
 		});
 
-		expect(config.reasoningEffort).toBe("high");
-	});
-
-	it("keeps the profile reasoningEffort over the store's when the profile sets one", () => {
-		writePiStore({ provider: "store-provider", model: "store-model", reasoningEffort: "high" });
-
-		const config = resolvePiLaunchConfig({
-			workspaceProfile: { providerId: "openai", modelId: "gpt-5", reasoningEffort: "low" },
-		});
-
-		expect(config.reasoningEffort).toBe("low");
+		expect(config.reasoningEffort).toBeNull();
 	});
 
 	it("applies the store reasoningEffort when a core field still needs the store", () => {
@@ -174,7 +162,12 @@ describe("resolvePiLaunchConfig — store reasoning", () => {
 		// modelId is unresolved, so the store layer is consulted and its
 		// reasoningEffort is filled in the same pass.
 		const config = resolvePiLaunchConfig({
-			workspaceProfile: { providerId: "openai", modelId: null, reasoningEffort: null },
+			committedProvider: {
+				providerId: "openai",
+				modelId: null,
+				baseUrl: "https://profile.test/v1",
+				reasoningEffort: null,
+			},
 		});
 
 		expect(config.modelId).toBe("store-model");
@@ -187,7 +180,7 @@ describe("resolvePiLaunchConfig — empty-string and missing-value handling", ()
 		const config = resolvePiLaunchConfig({
 			providerIdOverride: "   ",
 			modelIdOverride: "",
-			workspaceProfile: { providerId: "openai", modelId: "gpt-5" },
+			committedProvider: { providerId: "openai", modelId: "gpt-5" },
 		});
 
 		expect(config.providerId).toBe("openai");

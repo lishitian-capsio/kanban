@@ -1,6 +1,4 @@
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -201,7 +199,6 @@ vi.mock("../../../src/agent-sdk/kanban/provider-settings-store.js", () => ({
 }));
 
 import { HomeThreadStore } from "../../../src/session/home-thread-store";
-import { loadWorkspaceContext } from "../../../src/state/workspace-state";
 import type { RuntimeTrpcContext } from "../../../src/trpc/app-router";
 import { type CreateRuntimeApiDependencies, createRuntimeApi } from "../../../src/trpc/runtime-api";
 
@@ -2993,58 +2990,5 @@ describe("createRuntimeApi home thread handlers", () => {
 		expect(response.ok).toBe(false);
 		expect(response.thread).toBeNull();
 		expect(response.error).toBeTruthy();
-	});
-});
-
-describe("createRuntimeApi createAgentProfile: no provider store writes", () => {
-	it("creating a profile with a providerId does not call saveAgentProvider", async () => {
-		agentProviderConfigMocks.saveAgentProvider.mockReset();
-
-		const tempHome = mkdtempSync(join(tmpdir(), "kanban-profile-no-write-home-"));
-		const tempWorkspace = mkdtempSync(join(tmpdir(), "kanban-profile-no-write-ws-"));
-		const providersPath = join(tempHome, "agent_providers.json");
-		const originalHome = process.env.HOME;
-		const originalUserProfile = process.env.USERPROFILE;
-		const originalProvidersPath = process.env.KANBAN_AGENT_PROVIDERS_PATH;
-
-		process.env.HOME = tempHome;
-		process.env.USERPROFILE = tempHome;
-		process.env.KANBAN_AGENT_PROVIDERS_PATH = providersPath;
-
-		try {
-			spawnSync("git", ["init"], { cwd: tempWorkspace, stdio: "ignore" });
-			const ctx = await loadWorkspaceContext(tempWorkspace);
-			const workspaceScope = { workspaceId: ctx.workspaceId, workspacePath: tempWorkspace };
-
-			const api = createTestRuntimeApi({
-				getActiveWorkspaceId: vi.fn(() => ctx.workspaceId),
-				loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
-				setActiveRuntimeConfig: vi.fn(),
-				getScopedTerminalManager: vi.fn(async () => ({}) as never),
-				getScopedPiTaskSessionService: vi.fn(async () => createPiTaskSessionServiceMock() as never),
-				resolveInteractiveShellCommand: vi.fn(),
-				runCommand: vi.fn(),
-			});
-
-			await api.createAgentProfile(workspaceScope, {
-				agentId: "pi",
-				name: "p1",
-				providerId: "anthropic",
-				select: true,
-			});
-
-			// Profile create must not write the machine-home provider config store.
-			expect(existsSync(providersPath)).toBe(false);
-			expect(agentProviderConfigMocks.saveAgentProvider).not.toHaveBeenCalled();
-		} finally {
-			if (originalHome === undefined) delete process.env.HOME;
-			else process.env.HOME = originalHome;
-			if (originalUserProfile === undefined) delete process.env.USERPROFILE;
-			else process.env.USERPROFILE = originalUserProfile;
-			if (originalProvidersPath === undefined) delete process.env.KANBAN_AGENT_PROVIDERS_PATH;
-			else process.env.KANBAN_AGENT_PROVIDERS_PATH = originalProvidersPath;
-			rmSync(tempHome, { recursive: true, force: true });
-			rmSync(tempWorkspace, { recursive: true, force: true });
-		}
 	});
 });

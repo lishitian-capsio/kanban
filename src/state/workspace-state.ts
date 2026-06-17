@@ -7,13 +7,14 @@ import { z } from "zod";
 
 import { getAgentProviderConfig } from "../agent-sdk/kanban/agent-provider-config";
 import {
-	type RuntimeAgentProfilesData,
+	type RuntimeAgentId,
 	type RuntimeBoardData,
 	type RuntimeGitRepositoryInfo,
 	type RuntimeHomeChatThreadsData,
 	type RuntimeTaskSessionSummary,
 	type RuntimeWorkspaceStateResponse,
 	type RuntimeWorkspaceStateSaveRequest,
+	runtimeAgentIdSchema,
 	runtimeHomeChatThreadsDataSchema,
 	runtimeTaskSessionSummarySchema,
 	runtimeWorkspaceStateSaveRequestSchema,
@@ -23,10 +24,13 @@ import { updateTaskDependencies } from "../core/task-board-mutations";
 import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
 import { VaultDocumentStore } from "../vault/vault-document-store";
 import {
-	buildDefaultProfileFromProviderSettings,
-	readAgentProfilesData,
-	writeAgentProfilesData,
-} from "./agent-profile-store";
+	buildCommittedProviderFromProviderSettings,
+	type CommittedProviderRecord,
+	type CommittedProvidersData,
+	normalizeProviderId,
+	readCommittedProviders,
+	writeCommittedProviders,
+} from "./committed-provider-store";
 import {
 	collectRelatedTasks,
 	type LegacyRequirementsData,
@@ -62,12 +66,16 @@ const REQUIREMENT_TASK_LINKS_SHARD_DIRNAME = "requirement-task-links";
 const FILES_DIRNAME = "files";
 const DOCS_DIRNAME = "docs";
 const HOME_THREADS_FILENAME = "threads.json";
-// Per-agent named configuration profiles. Sharded by profile id (one `<id>.json`
-// per profile) so cross-branch profile edits never collide; the small selection
-// map (each agent's currently selected profile) lives in a sibling file. Both are
-// committed (non-secret config only — secrets stay in machine-home settings).
-const AGENT_PROFILES_SHARD_DIRNAME = "agent-profiles";
-const AGENT_PROFILE_SELECTION_FILENAME = "agent-profile-selection.json";
+// Workspace-committed providers (secret-free). Sharded by provider id (one
+// `<providerId>.json` per provider) so cross-branch provider edits never collide;
+// the small selection map (each agent's currently selected committed provider)
+// lives in a sibling file. Both are committed (non-secret config only — secrets
+// stay in the machine-home agent_providers.json store).
+const COMMITTED_PROVIDERS_SHARD_DIRNAME = "agent-providers";
+const COMMITTED_PROVIDER_SELECTION_FILENAME = "agent-provider-selection.json";
+// Legacy (retired) per-agent profile artifacts, migrated into committed providers.
+const LEGACY_AGENT_PROFILES_SHARD_DIRNAME = "agent-profiles";
+const LEGACY_AGENT_PROFILE_SELECTION_FILENAME = "agent-profile-selection.json";
 const META_FILENAME = "meta.json";
 const RUNTIME_HOME_GITIGNORE_FILENAME = ".gitignore";
 // Boundary between committed content and machine-local runtime/secrets inside a
@@ -300,12 +308,20 @@ function getWorkspaceHomeThreadsPath(repoPath: string, workspaceId: string): str
 	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), HOME_THREADS_FILENAME);
 }
 
-function getWorkspaceAgentProfilesShardDir(repoPath: string, workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), AGENT_PROFILES_SHARD_DIRNAME);
+function getWorkspaceCommittedProvidersShardDir(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), COMMITTED_PROVIDERS_SHARD_DIRNAME);
 }
 
-function getWorkspaceAgentProfileSelectionPath(repoPath: string, workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), AGENT_PROFILE_SELECTION_FILENAME);
+function getWorkspaceCommittedProviderSelectionPath(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), COMMITTED_PROVIDER_SELECTION_FILENAME);
+}
+
+function getLegacyWorkspaceAgentProfilesShardDir(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), LEGACY_AGENT_PROFILES_SHARD_DIRNAME);
+}
+
+function getLegacyWorkspaceAgentProfileSelectionPath(repoPath: string, workspaceId: string): string {
+	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), LEGACY_AGENT_PROFILE_SELECTION_FILENAME);
 }
 
 function getWorkspaceMetaPath(repoPath: string, workspaceId: string): string {
@@ -575,37 +591,37 @@ export async function mutateWorkspaceHomeThreads(
 	});
 }
 
-/** Read the persisted agent-profile registry (sharded profiles + selection) for a workspace. */
-export async function loadWorkspaceAgentProfiles(workspaceId: string): Promise<RuntimeAgentProfilesData> {
+/** Read the persisted committed-provider registry (sharded providers + selection) for a workspace. */
+export async function loadWorkspaceCommittedProviders(workspaceId: string): Promise<CommittedProvidersData> {
 	const repoPath = await resolveRepoPathForWorkspaceId(workspaceId);
 	if (!repoPath) {
 		throw new Error(`Unknown workspace "${workspaceId}"; cannot resolve its repository path.`);
 	}
-	return await readAgentProfilesData(
-		getWorkspaceAgentProfilesShardDir(repoPath, workspaceId),
-		getWorkspaceAgentProfileSelectionPath(repoPath, workspaceId),
+	return await readCommittedProviders(
+		getWorkspaceCommittedProvidersShardDir(repoPath, workspaceId),
+		getWorkspaceCommittedProviderSelectionPath(repoPath, workspaceId),
 	);
 }
 
 /**
- * Atomically read → transform → write the agent-profile registry under the workspace
- * directory lock. The `mutate` callback is pure (see `agent-profile-registry.ts`);
- * persistence and locking are owned here. Returns the persisted data.
+ * Atomically read → transform → write the committed-provider registry under the
+ * workspace directory lock. The `mutate` callback is pure; persistence and locking
+ * are owned here. Returns the persisted data.
  */
-export async function mutateWorkspaceAgentProfiles(
+export async function mutateWorkspaceCommittedProviders(
 	workspaceId: string,
-	mutate: (current: RuntimeAgentProfilesData) => RuntimeAgentProfilesData,
-): Promise<RuntimeAgentProfilesData> {
+	mutate: (current: CommittedProvidersData) => CommittedProvidersData,
+): Promise<CommittedProvidersData> {
 	const repoPath = await resolveRepoPathForWorkspaceId(workspaceId);
 	if (!repoPath) {
 		throw new Error(`Unknown workspace "${workspaceId}"; cannot resolve its repository path.`);
 	}
-	const profilesDir = getWorkspaceAgentProfilesShardDir(repoPath, workspaceId);
-	const selectionPath = getWorkspaceAgentProfileSelectionPath(repoPath, workspaceId);
+	const providersDir = getWorkspaceCommittedProvidersShardDir(repoPath, workspaceId);
+	const selectionPath = getWorkspaceCommittedProviderSelectionPath(repoPath, workspaceId);
 	return await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
-		const current = await readAgentProfilesData(profilesDir, selectionPath);
+		const current = await readCommittedProviders(providersDir, selectionPath);
 		const next = mutate(current);
-		await writeAgentProfilesData(profilesDir, selectionPath, next);
+		await writeCommittedProviders(providersDir, selectionPath, next);
 		return next;
 	});
 }
@@ -1017,40 +1033,145 @@ async function prepareRepoRuntimeHome(repoPath: string, workspaceId: string): Pr
 	await migrateRequirementsToVaultDocs(repoPath, workspaceId);
 	await dropRetiredRequirementData(repoPath, workspaceId);
 	await migrateWorkspaceBoardToShards(repoPath, workspaceId);
-	await migrateProviderSettingsToAgentProfile(repoPath, workspaceId);
+	await migrateToCommittedProviders(repoPath, workspaceId);
 }
 
 /**
- * One-time, idempotent conversion of the user's per-agent provider config
- * into a single default `pi` agent profile, selected for that agent. This
- * makes the new profile the workspace layer of the launch-config resolution chain
- * while preserving the user's prior provider/model choice. Secrets are NOT copied —
- * only non-secret config (the API key stays in the per-agent store and is resolved
- * at launch). Gated on the absence of the `agent-profiles/` directory so
- * re-runs are a cheap no-op; skipped entirely when no agent config exists yet.
+ * One-time, idempotent setup of the workspace's committed (secret-free) providers.
+ *
+ * Gated on the absence of the `agent-providers/` directory so re-runs are a cheap
+ * no-op. When it does run it produces the committed-provider registry from, in order:
+ *
+ *   1. a legacy retired `agent-profiles/` registry, if present — each profile with a
+ *      provider becomes a committed provider keyed by provider id, and the selected
+ *      profile's provider becomes the selected committed provider (then the legacy
+ *      artifacts are removed); otherwise
+ *   2. the user's machine-home per-agent provider config for `pi` — a single committed
+ *      provider, selected for that agent.
+ *
+ * Secrets are NEVER copied: only non-secret config is committed; the API key stays in
+ * the machine-home agent_providers.json store and is resolved at launch. Skipped
+ * entirely (no directory created) when there is nothing to migrate.
  */
-async function migrateProviderSettingsToAgentProfile(repoPath: string, workspaceId: string): Promise<void> {
-	const profilesDir = getWorkspaceAgentProfilesShardDir(repoPath, workspaceId);
-	if (await pathExists(profilesDir)) {
+async function migrateToCommittedProviders(repoPath: string, workspaceId: string): Promise<void> {
+	const providersDir = getWorkspaceCommittedProvidersShardDir(repoPath, workspaceId);
+	if (await pathExists(providersDir)) {
 		return;
 	}
-	const profile = buildDefaultProfileFromProviderSettings(getAgentProviderConfig("pi"), {
-		id: "default",
-		name: "Default",
-		agentId: "pi",
-	});
-	if (!profile) {
+
+	const legacyProfilesDir = getLegacyWorkspaceAgentProfilesShardDir(repoPath, workspaceId);
+	const legacyData = (await pathExists(legacyProfilesDir))
+		? await readLegacyAgentProfilesAsCommittedProviders(
+				legacyProfilesDir,
+				getLegacyWorkspaceAgentProfileSelectionPath(repoPath, workspaceId),
+			)
+		: null;
+
+	const data: CommittedProvidersData | null =
+		legacyData ?? buildSingleCommittedProviderData(getAgentProviderConfig("pi"), "pi");
+
+	if (!data) {
 		return;
 	}
+
 	await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
-		if (await pathExists(profilesDir)) {
+		if (await pathExists(providersDir)) {
 			return;
 		}
-		await writeAgentProfilesData(profilesDir, getWorkspaceAgentProfileSelectionPath(repoPath, workspaceId), {
-			profiles: [profile],
-			selectedByAgent: { [profile.agentId]: profile.id },
-		});
+		await writeCommittedProviders(
+			providersDir,
+			getWorkspaceCommittedProviderSelectionPath(repoPath, workspaceId),
+			data,
+		);
+		// Remove the retired profile artifacts now that they live as committed providers.
+		await rm(legacyProfilesDir, { recursive: true, force: true });
+		await rm(getLegacyWorkspaceAgentProfileSelectionPath(repoPath, workspaceId), { force: true });
 	});
+}
+
+/** Build a one-provider committed registry from a machine-home provider config (or null). */
+function buildSingleCommittedProviderData(
+	config: ReturnType<typeof getAgentProviderConfig>,
+	agentId: RuntimeAgentId,
+): CommittedProvidersData | null {
+	const provider = buildCommittedProviderFromProviderSettings(config, agentId);
+	if (!provider) {
+		return null;
+	}
+	return { providers: [provider], selectedByAgent: { [provider.agentId]: provider.providerId } };
+}
+
+// Retired agent-profile shard shape (read-only, for migration). Only the fields that
+// map onto a committed provider are needed; extras are ignored.
+const legacyAgentProfileShardSchema = z
+	.object({
+		id: z.string(),
+		agentId: runtimeAgentIdSchema,
+		providerId: z.string().nullable().optional(),
+		modelId: z.string().nullable().optional(),
+		baseUrl: z.string().nullable().optional(),
+		reasoningEffort: z.string().nullable().optional(),
+		region: z.string().nullable().optional(),
+		gcpProjectId: z.string().nullable().optional(),
+		gcpRegion: z.string().nullable().optional(),
+	})
+	.passthrough();
+
+const legacyAgentProfileSelectionSchema = z.object({
+	selectedByAgent: z.record(z.string(), z.string()).default({}),
+});
+
+/**
+ * Read a legacy `agent-profiles/` registry and project it onto committed providers.
+ * Profiles without a provider are skipped; the selected profile (per agent) becomes
+ * the selected committed provider. Returns null when no profile yields a provider.
+ */
+async function readLegacyAgentProfilesAsCommittedProviders(
+	profilesDir: string,
+	selectionPath: string,
+): Promise<CommittedProvidersData | null> {
+	const shardMap = await readShardDir(profilesDir, legacyAgentProfileShardSchema);
+	const profileById = new Map<string, z.infer<typeof legacyAgentProfileShardSchema>>();
+	const byProviderId = new Map<string, CommittedProviderRecord>();
+	for (const profile of shardMap.values()) {
+		profileById.set(profile.id, profile);
+		const provider = buildCommittedProviderFromProviderSettings(
+			{
+				agentId: profile.agentId,
+				provider: profile.providerId ?? undefined,
+				model: profile.modelId ?? undefined,
+				baseUrl: profile.baseUrl ?? undefined,
+				reasoning: profile.reasoningEffort ? { effort: profile.reasoningEffort } : undefined,
+				region: profile.region ?? undefined,
+				gcp: { projectId: profile.gcpProjectId ?? undefined, region: profile.gcpRegion ?? undefined },
+			},
+			profile.agentId,
+		);
+		if (provider) {
+			byProviderId.set(provider.providerId, provider);
+		}
+	}
+	if (byProviderId.size === 0) {
+		return null;
+	}
+
+	let selectedByAgent: Record<string, string> = {};
+	try {
+		const raw = await readFile(selectionPath, "utf8");
+		const parsed = legacyAgentProfileSelectionSchema.safeParse(JSON.parse(raw) as unknown);
+		if (parsed.success) {
+			for (const [agentId, profileId] of Object.entries(parsed.data.selectedByAgent)) {
+				const providerId = normalizeProviderId(profileById.get(profileId)?.providerId);
+				if (providerId && byProviderId.has(providerId)) {
+					selectedByAgent[agentId] = providerId;
+				}
+			}
+		}
+	} catch {
+		selectedByAgent = {};
+	}
+
+	return { providers: [...byProviderId.values()], selectedByAgent };
 }
 
 /**

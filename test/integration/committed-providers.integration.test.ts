@@ -5,12 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { resetAgentProviderConfigCache, saveAgentProvider } from "../../src/agent-sdk/kanban/agent-provider-config";
-import { createAgentProfile, selectAgentProfile } from "../../src/state/agent-profile-registry";
-import {
-	loadWorkspaceAgentProfiles,
-	loadWorkspaceContext,
-	mutateWorkspaceAgentProfiles,
-} from "../../src/state/workspace-state";
+import { loadWorkspaceCommittedProviders, loadWorkspaceContext } from "../../src/state/workspace-state";
 import { createGitTestEnv } from "../utilities/git-env";
 import { createTempDir } from "../utilities/temp-dir";
 
@@ -38,7 +33,7 @@ function initGitRepository(path: string): void {
 	}
 }
 
-describe.sequential("agent profiles integration", () => {
+describe.sequential("committed providers integration", () => {
 	let settingsTemp: { path: string; cleanup: () => void };
 	const previousSettingsPath = process.env.KANBAN_AGENT_PROVIDERS_PATH;
 
@@ -55,11 +50,11 @@ describe.sequential("agent profiles integration", () => {
 		settingsTemp.cleanup();
 	});
 
-	it("migrates existing agent provider config into a selected default pi profile (no secrets)", async () => {
+	it("migrates machine-home provider config into a selected committed provider (no secrets)", async () => {
 		await withTemporaryHome(async () => {
-			const { path: sandboxRoot, cleanup } = createTempDir("kanban-agent-profiles-");
+			const { path: sandboxRoot, cleanup } = createTempDir("kanban-committed-providers-");
 			try {
-				// Seed the user's per-agent provider config (incl. a secret API key).
+				// Seed the user's machine-home per-agent provider config (incl. a secret API key).
 				await saveAgentProvider("pi", {
 					agentId: "pi",
 					provider: "openai",
@@ -75,49 +70,36 @@ describe.sequential("agent profiles integration", () => {
 				// loadWorkspaceContext runs prepareRepoRuntimeHome → the one-time migration.
 				const context = await loadWorkspaceContext(workspacePath);
 
-				const data = await loadWorkspaceAgentProfiles(context.workspaceId);
-				expect(data.profiles).toHaveLength(1);
-				const profile = data.profiles[0];
-				expect(profile?.agentId).toBe("pi");
-				expect(profile?.providerId).toBe("openai");
-				expect(profile?.modelId).toBe("gpt-5");
-				// The migrated profile is selected for the pi agent.
-				expect(data.selectedByAgent.pi).toBe(profile?.id);
-				// Secrets never land in the committed profile record.
-				expect(JSON.stringify(profile)).not.toContain("sk-secret-key");
+				const data = await loadWorkspaceCommittedProviders(context.workspaceId);
+				expect(data.providers).toHaveLength(1);
+				const provider = data.providers[0];
+				expect(provider?.agentId).toBe("pi");
+				expect(provider?.scope).toBe("workspace");
+				expect(provider?.providerId).toBe("openai");
+				expect(provider?.modelId).toBe("gpt-5");
+				expect(provider?.baseUrl).toBe("https://api.openai.test/v1");
+				// The migrated provider is selected for the pi agent (by provider id).
+				expect(data.selectedByAgent.pi).toBe("openai");
+				// Secrets never land in the committed record.
+				expect(JSON.stringify(provider)).not.toContain("sk-secret-key");
 			} finally {
 				cleanup();
 			}
 		});
 	});
 
-	it("persists create + select through mutateWorkspaceAgentProfiles", async () => {
+	it("creates no committed providers when there is no machine-home config", async () => {
 		await withTemporaryHome(async () => {
-			const { path: sandboxRoot, cleanup } = createTempDir("kanban-agent-profiles-");
+			const { path: sandboxRoot, cleanup } = createTempDir("kanban-committed-providers-");
 			try {
 				const workspacePath = join(sandboxRoot, "project");
 				mkdirSync(workspacePath, { recursive: true });
 				initGitRepository(workspacePath);
+
 				const context = await loadWorkspaceContext(workspacePath);
-
-				await mutateWorkspaceAgentProfiles(context.workspaceId, (current) => {
-					const created = createAgentProfile(current, {
-						id: "anthropic-default",
-						name: "Claude",
-						agentId: "pi",
-						providerId: "anthropic",
-						modelId: "claude-sonnet-4",
-						reasoningEffort: "high",
-					});
-					return selectAgentProfile(created, "pi", "anthropic-default");
-				});
-
-				// Re-read from disk (sharded profiles + selection file).
-				const reloaded = await loadWorkspaceAgentProfiles(context.workspaceId);
-				const created = reloaded.profiles.find((p) => p.id === "anthropic-default");
-				expect(created?.modelId).toBe("claude-sonnet-4");
-				expect(created?.reasoningEffort).toBe("high");
-				expect(reloaded.selectedByAgent.pi).toBe("anthropic-default");
+				const data = await loadWorkspaceCommittedProviders(context.workspaceId);
+				expect(data.providers).toEqual([]);
+				expect(data.selectedByAgent).toEqual({});
 			} finally {
 				cleanup();
 			}

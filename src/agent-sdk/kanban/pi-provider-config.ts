@@ -129,21 +129,21 @@ export function assertResolvedPiModel(
 	modelId: string,
 ): Model<Api> {
 	if (!model) {
-		throw new Error(
-			`pi model "${provider}/${modelId}" is missing from the bundled model registry (models.json)`,
-		);
+		throw new Error(`pi model "${provider}/${modelId}" is missing from the bundled model registry (models.json)`);
 	}
 	return model;
 }
 
 /**
- * Non-secret launch config contributed by the workspace's currently selected agent
- * profile. This is the new "workspace layer" in the resolution chain; it never carries
- * secrets (the API key still comes from the machine-home settings store by providerId).
+ * Non-secret launch config contributed by the workspace's currently selected
+ * committed provider. This is the "workspace layer" in the resolution chain; it
+ * never carries secrets (the API key still comes from the machine-home settings
+ * store by providerId).
  */
-export interface PiLaunchProfile {
+export interface PiCommittedProvider {
 	providerId?: string | null;
 	modelId?: string | null;
+	baseUrl?: string | null;
 	reasoningEffort?: RuntimeReasoningEffort | null;
 }
 
@@ -151,7 +151,7 @@ export interface PiLaunchInput {
 	providerIdOverride?: string | null;
 	modelIdOverride?: string | null;
 	reasoningEffortOverride?: RuntimeReasoningEffort | null;
-	workspaceProfile?: PiLaunchProfile | null;
+	committedProvider?: PiCommittedProvider | null;
 }
 
 /**
@@ -185,17 +185,13 @@ function resolveOverrideLayer(input: PiLaunchInput): PiLaunchLayer {
 	};
 }
 
-/**
- * Layer 2 — the workspace's selected agent profile (always secret-free). A profile
- * is a pure reference: it never carries a base URL, so this layer never contributes
- * one — base URL resolves solely from the provider config (Layer 3).
- */
-function resolveProfileLayer(profile: PiLaunchProfile | null): PiLaunchLayer {
+/** Layer 2 — the workspace's selected committed provider (always secret-free). */
+function resolveCommittedProviderLayer(provider: PiCommittedProvider | null): PiLaunchLayer {
 	return {
-		providerId: normalizeOptional(profile?.providerId),
-		modelId: normalizeOptional(profile?.modelId),
-		baseUrl: null,
-		reasoningEffort: profile?.reasoningEffort ?? null,
+		providerId: normalizeOptional(provider?.providerId),
+		modelId: normalizeOptional(provider?.modelId),
+		baseUrl: normalizeOptional(provider?.baseUrl),
+		reasoningEffort: provider?.reasoningEffort ?? null,
 	};
 }
 
@@ -230,29 +226,28 @@ function resolveStoreLayer(): PiLaunchLayer {
  *
  * Resolution chain (highest priority first):
  *   1. explicit per-session overrides (`*Override` — the card's agentSettings),
- *   2. the workspace's selected agent profile (`workspaceProfile`),
+ *   2. the workspace's selected committed provider (`committedProvider`),
  *   3. the user's saved provider settings (machine-home Settings store),
  *   4. built-in defaults.
  *
  * The store layer is consulted only when a *core* field (provider/model/baseUrl)
- * is still unresolved after the override and profile layers, and its
- * `reasoningEffort` is filled in that same pass. Note that base URL is supplied
- * *only* by the store (neither the per-session override nor the profile carries
- * one), so in practice the store is always consulted and its reasoningEffort is
- * applied whenever override/profile did not already set one.
+ * is still unresolved after the override and committed-provider layers. This is
+ * deliberate and load-bearing: the store's `reasoningEffort` is filled in that same
+ * pass, so when override/committed-provider already supply all three core fields the
+ * store's reasoningEffort is intentionally not applied.
  *
- * Secrets are never part of the profile: the API key is resolved separately from the
- * machine-home store (by providerId), so committed profile records stay secret-free.
+ * Secrets are never part of a committed provider: the API key is resolved separately
+ * from the machine-home store (by providerId), so committed records stay secret-free.
  */
 export function resolvePiLaunchConfig(input?: PiLaunchInput): PiLaunchConfig {
 	const override = resolveOverrideLayer(input ?? {});
-	const profile = resolveProfileLayer(input?.workspaceProfile ?? null);
+	const committed = resolveCommittedProviderLayer(input?.committedProvider ?? null);
 
-	// Layers 1 + 2 (in-memory): override wins, then the profile.
-	let providerId = override.providerId ?? profile.providerId;
-	let modelId = override.modelId ?? profile.modelId;
-	let baseUrl = override.baseUrl ?? profile.baseUrl;
-	let reasoningEffort = override.reasoningEffort ?? profile.reasoningEffort;
+	// Layers 1 + 2 (in-memory): override wins, then the committed provider.
+	let providerId = override.providerId ?? committed.providerId;
+	let modelId = override.modelId ?? committed.modelId;
+	let baseUrl = override.baseUrl ?? committed.baseUrl;
+	let reasoningEffort = override.reasoningEffort ?? committed.reasoningEffort;
 
 	// Layer 3 (machine-home store): only when a core field still needs it.
 	if (providerId === null || modelId === null || baseUrl === null) {
@@ -288,9 +283,12 @@ export function resolvePiApiKey(providerId: string): string | null {
 			return value.trim();
 		}
 	}
-	// 2. Fall back to per-agent provider config
+	// 2. Fall back to the machine-home per-agent provider store. Prefer the secret
+	// registered under this exact providerId (so a selected committed provider finds
+	// its own machine-home secret), then the agent's default provider.
 	try {
-		const agentConfig = getAgentProviderConfig("pi");
+		const byProviderId = getAgentProviderConfig("pi", providerId);
+		const agentConfig = byProviderId ?? getAgentProviderConfig("pi");
 		const apiKey = agentConfig?.apiKey?.trim() || "";
 		if (apiKey) {
 			return apiKey;

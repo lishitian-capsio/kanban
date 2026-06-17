@@ -20,7 +20,7 @@ import {
 import { createAgentProviderService } from "../agent-sdk/kanban/agent-provider-service";
 import { createMcpRuntimeService, type McpRuntimeService } from "../agent-sdk/kanban/mcp-runtime-service";
 import { createKanbanMcpSettingsService } from "../agent-sdk/kanban/mcp-settings-service";
-import { type PiLaunchProfile, resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
+import { type PiCommittedProvider, resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
 import { buildPiSystemPrompt } from "../agent-sdk/kanban/pi-system-prompt";
 import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
 import { isKanbanClearSlashCommand } from "../agent-sdk/shared/slash-commands";
@@ -28,11 +28,6 @@ import { setRuntimeProxyStateFromConfig } from "../config/proxy-fetch";
 import type { RuntimeConfigState } from "../config/runtime-config";
 import { updateGlobalRuntimeConfig, updateRuntimeConfig } from "../config/runtime-config";
 import type {
-	RuntimeAgentProfile,
-	RuntimeAgentProfileListResponse,
-	RuntimeAgentProfileMutationResponse,
-	RuntimeAgentProfileRecord,
-	RuntimeAgentProfilesData,
 	RuntimeAgentProviderConfigListResponse,
 	RuntimeAgentProviderConfigSaveRequest,
 	RuntimeAgentProviderMutationRequest,
@@ -43,11 +38,6 @@ import type {
 	RuntimeUpdateStatusResponse,
 } from "../core/api-contract";
 import {
-	parseAgentProfileCreateRequest,
-	parseAgentProfileDeleteRequest,
-	parseAgentProfileListRequest,
-	parseAgentProfileSelectRequest,
-	parseAgentProfileUpdateRequest,
 	parseCommandRunRequest,
 	parseFetchRemoteModelsRequest,
 	parseHomeChatThreadCloseRequest,
@@ -76,16 +66,8 @@ import { resolveTaskTitle } from "../core/task-title.js";
 import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-prompt";
 import { openInBrowser } from "../server/browser";
 import type { HomeThreadStore } from "../session/home-thread-store";
-import {
-	type AgentProfilePatch,
-	createAgentProfile,
-	deleteAgentProfile,
-	getSelectedAgentProfile,
-	listAgentProfiles,
-	selectAgentProfile,
-	updateAgentProfile,
-} from "../state/agent-profile-registry";
-import { loadWorkspaceAgentProfiles, mutateWorkspaceAgentProfiles } from "../state/workspace-state";
+import { getSelectedCommittedProvider } from "../state/committed-provider-store";
+import { loadWorkspaceCommittedProviders } from "../state/workspace-state";
 import { buildRuntimeConfigResponse, resolveAgentCommand } from "../terminal/agent-registry";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { resolveTaskCwd } from "../workspace/task-worktree";
@@ -149,34 +131,16 @@ function resolvePiHomeAgentSystemPrompt(taskId: string, cwd: string): string | u
 	return `${basePrompt}\n\n${appendPrompt}`;
 }
 
-function createAgentProfileId(): string {
-	return crypto.randomUUID().replaceAll("-", "").slice(0, 8);
-}
-
-function toAgentProfileSummary(record: RuntimeAgentProfileRecord): RuntimeAgentProfile {
-	return record;
-}
-
-function buildAgentProfileMutationResponse(
-	data: RuntimeAgentProfilesData,
-	affected: RuntimeAgentProfileRecord | null,
-): RuntimeAgentProfileMutationResponse {
-	return {
-		profiles: data.profiles.map(toAgentProfileSummary),
-		selectedByAgent: data.selectedByAgent,
-		profile: affected ? toAgentProfileSummary(affected) : null,
-	};
-}
-
 /**
- * Resolve the workspace's selected `pi` profile as the non-secret launch-config layer
- * fed into {@link resolvePiLaunchConfig}. Returns null (so resolution falls back to the
- * machine-home settings / defaults) when nothing is selected or the lookup fails.
+ * Resolve the workspace's selected `pi` committed provider as the non-secret
+ * launch-config layer fed into {@link resolvePiLaunchConfig}. Returns null (so
+ * resolution falls back to the machine-home settings / defaults) when nothing is
+ * selected or the lookup fails.
  */
-async function loadSelectedPiLaunchProfile(scope: RuntimeTrpcWorkspaceScope): Promise<PiLaunchProfile | null> {
+async function loadSelectedCommittedProvider(scope: RuntimeTrpcWorkspaceScope): Promise<PiCommittedProvider | null> {
 	try {
-		const data = await loadWorkspaceAgentProfiles(scope.workspaceId);
-		const selected = getSelectedAgentProfile(data, "pi");
+		const data = await loadWorkspaceCommittedProviders(scope.workspaceId);
+		const selected = getSelectedCommittedProvider(data, "pi");
 		if (!selected) {
 			return null;
 		}
@@ -311,7 +275,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 						providerIdOverride: body.agentSettings?.providerId ?? undefined,
 						modelIdOverride: body.agentSettings?.modelId ?? undefined,
 						reasoningEffortOverride: body.agentSettings?.reasoningEffort ?? undefined,
-						workspaceProfile: await loadSelectedPiLaunchProfile(workspaceScope),
+						committedProvider: await loadSelectedCommittedProvider(workspaceScope),
 					});
 					const piTaskSessionService = await deps.getScopedPiTaskSessionService(workspaceScope);
 					const resolvedPiTitle = resolveTaskTitle(body.taskTitle?.trim(), body.prompt);
@@ -541,7 +505,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				const reloadHomeAgentId = resolveHomeAgentId(body.taskId);
 				if (!summary && reloadHomeAgentId === "pi") {
 					const piLaunchConfig = resolvePiLaunchConfig({
-						workspaceProfile: await loadSelectedPiLaunchProfile(workspaceScope),
+						committedProvider: await loadSelectedCommittedProvider(workspaceScope),
 					});
 					const homeAgentSystemPrompt = resolvePiHomeAgentSystemPrompt(body.taskId, workspaceScope.workspacePath);
 					summary = await piService.startTaskSession({
@@ -673,73 +637,6 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				const message = error instanceof Error ? error.message : String(error);
 				return { ok: false, thread: null, error: message };
 			}
-		},
-		listAgentProfiles: async (workspaceScope, input): Promise<RuntimeAgentProfileListResponse> => {
-			const body = parseAgentProfileListRequest(input);
-			const data = await loadWorkspaceAgentProfiles(workspaceScope.workspaceId);
-			return {
-				profiles: listAgentProfiles(data, body.agentId).map(toAgentProfileSummary),
-				selectedByAgent: data.selectedByAgent,
-			};
-		},
-		createAgentProfile: async (workspaceScope, input): Promise<RuntimeAgentProfileMutationResponse> => {
-			const body = parseAgentProfileCreateRequest(input);
-			const providerId = body.providerId?.trim() || null;
-			const id = createAgentProfileId();
-			const record: RuntimeAgentProfileRecord = {
-				id,
-				name: body.name,
-				agentId: body.agentId,
-				providerId,
-				modelId: body.modelId?.trim() || null,
-				reasoningEffort: body.reasoningEffort ?? null,
-			};
-			const data = await mutateWorkspaceAgentProfiles(workspaceScope.workspaceId, (current) => {
-				const created = createAgentProfile(current, record);
-				return body.select ? selectAgentProfile(created, body.agentId, id) : created;
-			});
-			deps.bumpKanbanSessionContextVersion?.();
-			return buildAgentProfileMutationResponse(data, data.profiles.find((profile) => profile.id === id) ?? record);
-		},
-		updateAgentProfile: async (workspaceScope, input): Promise<RuntimeAgentProfileMutationResponse> => {
-			const body = parseAgentProfileUpdateRequest(input);
-			const current = await loadWorkspaceAgentProfiles(workspaceScope.workspaceId);
-			const existing = current.profiles.find((profile) => profile.id === body.id);
-			if (!existing) {
-				throw new TRPCError({ code: "NOT_FOUND", message: `Agent profile "${body.id}" not found.` });
-			}
-			const patch: AgentProfilePatch = {};
-			if (body.name !== undefined) patch.name = body.name;
-			if (body.providerId !== undefined) patch.providerId = body.providerId?.trim() || null;
-			if (body.modelId !== undefined) patch.modelId = body.modelId?.trim() || null;
-			if (body.reasoningEffort !== undefined) patch.reasoningEffort = body.reasoningEffort;
-			const data = await mutateWorkspaceAgentProfiles(workspaceScope.workspaceId, (cur) =>
-				updateAgentProfile(cur, body.id, patch),
-			);
-			deps.bumpKanbanSessionContextVersion?.();
-			return buildAgentProfileMutationResponse(
-				data,
-				data.profiles.find((profile) => profile.id === body.id) ?? null,
-			);
-		},
-		deleteAgentProfile: async (workspaceScope, input): Promise<RuntimeAgentProfileMutationResponse> => {
-			const body = parseAgentProfileDeleteRequest(input);
-			let removed: RuntimeAgentProfileRecord | null = null;
-			const data = await mutateWorkspaceAgentProfiles(workspaceScope.workspaceId, (cur) => {
-				const result = deleteAgentProfile(cur, body.id);
-				removed = result.removed;
-				return result.next;
-			});
-			deps.bumpKanbanSessionContextVersion?.();
-			return buildAgentProfileMutationResponse(data, removed);
-		},
-		selectAgentProfile: async (workspaceScope, input): Promise<RuntimeAgentProfileMutationResponse> => {
-			const body = parseAgentProfileSelectRequest(input);
-			const data = await mutateWorkspaceAgentProfiles(workspaceScope.workspaceId, (cur) =>
-				selectAgentProfile(cur, body.agentId, body.profileId),
-			);
-			deps.bumpKanbanSessionContextVersion?.();
-			return buildAgentProfileMutationResponse(data, getSelectedAgentProfile(data, body.agentId));
 		},
 		getKanbanProviderCatalog: async (_workspaceScope) => {
 			return await agentProviderService.getAllAgentProviderCatalog();
@@ -891,7 +788,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 						}
 					} else {
 						const piLaunchConfig = resolvePiLaunchConfig({
-							workspaceProfile: await loadSelectedPiLaunchProfile(workspaceScope),
+							committedProvider: await loadSelectedCommittedProvider(workspaceScope),
 						});
 						const homeAgentSystemPrompt = resolvePiHomeAgentSystemPrompt(
 							body.taskId,
