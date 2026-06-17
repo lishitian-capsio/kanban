@@ -110,8 +110,6 @@ import type {
 	RuntimeTaskWorkspaceInfoRequest,
 	RuntimeTaskWorkspaceInfoResponse,
 	RuntimeUpdateStatusResponse,
-	RuntimeVaultCrystallizeRequest,
-	RuntimeVaultCrystallizeResponse,
 	RuntimeVaultDocumentCreateRequest,
 	RuntimeVaultDocumentCreateResponse,
 	RuntimeVaultDocumentDeleteRequest,
@@ -251,8 +249,6 @@ import {
 	runtimeTaskWorkspaceInfoRequestSchema,
 	runtimeTaskWorkspaceInfoResponseSchema,
 	runtimeUpdateStatusResponseSchema,
-	runtimeVaultCrystallizeRequestSchema,
-	runtimeVaultCrystallizeResponseSchema,
 	runtimeVaultDocumentCreateRequestSchema,
 	runtimeVaultDocumentCreateResponseSchema,
 	runtimeVaultDocumentDeleteRequestSchema,
@@ -525,10 +521,6 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeVaultDocumentDeleteRequest,
 		) => Promise<RuntimeVaultDocumentDeleteResponse>;
-		crystallizeChatToDoc: (
-			scope: RuntimeTrpcWorkspaceScope,
-			input: RuntimeVaultCrystallizeRequest,
-		) => Promise<RuntimeVaultCrystallizeResponse>;
 		listViews: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeVaultViewsListRequest,
@@ -1022,12 +1014,6 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeVaultDocumentDeleteResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.deleteDocument(ctx.workspaceScope, input);
-			}),
-		crystallizeChatToDoc: workspaceProcedure
-			.input(runtimeVaultCrystallizeRequestSchema)
-			.output(runtimeVaultCrystallizeResponseSchema)
-			.mutation(async ({ ctx, input }) => {
-				return await ctx.workspaceApi.crystallizeChatToDoc(ctx.workspaceScope, input);
 			}),
 		listViews: workspaceProcedure
 			.input(runtimeVaultViewsListRequestSchema)

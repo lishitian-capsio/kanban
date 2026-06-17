@@ -524,26 +524,6 @@ export const runtimeVaultDocumentDeleteResponseSchema = z.object({
 });
 export type RuntimeVaultDocumentDeleteResponse = z.infer<typeof runtimeVaultDocumentDeleteResponseSchema>;
 
-// Crystallize a chat transcript into a vault document. The runtime reads the
-// session's unified `SessionMessage` transcript (whole thread or the trailing
-// `lastN`), renders the conversation to markdown, and writes a new doc of the
-// requested type. The raw session journal is never moved into the vault.
-export const runtimeVaultCrystallizeRequestSchema = z.object({
-	// The chat session id (a task id, or a synthetic home-agent session id).
-	sessionId: z.string(),
-	type: z.string().min(1),
-	// Keep only the trailing N messages. Omitted = the whole thread.
-	lastN: z.number().int().positive().optional(),
-	// Override the title derived from the conversation.
-	title: z.string().optional(),
-});
-export type RuntimeVaultCrystallizeRequest = z.infer<typeof runtimeVaultCrystallizeRequestSchema>;
-
-export const runtimeVaultCrystallizeResponseSchema = z.object({
-	document: runtimeVaultDocumentSchema,
-});
-export type RuntimeVaultCrystallizeResponse = z.infer<typeof runtimeVaultCrystallizeResponseSchema>;
-
 // Where a `[[wikilink]]` was found in a document: in a named frontmatter field
 // (the field is the relationship type, e.g. `customer`) or in the markdown body.
 export const runtimeVaultLinkSourceSchema = z.discriminatedUnion("kind", [

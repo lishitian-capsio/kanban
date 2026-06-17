@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RuntimeTaskSessionSummary, RuntimeWorkspaceChangesResponse } from "../../../src/core/api-contract";
-import type { SessionMessage } from "../../../src/session/session-message";
 
 const workspaceTaskWorktreeMocks = vi.hoisted(() => ({
 	resolveTaskCwd: vi.fn(),
@@ -406,24 +405,17 @@ describe("createWorkspaceApi file library", () => {
 	});
 });
 
-function message(role: SessionMessage["role"], content: string, createdAt: number): SessionMessage {
-	return { id: `${role}-${createdAt}`, role, content, createdAt };
-}
-
 describe("createWorkspaceApi vault documents", () => {
 	let repoPath: string;
 	let broadcastRuntimeWorkspaceStateUpdated: ReturnType<typeof vi.fn>;
 
-	// Build the API with injectable session transcripts so crystallize can be
-	// exercised; the vault store itself writes to the real temp `repoPath`.
-	function createApi(options: { piMessages?: SessionMessage[]; terminalMessages?: SessionMessage[] } = {}) {
+	// The vault store writes to the real temp `repoPath`; the session deps are
+	// stubbed because vault-document operations never touch a transcript.
+	function createApi() {
 		broadcastRuntimeWorkspaceStateUpdated = vi.fn();
 		return createWorkspaceApi({
 			ensureTerminalManagerForWorkspace: vi.fn(
-				async () => ({ loadTaskSessionMessages: vi.fn(async () => options.terminalMessages ?? []) }) as never,
-			),
-			getScopedPiTaskSessionService: vi.fn(
-				async () => ({ loadTaskSessionMessages: vi.fn(async () => options.piMessages ?? []) }) as never,
+				async () => ({ loadTaskSessionMessages: vi.fn(async () => []) }) as never,
 			),
 			broadcastRuntimeWorkspaceStateUpdated: broadcastRuntimeWorkspaceStateUpdated as never,
 			broadcastRuntimeProjectsUpdated: vi.fn(),
@@ -496,49 +488,5 @@ describe("createWorkspaceApi vault documents", () => {
 
 		const none = await api.searchDocuments(scope(), { query: "   " });
 		expect(none.results).toEqual([]);
-	});
-
-	it("crystallizes a pi transcript into a markdown document and persists it", async () => {
-		const api = createApi({
-			piMessages: [
-				message("user", "How do we throttle logins?", 1),
-				message("reasoning", "internal thought", 2),
-				message("assistant", "Token bucket per account.", 3),
-			],
-		});
-
-		const result = await api.crystallizeChatToDoc(scope(), { sessionId: "task-1", type: "requirement" });
-		expect(result.document.type).toBe("requirement");
-		expect(result.document.title).toBe("How do we throttle logins?");
-		expect(result.document.body).toContain("**User:**");
-		expect(result.document.body).toContain("Token bucket per account.");
-		expect(result.document.body).not.toContain("internal thought");
-		expect(broadcastRuntimeWorkspaceStateUpdated).toHaveBeenCalledWith("workspace-1", repoPath);
-
-		// The crystallized doc is now a real, listable vault document.
-		const listed = await api.listDocuments(scope(), { type: "requirement" });
-		expect(listed.documents).toHaveLength(1);
-		expect(listed.documents[0]?.id).toBe(result.document.id);
-	});
-
-	it("respects lastN and an explicit title, falling back to the terminal transcript when pi is empty", async () => {
-		const api = createApi({
-			terminalMessages: [
-				message("user", "first", 1),
-				message("assistant", "older answer", 2),
-				message("user", "second", 3),
-				message("assistant", "latest answer", 4),
-			],
-		});
-
-		const result = await api.crystallizeChatToDoc(scope(), {
-			sessionId: "task-1",
-			type: "note",
-			lastN: 2,
-			title: "CLI note",
-		});
-		expect(result.document.title).toBe("CLI note");
-		expect(result.document.body).toContain("latest answer");
-		expect(result.document.body).not.toContain("older answer");
 	});
 });

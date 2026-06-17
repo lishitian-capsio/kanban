@@ -17,10 +17,8 @@ import {
 	parseWorktreeEnsureRequest,
 } from "../core/api-validation";
 import { FileLibraryStore } from "../files/file-library-store";
-import type { SessionMessage } from "../session/session-message";
 import { saveWorkspaceState, WorkspaceStateConflictError } from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
-import { renderTranscriptToMarkdown, selectTranscriptMessages } from "../vault/crystallize";
 import { SavedViewStore } from "../vault/saved-view-store";
 import { VaultDocumentStore } from "../vault/vault-document-store";
 import { buildVaultLinkIndex } from "../vault/vault-link-index";
@@ -201,30 +199,6 @@ function isMissingTaskWorktreeError(error: unknown): boolean {
 		return false;
 	}
 	return error.message.startsWith("Task worktree not found for task ");
-}
-
-/**
- * Load a session's unified transcript, mirroring the agent fallback in
- * `getTaskChatMessages`: prefer pi's session, fall back to the terminal/CLI
- * manager. Used by crystallize, which is agent-agnostic.
- */
-async function loadSessionTranscript(
-	deps: CreateWorkspaceApiDependencies,
-	workspaceScope: { workspaceId: string; workspacePath: string },
-	sessionId: string,
-): Promise<SessionMessage[]> {
-	if (deps.getScopedPiTaskSessionService) {
-		const piService = await deps.getScopedPiTaskSessionService(workspaceScope);
-		const piMessages = await piService.loadTaskSessionMessages(sessionId);
-		if (piMessages.length > 0) {
-			return piMessages;
-		}
-	}
-	const terminalManager = await deps.ensureTerminalManagerForWorkspace(
-		workspaceScope.workspaceId,
-		workspaceScope.workspacePath,
-	);
-	return await terminalManager.loadTaskSessionMessages(sessionId);
 }
 
 export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): RuntimeTrpcContext["workspaceApi"] {
@@ -480,18 +454,6 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 				void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
 			}
 			return { deleted };
-		},
-		crystallizeChatToDoc: async (workspaceScope, input) => {
-			const transcript = await loadSessionTranscript(deps, workspaceScope, input.sessionId);
-			const selected = selectTranscriptMessages(transcript, { lastN: input.lastN });
-			const { title, body } = renderTranscriptToMarkdown(selected, { title: input.title });
-			const document = await new VaultDocumentStore(workspaceScope.workspacePath).create({
-				type: input.type,
-				title,
-				body,
-			});
-			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
-			return { document };
 		},
 		listViews: async (workspaceScope, input) => {
 			const type = input.type?.trim() ? input.type.trim() : undefined;
