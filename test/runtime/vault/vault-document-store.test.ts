@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { parseVaultDocument, serializeVaultDocument } from "../../../src/vault/vault-document";
 import { VaultDocumentStore } from "../../../src/vault/vault-document-store";
+import { getVaultTypesDir } from "../../../src/vault/vault-paths";
+import { seedVaultTypeDefinitions } from "../../../src/vault/vault-type-registry";
 
 let repoPath: string;
 let store: VaultDocumentStore;
@@ -14,6 +16,9 @@ const docsRoot = () => join(repoPath, ".kanban", "files", "docs");
 
 beforeEach(async () => {
 	repoPath = await mkdtemp(join(tmpdir(), "kanban-vault-store-"));
+	// Type defaults (e.g. requirement → status/priority) come from the data-driven
+	// `_types/` registry, so seed it the way `prepareRepoRuntimeHome` does in prod.
+	await seedVaultTypeDefinitions(getVaultTypesDir(repoPath));
 	store = new VaultDocumentStore(repoPath);
 });
 
@@ -109,6 +114,15 @@ describe("VaultDocumentStore.list", () => {
 
 	it("is empty before any document is written", async () => {
 		expect(await store.list()).toEqual([]);
+	});
+
+	it("never surfaces the `_types/` type-definition documents as user documents", async () => {
+		await store.create({ type: "requirement", title: "Req" });
+
+		const listed = await store.list();
+		// `_types/` was seeded in setup, yet the scan excludes `_`-prefixed dirs.
+		expect(listed).toHaveLength(1);
+		expect(listed.every((doc) => doc.type !== "type")).toBe(true);
 	});
 });
 

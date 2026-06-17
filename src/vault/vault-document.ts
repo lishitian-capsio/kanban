@@ -125,7 +125,12 @@ export function slugify(title: string): string {
 	return slug.length > 0 ? slug : "untitled";
 }
 
-function coerceFrontmatterValue(value: unknown): VaultFrontmatterValue {
+/**
+ * Coerce an arbitrary YAML-parsed value into a {@link VaultFrontmatterValue}:
+ * scalars and scalar arrays pass through; anything richer (a nested map, a Date)
+ * becomes a string so a hand-edited file never crashes a scan.
+ */
+export function coerceFrontmatterValue(value: unknown): VaultFrontmatterValue {
 	if (value === null || value === undefined) {
 		return value === undefined ? null : value;
 	}

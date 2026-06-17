@@ -23,6 +23,8 @@ import { createGitProcessEnv } from "../core/git-process-env";
 import { updateTaskDependencies } from "../core/task-board-mutations";
 import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
 import { VaultDocumentStore } from "../vault/vault-document-store";
+import { getVaultTypesDir } from "../vault/vault-paths";
+import { seedVaultTypeDefinitions } from "../vault/vault-type-registry";
 import {
 	buildCommittedProviderFromProviderSettings,
 	type CommittedProviderRecord,
@@ -773,6 +775,24 @@ async function migrateWorkspaceDataFromLegacyHome(repoPath: string, workspaceId:
 }
 
 /**
+ * Seed the built-in vault type definitions into `<repo>/.kanban/files/docs/_types/`
+ * on first run. Types are data-driven (one `_types/<type>.md` per type, frontmatter
+ * + an authoring prompt), so this writes the requirement/customer/decision/note
+ * seeds once and then never again — the `_types/` directory guard makes re-runs a
+ * no-op, and a workspace is free to edit or add types afterwards. Cheap dir-exists
+ * precheck skips the workspace lock when there is nothing to do.
+ */
+async function migrateSeedVaultTypes(repoPath: string, workspaceId: string): Promise<void> {
+	const typesDir = getVaultTypesDir(repoPath);
+	if (await pathExists(typesDir)) {
+		return;
+	}
+	await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
+		await seedVaultTypeDefinitions(typesDir);
+	});
+}
+
+/**
  * One-time, idempotent conversion of a workspace's pre-vault requirement data
  * (per-id `requirements/` shards, or the older single-file `requirements.json` /
  * legacy-home fallback) into vault documents at
@@ -1030,6 +1050,7 @@ export async function loadWorkspaceContext(
 async function prepareRepoRuntimeHome(repoPath: string, workspaceId: string): Promise<void> {
 	await migrateWorkspaceDataFromLegacyHome(repoPath, workspaceId);
 	await ensureRuntimeHomeGitignore(repoPath);
+	await migrateSeedVaultTypes(repoPath, workspaceId);
 	await migrateRequirementsToVaultDocs(repoPath, workspaceId);
 	await dropRetiredRequirementData(repoPath, workspaceId);
 	await migrateWorkspaceBoardToShards(repoPath, workspaceId);

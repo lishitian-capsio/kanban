@@ -1,0 +1,102 @@
+import type { VaultTypeDefinition } from "./vault-types";
+
+/**
+ * The built-in vault types, seeded once into a workspace's `docs/_types/` on first
+ * run (see `migrateSeedVaultTypes`). Metadata mirrors the former hardcoded registry;
+ * each `body` is a self-governing authoring prompt — once on disk these documents
+ * are the source of truth and can be edited per workspace, so this array is only a
+ * seed, never consulted at runtime.
+ */
+export const VAULT_TYPE_SEEDS: readonly VaultTypeDefinition[] = [
+	{
+		type: "requirement",
+		label: "Requirement",
+		description: "A customer-facing problem statement — what the customer needs, not how to build it.",
+		icon: "ClipboardList",
+		slugField: "title",
+		statusEnum: ["proposed", "clarified", "parked", "invalid"],
+		defaultFrontmatter: { status: "proposed", priority: "medium" },
+		body: [
+			"# How to author a Requirement",
+			"",
+			"A requirement faces the **customer**, so it describes the *problem*, not the",
+			"delivery. State the need from the customer's point of view; leave solutions,",
+			"tasks, and implementation detail out.",
+			"",
+			"- **title**: a short problem statement, phrased as the customer's need.",
+			"- **body**: the context — who is affected, what hurts today, what success looks",
+			"  like. Capture the customer's own words where you can.",
+			"- **status**: the problem's lifecycle, not delivery —",
+			"  `proposed` (raised), `clarified` (understood), `parked` (deferred),",
+			"  `invalid` (not a real need).",
+			"- **priority**: how pressing the problem is for the customer.",
+			"- **customer**: a `[[wikilink]]` to the customer this anchors to.",
+			"- **related_tasks**: ids of the tasks delivering against this problem.",
+			"",
+			"Keep one problem per document. If a requirement names two needs, split it.",
+		].join("\n"),
+	},
+	{
+		type: "customer",
+		label: "Customer",
+		description: "The physical anchor of requirements — a person or organization with needs.",
+		icon: "Building2",
+		slugField: "title",
+		body: [
+			"# How to author a Customer",
+			"",
+			"A customer is the physical anchor of the chain 客户 → 需求 → 任务. It has no",
+			"status lifecycle — it simply exists and accumulates context.",
+			"",
+			"- **title**: the customer's name (person or organization).",
+			"- **body**: who they are, their domain, how we reach them, and any standing",
+			"  context that helps interpret their requirements.",
+			"- **materials**: an array of file-library ids pinning supporting material",
+			"  (decks, transcripts, contracts).",
+			"",
+			"Requirements point *here* via a `customer` wikilink; you do not list",
+			"requirements on the customer.",
+		].join("\n"),
+	},
+	{
+		type: "decision",
+		label: "Decision",
+		description: "An ADR-flavored record of a decision and its standing over time.",
+		icon: "GitBranch",
+		slugField: "title",
+		statusEnum: ["proposed", "accepted", "superseded", "rejected"],
+		defaultFrontmatter: { status: "proposed" },
+		body: [
+			"# How to author a Decision",
+			"",
+			"A decision is crystallized out of a discussion and then ratified, so its status",
+			"describes the decision's *standing* over time (ADR-flavored).",
+			"",
+			'- **title**: the decision, stated as a resolution (e.g. "Shard the board per task").',
+			"- **body**: the context that forced a choice, the options weighed, the decision,",
+			"  and its consequences.",
+			"- **status**: `proposed` (under discussion), `accepted` (in force),",
+			"  `superseded` (replaced by a later decision — link it), `rejected` (declined).",
+			"",
+			"When a decision replaces an earlier one, mark the old one `superseded` and",
+			"`[[wikilink]]` between them rather than editing history.",
+		].join("\n"),
+	},
+	{
+		type: "note",
+		label: "Note",
+		description: "A free-form crystallized record — meeting minutes, scratch context, anything.",
+		icon: "StickyNote",
+		slugField: "title",
+		body: [
+			"# How to author a Note",
+			"",
+			"A note is a free-form record (纪要) with no lifecycle — use it for meeting",
+			"minutes, scratch context, or anything that doesn't fit a stricter type.",
+			"",
+			"- **title**: a short, scannable summary of what the note captures.",
+			"- **body**: whatever is worth keeping. Link to customers, requirements, and",
+			"  decisions with `[[wikilinks]]` so the note joins the graph.",
+		].join("\n"),
+	},
+];

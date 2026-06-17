@@ -5,12 +5,10 @@ import { join, relative } from "node:path";
 import type { RuntimeVaultDocument, RuntimeVaultFrontmatterValue } from "../core/api-contract";
 import { createUniqueTaskId } from "../core/task-id";
 import { lockedFileSystem } from "../fs/locked-file-system";
-import { getRuntimeHomePath } from "../state/workspace-state";
 import { parseVaultDocument, serializeVaultDocument, slugify, type VaultDocument } from "./vault-document";
-import { getVaultTypeDefinition } from "./vault-types";
+import { getVaultDocsDir, getVaultFilesDir } from "./vault-paths";
+import { VaultTypeRegistry } from "./vault-type-registry";
 
-const FILES_DIR = "files";
-const DOCS_DIR = "docs";
 const DOC_EXTENSION = ".md";
 
 // System frontmatter fields the store owns and promotes onto the wire document,
@@ -66,15 +64,17 @@ export class VaultDocumentStore {
 	private readonly docsDir: string;
 	private readonly now: () => number;
 	private readonly randomUuid: () => string;
+	private readonly typeRegistry: VaultTypeRegistry;
 
 	constructor(
 		private readonly repoPath: string,
-		options: { now?: () => number; randomUuid?: () => string } = {},
+		options: { now?: () => number; randomUuid?: () => string; typeRegistry?: VaultTypeRegistry } = {},
 	) {
-		this.filesDir = join(getRuntimeHomePath(repoPath), FILES_DIR);
-		this.docsDir = join(this.filesDir, DOCS_DIR);
+		this.filesDir = getVaultFilesDir(repoPath);
+		this.docsDir = getVaultDocsDir(repoPath);
 		this.now = options.now ?? Date.now;
 		this.randomUuid = options.randomUuid ?? randomUUID;
+		this.typeRegistry = options.typeRegistry ?? new VaultTypeRegistry(repoPath);
 	}
 
 	async list(type?: string): Promise<RuntimeVaultDocument[]> {
@@ -92,7 +92,7 @@ export class VaultDocumentStore {
 			const entries = await this.scan();
 			const id = createUniqueTaskId(new Set(entries.map((entry) => entry.doc.id)), this.randomUuid);
 			const timestamp = this.now();
-			const definition = getVaultTypeDefinition(input.type);
+			const definition = await this.typeRegistry.get(input.type);
 			const frontmatter: Record<string, RuntimeVaultFrontmatterValue> = {
 				...definition?.defaultFrontmatter,
 				...input.frontmatter,
@@ -114,7 +114,7 @@ export class VaultDocumentStore {
 	 */
 	async importDocument(input: ImportVaultDocumentInput): Promise<RuntimeVaultDocument> {
 		return await this.withLock(async () => {
-			const definition = getVaultTypeDefinition(input.type);
+			const definition = await this.typeRegistry.get(input.type);
 			const frontmatter: Record<string, RuntimeVaultFrontmatterValue> = {
 				...definition?.defaultFrontmatter,
 				...input.frontmatter,
@@ -203,7 +203,11 @@ export class VaultDocumentStore {
 	private async listTypeDirs(): Promise<string[]> {
 		try {
 			const entries = await readdir(this.docsDir, { withFileTypes: true });
-			return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+			// `_`-prefixed dirs (e.g. `_types/`) describe the vault rather than holding
+			// user documents, so they are not scannable document types.
+			return entries
+				.filter((entry) => entry.isDirectory() && !entry.name.startsWith("_"))
+				.map((entry) => entry.name);
 		} catch (error) {
 			if (isNotFound(error)) {
 				return [];
@@ -213,13 +217,13 @@ export class VaultDocumentStore {
 	}
 
 	private async writeDocument(doc: VaultDocument): Promise<string> {
-		const absolutePath = this.documentPath(doc);
+		const absolutePath = await this.documentPath(doc);
 		await lockedFileSystem.writeTextFileAtomic(absolutePath, serializeVaultDocument(doc), { lock: null });
 		return relative(this.repoPath, absolutePath);
 	}
 
-	private documentPath(doc: VaultDocument): string {
-		const definition = getVaultTypeDefinition(doc.type);
+	private async documentPath(doc: VaultDocument): Promise<string> {
+		const definition = await this.typeRegistry.get(doc.type);
 		const slugSource = definition ? doc.frontmatter[definition.slugField] : doc.frontmatter[TITLE_FIELD];
 		const slug = slugify(typeof slugSource === "string" ? slugSource : String(slugSource ?? ""));
 		return join(this.docsDir, doc.type, `${slug}-${doc.id}${DOC_EXTENSION}`);
