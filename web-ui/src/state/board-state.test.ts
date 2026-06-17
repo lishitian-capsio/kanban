@@ -599,6 +599,42 @@ describe("board dependency state", () => {
 		]);
 	});
 
+	it("preserves a task owner through normalization and drops a blank owner", () => {
+		const rawBoard = {
+			columns: [
+				{
+					id: "backlog",
+					title: "Backlog",
+					cards: [
+						{
+							id: "owned",
+							prompt: "Owned",
+							baseRef: "main",
+							startInPlanMode: false,
+							owner: { name: " Ada ", email: " ada@example.com " },
+						},
+						{
+							id: "blank-owner",
+							prompt: "Blank owner",
+							baseRef: "main",
+							startInPlanMode: false,
+							owner: { name: "  ", email: "" },
+						},
+					],
+				},
+				{ id: "in_progress", title: "In Progress", cards: [] },
+				{ id: "review", title: "Review", cards: [] },
+				{ id: "trash", title: "Done", cards: [] },
+			],
+			dependencies: [],
+		};
+
+		const normalized = normalizeBoardData(rawBoard);
+		const cards = normalized?.columns.find((column) => column.id === "backlog")?.cards;
+		expect(cards?.find((card) => card.id === "owned")?.owner).toEqual({ name: "Ada", email: "ada@example.com" });
+		expect(cards?.find((card) => card.id === "blank-owner")?.owner).toBeUndefined();
+	});
+
 	it("disables auto-review settings for a task", () => {
 		let board = createInitialBoardData();
 		board = addTaskToColumn(board, "review", {

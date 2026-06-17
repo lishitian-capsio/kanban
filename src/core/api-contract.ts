@@ -104,6 +104,16 @@ export const runtimeTaskImageSchema = z.object({
 });
 export type RuntimeTaskImage = z.infer<typeof runtimeTaskImageSchema>;
 
+// A task's responsible person ("owner"), captured as a git identity (the same
+// name/email pair git uses for authorship). Defaults at creation to the workspace
+// repo's `git config user.name` / `user.email`; either field may be empty when the
+// repo has only one configured.
+export const runtimeTaskOwnerSchema = z.object({
+	name: z.string(),
+	email: z.string(),
+});
+export type RuntimeTaskOwner = z.infer<typeof runtimeTaskOwnerSchema>;
+
 // Durable task spec fields, pre-title-resolution. Exported so the on-disk sharded
 // task store (src/state/task-shard-store.ts) can extend this exact shape with its
 // storage-only fields (column, rank, dependsOn) instead of redefining the columns.
@@ -117,6 +127,7 @@ export const runtimeBoardCardObjectSchema = z.object({
 	images: z.array(runtimeTaskImageSchema).optional(),
 	agentId: runtimeAgentIdSchema.optional(),
 	agentSettings: runtimeTaskAgentSettingsSchema.optional(),
+	owner: runtimeTaskOwnerSchema.optional(),
 	baseRef: z.string(),
 	createdAt: z.number(),
 	updatedAt: z.number(),

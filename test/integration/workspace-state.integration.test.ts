@@ -95,6 +95,18 @@ function initGitRepository(path: string): void {
 	}
 }
 
+function setGitIdentity(path: string, name: string, email: string): void {
+	for (const [key, value] of [
+		["user.name", name],
+		["user.email", email],
+	]) {
+		const result = spawnSync("git", ["config", key, value], { cwd: path, stdio: "ignore", env: createGitTestEnv() });
+		if (result.status !== 0) {
+			throw new Error(`Failed to set git ${key} at ${path}`);
+		}
+	}
+}
+
 describe.sequential("workspace-state integration", () => {
 	it("persists revision numbers and rejects stale writes", async () => {
 		await withTemporaryHome(async () => {
@@ -137,6 +149,70 @@ describe.sequential("workspace-state integration", () => {
 				const loadedAfterConflict = await loadWorkspaceState(workspacePath);
 				expect(loadedAfterConflict.revision).toBe(2);
 				expect(loadedAfterConflict.board.columns[0]?.cards[0]?.prompt).toBe("Task Two");
+			} finally {
+				cleanup();
+			}
+		});
+	});
+
+	it("stamps the repo git identity as the default owner on ownerless tasks", async () => {
+		await withTemporaryHome(async () => {
+			const { path: sandboxRoot, cleanup } = createTempDir("kanban-owner-");
+			try {
+				const workspacePath = join(sandboxRoot, "project-owner");
+				mkdirSync(workspacePath, { recursive: true });
+				initGitRepository(workspacePath);
+				setGitIdentity(workspacePath, "Ada Lovelace", "ada@example.com");
+
+				const initial = await loadWorkspaceState(workspacePath);
+				const saved = await saveWorkspaceState(workspacePath, {
+					board: createBoard("Ownerless task"),
+					sessions: {},
+					expectedRevision: initial.revision,
+				});
+
+				expect(saved.board.columns[0]?.cards[0]?.owner).toEqual({
+					name: "Ada Lovelace",
+					email: "ada@example.com",
+				});
+
+				const reloaded = await loadWorkspaceState(workspacePath);
+				expect(reloaded.board.columns[0]?.cards[0]?.owner).toEqual({
+					name: "Ada Lovelace",
+					email: "ada@example.com",
+				});
+			} finally {
+				cleanup();
+			}
+		});
+	});
+
+	it("does not overwrite an explicit task owner with the git default", async () => {
+		await withTemporaryHome(async () => {
+			const { path: sandboxRoot, cleanup } = createTempDir("kanban-owner-explicit-");
+			try {
+				const workspacePath = join(sandboxRoot, "project-owner-explicit");
+				mkdirSync(workspacePath, { recursive: true });
+				initGitRepository(workspacePath);
+				setGitIdentity(workspacePath, "Ada Lovelace", "ada@example.com");
+
+				const board = createBoard("Explicitly owned task");
+				const card = board.columns[0]?.cards[0];
+				if (card) {
+					card.owner = { name: "Grace Hopper", email: "grace@example.com" };
+				}
+
+				const initial = await loadWorkspaceState(workspacePath);
+				const saved = await saveWorkspaceState(workspacePath, {
+					board,
+					sessions: {},
+					expectedRevision: initial.revision,
+				});
+
+				expect(saved.board.columns[0]?.cards[0]?.owner).toEqual({
+					name: "Grace Hopper",
+					email: "grace@example.com",
+				});
 			} finally {
 				cleanup();
 			}

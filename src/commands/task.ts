@@ -7,6 +7,7 @@ import type {
 	RuntimeBoardDependency,
 	RuntimeReasoningEffort,
 	RuntimeTaskAgentSettings,
+	RuntimeTaskOwner,
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
 import { runtimeAgentIdSchema, runtimeReasoningEffortSchema } from "../core/api-contract";
@@ -25,6 +26,7 @@ import {
 } from "../core/task-board-mutations";
 import { mutateWorkspaceState } from "../state/workspace-state";
 import { KANBAN_SESSION_TASK_ID_ENV } from "../terminal/hook-runtime-context";
+import { readGitUserIdentity } from "../workspace/git-utils";
 import {
 	createRuntimeTrpcClient,
 	ensureRuntimeWorkspace,
@@ -62,6 +64,32 @@ function parseListColumn(value: string | undefined): ListTaskColumn | undefined 
 		return value;
 	}
 	throw new Error(`Invalid column "${value}". Expected one of: ${LIST_TASK_COLUMNS.join(", ")}, done.`);
+}
+
+/**
+ * Parse an `--owner` value. Accepts git's `Name <email>` author format, or a bare
+ * name, or a bare `<email>`. Returns `undefined` when the flag is absent (keep /
+ * use default) and `null` for an explicit empty value (clear the owner so the repo
+ * git default re-applies on the next save).
+ */
+function parseOwner(value: string | undefined): RuntimeTaskOwner | null | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	const trimmed = value.trim();
+	if (!trimmed) {
+		return null;
+	}
+	const match = trimmed.match(/^(.*?)\s*<([^>]*)>$/);
+	if (match) {
+		const name = (match[1] ?? "").trim();
+		const email = (match[2] ?? "").trim();
+		if (!name && !email) {
+			return null;
+		}
+		return { name, email };
+	}
+	return { name: trimmed, email: "" };
 }
 
 function parseAutoReviewMode(value: string | undefined): "commit" | "pr" | undefined {
@@ -272,6 +300,7 @@ function formatTaskRecord(
 		autoReviewMode: task.autoReviewMode ?? "commit",
 		...(task.agentId ? { agentId: task.agentId } : {}),
 		...formatTaskAgentSettings(task.agentSettings),
+		...(task.owner ? { owner: task.owner } : {}),
 		createdAt: task.createdAt,
 		updatedAt: task.updatedAt,
 		session: session
@@ -402,10 +431,15 @@ async function createTask(input: {
 	autoReviewMode?: "commit" | "pr";
 	agentId?: RuntimeAgentId;
 	agentSettings?: RuntimeTaskAgentSettings;
+	owner?: RuntimeTaskOwner;
 }): Promise<JsonRecord> {
 	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd);
 	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
 	const runtimeClient = createRuntimeTrpcClient(workspaceId);
+	// Resolve the default owner (the repo's git identity) at the CLI boundary so the
+	// returned record is accurate; the persistence layer applies the same default to
+	// web-ui-created tasks. An explicit `--owner` wins over the git default.
+	const resolvedOwner = input.owner ?? (await readGitUserIdentity(workspaceRepoPath)) ?? undefined;
 	const created = await updateRuntimeWorkspaceState(runtimeClient, workspaceRepoPath, (state) => {
 		const resolvedBaseRef = (input.baseRef ?? "").trim() || resolveTaskBaseRef(state);
 		if (!resolvedBaseRef) {
@@ -422,6 +456,7 @@ async function createTask(input: {
 				autoReviewMode: input.autoReviewMode,
 				agentId: input.agentId,
 				agentSettings: input.agentSettings,
+				owner: resolvedOwner,
 				baseRef: resolvedBaseRef,
 			},
 			() => globalThis.crypto.randomUUID(),
@@ -446,6 +481,7 @@ async function createTask(input: {
 			autoReviewMode: created.autoReviewMode ?? "commit",
 			...(created.agentId ? { agentId: created.agentId } : {}),
 			...formatTaskAgentSettings(created.agentSettings),
+			...(created.owner ? { owner: created.owner } : {}),
 		},
 	};
 }
@@ -464,6 +500,7 @@ async function updateTaskCommand(input: {
 	providerId?: string | null;
 	modelId?: string | null;
 	reasoningEffort?: ParsedTaskReasoningEffort;
+	owner?: RuntimeTaskOwner | null;
 }): Promise<JsonRecord> {
 	if (
 		input.title === undefined &&
@@ -475,7 +512,8 @@ async function updateTaskCommand(input: {
 		input.agentId === undefined &&
 		input.providerId === undefined &&
 		input.modelId === undefined &&
-		input.reasoningEffort === undefined
+		input.reasoningEffort === undefined &&
+		input.owner === undefined
 	) {
 		throw new Error("task update requires at least one field to change.");
 	}
@@ -503,6 +541,7 @@ async function updateTaskCommand(input: {
 			autoReviewMode: input.autoReviewMode ?? taskRecord.task.autoReviewMode ?? "commit",
 			agentId: input.agentId,
 			agentSettings: nextTaskKanbanSettings,
+			owner: input.owner,
 		});
 		if (!updatedTask.updated || !updatedTask.task) {
 			throw new Error(`Task "${input.taskId}" could not be updated.`);
@@ -1044,19 +1083,17 @@ export function registerTaskCommand(program: Command): void {
 		.option("--start-in-plan-mode [value]", "Set plan mode (true|false). Flag-only implies true.")
 		.option("--auto-review-enabled [value]", "Enable auto-review behavior (true|false). Flag-only implies true.")
 		.option("--auto-review-mode <mode>", "Auto-review mode: commit | pr.", parseAutoReviewMode)
+		.option(
+			"--owner <identity>",
+			'Task owner as a git identity, e.g. "Ada <ada@example.com>". Defaults to the workspace repo git config.',
+		)
 		.option("--agent-id <id>", "Agent override: pi | claude | codex | droid | gemini | opencode | default.")
 		.option(
 			"--provider <id>",
 			'Provider override (e.g. anthropic, openai, openrouter). Use "default" for workspace default.',
 		)
-		.option(
-			"--model <id>",
-			'Model override (e.g. claude-sonnet-4-20250514). Use "default" for workspace default.',
-		)
-		.option(
-			"--reasoning-effort <level>",
-			"Reasoning effort override: default | low | medium | high | xhigh.",
-		)
+		.option("--model <id>", 'Model override (e.g. claude-sonnet-4-20250514). Use "default" for workspace default.')
+		.option("--reasoning-effort <level>", "Reasoning effort override: default | low | medium | high | xhigh.")
 		.action(
 			async (options: {
 				title?: string;
@@ -1066,6 +1103,7 @@ export function registerTaskCommand(program: Command): void {
 				startInPlanMode?: unknown;
 				autoReviewEnabled?: unknown;
 				autoReviewMode?: "commit" | "pr";
+				owner?: string;
 				agentId?: string;
 				provider?: string;
 				model?: string;
@@ -1093,6 +1131,7 @@ export function registerTaskCommand(program: Command): void {
 							startInPlanMode: parseOptionalBooleanOption(options.startInPlanMode, "--start-in-plan-mode"),
 							autoReviewEnabled: parseOptionalBooleanOption(options.autoReviewEnabled, "--auto-review-enabled"),
 							autoReviewMode: options.autoReviewMode,
+							owner: parseOwner(options.owner) ?? undefined,
 							agentId: resolvedAgentId,
 							agentSettings: buildTaskAgentSettingsForCreate({
 								providerId: parseOptionalStringOrDefault(options.provider) ?? undefined,
@@ -1116,13 +1155,14 @@ export function registerTaskCommand(program: Command): void {
 		.option("--auto-review-enabled [value]", "Enable auto-review behavior (true|false). Flag-only implies true.")
 		.option("--auto-review-mode <mode>", "Auto-review mode: commit | pr.", parseAutoReviewMode)
 		.option(
+			"--owner <identity>",
+			'Owner as a git identity, e.g. "Ada <ada@example.com>". Pass "" to clear (repo git default re-applies).',
+		)
+		.option(
 			"--agent-id <id>",
 			'Agent override: pi | claude | codex | droid | gemini | opencode. Use "default" to clear.',
 		)
-		.option(
-			"--provider <id>",
-			'Provider override (e.g. anthropic, openai, openrouter). Use "default" to clear.',
-		)
+		.option("--provider <id>", 'Provider override (e.g. anthropic, openai, openrouter). Use "default" to clear.')
 		.option("--model <id>", 'Model override (e.g. claude-sonnet-4-20250514). Use "default" to clear.')
 		.option(
 			"--reasoning-effort <level>",
@@ -1138,6 +1178,7 @@ export function registerTaskCommand(program: Command): void {
 				startInPlanMode?: unknown;
 				autoReviewEnabled?: unknown;
 				autoReviewMode?: "commit" | "pr";
+				owner?: string;
 				agentId?: string;
 				provider?: string;
 				model?: string;
@@ -1155,6 +1196,7 @@ export function registerTaskCommand(program: Command): void {
 							startInPlanMode: parseOptionalBooleanOption(options.startInPlanMode, "--start-in-plan-mode"),
 							autoReviewEnabled: parseOptionalBooleanOption(options.autoReviewEnabled, "--auto-review-enabled"),
 							autoReviewMode: options.autoReviewMode,
+							owner: parseOwner(options.owner),
 							agentId: parseAgentId(options.agentId),
 							providerId: parseOptionalStringOrDefault(options.provider),
 							modelId: parseOptionalStringOrDefault(options.model),

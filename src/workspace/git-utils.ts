@@ -108,6 +108,31 @@ export async function readGitHeadInfo(cwd: string): Promise<GitHeadInfo> {
 	};
 }
 
+export interface GitUserIdentity {
+	name: string;
+	email: string;
+}
+
+/**
+ * Read the effective git identity (`user.name` / `user.email`) resolved from the
+ * repository at `cwd` — repo-local config first, then the user's global config, the
+ * same precedence `git commit` uses for authorship. Returns `null` only when git
+ * resolves neither field (no identity configured at any scope), so a partially
+ * configured repo still yields the field it has.
+ */
+export async function readGitUserIdentity(cwd: string): Promise<GitUserIdentity | null> {
+	const [nameResult, emailResult] = await Promise.all([
+		runGit(cwd, ["config", "user.name"]),
+		runGit(cwd, ["config", "user.email"]),
+	]);
+	const name = nameResult.ok ? nameResult.stdout.trim() : "";
+	const email = emailResult.ok ? emailResult.stdout.trim() : "";
+	if (!name && !email) {
+		return null;
+	}
+	return { name, email };
+}
+
 export function getGitCommandErrorMessage(error: unknown): string {
 	if (error && typeof error === "object" && "stderr" in error) {
 		const stderr = (error as { stderr?: unknown }).stderr;

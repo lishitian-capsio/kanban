@@ -12,6 +12,7 @@ import {
 	Play,
 	RotateCcw,
 	Trash2,
+	User,
 } from "lucide-react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -33,6 +34,7 @@ import { getTaskAutoReviewCancelButtonLabel } from "@/types";
 import { formatPathForDisplay } from "@/utils/path-display";
 import { useCopyToClipboard, useMeasure } from "@/utils/react-use";
 import { formatTaskIdChipLabel } from "@/utils/task-id";
+import { getTaskOwnerLabel } from "@/utils/task-owner";
 import {
 	clampTextWithInlineSuffix,
 	getTaskPromptDescription,
@@ -244,6 +246,7 @@ export function BoardCard({
 	isDependencySource = false,
 	isDependencyTarget = false,
 	isDependencyLinking = false,
+	isReorderDisabled = false,
 	workspacePath,
 	defaultKanbanModelId = null,
 }: {
@@ -268,6 +271,7 @@ export function BoardCard({
 	isDependencySource?: boolean;
 	isDependencyTarget?: boolean;
 	isDependencyLinking?: boolean;
+	isReorderDisabled?: boolean;
 	workspacePath?: string | null;
 	defaultKanbanModelId?: string | null;
 }): React.ReactElement {
@@ -458,6 +462,7 @@ export function BoardCard({
 		() => (card.agentId ? (getRuntimeAgentCatalogEntry(card.agentId)?.label ?? card.agentId) : null),
 		[card.agentId],
 	);
+	const ownerLabel = useMemo(() => getTaskOwnerLabel(card.owner), [card.owner]);
 	const modelOverrideLabel = useMemo(() => {
 		if (card.agentSettings === undefined) {
 			return null;
@@ -494,7 +499,7 @@ export function BoardCard({
 	const activeDescriptionDisplay = isDescriptionExpanded ? descriptionDisplay.expanded : descriptionDisplay.collapsed;
 
 	return (
-		<Draggable draggableId={card.id} index={index} isDragDisabled={false}>
+		<Draggable draggableId={card.id} index={index} isDragDisabled={isReorderDisabled}>
 			{(provided, snapshot) => {
 				const isDragging = snapshot.isDragging;
 				const draggableContent = (
@@ -754,19 +759,35 @@ export function BoardCard({
 									</p>
 								</div>
 							) : null}
-							{taskAgentSettingsLabel ? (
-								<div className="mt-1">
-									<span
-										className={cn(
-											"inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs",
-											isTrashCard
-												? "border-border text-text-tertiary bg-surface-1"
-												: "border-status-blue/30 bg-status-blue/10 text-status-blue",
-										)}
-									>
-										<Bot size={12} className="shrink-0" />
-										<span className="truncate">{taskAgentSettingsLabel}</span>
-									</span>
+							{taskAgentSettingsLabel || ownerLabel ? (
+								<div className="mt-1 flex flex-wrap items-center gap-1">
+									{taskAgentSettingsLabel ? (
+										<span
+											className={cn(
+												"inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs",
+												isTrashCard
+													? "border-border text-text-tertiary bg-surface-1"
+													: "border-status-blue/30 bg-status-blue/10 text-status-blue",
+											)}
+										>
+											<Bot size={12} className="shrink-0" />
+											<span className="truncate">{taskAgentSettingsLabel}</span>
+										</span>
+									) : null}
+									{ownerLabel ? (
+										<span
+											title={`Owner: ${ownerLabel}`}
+											className={cn(
+												"inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs",
+												isTrashCard
+													? "border-border text-text-tertiary bg-surface-1"
+													: "border-border-bright bg-surface-1 text-text-secondary",
+											)}
+										>
+											<User size={12} className="shrink-0" />
+											<span className="truncate">{ownerLabel}</span>
+										</span>
+									) : null}
 								</div>
 							) : null}
 							{sessionActivity ? (

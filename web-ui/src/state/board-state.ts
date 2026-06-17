@@ -17,6 +17,7 @@ import {
 	resolveTaskAutoReviewMode,
 	type TaskAutoReviewMode,
 	type TaskImage,
+	type TaskOwner,
 } from "@/types";
 
 export interface TaskDraft {
@@ -128,6 +129,19 @@ function normalizeTaskAgentSettings(rawSettings: unknown): RuntimeTaskAgentSetti
 	};
 }
 
+function normalizeTaskOwner(rawOwner: unknown): TaskOwner | undefined {
+	if (!rawOwner || typeof rawOwner !== "object") {
+		return undefined;
+	}
+	const owner = rawOwner as { name?: unknown; email?: unknown };
+	const name = typeof owner.name === "string" ? owner.name.trim() : "";
+	const email = typeof owner.email === "string" ? owner.email.trim() : "";
+	if (!name && !email) {
+		return undefined;
+	}
+	return { name, email };
+}
+
 function normalizeCard(rawCard: unknown): BoardCard | null {
 	if (!rawCard || typeof rawCard !== "object") {
 		return null;
@@ -144,6 +158,7 @@ function normalizeCard(rawCard: unknown): BoardCard | null {
 		baseRef?: unknown;
 		agentId?: unknown;
 		agentSettings?: unknown;
+		owner?: unknown;
 		createdAt?: unknown;
 		updatedAt?: unknown;
 	};
@@ -176,6 +191,7 @@ function normalizeCard(rawCard: unknown): BoardCard | null {
 		baseRef,
 		...(typeof card.agentId === "string" && card.agentId ? { agentId: card.agentId as RuntimeAgentId } : {}),
 		...(agentSettings !== undefined ? { agentSettings } : {}),
+		...(normalizeTaskOwner(card.owner) ? { owner: normalizeTaskOwner(card.owner) } : {}),
 		createdAt: typeof card.createdAt === "number" ? card.createdAt : now,
 		updatedAt: typeof card.updatedAt === "number" ? card.updatedAt : now,
 	};

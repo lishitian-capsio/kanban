@@ -7,6 +7,7 @@ import type {
 	RuntimeTaskAgentSettings,
 	RuntimeTaskAutoReviewMode,
 	RuntimeTaskImage,
+	RuntimeTaskOwner,
 } from "./api-contract";
 import { safeRandomUUID } from "./safe-uuid";
 import { createUniqueTaskId } from "./task-id";
@@ -22,6 +23,7 @@ export interface RuntimeCreateTaskInput {
 	images?: RuntimeTaskImage[];
 	agentId?: RuntimeAgentId;
 	agentSettings?: RuntimeTaskAgentSettings;
+	owner?: RuntimeTaskOwner;
 	baseRef: string;
 }
 
@@ -34,6 +36,8 @@ export interface RuntimeUpdateTaskInput {
 	images?: RuntimeTaskImage[];
 	agentId?: RuntimeAgentId | null;
 	agentSettings?: RuntimeTaskAgentSettings | null;
+	// undefined → keep existing owner; null → clear owner; object → set owner.
+	owner?: RuntimeTaskOwner | null;
 	baseRef: string;
 }
 
@@ -47,6 +51,20 @@ function normalizeTaskAutoReviewMode(value: RuntimeTaskAutoReviewMode | null | u
 // Copy image metadata so board tasks do not retain caller-owned array or object references.
 function cloneTaskImages(images?: RuntimeTaskImage[]): RuntimeTaskImage[] | undefined {
 	return images && images.length > 0 ? images.map((image) => ({ ...image })) : undefined;
+}
+
+// Normalize/copy an owner identity so board tasks do not retain caller-owned
+// references. A whitespace-only name+email collapses to undefined (no owner).
+function cloneTaskOwner(owner?: RuntimeTaskOwner | null): RuntimeTaskOwner | undefined {
+	if (owner === undefined || owner === null) {
+		return undefined;
+	}
+	const name = owner.name.trim();
+	const email = owner.email.trim();
+	if (!name && !email) {
+		return undefined;
+	}
+	return { name, email };
 }
 
 function cloneTaskAgentSettings(settings?: RuntimeTaskAgentSettings | null): RuntimeTaskAgentSettings | undefined {
@@ -310,6 +328,7 @@ export function addTaskToColumn(
 		images: cloneTaskImages(input.images),
 		...(input.agentId ? { agentId: input.agentId } : {}),
 		...(input.agentSettings !== undefined ? { agentSettings: cloneTaskAgentSettings(input.agentSettings) } : {}),
+		...(cloneTaskOwner(input.owner) ? { owner: cloneTaskOwner(input.owner) } : {}),
 		baseRef,
 		createdAt: now,
 		updatedAt: now,
@@ -631,6 +650,12 @@ export function updateTask(
 						: input.agentSettings === null
 							? undefined
 							: cloneTaskAgentSettings(input.agentSettings),
+				owner:
+					input.owner === undefined
+						? cloneTaskOwner(card.owner)
+						: input.owner === null
+							? undefined
+							: cloneTaskOwner(input.owner),
 				baseRef,
 				updatedAt: now,
 			};

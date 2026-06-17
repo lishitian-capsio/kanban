@@ -1,9 +1,10 @@
 import type {
 	RuntimeAgentId,
 	RuntimeBoardColumnId,
-	RuntimeTaskAutoReviewMode,
 	RuntimeTaskAgentSettings,
+	RuntimeTaskAutoReviewMode,
 	RuntimeTaskImage,
+	RuntimeTaskOwner,
 } from "@/runtime/types";
 
 export type BoardColumnId = RuntimeBoardColumnId;
@@ -46,10 +47,13 @@ export interface BoardCard {
 	images?: TaskImage[];
 	agentId?: RuntimeAgentId;
 	agentSettings?: RuntimeTaskAgentSettings;
+	owner?: RuntimeTaskOwner;
 	baseRef: string;
 	createdAt: number;
 	updatedAt: number;
 }
+
+export type TaskOwner = RuntimeTaskOwner;
 
 export interface BoardColumn {
 	id: BoardColumnId;

@@ -13,7 +13,7 @@ vi.mock("node:child_process", () => ({
 	}),
 }));
 
-import { runGit } from "../../src/workspace/git-utils";
+import { readGitUserIdentity, runGit } from "../../src/workspace/git-utils";
 
 function createExecError(options: {
 	code: string | number;
@@ -70,5 +70,45 @@ describe("runGit", () => {
 		expect(result.ok).toBe(false);
 		expect(result.exitCode).toBe(-1);
 		expect(result.stdout).toBe("partial-output");
+	});
+});
+
+describe("readGitUserIdentity", () => {
+	beforeEach(() => {
+		childProcessMocks.execFile.mockReset();
+		childProcessMocks.execFilePromise.mockReset();
+	});
+
+	function mockConfigValue(
+		value: string,
+	): (cmd: string, args: string[]) => Promise<{ stdout: string; stderr: string }> {
+		return async (_cmd, args) => {
+			const key = args[args.length - 1];
+			if (key === "user.name") {
+				return {
+					stdout: `${value === "name-only" ? "Ada Lovelace" : value === "email-only" ? "" : "Ada Lovelace"}\n`,
+					stderr: "",
+				};
+			}
+			return { stdout: `${value === "name-only" ? "" : "ada@example.com"}\n`, stderr: "" };
+		};
+	}
+
+	it("returns the trimmed name and email", async () => {
+		childProcessMocks.execFilePromise.mockImplementation(mockConfigValue("both"));
+		const identity = await readGitUserIdentity("/repo");
+		expect(identity).toEqual({ name: "Ada Lovelace", email: "ada@example.com" });
+	});
+
+	it("returns the configured field even when the other is missing", async () => {
+		childProcessMocks.execFilePromise.mockImplementation(mockConfigValue("name-only"));
+		const identity = await readGitUserIdentity("/repo");
+		expect(identity).toEqual({ name: "Ada Lovelace", email: "" });
+	});
+
+	it("returns null when neither name nor email is configured", async () => {
+		childProcessMocks.execFilePromise.mockRejectedValue(createExecError({ code: 1, stdout: "", stderr: "" }));
+		const identity = await readGitUserIdentity("/repo");
+		expect(identity).toBeNull();
 	});
 });

@@ -272,3 +272,78 @@ describe("per-task agent/model/provider overrides", () => {
 		});
 	});
 });
+
+describe("task owner", () => {
+	it("stores the owner identity supplied at creation", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{ prompt: "Owned task", baseRef: "main", owner: { name: "Ada", email: "ada@example.com" } },
+			() => "aaaaa111",
+		);
+		expect(created.task.owner).toEqual({ name: "Ada", email: "ada@example.com" });
+	});
+
+	it("leaves owner undefined when none is supplied", () => {
+		const created = addTaskToColumn(createBoard(), "backlog", { prompt: "Task", baseRef: "main" }, () => "aaaaa111");
+		expect(created.task.owner).toBeUndefined();
+	});
+
+	it("collapses a whitespace-only owner to undefined", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{ prompt: "Task", baseRef: "main", owner: { name: "  ", email: " " } },
+			() => "aaaaa111",
+		);
+		expect(created.task.owner).toBeUndefined();
+	});
+
+	it("keeps the existing owner when update omits it", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{ prompt: "Task", baseRef: "main", owner: { name: "Ada", email: "ada@example.com" } },
+			() => "aaaaa111",
+		);
+		const updated = updateTask(created.board, created.task.id, { prompt: "Task", baseRef: "main" });
+		expect(updated.task?.owner).toEqual({ name: "Ada", email: "ada@example.com" });
+	});
+
+	it("overrides the owner when a new identity is provided", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{ prompt: "Task", baseRef: "main", owner: { name: "Ada", email: "ada@example.com" } },
+			() => "aaaaa111",
+		);
+		const updated = updateTask(created.board, created.task.id, {
+			prompt: "Task",
+			baseRef: "main",
+			owner: { name: "Grace", email: "grace@example.com" },
+		});
+		expect(updated.task?.owner).toEqual({ name: "Grace", email: "grace@example.com" });
+	});
+
+	it("clears the owner when update passes null", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{ prompt: "Task", baseRef: "main", owner: { name: "Ada", email: "ada@example.com" } },
+			() => "aaaaa111",
+		);
+		const updated = updateTask(created.board, created.task.id, { prompt: "Task", baseRef: "main", owner: null });
+		expect(updated.task?.owner).toBeUndefined();
+	});
+
+	it("preserves owner across move operations", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{ prompt: "Task", baseRef: "main", owner: { name: "Ada", email: "ada@example.com" } },
+			() => "aaaaa111",
+		);
+		const moved = moveTaskToColumn(created.board, created.task.id, "in_progress");
+		expect(moved.task?.owner).toEqual({ name: "Ada", email: "ada@example.com" });
+	});
+});
