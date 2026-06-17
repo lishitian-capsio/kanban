@@ -72,5 +72,6 @@ describe("resolvePiLaunchConfig with a selected profile (workspace layer)", () =
 		// Base URL comes from the bundled model / provider config, never from the profile.
 		expect(config.providerId).toBe("anthropic");
 		expect(config.modelId).toBe("claude-sonnet-4-20250514");
+		expect(config.baseUrl).toBeNull();
 	});
 });
