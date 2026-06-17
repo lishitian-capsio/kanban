@@ -45,6 +45,7 @@ import type {
 	RuntimeGitSummaryResponse,
 	RuntimeGitSyncAction,
 	RuntimeGitSyncResponse,
+	RuntimeGitUserIdentityResponse,
 	RuntimeHomeChatThreadCloseRequest,
 	RuntimeHomeChatThreadCreateRequest,
 	RuntimeHomeChatThreadMutationResponse,
@@ -180,6 +181,7 @@ import {
 	runtimeGitSummaryResponseSchema,
 	runtimeGitSyncActionSchema,
 	runtimeGitSyncResponseSchema,
+	runtimeGitUserIdentityResponseSchema,
 	runtimeHomeChatThreadCloseRequestSchema,
 	runtimeHomeChatThreadCreateRequestSchema,
 	runtimeHomeChatThreadMutationResponseSchema,
@@ -510,6 +512,7 @@ export interface RuntimeTrpcContext {
 			input: RuntimeVaultViewDeleteRequest,
 		) => Promise<RuntimeVaultViewDeleteResponse>;
 		getVaultSettings: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeVaultSettingsGetResponse>;
+		getGitUserIdentity: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeGitUserIdentityResponse>;
 		updateVaultSettings: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeVaultSettingsUpdateRequest,
@@ -986,15 +989,18 @@ export const runtimeAppRouter = t.router({
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.deleteView(ctx.workspaceScope, input);
 			}),
-			getVaultSettings: workspaceProcedure.output(runtimeVaultSettingsGetResponseSchema).query(async ({ ctx }) => {
-				return await ctx.workspaceApi.getVaultSettings(ctx.workspaceScope);
+		getVaultSettings: workspaceProcedure.output(runtimeVaultSettingsGetResponseSchema).query(async ({ ctx }) => {
+			return await ctx.workspaceApi.getVaultSettings(ctx.workspaceScope);
+		}),
+		getGitUserIdentity: workspaceProcedure.output(runtimeGitUserIdentityResponseSchema).query(async ({ ctx }) => {
+			return await ctx.workspaceApi.getGitUserIdentity(ctx.workspaceScope);
+		}),
+		updateVaultSettings: workspaceProcedure
+			.input(runtimeVaultSettingsUpdateRequestSchema)
+			.output(runtimeVaultSettingsUpdateResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.updateVaultSettings(ctx.workspaceScope, input);
 			}),
-			updateVaultSettings: workspaceProcedure
-				.input(runtimeVaultSettingsUpdateRequestSchema)
-				.output(runtimeVaultSettingsUpdateResponseSchema)
-				.mutation(async ({ ctx, input }) => {
-					return await ctx.workspaceApi.updateVaultSettings(ctx.workspaceScope, input);
-				}),
 		notifyStateUpdated: workspaceProcedure
 			.output(runtimeWorkspaceStateNotifyResponseSchema)
 			.mutation(async ({ ctx }) => {

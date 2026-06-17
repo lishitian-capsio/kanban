@@ -105,14 +105,24 @@ export const runtimeTaskImageSchema = z.object({
 export type RuntimeTaskImage = z.infer<typeof runtimeTaskImageSchema>;
 
 // A task's responsible person ("owner"), captured as a git identity (the same
-// name/email pair git uses for authorship). Defaults at creation to the workspace
-// repo's `git config user.name` / `user.email`; either field may be empty when the
-// repo has only one configured.
+// name/email pair git uses for authorship). Stamped once, at creation, from the
+// creator's git identity (explicit CLI `--owner` wins; otherwise the workspace repo's
+// `git config user.name` / `user.email`); either field may be empty when the repo has
+// only one configured. It is NEVER backfilled afterwards — an ownerless task stays
+// ownerless on every read/write, so real authorship is preserved.
 export const runtimeTaskOwnerSchema = z.object({
 	name: z.string(),
 	email: z.string(),
 });
 export type RuntimeTaskOwner = z.infer<typeof runtimeTaskOwnerSchema>;
+
+// The current git identity resolved from the workspace repo (`git config
+// user.name`/`user.email`), or null when neither is configured. The web-ui reads this
+// to stamp the creator onto a new task at creation time.
+export const runtimeGitUserIdentityResponseSchema = z.object({
+	identity: runtimeTaskOwnerSchema.nullable(),
+});
+export type RuntimeGitUserIdentityResponse = z.infer<typeof runtimeGitUserIdentityResponseSchema>;
 
 // Durable task spec fields, pre-title-resolution. Exported so the on-disk sharded
 // task store (src/state/task-shard-store.ts) can extend this exact shape with its

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useTaskEditor } from "@/hooks/use-task-editor";
 import type { RuntimeAgentId, RuntimeTaskAgentSettings } from "@/runtime/types";
-import type { BoardCard, BoardData, TaskAutoReviewMode, TaskImage } from "@/types";
+import type { BoardCard, BoardData, TaskAutoReviewMode, TaskImage, TaskOwner } from "@/types";
 
 function createTask(taskId: string, prompt: string, createdAt: number, overrides: Partial<BoardCard> = {}): BoardCard {
 	return {
@@ -71,10 +71,12 @@ function HookHarness({
 	initialBoard,
 	onSnapshot,
 	queueTaskStartAfterEdit,
+	defaultTaskOwner = null,
 }: {
 	initialBoard: BoardData;
 	onSnapshot: (snapshot: HookSnapshot) => void;
 	queueTaskStartAfterEdit?: (taskId: string) => void;
+	defaultTaskOwner?: TaskOwner | null;
 }): null {
 	const [board, setBoard] = useState<BoardData>(initialBoard);
 	const [, setSelectedTaskId] = useState<string | null>(null);
@@ -85,6 +87,7 @@ function HookHarness({
 		createTaskBranchOptions: [{ value: "main", label: "main" }],
 		defaultTaskBranchRef: "main",
 		selectedAgentId: null,
+		defaultTaskOwner,
 		setSelectedTaskId,
 		queueTaskStartAfterEdit,
 	});
@@ -340,6 +343,69 @@ describe("useTaskEditor", () => {
 		expect(snapshot.newTaskAgentId).toBeUndefined();
 		expect(snapshot.newTaskAgentSettings).toBeUndefined();
 		expect(snapshot.board.columns[0]?.cards.some((card) => card.prompt === "Create another task")).toBe(true);
+	});
+
+	it("stamps the creator git identity as the owner of a newly created task", async () => {
+		let latestSnapshot: HookSnapshot | null = null;
+		const owner: TaskOwner = { name: "Ada Lovelace", email: "ada@example.com" };
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					initialBoard={createBoard()}
+					defaultTaskOwner={owner}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+		});
+
+		await act(async () => {
+			requireSnapshot(latestSnapshot).handleOpenCreateTask();
+		});
+		await act(async () => {
+			requireSnapshot(latestSnapshot).setNewTaskPrompt("Owned task");
+		});
+		await act(async () => {
+			requireSnapshot(latestSnapshot).handleCreateTask();
+		});
+
+		const created = requireSnapshot(latestSnapshot).board.columns[0]?.cards.find(
+			(card) => card.prompt === "Owned task",
+		);
+		expect(created?.owner).toEqual(owner);
+	});
+
+	it("leaves a newly created task ownerless when no creator identity is configured", async () => {
+		let latestSnapshot: HookSnapshot | null = null;
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					initialBoard={createBoard()}
+					defaultTaskOwner={null}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+		});
+
+		await act(async () => {
+			requireSnapshot(latestSnapshot).handleOpenCreateTask();
+		});
+		await act(async () => {
+			requireSnapshot(latestSnapshot).setNewTaskPrompt("Unowned task");
+		});
+		await act(async () => {
+			requireSnapshot(latestSnapshot).handleCreateTask();
+		});
+
+		const created = requireSnapshot(latestSnapshot).board.columns[0]?.cards.find(
+			(card) => card.prompt === "Unowned task",
+		);
+		expect(created?.owner).toBeUndefined();
 	});
 	it("copies attached images to each split task and clears the draft images", async () => {
 		let latestSnapshot: HookSnapshot | null = null;

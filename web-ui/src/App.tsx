@@ -41,6 +41,7 @@ import { useDebugTools } from "@/hooks/use-debug-tools";
 import { useDetailTaskNavigation } from "@/hooks/use-detail-task-navigation";
 import { useDocumentVisibility } from "@/hooks/use-document-visibility";
 import { useGitActions } from "@/hooks/use-git-actions";
+import { useGitUserIdentity } from "@/hooks/use-git-user-identity";
 import { useHomeSidebarAgentPanel } from "@/hooks/use-home-sidebar-agent-panel";
 import { useHomeThreads } from "@/hooks/use-home-threads";
 import { useKanbanAccessGate } from "@/hooks/use-kanban-access-gate";
@@ -290,6 +291,7 @@ export default function App(): ReactElement {
 	const queueTaskStartAfterEdit = useCallback((taskId: string) => {
 		setPendingTaskStartAfterEditId(taskId);
 	}, []);
+	const { identity: gitUserIdentity } = useGitUserIdentity(currentProjectId);
 
 	const {
 		isInlineTaskCreateOpen,
@@ -345,6 +347,7 @@ export default function App(): ReactElement {
 		createTaskBranchOptions,
 		defaultTaskBranchRef,
 		selectedAgentId: runtimeProjectConfig?.selectedAgentId ?? null,
+		defaultTaskOwner: gitUserIdentity,
 		setSelectedTaskId,
 		queueTaskStartAfterEdit,
 	});
@@ -860,6 +863,7 @@ export default function App(): ReactElement {
 						runtimeHint={navbarRuntimeHint}
 						selectedTaskId={selectedCard?.card.id ?? null}
 						selectedTaskBaseRef={selectedCard?.card.baseRef ?? null}
+						selectedTaskOwner={selectedCard?.card.owner ?? null}
 						showHomeGitSummary={!hasNoProjects && !selectedCard}
 						runningGitAction={selectedCard || hasNoProjects ? null : runningGitAction}
 						onGitFetch={

@@ -29,6 +29,7 @@ export interface TaskDraft {
 	images?: TaskImage[];
 	agentId?: RuntimeAgentId;
 	agentSettings?: RuntimeTaskAgentSettings;
+	owner?: TaskOwner;
 	baseRef: string;
 }
 
@@ -339,6 +340,7 @@ export function addTaskToColumnWithResult(
 			images: draft.images,
 			agentId: draft.agentId,
 			agentSettings: draft.agentSettings,
+			owner: draft.owner,
 			baseRef: draft.baseRef,
 		},
 		createBrowserUuid,

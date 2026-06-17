@@ -155,13 +155,15 @@ describe.sequential("workspace-state integration", () => {
 		});
 	});
 
-	it("stamps the repo git identity as the default owner on ownerless tasks", async () => {
+	it("never backfills an owner onto an ownerless task, even when git identity is configured", async () => {
 		await withTemporaryHome(async () => {
 			const { path: sandboxRoot, cleanup } = createTempDir("kanban-owner-");
 			try {
 				const workspacePath = join(sandboxRoot, "project-owner");
 				mkdirSync(workspacePath, { recursive: true });
 				initGitRepository(workspacePath);
+				// A configured git identity must NOT leak onto ownerless tasks: owner is
+				// stamped only at creation, never by the persistence layer.
 				setGitIdentity(workspacePath, "Ada Lovelace", "ada@example.com");
 
 				const initial = await loadWorkspaceState(workspacePath);
@@ -171,23 +173,17 @@ describe.sequential("workspace-state integration", () => {
 					expectedRevision: initial.revision,
 				});
 
-				expect(saved.board.columns[0]?.cards[0]?.owner).toEqual({
-					name: "Ada Lovelace",
-					email: "ada@example.com",
-				});
+				expect(saved.board.columns[0]?.cards[0]?.owner).toBeUndefined();
 
 				const reloaded = await loadWorkspaceState(workspacePath);
-				expect(reloaded.board.columns[0]?.cards[0]?.owner).toEqual({
-					name: "Ada Lovelace",
-					email: "ada@example.com",
-				});
+				expect(reloaded.board.columns[0]?.cards[0]?.owner).toBeUndefined();
 			} finally {
 				cleanup();
 			}
 		});
 	});
 
-	it("does not overwrite an explicit task owner with the git default", async () => {
+	it("preserves an explicit task owner across save and reload", async () => {
 		await withTemporaryHome(async () => {
 			const { path: sandboxRoot, cleanup } = createTempDir("kanban-owner-explicit-");
 			try {

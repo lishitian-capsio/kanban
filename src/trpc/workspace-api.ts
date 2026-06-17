@@ -21,9 +21,9 @@ import { saveWorkspaceState, WorkspaceStateConflictError } from "../state/worksp
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { SavedViewStore } from "../vault/saved-view-store";
 import { VaultDocumentStore } from "../vault/vault-document-store";
-import { VaultSettingsStore } from "../vault/vault-settings-store";
 import { buildVaultLinkIndex } from "../vault/vault-link-index";
 import { searchVaultDocuments } from "../vault/vault-search";
+import { VaultSettingsStore } from "../vault/vault-settings-store";
 import {
 	createEmptyWorkspaceChangesResponse,
 	getWorkspaceChanges,
@@ -32,6 +32,7 @@ import {
 } from "../workspace/get-workspace-changes";
 import { getCommitDiff, getGitLog, getGitRefs } from "../workspace/git-history";
 import { discardGitChanges, getGitSyncSummary, runGitCheckoutAction, runGitSyncAction } from "../workspace/git-sync";
+import { readGitUserIdentity } from "../workspace/git-utils";
 import { searchWorkspaceFiles } from "../workspace/search-workspace-files";
 import {
 	deleteTaskWorktree,
@@ -482,6 +483,10 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 		getVaultSettings: async (workspaceScope) => {
 			const settings = await new VaultSettingsStore(workspaceScope.workspacePath).get();
 			return { settings };
+		},
+		getGitUserIdentity: async (workspaceScope) => {
+			const identity = await readGitUserIdentity(workspaceScope.workspacePath);
+			return { identity };
 		},
 		updateVaultSettings: async (workspaceScope, input) => {
 			const settings = await new VaultSettingsStore(workspaceScope.workspacePath).set({ managed: input.managed });

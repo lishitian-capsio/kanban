@@ -25,7 +25,6 @@ import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
 import { VaultDocumentStore } from "../vault/vault-document-store";
 import { getVaultTypesDir } from "../vault/vault-paths";
 import { seedVaultTypeDefinitions } from "../vault/vault-type-registry";
-import { readGitUserIdentity } from "../workspace/git-utils";
 import {
 	buildCommittedProviderFromProviderSettings,
 	type CommittedProviderRecord,
@@ -1271,32 +1270,6 @@ export async function loadWorkspaceState(cwd: string): Promise<RuntimeWorkspaceS
 	return toWorkspaceStateResponse(context, board, sessions, meta.revision);
 }
 
-/**
- * Stamp a default owner (the repo's effective git identity) onto every task that
- * has none, so tasks created anywhere — the web-ui (which never sets an owner) and
- * the CLI alike — pick up the workspace repo's `git config user.name`/`user.email`
- * at persistence time. Single source of truth: explicit owners (CLI `--owner`,
- * `task update`) already carry an owner and are left untouched. Git is consulted
- * only when at least one ownerless task exists, and resolves nothing → no change.
- */
-async function applyDefaultTaskOwner(board: RuntimeBoardData, repoPath: string): Promise<RuntimeBoardData> {
-	const hasOwnerlessTask = board.columns.some((column) => column.cards.some((card) => !card.owner));
-	if (!hasOwnerlessTask) {
-		return board;
-	}
-	const identity = await readGitUserIdentity(repoPath);
-	if (!identity) {
-		return board;
-	}
-	return {
-		...board,
-		columns: board.columns.map((column) => ({
-			...column,
-			cards: column.cards.map((card) => (card.owner ? card : { ...card, owner: identity })),
-		})),
-	};
-}
-
 export async function saveWorkspaceState(
 	cwd: string,
 	payload: RuntimeWorkspaceStateSaveRequest,
@@ -1316,7 +1289,7 @@ export async function saveWorkspaceState(
 		) {
 			throw new WorkspaceStateConflictError(expectedRevision, currentMeta.revision);
 		}
-		const board = await applyDefaultTaskOwner(parsedPayload.board, repoPath);
+		const board = parsedPayload.board;
 		const sessions = parsedPayload.sessions;
 		const nextRevision = currentMeta.revision + 1;
 		const nextMeta: WorkspaceStateMeta = {
@@ -1370,7 +1343,7 @@ export async function mutateWorkspaceState<T>(
 			};
 		}
 
-		const nextBoard = await applyDefaultTaskOwner(mutation.board, repoPath);
+		const nextBoard = mutation.board;
 		const nextSessions = mutation.sessions ?? currentSessions;
 		const nextRevision = currentMeta.revision + 1;
 		const nextMeta: WorkspaceStateMeta = {

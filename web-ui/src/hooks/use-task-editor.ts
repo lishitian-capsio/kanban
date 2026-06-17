@@ -11,7 +11,7 @@ import {
 import type { RuntimeAgentId, RuntimeTaskAgentSettings } from "@/runtime/types";
 import { addTaskToColumnWithResult, findCardSelection, updateTask, updateTaskTitle } from "@/state/board-state";
 import { toTelemetrySelectedAgentId, trackTaskCreated } from "@/telemetry/events";
-import type { BoardCard, BoardData, TaskAutoReviewMode, TaskImage } from "@/types";
+import type { BoardCard, BoardData, TaskAutoReviewMode, TaskImage, TaskOwner } from "@/types";
 import { resolveTaskAutoReviewMode } from "@/types";
 import { useBooleanLocalStorageValue, useRawLocalStorageValue } from "@/utils/react-use";
 
@@ -22,6 +22,8 @@ interface UseTaskEditorInput {
 	createTaskBranchOptions: Array<{ value: string; label: string }>;
 	defaultTaskBranchRef: string;
 	selectedAgentId: RuntimeAgentId | null;
+	/** Creator git identity stamped onto a new task at creation; null when unset. */
+	defaultTaskOwner: TaskOwner | null;
 	setSelectedTaskId: Dispatch<SetStateAction<string | null>>;
 	queueTaskStartAfterEdit?: (taskId: string) => void;
 }
@@ -90,6 +92,7 @@ export function useTaskEditor({
 	createTaskBranchOptions,
 	defaultTaskBranchRef,
 	selectedAgentId,
+	defaultTaskOwner,
 	setSelectedTaskId,
 	queueTaskStartAfterEdit,
 }: UseTaskEditorInput): UseTaskEditorResult {
@@ -352,6 +355,7 @@ export function useTaskEditor({
 				images: newTaskImages,
 				agentId: newTaskAgentId,
 				agentSettings: newTaskAgentSettings,
+				owner: defaultTaskOwner ?? undefined,
 				baseRef,
 			});
 			setBoard(created.board);
@@ -381,6 +385,7 @@ export function useTaskEditor({
 		[
 			board,
 			currentProjectId,
+			defaultTaskOwner,
 			newTaskAgentId,
 			newTaskAutoReviewEnabled,
 			newTaskAutoReviewMode,
@@ -418,6 +423,7 @@ export function useTaskEditor({
 					images: newTaskImages,
 					agentId: newTaskAgentId,
 					agentSettings: newTaskAgentSettings,
+					owner: defaultTaskOwner ?? undefined,
 					baseRef,
 				});
 				updatedBoard = created.board;
@@ -452,6 +458,7 @@ export function useTaskEditor({
 		[
 			board,
 			currentProjectId,
+			defaultTaskOwner,
 			newTaskAgentId,
 			newTaskAutoReviewEnabled,
 			newTaskAutoReviewMode,

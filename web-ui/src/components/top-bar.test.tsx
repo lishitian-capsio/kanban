@@ -4,6 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TopBar } from "@/components/top-bar";
 
+vi.mock("@/stores/workspace-metadata-store", () => ({
+	useHomeGitSummaryValue: () => null,
+	useTaskWorkspaceInfoValue: (taskId: string | null) => (taskId ? { branch: "task-1" } : null),
+	useTaskWorkspaceSnapshotValue: () => null,
+}));
+
 function findButtonByText(container: HTMLElement, text: string): HTMLButtonElement | null {
 	return (Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.trim() === text) ??
 		null) as HTMLButtonElement | null;
@@ -130,5 +136,54 @@ describe("TopBar script shortcut onboarding", () => {
 		});
 
 		expect(onOpenSettings).toHaveBeenCalledTimes(1);
+	});
+
+	it("shows the selected task's owner after the branch control", async () => {
+		await act(async () => {
+			root.render(
+				<TopBar
+					openTargetOptions={[]}
+					selectedOpenTargetId="vscode"
+					onSelectOpenTarget={() => {}}
+					onOpenWorkspace={() => {}}
+					canOpenWorkspace={false}
+					isOpeningWorkspace={false}
+					shortcuts={[]}
+					selectedTaskId="task-1"
+					selectedTaskBaseRef="main"
+					selectedTaskOwner={{ name: "Ada Lovelace", email: "ada@example.com" }}
+				/>,
+			);
+		});
+
+		const ownerBadge = Array.from(container.querySelectorAll("span")).find(
+			(span) => span.getAttribute("title") === "Created by Ada Lovelace",
+		);
+		expect(ownerBadge).toBeDefined();
+		expect(ownerBadge?.textContent).toContain("Ada Lovelace");
+	});
+
+	it("omits the owner indicator when the selected task has no owner", async () => {
+		await act(async () => {
+			root.render(
+				<TopBar
+					openTargetOptions={[]}
+					selectedOpenTargetId="vscode"
+					onSelectOpenTarget={() => {}}
+					onOpenWorkspace={() => {}}
+					canOpenWorkspace={false}
+					isOpeningWorkspace={false}
+					shortcuts={[]}
+					selectedTaskId="task-1"
+					selectedTaskBaseRef="main"
+					selectedTaskOwner={null}
+				/>,
+			);
+		});
+
+		const ownerBadge = Array.from(container.querySelectorAll("span")).find((span) =>
+			span.getAttribute("title")?.startsWith("Created by"),
+		);
+		expect(ownerBadge).toBeUndefined();
 	});
 });

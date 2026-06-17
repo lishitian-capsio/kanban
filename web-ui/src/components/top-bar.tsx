@@ -15,6 +15,7 @@ import {
 	Plus,
 	Settings,
 	Terminal,
+	User,
 } from "lucide-react";
 import { useState } from "react";
 import { OpenWorkspaceButton } from "@/components/open-workspace-button";
@@ -36,9 +37,11 @@ import {
 	useTaskWorkspaceInfoValue,
 	useTaskWorkspaceSnapshotValue,
 } from "@/stores/workspace-metadata-store";
+import type { TaskOwner } from "@/types";
 import type { OpenTargetId, OpenTargetOption } from "@/utils/open-targets";
 import { formatPathForDisplay } from "@/utils/path-display";
 import { isMacPlatform } from "@/utils/platform";
+import { getTaskOwnerLabel } from "@/utils/task-owner";
 
 type SettingsSection = "shortcuts";
 type CreateShortcutResult = { ok: boolean; message?: string };
@@ -171,6 +174,7 @@ function TopBarGitStatusSection({
 	showHomeGitSummary,
 	selectedTaskId,
 	selectedTaskBaseRef,
+	selectedTaskOwner,
 	onToggleGitHistory,
 	isGitHistoryOpen,
 	runningGitAction,
@@ -181,6 +185,7 @@ function TopBarGitStatusSection({
 	showHomeGitSummary: boolean;
 	selectedTaskId: string | null;
 	selectedTaskBaseRef: string | null;
+	selectedTaskOwner: TaskOwner | null;
 	onToggleGitHistory?: () => void;
 	isGitHistoryOpen?: boolean;
 	runningGitAction?: RuntimeGitSyncAction | null;
@@ -259,6 +264,7 @@ function TopBarGitStatusSection({
 	}
 
 	if (selectedTaskId && (taskWorkspaceInfo || taskWorkspaceSnapshot)) {
+		const ownerLabel = getTaskOwnerLabel(selectedTaskOwner ?? undefined);
 		return (
 			<>
 				<div className="w-px h-5 bg-border mx-1" />
@@ -272,6 +278,15 @@ function TopBarGitStatusSection({
 					onToggleGitHistory={onToggleGitHistory}
 					isGitHistoryOpen={isGitHistoryOpen}
 				/>
+				{ownerLabel ? (
+					<span
+						title={`Created by ${ownerLabel}`}
+						className="inline-flex max-w-[160px] items-center gap-1 rounded-md border border-border-bright bg-surface-1 px-1.5 py-0.5 text-xs text-text-secondary"
+					>
+						<User size={12} className="shrink-0" />
+						<span className="truncate">{ownerLabel}</span>
+					</span>
+				) : null}
 			</>
 		);
 	}
@@ -288,6 +303,7 @@ export function TopBar({
 	runtimeHint,
 	selectedTaskId,
 	selectedTaskBaseRef,
+	selectedTaskOwner,
 	showHomeGitSummary,
 	runningGitAction,
 	onGitFetch,
@@ -325,6 +341,7 @@ export function TopBar({
 	runtimeHint?: string;
 	selectedTaskId?: string | null;
 	selectedTaskBaseRef?: string | null;
+	selectedTaskOwner?: TaskOwner | null;
 	showHomeGitSummary?: boolean;
 	runningGitAction?: RuntimeGitSyncAction | null;
 	onGitFetch?: () => void;
@@ -510,6 +527,7 @@ export function TopBar({
 									showHomeGitSummary={showHomeGitSummary === true}
 									selectedTaskId={selectedTaskId ?? null}
 									selectedTaskBaseRef={selectedTaskBaseRef ?? null}
+									selectedTaskOwner={selectedTaskOwner ?? null}
 									onToggleGitHistory={onToggleGitHistory}
 									isGitHistoryOpen={isGitHistoryOpen}
 									runningGitAction={runningGitAction}

@@ -436,9 +436,10 @@ async function createTask(input: {
 	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd);
 	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
 	const runtimeClient = createRuntimeTrpcClient(workspaceId);
-	// Resolve the default owner (the repo's git identity) at the CLI boundary so the
-	// returned record is accurate; the persistence layer applies the same default to
-	// web-ui-created tasks. An explicit `--owner` wins over the git default.
+	// Stamp the owner once, here at creation: an explicit `--owner` wins, otherwise the
+	// creator's git identity (`git config user.name`/`user.email`). When neither resolves
+	// the task stays ownerless — nothing backfills it later (the web-ui stamps its own
+	// creator identity at creation the same way, via `workspace.getGitUserIdentity`).
 	const resolvedOwner = input.owner ?? (await readGitUserIdentity(workspaceRepoPath)) ?? undefined;
 	const created = await updateRuntimeWorkspaceState(runtimeClient, workspaceRepoPath, (state) => {
 		const resolvedBaseRef = (input.baseRef ?? "").trim() || resolveTaskBaseRef(state);
