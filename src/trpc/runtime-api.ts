@@ -124,8 +124,8 @@ async function resolveExistingTaskCwdOrEnsure(options: {
  * identity and CLI instructions). Returns `undefined` for non-home tasks
  * so they fall through to the default pi system prompt.
  */
-function resolvePiHomeAgentSystemPrompt(taskId: string, cwd: string): string | undefined {
-	const appendPrompt = resolveHomeAgentAppendSystemPrompt(taskId);
+async function resolvePiHomeAgentSystemPrompt(taskId: string, cwd: string): Promise<string | undefined> {
+	const appendPrompt = await resolveHomeAgentAppendSystemPrompt(taskId);
 	if (!appendPrompt) return undefined;
 	const basePrompt = buildPiSystemPrompt({ cwd });
 	return `${basePrompt}\n\n${appendPrompt}`;
@@ -279,7 +279,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					});
 					const piTaskSessionService = await deps.getScopedPiTaskSessionService(workspaceScope);
 					const resolvedPiTitle = resolveTaskTitle(body.taskTitle?.trim(), body.prompt);
-					const homeAgentSystemPrompt = resolvePiHomeAgentSystemPrompt(body.taskId, taskCwd);
+					const homeAgentSystemPrompt = await resolvePiHomeAgentSystemPrompt(body.taskId, taskCwd);
 					const summary = await piTaskSessionService.startTaskSession({
 						taskId: body.taskId,
 						cwd: taskCwd,
@@ -507,7 +507,10 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					const piLaunchConfig = resolvePiLaunchConfig({
 						committedProvider: await loadSelectedCommittedProvider(workspaceScope),
 					});
-					const homeAgentSystemPrompt = resolvePiHomeAgentSystemPrompt(body.taskId, workspaceScope.workspacePath);
+					const homeAgentSystemPrompt = await resolvePiHomeAgentSystemPrompt(
+						body.taskId,
+						workspaceScope.workspacePath,
+					);
 					summary = await piService.startTaskSession({
 						taskId: body.taskId,
 						cwd: workspaceScope.workspacePath,
@@ -796,7 +799,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 							providerIdOverride: body.providerId ?? undefined,
 							committedProvider: await loadSelectedCommittedProvider(workspaceScope),
 						});
-						const homeAgentSystemPrompt = resolvePiHomeAgentSystemPrompt(
+						const homeAgentSystemPrompt = await resolvePiHomeAgentSystemPrompt(
 							body.taskId,
 							workspaceScope.workspacePath,
 						);

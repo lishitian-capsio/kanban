@@ -496,7 +496,7 @@ const claudeAdapter: AgentSessionAdapter = {
 		const env: Record<string, string | undefined> = {
 			FORCE_HYPERLINK: "1",
 		};
-		const appendedSystemPrompt = resolveHomeAgentAppendSystemPrompt(input.taskId);
+		const appendedSystemPrompt = await resolveHomeAgentAppendSystemPrompt(input.taskId);
 		if (
 			input.autonomousModeEnabled &&
 			!input.startInPlanMode &&
@@ -685,7 +685,7 @@ const codexAdapter: AgentSessionAdapter = {
 		const env: Record<string, string | undefined> = {};
 		const binary = input.binary;
 		let deferredStartupInput: string | undefined;
-		const appendedSystemPrompt = resolveHomeAgentAppendSystemPrompt(input.taskId);
+		const appendedSystemPrompt = await resolveHomeAgentAppendSystemPrompt(input.taskId);
 
 		if (!hasCodexConfigOverride(codexArgs, "check_for_update_on_startup")) {
 			codexArgs.push("-c", "check_for_update_on_startup=false");
@@ -1184,7 +1184,7 @@ const droidAdapter: AgentSessionAdapter = {
 			}
 		}
 
-		const appendedSystemPrompt = resolveHomeAgentAppendSystemPrompt(input.taskId);
+		const appendedSystemPrompt = await resolveHomeAgentAppendSystemPrompt(input.taskId);
 		if (
 			appendedSystemPrompt &&
 			!hasCliOption(args, "--append-system-prompt") &&
@@ -1218,7 +1218,7 @@ const kiroAdapter: AgentSessionAdapter = {
 		}
 
 		const hooks = resolveHookContext(input);
-		const appendedSystemPrompt = resolveHomeAgentAppendSystemPrompt(input.taskId);
+		const appendedSystemPrompt = await resolveHomeAgentAppendSystemPrompt(input.taskId);
 		if (hooks || appendedSystemPrompt) {
 			const configPath = getKiroAgentConfigPath();
 			const config: Record<string, unknown> = {

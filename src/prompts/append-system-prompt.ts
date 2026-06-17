@@ -6,7 +6,10 @@ import type { RuntimeAgentId } from "../core/api-contract";
 import { isHomeAgentSessionId, parseHomeAgentSessionId } from "../core/home-agent-session";
 import { resolveKanbanCommandParts } from "../core/kanban-command";
 import { buildShellCommandLine } from "../core/shell";
+import { resolveRepoPathForWorkspaceId } from "../state/workspace-state";
 import { detectAutoUpdateInstallation, UpdatePackageManager } from "../update/update";
+import { VaultTypeRegistry } from "../vault/vault-type-registry";
+import type { VaultTypeDefinition } from "../vault/vault-types";
 
 const DEFAULT_COMMAND_PREFIX = "kanban";
 const KANBAN_VERSION = typeof packageJson.version === "string" ? packageJson.version : "0.1.0";
@@ -22,16 +25,16 @@ export interface ResolveAppendSystemPromptCommandPrefixOptions {
 
 export interface RenderAppendSystemPromptOptions {
 	agentId?: RuntimeAgentId | null;
+	/**
+	 * The workspace's vault document types, as discovered by the type registry
+	 * (the light "index" tier: name + description, no authoring prompt body). Used
+	 * to render the progressive-disclosure vault-types section. Defaults to empty,
+	 * which renders the type-agnostic "no types defined" guidance.
+	 */
+	vaultTypes?: readonly VaultTypeDefinition[];
 }
 
-const APPEND_PROMPT_AGENT_IDS: readonly RuntimeAgentId[] = [
-	"claude",
-	"codex",
-	"droid",
-	"kiro",
-	"gemini",
-	"opencode",
-];
+const APPEND_PROMPT_AGENT_IDS: readonly RuntimeAgentId[] = ["claude", "codex", "droid", "kiro", "gemini", "opencode"];
 
 function isRuntimeAgentId(value: string): value is RuntimeAgentId {
 	return APPEND_PROMPT_AGENT_IDS.includes(value as RuntimeAgentId);
@@ -62,6 +65,47 @@ function renderLinearSetupGuidanceForAgent(agentId: RuntimeAgentId | null): stri
 		default:
 			return "- If Linear MCP is not available, provide setup instructions for the active agent only, then continue once OAuth is complete.";
 	}
+}
+
+/**
+ * Render the "knowledge vault document types" section as skill-style progressive
+ * disclosure: list each discovered type by name + one-line description + its create
+ * command (the light index), and instruct the agent to load a type's full authoring
+ * prompt on demand via `vault type show` before writing a document of that type.
+ *
+ * This is type-agnostic — there are no per-type branches. When no types are defined,
+ * it degrades to generic vault-document guidance that still points at the discovery
+ * commands. Pure and side-effect-free so the rendering logic is unit-testable.
+ */
+function renderVaultDocumentTypesSection(types: readonly VaultTypeDefinition[], kanbanCommand: string): string {
+	const intro = `# Knowledge vault documents
+
+Kanban tracks structured knowledge as documents in a git-backed vault: each document is a markdown file with YAML frontmatter under \`.kanban/files/docs/<type>/\`, managed through the \`vault doc\` CLI commands listed below. Reading and editing vault documents is allowed work for you; it is not implementation work, so do not redirect it to task creation. Document history lives in git, so there is no separate version-history or revert command.
+
+Tasks and vault documents are independent things. There is no ordering, hierarchy, or parent-child relationship between them: a document does not own or contain tasks, and a task does not belong under a document. A document may optionally reference tasks through its frontmatter, but this is an optional lateral reference, not a hierarchy.`;
+
+	if (types.length === 0) {
+		return `${intro}
+
+No document types are defined in this workspace yet. You can still create a document of any type with \`${kanbanCommand} vault doc create --type <type>\`. To discover the types a workspace offers, run \`${kanbanCommand} vault type list\`; before authoring a document of a given type, run \`${kanbanCommand} vault type show --type <type>\` to read that type's authoring guidance and follow it.`;
+	}
+
+	const typeLines = [...types]
+		.sort((left, right) => left.type.localeCompare(right.type))
+		.map((definition) => {
+			// Strip a trailing sentence period so descriptions that end in "." don't render "..".
+			const description = definition.description?.trim().replace(/\.$/, "");
+			const summary = description ? ` — ${description}` : "";
+			return `- \`${definition.type}\`${summary}. Create with \`${kanbanCommand} vault doc create --type ${definition.type}\`.`;
+		})
+		.join("\n");
+
+	return `${intro}
+
+This workspace defines the following document types (a light index — name and one-line purpose only):
+${typeLines}
+
+Each type is self-governing: it carries its own authoring prompt describing which frontmatter fields to set, what the body should contain, and how its status flows. Before you create or update a document of a given type, FIRST run \`${kanbanCommand} vault type show --type <type>\` to read that type's full authoring prompt, then write the document exactly as that prompt instructs. The list above intentionally omits those rules — load them on demand for the type you are about to write.`;
 }
 
 export function resolveAppendSystemPromptCommandPrefix(
@@ -120,13 +164,14 @@ export function resolveAppendSystemPromptCommandPrefix(
 export function renderAppendSystemPrompt(commandPrefix: string, options: RenderAppendSystemPromptOptions = {}): string {
 	const kanbanCommand = commandPrefix.trim() || DEFAULT_COMMAND_PREFIX;
 	const selectedAgentId = options.agentId ?? null;
+	const vaultTypesSection = renderVaultDocumentTypesSection(options.vaultTypes ?? [], kanbanCommand);
 	return `# Kanban Sidebar
 
 You are the Kanban sidebar agent for this workspace. Help the user interact with their Kanban board directly from this side panel. When the user asks to add tasks, create tasks, break work down, link tasks, or start tasks, prefer using the Kanban CLI yourself instead of describing manual steps.
 
 Kanban is a CLI tool for orchestrating multiple coding agents working on tasks in parallel on a kanban board. It manages git worktrees automatically so that each task can run a dedicated CLI agent in its own worktree.
 
-You are a Kanban board management helper: your job is to create, organize, link, start, and manage tasks, and to manage the workspace's knowledge-vault documents (such as requirements), using the Kanban CLI.
+You are a Kanban board management helper: your job is to create, organize, link, start, and manage tasks, and to manage the workspace's knowledge-vault documents, using the Kanban CLI.
 
 # CRITICAL: You are NOT a coding agent
 
@@ -141,15 +186,7 @@ If the user asks you to write code, fix a bug, implement a feature, refactor, or
 - If your current working directory is inside \`.kanban/worktrees/\`, you are inside a Kanban task worktree. In that case, create or manage tasks against the main workspace path, not the task worktree path. Pass the main workspace with \`--project-path\`.
 - If a task command fails because the runtime is unavailable, tell the user to start Kanban in that workspace first with \`${kanbanCommand}\`, then retry the task command.
 
-# Requirements (knowledge vault)
-
-Kanban tracks requirements as documents in a git-backed knowledge vault: each requirement is a markdown file with YAML frontmatter under \`.kanban/files/docs/requirement/\`, managed through the \`vault doc\` CLI commands listed below. A requirement is a customer-facing problem statement — its markdown body is the description, and its frontmatter carries \`status\` (proposed | clarified | parked | invalid), \`priority\` (low | medium | high | urgent), and an optional \`related_tasks\` list. Reading and editing vault documents is allowed work for you; it is not implementation work, so do not redirect it to task creation. Document history lives in git, so there is no separate version-history or revert command.
-
-Tasks and requirements are two independent things. There is no ordering, hierarchy, or parent-child relationship between them: a requirement does not own or contain tasks, and a task does not belong under a requirement. A requirement may optionally reference tasks through its \`related_tasks\` frontmatter (set with \`--set related_tasks=<task_id>\`), but this is an optional lateral reference, not a hierarchy.
-
-- If the user asks to add, log, or capture a requirement (for example "add a requirement", "log a requirement", "记个需求", "加个需求"), route to \`vault doc create --type requirement\`.
-- If the user asks to see or filter requirements (for example "list requirements", "看需求列表", "show this requirement", "看这条需求"), route to \`vault doc list --type requirement\` or \`vault doc show\`.
-- If the user asks to change or remove a requirement (for example "update this requirement", "改这条需求", "delete this requirement", "删掉这条需求"), route to \`vault doc update\` or \`vault doc delete\`.
+${vaultTypesSection}
 
 # Command Prefix
 
@@ -299,9 +336,30 @@ Parameters:
 - \`--task-id <task_id>\` required task ID.
 - \`--project-path <path>\` optional workspace path. If not already registered in Kanban, it is auto-added for git repos.
 
+## vault type list
+
+Purpose: list the workspace's document types as a light index (name + description + metadata, without each type's authoring prompt). Use this to discover which types exist.
+
+Command:
+\`${kanbanCommand} vault type list [--project-path <path>]\`
+
+Parameters:
+- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
+
+## vault type show
+
+Purpose: show a type's full definition, including the self-governing authoring prompt (body). Run this before creating or updating a document of that type, and follow the prompt it returns.
+
+Command:
+\`${kanbanCommand} vault type show --type <type> [--project-path <path>]\`
+
+Parameters:
+- \`--type <type>\` required type id (e.g. \`requirement\`).
+- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
+
 ## vault doc list
 
-Purpose: list knowledge-vault documents for a workspace, optionally filtered by type (use \`requirement\` for requirements).
+Purpose: list knowledge-vault documents for a workspace, optionally filtered by type.
 
 Command:
 \`${kanbanCommand} vault doc list [--type <type>] [--project-path <path>]\`
@@ -323,7 +381,7 @@ Parameters:
 
 ## vault doc create
 
-Purpose: create a vault document. For a requirement, pass \`--type requirement\`; new requirements default to \`proposed\` status and \`medium\` priority.
+Purpose: create a vault document of a given type. Run \`vault type show --type <type>\` first to learn the type's required frontmatter and body; the type's default frontmatter is applied before your \`--set\` overrides.
 
 Command:
 \`${kanbanCommand} vault doc create --type <type> --title "<text>" [--body "<markdown>"] [--body-file <path>] [--set key=value ...] [--project-path <path>]\`
@@ -331,7 +389,7 @@ Command:
 Parameters:
 - \`--type <type>\` required document type, e.g. \`requirement\`.
 - \`--title "<text>"\` required document title.
-- \`--body "<markdown>"\` optional markdown body (for a requirement, this is the description).
+- \`--body "<markdown>"\` optional markdown body (the document's main content, per the type's authoring prompt).
 - \`--body-file <path>\` optional path to read the markdown body from a file.
 - \`--set key=value\` optional frontmatter field, repeatable (e.g. \`--set status=proposed --set priority=high\`).
 - \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
@@ -372,14 +430,38 @@ Parameters:
 `;
 }
 
-export function resolveHomeAgentAppendSystemPrompt(
+/**
+ * Load the workspace's vault document types (light index tier) for the home session
+ * encoded in `taskId`. Resolves the repo path from the parsed workspace id, then asks
+ * the type registry to scan `docs/_types/`. Degrades to an empty list — never throws —
+ * when the workspace is unknown or the scan fails, so prompt rendering still succeeds.
+ */
+async function loadVaultTypesForHomeSession(taskId: string): Promise<readonly VaultTypeDefinition[]> {
+	const parts = parseHomeAgentSessionId(taskId);
+	if (!parts) {
+		return [];
+	}
+	try {
+		const repoPath = await resolveRepoPathForWorkspaceId(parts.workspaceId);
+		if (!repoPath) {
+			return [];
+		}
+		return await new VaultTypeRegistry(repoPath).list();
+	} catch {
+		return [];
+	}
+}
+
+export async function resolveHomeAgentAppendSystemPrompt(
 	taskId: string,
 	options: ResolveAppendSystemPromptCommandPrefixOptions = {},
-): string | null {
+): Promise<string | null> {
 	if (!isHomeAgentSessionId(taskId)) {
 		return null;
 	}
+	const vaultTypes = await loadVaultTypesForHomeSession(taskId);
 	return renderAppendSystemPrompt(resolveAppendSystemPromptCommandPrefix(options), {
 		agentId: resolveHomeAgentId(taskId),
+		vaultTypes,
 	});
 }
