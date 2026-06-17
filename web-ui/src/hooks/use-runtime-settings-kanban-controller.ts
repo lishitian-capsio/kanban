@@ -14,7 +14,9 @@ import {
 	startKanbanDeviceAuth,
 } from "@/runtime/runtime-config-query";
 import type {
+	RuntimeAgentId,
 	RuntimeAgentProviderConfig,
+	RuntimeConfigResponse,
 	RuntimeKanbanOauthLoginResponse,
 	RuntimeKanbanOauthProvider,
 	RuntimeKanbanProviderCapability,
@@ -22,7 +24,6 @@ import type {
 	RuntimeKanbanProviderModel,
 	RuntimeKanbanProviderSettings,
 	RuntimeReasoningEffort,
-	RuntimeConfigResponse,
 	RuntimeTaskAgentSettings,
 } from "@/runtime/types";
 import { isLocalhostAccess } from "@/utils/localhost-detection";
@@ -146,8 +147,8 @@ export interface UseRuntimeSettingsKanbanControllerResult {
 	hasUnsavedChanges: boolean;
 	saveProviderSettings: (overrides?: SaveProviderSettingsOverrides) => Promise<SaveResult>;
 	refreshProviderModels: () => Promise<SaveResult>;
-	addCustomProvider: (input: AddKanbanProviderInput) => Promise<SaveResult>;
-	updateCustomProvider: (input: UpdateKanbanProviderInput) => Promise<SaveResult>;
+	addCustomProvider: (input: AddKanbanProviderInput, agentId?: RuntimeAgentId) => Promise<SaveResult>;
+	updateCustomProvider: (input: UpdateKanbanProviderInput, agentId?: RuntimeAgentId) => Promise<SaveResult>;
 	runOauthLogin: () => Promise<SaveResult>;
 }
 
@@ -180,7 +181,7 @@ function buildProviderSettingsFromConfig(
 		modelId: config.model?.trim() || null,
 		baseUrl: config.baseUrl?.trim() || null,
 		reasoningEffort: (config.reasoning?.effort as RuntimeReasoningEffort | undefined) ?? null,
-		apiKeyConfigured: !!(config.apiKey?.trim()),
+		apiKeyConfigured: !!config.apiKey?.trim(),
 		oauthProvider: existing?.oauthProvider ?? null,
 		oauthAccessTokenConfigured: existing?.oauthAccessTokenConfigured ?? false,
 		oauthRefreshTokenConfigured: existing?.oauthRefreshTokenConfigured ?? false,
@@ -698,10 +699,10 @@ export function useRuntimeSettingsKanbanController(
 	]);
 
 	const addCustomProvider = useCallback(
-		async (input: AddKanbanProviderInput): Promise<SaveResult> => {
+		async (input: AddKanbanProviderInput, agentId: RuntimeAgentId = "pi"): Promise<SaveResult> => {
 			try {
 				const agentConfig: RuntimeAgentProviderConfig = {
-					agentId: selectedAgentId,
+					agentId,
 					provider: input.providerId,
 					apiKey: input.apiKey?.trim() || undefined,
 					baseUrl: input.baseUrl?.trim() || undefined,
@@ -713,29 +714,31 @@ export function useRuntimeSettingsKanbanController(
 					headers: input.headers,
 					timeout: input.timeoutMs,
 				};
-				const result = await saveAgentProviderConfig(workspaceId, selectedAgentId, agentConfig);
+				const result = await saveAgentProviderConfig(workspaceId, agentId, agentConfig);
 				if (!result.ok) {
 					return { ok: false, message: result.error ?? "Failed to add provider." };
 				}
-				const savedConfig = result.config;
-				if (savedConfig) {
-					const savedSettings = buildProviderSettingsFromConfig(savedConfig, effectiveProviderSettings);
-					const nextProviderId = savedSettings.providerId ?? input.providerId.trim().toLowerCase();
-					setProviderId(nextProviderId);
-					setModelId(savedSettings.modelId ?? input.defaultModelId?.trim() ?? input.models[0] ?? "");
-					setApiKey("");
-					setBaseUrl(savedSettings.baseUrl ?? input.baseUrl ?? "");
-					setReasoningEffort(savedSettings.reasoningEffort ?? "");
-					setProviderSettingsOverride(savedSettings);
-					await loadProviderModelsForProvider(nextProviderId);
-				} else {
-					const nextProviderId = input.providerId.trim().toLowerCase();
-					setProviderId(nextProviderId);
-					setModelId(input.defaultModelId?.trim() ?? input.models[0] ?? "");
-					setApiKey("");
-					setBaseUrl(input.baseUrl ?? "");
-					setProviderSettingsOverride(null);
-					await loadProviderModelsForProvider(nextProviderId);
+				if (agentId === "pi") {
+					const savedConfig = result.config;
+					if (savedConfig) {
+						const savedSettings = buildProviderSettingsFromConfig(savedConfig, effectiveProviderSettings);
+						const nextProviderId = savedSettings.providerId ?? input.providerId.trim().toLowerCase();
+						setProviderId(nextProviderId);
+						setModelId(savedSettings.modelId ?? input.defaultModelId?.trim() ?? input.models[0] ?? "");
+						setApiKey("");
+						setBaseUrl(savedSettings.baseUrl ?? input.baseUrl ?? "");
+						setReasoningEffort(savedSettings.reasoningEffort ?? "");
+						setProviderSettingsOverride(savedSettings);
+						await loadProviderModelsForProvider(nextProviderId);
+					} else {
+						const nextProviderId = input.providerId.trim().toLowerCase();
+						setProviderId(nextProviderId);
+						setModelId(input.defaultModelId?.trim() ?? input.models[0] ?? "");
+						setApiKey("");
+						setBaseUrl(input.baseUrl ?? "");
+						setProviderSettingsOverride(null);
+						await loadProviderModelsForProvider(nextProviderId);
+					}
 				}
 				return { ok: true };
 			} catch (error) {
@@ -802,19 +805,19 @@ export function useRuntimeSettingsKanbanController(
 	}, [managedOauthProvider, providerCatalog, providerId, workspaceId]);
 
 	const updateCustomProvider = useCallback(
-		async (input: UpdateKanbanProviderInput): Promise<SaveResult> => {
+		async (input: UpdateKanbanProviderInput, agentId: RuntimeAgentId = "pi"): Promise<SaveResult> => {
 			try {
 				// Fetch existing config to merge updates into.
 				let existingConfig: RuntimeAgentProviderConfig | null = null;
 				try {
 					const configs = await fetchAgentProviderConfigs(workspaceId);
-					existingConfig = configs.agents[selectedAgentId] ?? null;
+					existingConfig = configs.agents[agentId] ?? null;
 				} catch {
 					// If fetch fails, start from empty.
 				}
 				const mergedConfig: RuntimeAgentProviderConfig = {
-					...(existingConfig ?? { agentId: selectedAgentId }),
-					agentId: selectedAgentId,
+					...(existingConfig ?? { agentId }),
+					agentId,
 					provider: input.providerId,
 					...(input.apiKey !== undefined ? { apiKey: input.apiKey?.trim() || undefined } : {}),
 					...(input.baseUrl !== undefined ? { baseUrl: input.baseUrl?.trim() || undefined } : {}),
@@ -830,29 +833,31 @@ export function useRuntimeSettingsKanbanController(
 					...(input.headers !== undefined ? { headers: input.headers ?? undefined } : {}),
 					...(input.timeoutMs !== undefined ? { timeout: input.timeoutMs ?? undefined } : {}),
 				};
-				const result = await saveAgentProviderConfig(workspaceId, selectedAgentId, mergedConfig);
+				const result = await saveAgentProviderConfig(workspaceId, agentId, mergedConfig);
 				if (!result.ok) {
 					return { ok: false, message: result.error ?? "Failed to update provider." };
 				}
-				const savedConfig = result.config;
-				if (savedConfig) {
-					const savedSettings = buildProviderSettingsFromConfig(savedConfig, effectiveProviderSettings);
-					const nextProviderId = savedSettings.providerId ?? input.providerId.trim().toLowerCase();
-					setProviderId(nextProviderId);
-					setModelId(savedSettings.modelId ?? input.defaultModelId?.trim() ?? modelId);
-					setApiKey("");
-					setBaseUrl(savedSettings.baseUrl ?? input.baseUrl ?? baseUrl);
-					setReasoningEffort(savedSettings.reasoningEffort ?? "");
-					setProviderSettingsOverride(savedSettings);
-					await loadProviderModelsForProvider(nextProviderId);
-				} else {
-					const nextProviderId = input.providerId.trim().toLowerCase();
-					setProviderId(nextProviderId);
-					setModelId(input.defaultModelId?.trim() ?? modelId);
-					setApiKey("");
-					setBaseUrl(input.baseUrl ?? baseUrl);
-					setProviderSettingsOverride(null);
-					await loadProviderModelsForProvider(nextProviderId);
+				if (agentId === "pi") {
+					const savedConfig = result.config;
+					if (savedConfig) {
+						const savedSettings = buildProviderSettingsFromConfig(savedConfig, effectiveProviderSettings);
+						const nextProviderId = savedSettings.providerId ?? input.providerId.trim().toLowerCase();
+						setProviderId(nextProviderId);
+						setModelId(savedSettings.modelId ?? input.defaultModelId?.trim() ?? modelId);
+						setApiKey("");
+						setBaseUrl(savedSettings.baseUrl ?? input.baseUrl ?? baseUrl);
+						setReasoningEffort(savedSettings.reasoningEffort ?? "");
+						setProviderSettingsOverride(savedSettings);
+						await loadProviderModelsForProvider(nextProviderId);
+					} else {
+						const nextProviderId = input.providerId.trim().toLowerCase();
+						setProviderId(nextProviderId);
+						setModelId(input.defaultModelId?.trim() ?? modelId);
+						setApiKey("");
+						setBaseUrl(input.baseUrl ?? baseUrl);
+						setProviderSettingsOverride(null);
+						await loadProviderModelsForProvider(nextProviderId);
+					}
 				}
 				return { ok: true };
 			} catch (error) {

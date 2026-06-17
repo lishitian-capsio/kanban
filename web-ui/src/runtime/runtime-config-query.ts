@@ -8,6 +8,10 @@ import type {
 	RuntimeAgentProviderConfigListResponse,
 	RuntimeAgentProviderMutationRequest,
 	RuntimeAgentProviderMutationResponse,
+	RuntimeAgentProviderSetListResponse,
+	RuntimeConfigResponse,
+	RuntimeDebugResetAllStateResponse,
+	RuntimeFeaturebaseTokenResponse,
 	RuntimeKanbanAccountBalanceResponse,
 	RuntimeKanbanAccountOrganizationsResponse,
 	RuntimeKanbanAccountProfileResponse,
@@ -24,9 +28,6 @@ import type {
 	RuntimeKanbanOauthProvider,
 	RuntimeKanbanProviderCatalogItem,
 	RuntimeKanbanProviderModel,
-	RuntimeConfigResponse,
-	RuntimeDebugResetAllStateResponse,
-	RuntimeFeaturebaseTokenResponse,
 	RuntimeProjectShortcut,
 	RuntimeRunUpdateResponse,
 	RuntimeUpdateStatusResponse,
@@ -207,6 +208,11 @@ export async function fetchAgentProviderConfigs(
 ): Promise<RuntimeAgentProviderConfigListResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
 	return await trpcClient.runtime.listAgentProviderConfigs.query();
+}
+
+export async function fetchAgentProviderSets(workspaceId: string | null): Promise<RuntimeAgentProviderSetListResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.runtime.listAgentProviders.query();
 }
 
 export async function addProviderToAgent(
