@@ -66,6 +66,14 @@ export interface PiTaskSessionService extends SessionMessageSource {
 		mode?: RuntimeTaskSessionMode,
 		images?: RuntimeTaskImage[],
 	): Promise<RuntimeTaskSessionSummary | null>;
+	/**
+	 * Whether a live agent is currently running for this task. The live agent
+	 * lives in the agent runtime, which can diverge from the message-store entry
+	 * (e.g. a start that failed before populating the runtime, or a disposed
+	 * session). Callers use this to decide whether a message can be delivered to
+	 * an existing session or the session must be (re)started first.
+	 */
+	hasActiveAgentSession(taskId: string): boolean;
 	reloadTaskSession(taskId: string): Promise<RuntimeTaskSessionSummary | null>;
 	clearTaskSession(taskId: string): Promise<RuntimeTaskSessionSummary | null>;
 	/** Permanently close a session: stop, drop in-memory state, delete transcript. */
@@ -407,6 +415,10 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 		});
 
 		return cloneSummary(entry.summary);
+	}
+
+	hasActiveAgentSession(taskId: string): boolean {
+		return this.agentRuntime.getSession(taskId) !== null;
 	}
 
 	async reloadTaskSession(taskId: string): Promise<RuntimeTaskSessionSummary | null> {

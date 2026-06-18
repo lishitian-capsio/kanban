@@ -35,6 +35,7 @@ import type {
 	RuntimeAgentProviderSetListResponse,
 	RuntimeCommandRunResponse,
 	RuntimeRunUpdateResponse,
+	RuntimeTaskSessionSummary,
 	RuntimeUpdateStatusResponse,
 } from "../core/api-contract";
 import {
@@ -772,9 +773,56 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					deps.broadcastTaskChatCleared?.(workspaceScope.workspaceId, body.taskId);
 					return { ok: true, summary, message: null };
 				}
-				let summary = await piService.sendTaskSessionInput(body.taskId, body.text, requestedMode, body.images);
+
+				const isHomeSession = isHomeAgentSessionId(body.taskId);
+
+				// Lazily (re)start a home pi chat. The home sidebar starts pi chats
+				// lazily on first message, and the live agent can be absent even when a
+				// message-store entry lingers (e.g. a prior start failed to leave a live
+				// agent, or the session was disposed). Sending into that dead session
+				// would throw the internal "No active pi session" error, so start a fresh
+				// session here — the message rides along as the start prompt. A genuine
+				// launch failure (provider/login/model not configured) still surfaces its
+				// own actionable "Pi agent start failed" message rather than the no-session
+				// error.
+				const startHomePiSession = async (): Promise<RuntimeTaskSessionSummary> => {
+					const piLaunchConfig = resolvePiLaunchConfig({
+						// Per-session provider override from the composer's provider switch.
+						// It outranks the committed-provider/store layers, so this session
+						// launches with the chosen provider (and that provider's
+						// model/baseUrl/apiKey) without touching the agent default or any
+						// other running session.
+						providerIdOverride: body.providerId ?? undefined,
+						committedProvider: await loadSelectedCommittedProvider(workspaceScope),
+					});
+					const homeAgentSystemPrompt = await resolvePiHomeAgentSystemPrompt(
+						body.taskId,
+						workspaceScope.workspacePath,
+					);
+					return piService.startTaskSession({
+						taskId: body.taskId,
+						cwd: workspaceScope.workspacePath,
+						prompt: body.text,
+						images: body.images,
+						resumeFromPersistence: true,
+						providerId: piLaunchConfig.providerId,
+						modelId: piLaunchConfig.modelId,
+						mode: requestedMode,
+						apiKey: piLaunchConfig.apiKey,
+						baseUrl: piLaunchConfig.baseUrl,
+						reasoningEffort: piLaunchConfig.reasoningEffort,
+						systemPrompt: homeAgentSystemPrompt,
+					});
+				};
+
+				let summary: RuntimeTaskSessionSummary | null;
+				if (isHomeSession && !piService.hasActiveAgentSession(body.taskId)) {
+					summary = await startHomePiSession();
+				} else {
+					summary = await piService.sendTaskSessionInput(body.taskId, body.text, requestedMode, body.images);
+				}
 				if (!summary) {
-					if (!isHomeAgentSessionId(body.taskId)) {
+					if (!isHomeSession) {
 						const rebound = await piService.rebindPersistedTaskSession(body.taskId);
 						if (rebound) {
 							summary = await piService.sendTaskSessionInput(body.taskId, body.text, requestedMode, body.images);
@@ -805,33 +853,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 							};
 						}
 					} else {
-						const piLaunchConfig = resolvePiLaunchConfig({
-							// Per-session provider override from the composer's provider switch.
-							// It outranks the committed-provider/store layers, so this session
-							// launches with the chosen provider (and that provider's
-							// model/baseUrl/apiKey) without touching the agent default or any
-							// other running session.
-							providerIdOverride: body.providerId ?? undefined,
-							committedProvider: await loadSelectedCommittedProvider(workspaceScope),
-						});
-						const homeAgentSystemPrompt = await resolvePiHomeAgentSystemPrompt(
-							body.taskId,
-							workspaceScope.workspacePath,
-						);
-						summary = await piService.startTaskSession({
-							taskId: body.taskId,
-							cwd: workspaceScope.workspacePath,
-							prompt: body.text,
-							images: body.images,
-							resumeFromPersistence: true,
-							providerId: piLaunchConfig.providerId,
-							modelId: piLaunchConfig.modelId,
-							mode: requestedMode,
-							apiKey: piLaunchConfig.apiKey,
-							baseUrl: piLaunchConfig.baseUrl,
-							reasoningEffort: piLaunchConfig.reasoningEffort,
-							systemPrompt: homeAgentSystemPrompt,
-						});
+						summary = await startHomePiSession();
 					}
 				}
 				const latestMessage = piService.listMessages(body.taskId).at(-1) ?? null;

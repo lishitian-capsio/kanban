@@ -349,6 +349,7 @@ function createPiTaskSessionServiceMock() {
 		abortTaskSession: vi.fn<(...args: unknown[]) => Promise<RuntimeTaskSessionSummary | null>>(async () => null),
 		cancelTaskTurn: vi.fn<(...args: unknown[]) => Promise<RuntimeTaskSessionSummary | null>>(async () => null),
 		sendTaskSessionInput: vi.fn<(...args: unknown[]) => Promise<RuntimeTaskSessionSummary | null>>(async () => null),
+		hasActiveAgentSession: vi.fn<(...args: unknown[]) => boolean>(() => false),
 		clearTaskSession: vi.fn<(...args: unknown[]) => Promise<RuntimeTaskSessionSummary | null>>(async () => null),
 		listSlashCommands: vi.fn<(...args: unknown[]) => Promise<unknown[]>>(async () => []),
 		reloadTaskSession: vi.fn<(...args: unknown[]) => Promise<RuntimeTaskSessionSummary | null>>(async () => null),
@@ -1935,6 +1936,100 @@ describe("createRuntimeApi startTaskSession", () => {
 		expect(response.message).toEqual(latestMessage);
 	});
 
+	it("lazily restarts a home pi chat when a stale entry has no live agent (no 'No active pi session')", async () => {
+		// Reproduces the bug: a prior pi start left a message-store entry (e.g. a
+		// failed launch) but no live agent in the runtime. The send must (re)start
+		// the session instead of routing the message into a dead session, which
+		// would surface the internal "No active pi session" error.
+		const summary = createSummary({ agentId: "pi", pid: null });
+		const latestMessage = {
+			id: "message-home-restart-1",
+			role: "user" as const,
+			content: "hello again",
+			createdAt: Date.now(),
+		};
+		const piTaskSessionService = createPiTaskSessionServiceMock();
+		piTaskSessionService.hasActiveAgentSession.mockReturnValue(false);
+		// A stale entry would make sendTaskSessionInput return a summary (and fire a
+		// doomed sendInput). It must NOT be consulted when there is no live agent.
+		piTaskSessionService.sendTaskSessionInput.mockResolvedValue(summary);
+		piTaskSessionService.startTaskSession.mockResolvedValue(summary);
+		piTaskSessionService.listMessages.mockReturnValue([latestMessage]);
+		setSelectedProviderSettings({
+			provider: "cline",
+			auth: {
+				accessToken: "seed-token",
+				refreshToken: "seed-refresh",
+				expiresAt: Date.now() + 3_600_000,
+			},
+		});
+
+		const api = createTestRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => ({}) as never),
+			getScopedPiTaskSessionService: vi.fn(async () => piTaskSessionService as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+
+		const response = await api.sendTaskChatMessage(
+			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
+			{ taskId: "__home_agent__:workspace-1:pi", text: "hello again" },
+		);
+
+		expect(response.ok).toBe(true);
+		expect(piTaskSessionService.sendTaskSessionInput).not.toHaveBeenCalled();
+		expect(piTaskSessionService.startTaskSession).toHaveBeenCalledWith(
+			expect.objectContaining({
+				taskId: "__home_agent__:workspace-1:pi",
+				prompt: "hello again",
+				resumeFromPersistence: true,
+			}),
+		);
+		expect(response.message).toEqual(latestMessage);
+	});
+
+	it("sends to a live home pi chat without restarting when an agent is active", async () => {
+		const summary = createSummary({ agentId: "pi", pid: null });
+		const latestMessage = {
+			id: "message-home-live-1",
+			role: "user" as const,
+			content: "follow up",
+			createdAt: Date.now(),
+		};
+		const piTaskSessionService = createPiTaskSessionServiceMock();
+		piTaskSessionService.hasActiveAgentSession.mockReturnValue(true);
+		piTaskSessionService.sendTaskSessionInput.mockResolvedValue(summary);
+		piTaskSessionService.listMessages.mockReturnValue([latestMessage]);
+
+		const api = createTestRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => ({}) as never),
+			getScopedPiTaskSessionService: vi.fn(async () => piTaskSessionService as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+
+		const response = await api.sendTaskChatMessage(
+			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
+			{ taskId: "__home_agent__:workspace-1:pi", text: "follow up" },
+		);
+
+		expect(response.ok).toBe(true);
+		expect(piTaskSessionService.startTaskSession).not.toHaveBeenCalled();
+		expect(piTaskSessionService.sendTaskSessionInput).toHaveBeenCalledWith(
+			"__home_agent__:workspace-1:pi",
+			"follow up",
+			undefined,
+			undefined,
+		);
+		expect(response.message).toEqual(latestMessage);
+	});
+
 	it("starts home chat sessions from persisted history with current launch config", async () => {
 		const summary = createSummary({ agentId: "pi", pid: null });
 		const latestMessage = {
@@ -1982,7 +2077,9 @@ describe("createRuntimeApi startTaskSession", () => {
 				apiKey: null,
 			}),
 		);
-		expect(piTaskSessionService.sendTaskSessionInput).toHaveBeenCalledTimes(1);
+		// With no live agent for the home session, the send path (re)starts pi
+		// directly rather than routing into a dead session via sendTaskSessionInput.
+		expect(piTaskSessionService.sendTaskSessionInput).not.toHaveBeenCalled();
 		expect(response.message).toEqual(latestMessage);
 	});
 
