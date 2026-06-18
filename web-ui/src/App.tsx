@@ -809,7 +809,6 @@ export default function App(): ReactElement {
 			agentSettings={editTaskAgentSettings}
 			onKanbanSettingsChange={setEditTaskKanbanSettings}
 			defaultAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
-			defaultProviderId={defaultTaskKanbanProviderId}
 			defaultModelId={runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null}
 			defaultReasoningEffort={runtimeProjectConfig?.kanbanProviderSettings?.reasoningEffort ?? null}
 			mode="edit"
@@ -1161,7 +1160,6 @@ export default function App(): ReactElement {
 					agentSettings={newTaskAgentSettings}
 					onKanbanSettingsChange={setNewTaskKanbanSettings}
 					defaultAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
-					defaultProviderId={defaultTaskKanbanProviderId}
 					defaultModelId={runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null}
 					defaultReasoningEffort={runtimeProjectConfig?.kanbanProviderSettings?.reasoningEffort ?? null}
 				/>

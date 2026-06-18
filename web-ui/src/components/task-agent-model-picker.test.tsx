@@ -4,12 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { UseTaskAgentModelPickerResult } from "@/components/task-agent-model-picker";
 import type {
-	RuntimeKanbanProviderCatalogItem,
+	RuntimeAgentProviderConfig,
+	RuntimeAgentProviderSetListResponse,
 	RuntimeKanbanProviderModel,
 	RuntimeTaskAgentSettings,
 } from "@/runtime/types";
 
-const fetchKanbanProviderCatalogMock = vi.hoisted(() => vi.fn());
+const fetchAgentProviderSetsMock = vi.hoisted(() => vi.fn());
 const fetchKanbanProviderModelsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@runtime-agent-catalog", () => ({
@@ -20,17 +21,27 @@ vi.mock("@runtime-agent-catalog", () => ({
 }));
 
 vi.mock("@/runtime/runtime-config-query", () => ({
-	fetchKanbanProviderCatalog: fetchKanbanProviderCatalogMock,
+	fetchAgentProviderSets: fetchAgentProviderSetsMock,
 	fetchKanbanProviderModels: fetchKanbanProviderModelsMock,
 }));
 
-function createProvider(
-	id: string,
-	name: string,
-	enabled: boolean,
-	defaultModelId: string | null = null,
-): RuntimeKanbanProviderCatalogItem {
-	return { id, name, oauthSupported: false, enabled, defaultModelId, baseUrl: null, supportsBaseUrl: false, protocols: [{ protocol: "openai" }], models: [], modelsSourceUrl: null, apiKeyPreview: null };
+function provider(agentId: string, name: string, model?: string, models: string[] = []): RuntimeAgentProviderConfig {
+	return { agentId, provider: name, ...(model ? { model } : {}), models };
+}
+
+/** Build a `listAgentProviders` response: agentId → its provider set + default. */
+function providerSets(
+	agents: Record<string, { providers: RuntimeAgentProviderConfig[]; defaultProviderId?: string }>,
+): RuntimeAgentProviderSetListResponse {
+	const response: RuntimeAgentProviderSetListResponse = { agents: {} };
+	for (const [agentId, set] of Object.entries(agents)) {
+		response.agents[agentId] = {
+			agentId,
+			providers: set.providers,
+			...(set.defaultProviderId ? { defaultProviderId: set.defaultProviderId } : {}),
+		};
+	}
+	return response;
 }
 
 function createTaskAgentSettings(settings?: RuntimeTaskAgentSettings): RuntimeTaskAgentSettings | undefined {
@@ -52,14 +63,16 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-describe("useTaskAgentModelPicker – kanbanProviderOptions", () => {
-	it("shows all providers except the default, regardless of enabled flag", async () => {
-		const catalog: RuntimeKanbanProviderCatalogItem[] = [
-			createProvider("cline", "Kanban", true),
-			createProvider("openrouter", "OpenRouter", false),
-			createProvider("anthropic", "Anthropic", false),
-		];
-		fetchKanbanProviderCatalogMock.mockResolvedValue(catalog);
+describe("useTaskAgentModelPicker – kanbanProviderOptions (per-agent provider set)", () => {
+	it("lists the selected CLI agent's providers with its default first and offers official login", async () => {
+		fetchAgentProviderSetsMock.mockResolvedValue(
+			providerSets({
+				claude: {
+					providers: [provider("claude", "anthropic"), provider("claude", "openrouter")],
+					defaultProviderId: "anthropic",
+				},
+			}),
+		);
 		fetchKanbanProviderModelsMock.mockResolvedValue([]);
 
 		let snapshot: UseTaskAgentModelPickerResult | null = null;
@@ -69,10 +82,9 @@ describe("useTaskAgentModelPicker – kanbanProviderOptions", () => {
 			const result = useTaskAgentModelPicker({
 				active: true,
 				workspaceId: null,
-				agentId: "pi",
+				agentId: "claude",
 				agentSettings: undefined,
 				defaultAgentId: "pi",
-				defaultProviderId: "cline",
 				defaultModelId: null,
 			});
 			useEffect(() => {
@@ -88,19 +100,22 @@ describe("useTaskAgentModelPicker – kanbanProviderOptions", () => {
 
 		expect(snapshot).not.toBeNull();
 		const options = snapshot!.kanbanProviderOptions;
-		expect(options[0]).toEqual({ value: "", label: "Kanban" });
-		const nonDefault = options.slice(1);
-		expect(nonDefault).toEqual([
-			{ value: "openrouter", label: "OpenRouter" },
-			{ value: "anthropic", label: "Anthropic" },
-		]);
+		// The agent's default provider is the first ("") option.
+		expect(options[0]).toEqual({ value: "", label: "anthropic" });
+		const values = options.map((o) => o.value);
+		// Official login is offered for CLI agents.
+		expect(values).toContain("official");
+		// The other configured provider is listed; the default is not duplicated.
+		expect(values).toContain("openrouter");
+		expect(values.filter((v) => v === "anthropic")).toHaveLength(0);
 	});
-	it("excludes the default provider from the explicit list", async () => {
-		const catalog: RuntimeKanbanProviderCatalogItem[] = [
-			createProvider("cline", "Kanban", true),
-			createProvider("anthropic", "Anthropic", true),
-		];
-		fetchKanbanProviderCatalogMock.mockResolvedValue(catalog);
+
+	it("never offers official login for the main agent (pi)", async () => {
+		fetchAgentProviderSetsMock.mockResolvedValue(
+			providerSets({
+				pi: { providers: [provider("pi", "anthropic")], defaultProviderId: "anthropic" },
+			}),
+		);
 		fetchKanbanProviderModelsMock.mockResolvedValue([]);
 
 		let snapshot: UseTaskAgentModelPickerResult | null = null;
@@ -113,7 +128,6 @@ describe("useTaskAgentModelPicker – kanbanProviderOptions", () => {
 				agentId: "pi",
 				agentSettings: undefined,
 				defaultAgentId: "pi",
-				defaultProviderId: "anthropic",
 				defaultModelId: null,
 			});
 			useEffect(() => {
@@ -128,28 +142,69 @@ describe("useTaskAgentModelPicker – kanbanProviderOptions", () => {
 		});
 
 		expect(snapshot).not.toBeNull();
+		expect(snapshot!.kanbanProviderOptions).toEqual([{ value: "", label: "anthropic" }]);
+		expect(snapshot!.effectiveDefaultProviderId).toBe("anthropic");
+	});
+
+	it("defaults a CLI agent with no configured default to official login", async () => {
+		fetchAgentProviderSetsMock.mockResolvedValue(
+			providerSets({
+				claude: { providers: [provider("claude", "anthropic")] },
+			}),
+		);
+		fetchKanbanProviderModelsMock.mockResolvedValue([]);
+
+		let snapshot: UseTaskAgentModelPickerResult | null = null;
+		const { useTaskAgentModelPicker } = await import("@/components/task-agent-model-picker");
+
+		function Harness() {
+			const result = useTaskAgentModelPicker({
+				active: true,
+				workspaceId: null,
+				agentId: "claude",
+				agentSettings: undefined,
+				defaultAgentId: "pi",
+				defaultModelId: null,
+			});
+			useEffect(() => {
+				snapshot = result;
+			});
+			return null;
+		}
+
+		await act(async () => root.render(<Harness />));
+		await act(async () => {
+			await new Promise((r) => setTimeout(r, 0));
+		});
+
+		expect(snapshot).not.toBeNull();
+		expect(snapshot!.effectiveDefaultProviderId).toBe("official");
 		const options = snapshot!.kanbanProviderOptions;
-		expect(options[0]).toEqual({ value: "", label: "Anthropic" });
-		const values = options.slice(1).map((o) => o.value);
-		expect(values).toContain("cline");
-		expect(values).not.toContain("anthropic");
+		// Official login is the implicit default → it's the first ("") option, not a duplicate.
+		expect(options[0]).toEqual({ value: "", label: "Official login" });
+		expect(options.filter((o) => o.value === "official")).toHaveLength(0);
+		expect(options).toContainEqual({ value: "anthropic", label: "anthropic" });
 	});
 
-	it("returns only the default option when catalog is empty", async () => {
-		fetchKanbanProviderCatalogMock.mockResolvedValue([]);
+	it("scopes the provider list to the selected agent and re-scopes when the agent changes", async () => {
+		fetchAgentProviderSetsMock.mockResolvedValue(
+			providerSets({
+				claude: { providers: [provider("claude", "anthropic")], defaultProviderId: "anthropic" },
+				pi: { providers: [provider("pi", "cline")], defaultProviderId: "cline" },
+			}),
+		);
 		fetchKanbanProviderModelsMock.mockResolvedValue([]);
 
 		let snapshot: UseTaskAgentModelPickerResult | null = null;
 		const { useTaskAgentModelPicker } = await import("@/components/task-agent-model-picker");
 
-		function Harness() {
+		function Harness({ agentId }: { agentId: "claude" | "pi" }) {
 			const result = useTaskAgentModelPicker({
 				active: true,
 				workspaceId: null,
-				agentId: "pi",
+				agentId,
 				agentSettings: undefined,
 				defaultAgentId: "pi",
-				defaultProviderId: "cline",
 				defaultModelId: null,
 			});
 			useEffect(() => {
@@ -158,24 +213,36 @@ describe("useTaskAgentModelPicker – kanbanProviderOptions", () => {
 			return null;
 		}
 
-		await act(async () => root.render(<Harness />));
+		await act(async () => root.render(<Harness agentId="claude" />));
 		await act(async () => {
 			await new Promise((r) => setTimeout(r, 0));
 		});
+		expect(snapshot!.kanbanProviderOptions.map((o) => o.value)).not.toContain("cline");
 
-		expect(snapshot).not.toBeNull();
-		expect(snapshot!.kanbanProviderOptions).toEqual([{ value: "", label: "cline" }]);
+		await act(async () => root.render(<Harness agentId="pi" />));
+		await act(async () => {
+			await new Promise((r) => setTimeout(r, 0));
+		});
+		const piValues = snapshot!.kanbanProviderOptions.map((o) => o.value);
+		expect(piValues).not.toContain("anthropic");
+		expect(snapshot!.effectiveDefaultProviderId).toBe("cline");
 	});
 });
 
 describe("useTaskAgentModelPicker – providerDefaultModels", () => {
-	it("returns a map of provider ID → default model ID", async () => {
-		const catalog: RuntimeKanbanProviderCatalogItem[] = [
-			createProvider("anthropic", "Anthropic", true, "claude-opus-4-20250514"),
-			createProvider("groq", "Groq", true, "llama-3.3-70b-versatile"),
-			createProvider("openrouter", "OpenRouter", true), // no default model
-		];
-		fetchKanbanProviderCatalogMock.mockResolvedValue(catalog);
+	it("returns a map of provider id → its configured default model", async () => {
+		fetchAgentProviderSetsMock.mockResolvedValue(
+			providerSets({
+				pi: {
+					providers: [
+						provider("pi", "anthropic", "claude-opus-4-20250514"),
+						provider("pi", "groq", "llama-3.3-70b-versatile"),
+						provider("pi", "openrouter"), // no default model
+					],
+					defaultProviderId: "anthropic",
+				},
+			}),
+		);
 		fetchKanbanProviderModelsMock.mockResolvedValue([]);
 
 		let snapshot: UseTaskAgentModelPickerResult | null = null;
@@ -188,7 +255,6 @@ describe("useTaskAgentModelPicker – providerDefaultModels", () => {
 				agentId: "pi",
 				agentSettings: undefined,
 				defaultAgentId: "pi",
-				defaultProviderId: "anthropic",
 				defaultModelId: "claude-opus-4-20250514",
 			});
 			useEffect(() => {
@@ -211,16 +277,22 @@ describe("useTaskAgentModelPicker – providerDefaultModels", () => {
 });
 
 describe("useTaskAgentModelPicker – provider-aware model default label", () => {
-	it("loads inherited models for managed OAuth providers and derives their catalog default model", async () => {
-		const catalog: RuntimeKanbanProviderCatalogItem[] = [
-			createProvider("cline", "Kanban", true, "cline-sonnet"),
-			createProvider("anthropic", "Anthropic", true, "claude-opus-4-20250514"),
-		];
+	it("derives the agent default provider's configured default model and loads its models", async () => {
+		fetchAgentProviderSetsMock.mockResolvedValue(
+			providerSets({
+				pi: {
+					providers: [
+						provider("pi", "cline", "cline-sonnet"),
+						provider("pi", "anthropic", "claude-opus-4-20250514"),
+					],
+					defaultProviderId: "cline",
+				},
+			}),
+		);
 		const clineModels = [
 			{ id: "cline-sonnet", name: "Kanban Sonnet" },
 			{ id: "cline-opus", name: "Kanban Opus" },
 		];
-		fetchKanbanProviderCatalogMock.mockResolvedValue(catalog);
 		fetchKanbanProviderModelsMock.mockResolvedValue(clineModels);
 
 		let snapshot: UseTaskAgentModelPickerResult | null = null;
@@ -233,7 +305,6 @@ describe("useTaskAgentModelPicker – provider-aware model default label", () =>
 				agentId: "pi",
 				agentSettings: undefined,
 				defaultAgentId: "pi",
-				defaultProviderId: "cline",
 				defaultModelId: null,
 			});
 			useEffect(() => {
@@ -253,13 +324,16 @@ describe("useTaskAgentModelPicker – provider-aware model default label", () =>
 		expect(snapshot!.effectiveDefaultModelId).toBe("cline-sonnet");
 	});
 
-	it("does not borrow the global default model for an overridden provider without a catalog default", async () => {
-		const catalog: RuntimeKanbanProviderCatalogItem[] = [
-			createProvider("anthropic", "Anthropic", true, "claude-opus-4-20250514"),
-			createProvider("custom", "Custom Provider", true),
-		];
+	it("does not borrow the global default model for an overridden provider without a configured default", async () => {
+		fetchAgentProviderSetsMock.mockResolvedValue(
+			providerSets({
+				pi: {
+					providers: [provider("pi", "anthropic", "claude-opus-4-20250514"), provider("pi", "custom")],
+					defaultProviderId: "anthropic",
+				},
+			}),
+		);
 		const customModels = [{ id: "custom/model-a", name: "Model A" }];
-		fetchKanbanProviderCatalogMock.mockResolvedValue(catalog);
 		fetchKanbanProviderModelsMock.mockResolvedValue(customModels);
 
 		let snapshot: UseTaskAgentModelPickerResult | null = null;
@@ -272,7 +346,6 @@ describe("useTaskAgentModelPicker – provider-aware model default label", () =>
 				agentId: "pi",
 				agentSettings: createTaskAgentSettings({ providerId: "custom" }),
 				defaultAgentId: "pi",
-				defaultProviderId: "anthropic",
 				defaultModelId: "claude-opus-4-20250514",
 			});
 			useEffect(() => {
@@ -292,15 +365,21 @@ describe("useTaskAgentModelPicker – provider-aware model default label", () =>
 	});
 
 	it("shows the selected provider's default model name when provider is overridden", async () => {
-		const catalog: RuntimeKanbanProviderCatalogItem[] = [
-			createProvider("anthropic", "Anthropic", true, "claude-opus-4-20250514"),
-			createProvider("groq", "Groq", true, "llama-3.3-70b-versatile"),
-		];
+		fetchAgentProviderSetsMock.mockResolvedValue(
+			providerSets({
+				pi: {
+					providers: [
+						provider("pi", "anthropic", "claude-opus-4-20250514"),
+						provider("pi", "groq", "llama-3.3-70b-versatile"),
+					],
+					defaultProviderId: "anthropic",
+				},
+			}),
+		);
 		const groqModels = [
 			{ id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B" },
 			{ id: "mixtral-8x7b-32768", name: "Mixtral 8x7B" },
 		];
-		fetchKanbanProviderCatalogMock.mockResolvedValue(catalog);
 		fetchKanbanProviderModelsMock.mockResolvedValue(groqModels);
 
 		let snapshot: UseTaskAgentModelPickerResult | null = null;
@@ -313,7 +392,6 @@ describe("useTaskAgentModelPicker – provider-aware model default label", () =>
 				agentId: "pi",
 				agentSettings: createTaskAgentSettings({ providerId: "groq" }), // explicit provider override to groq
 				defaultAgentId: "pi",
-				defaultProviderId: "anthropic",
 				defaultModelId: "claude-opus-4-20250514", // global default is Anthropic's model
 			});
 			useEffect(() => {
@@ -335,15 +413,21 @@ describe("useTaskAgentModelPicker – provider-aware model default label", () =>
 	});
 
 	it("shows the global default model when no provider override is set", async () => {
-		const catalog: RuntimeKanbanProviderCatalogItem[] = [
-			createProvider("anthropic", "Anthropic", true, "claude-opus-4-20250514"),
-			createProvider("groq", "Groq", true, "llama-3.3-70b-versatile"),
-		];
+		fetchAgentProviderSetsMock.mockResolvedValue(
+			providerSets({
+				pi: {
+					providers: [
+						provider("pi", "anthropic", "claude-opus-4-20250514"),
+						provider("pi", "groq", "llama-3.3-70b-versatile"),
+					],
+					defaultProviderId: "anthropic",
+				},
+			}),
+		);
 		const anthropicModels = [
 			{ id: "claude-opus-4-20250514", name: "Claude Opus 4" },
 			{ id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
 		];
-		fetchKanbanProviderCatalogMock.mockResolvedValue(catalog);
 		fetchKanbanProviderModelsMock.mockResolvedValue(anthropicModels);
 
 		let snapshot: UseTaskAgentModelPickerResult | null = null;
@@ -356,7 +440,6 @@ describe("useTaskAgentModelPicker – provider-aware model default label", () =>
 				agentId: "pi",
 				agentSettings: undefined, // no provider override
 				defaultAgentId: "pi",
-				defaultProviderId: "anthropic",
 				defaultModelId: "claude-opus-4-20250514",
 			});
 			useEffect(() => {
@@ -374,6 +457,47 @@ describe("useTaskAgentModelPicker – provider-aware model default label", () =>
 		const defaultOption = snapshot!.kanbanModelOptions[0]!;
 		expect(defaultOption.value).toBe("");
 		expect(defaultOption.label).toBe("Claude Opus 4");
+	});
+
+	it("uses the provider config's own models when the registry returns none", async () => {
+		fetchAgentProviderSetsMock.mockResolvedValue(
+			providerSets({
+				claude: {
+					providers: [provider("claude", "anthropic", "sonnet", ["sonnet", "opus"])],
+					defaultProviderId: "anthropic",
+				},
+			}),
+		);
+		fetchKanbanProviderModelsMock.mockResolvedValue([]); // not in bundled registry
+
+		let snapshot: UseTaskAgentModelPickerResult | null = null;
+		const { useTaskAgentModelPicker } = await import("@/components/task-agent-model-picker");
+
+		function Harness() {
+			const result = useTaskAgentModelPicker({
+				active: true,
+				workspaceId: null,
+				agentId: "claude",
+				agentSettings: undefined,
+				defaultAgentId: "pi",
+				defaultModelId: null,
+			});
+			useEffect(() => {
+				snapshot = result;
+			});
+			return null;
+		}
+
+		await act(async () => root.render(<Harness />));
+		await act(async () => {
+			await new Promise((r) => setTimeout(r, 0));
+		});
+
+		expect(snapshot).not.toBeNull();
+		expect(snapshot!.providerModels).toEqual([
+			{ id: "sonnet", name: "sonnet" },
+			{ id: "opus", name: "opus" },
+		]);
 	});
 });
 
@@ -760,5 +884,47 @@ describe("TaskAgentModelPicker – inherited default reasoning effort", () => {
 
 		expect(container.textContent).toContain("GPT-5.3 Codex");
 		expect(container.textContent).not.toContain("GPT-5.3 Codex (High)");
+	});
+});
+
+describe("TaskAgentModelPicker – official login provider", () => {
+	it("shows the provider picker but hides the model picker when the provider is official login", async () => {
+		const { TaskAgentModelPicker } = await import("@/components/task-agent-model-picker");
+
+		await act(async () =>
+			root.render(
+				<TaskAgentModelPicker
+					agentId={"claude"}
+					onAgentIdChange={() => {}}
+					agentSettings={undefined}
+					onKanbanSettingsChange={() => {}}
+					agentOptions={[{ value: "", label: "Claude Code" }]}
+					kanbanProviderOptions={[
+						{ value: "", label: "Official login" },
+						{ value: "anthropic", label: "anthropic" },
+					]}
+					kanbanModelOptions={[{ value: "", label: "Default" }]}
+					isLoadingProviders={false}
+					isLoadingModels={false}
+					defaultAgentId={"pi"}
+					// The agent's effective default provider is the official-login sentinel.
+					defaultProviderId="official"
+				/>,
+			),
+		);
+
+		const settingsTrigger = Array.from(container.querySelectorAll("button")).find((button) =>
+			button.textContent?.includes("Override Agent Settings"),
+		);
+		expect(settingsTrigger).not.toBeUndefined();
+		await act(async () => {
+			(settingsTrigger as HTMLButtonElement).click();
+		});
+
+		// The provider picker is shown…
+		expect(container.textContent).toContain("Provider");
+		// …but the model picker is not (the official-login sentinel has no models).
+		expect(document.getElementById("kanban-chat-model-picker")).toBeNull();
+		expect(container.textContent).not.toContain("Model");
 	});
 });

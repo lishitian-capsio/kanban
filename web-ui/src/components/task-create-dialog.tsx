@@ -123,7 +123,6 @@ export function TaskCreateDialog({
 	agentSettings,
 	onKanbanSettingsChange,
 	defaultAgentId,
-	defaultProviderId,
 	defaultModelId,
 	defaultReasoningEffort,
 }: {
@@ -155,8 +154,6 @@ export function TaskCreateDialog({
 	onKanbanSettingsChange?: (value: RuntimeTaskAgentSettings | undefined) => void;
 	/** Default agent ID from runtimeConfig.selectedAgentId, used to show "Default (AgentName)" in picker */
 	defaultAgentId?: RuntimeAgentId | null;
-	/** Default Kanban provider ID from runtimeConfig.kanbanProviderSettings.providerId */
-	defaultProviderId?: string | null;
 	/** Default Kanban model ID from runtimeConfig.kanbanProviderSettings.modelId */
 	defaultModelId?: string | null;
 	/** Default Kanban reasoning effort from runtimeConfig.kanbanProviderSettings.reasoningEffort */
@@ -182,6 +179,7 @@ export function TaskCreateDialog({
 		kanbanProviderOptions,
 		kanbanModelOptions,
 		effectiveDefaultModelId,
+		effectiveDefaultProviderId,
 		providerModels,
 		isLoadingProviders,
 		isLoadingModels,
@@ -192,7 +190,6 @@ export function TaskCreateDialog({
 		agentId,
 		agentSettings,
 		defaultAgentId,
-		defaultProviderId,
 		defaultModelId,
 	});
 
@@ -590,7 +587,7 @@ export function TaskCreateDialog({
 							isLoadingProviders={isLoadingProviders}
 							isLoadingModels={isLoadingModels}
 							defaultAgentId={defaultAgentId}
-							defaultProviderId={defaultProviderId}
+							defaultProviderId={effectiveDefaultProviderId}
 							defaultReasoningEffort={defaultReasoningEffort}
 							providerDefaultModels={providerDefaultModels}
 						/>

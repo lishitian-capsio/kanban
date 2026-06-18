@@ -1,5 +1,11 @@
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { getRuntimeLaunchSupportedAgentCatalog } from "@runtime-agent-catalog";
+import {
+	agentSupportsOfficialLogin,
+	isOfficialLoginProviderId,
+	OFFICIAL_LOGIN_LABEL,
+	OFFICIAL_LOGIN_PROVIDER_ID,
+} from "@runtime-provider-protocol";
 import { ChevronDown } from "lucide-react";
 import type { ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -13,10 +19,10 @@ import {
 import { SearchSelectDropdown } from "@/components/search-select-dropdown";
 import { cn } from "@/components/ui/cn";
 import { NativeSelect } from "@/components/ui/native-select";
-import { fetchKanbanProviderCatalog, fetchKanbanProviderModels } from "@/runtime/runtime-config-query";
+import { providerIdOfConfig, useAgentProviderSet } from "@/hooks/use-agent-provider-set";
+import { fetchKanbanProviderModels } from "@/runtime/runtime-config-query";
 import type {
 	RuntimeAgentId,
-	RuntimeKanbanProviderCatalogItem,
 	RuntimeKanbanProviderModel,
 	RuntimeReasoningEffort,
 	RuntimeTaskAgentSettings,
@@ -36,8 +42,6 @@ export interface UseTaskAgentModelPickerInput {
 	agentSettings?: RuntimeTaskAgentSettings;
 	/** The default agent ID from runtimeConfig.selectedAgentId — used to build the first option label */
 	defaultAgentId?: RuntimeAgentId | null;
-	/** The default Kanban provider ID from runtimeConfig.kanbanProviderSettings.providerId */
-	defaultProviderId?: string | null;
 	/** The default Kanban model ID from runtimeConfig.kanbanProviderSettings.modelId */
 	defaultModelId?: string | null;
 }
@@ -47,10 +51,17 @@ export interface UseTaskAgentModelPickerResult {
 	kanbanProviderOptions: Array<{ value: string; label: string }>;
 	kanbanModelOptions: Array<{ value: string; label: string }>;
 	effectiveDefaultModelId: string | null;
+	/**
+	 * The effective default provider id for the selected agent: the agent's own
+	 * default provider (its provider name), or the "official login" sentinel for a
+	 * CLI agent with no configured default, or null when none applies. This is what
+	 * the picker selects when the task carries no explicit `agentSettings.providerId`.
+	 */
+	effectiveDefaultProviderId: string | null;
 	providerModels: RuntimeKanbanProviderModel[];
 	isLoadingProviders: boolean;
 	isLoadingModels: boolean;
-	/** Map of provider ID → its default model ID (from the provider catalog). */
+	/** Map of provider id → its default model id (from the agent's provider set). */
 	providerDefaultModels: Record<string, string>;
 }
 
@@ -60,50 +71,50 @@ export function useTaskAgentModelPicker({
 	agentId,
 	agentSettings,
 	defaultAgentId,
-	defaultProviderId,
 	defaultModelId,
 }: UseTaskAgentModelPickerInput): UseTaskAgentModelPickerResult {
-	const [providerCatalog, setProviderCatalog] = useState<RuntimeKanbanProviderCatalogItem[]>([]);
 	const [providerModels, setProviderModels] = useState<RuntimeKanbanProviderModel[]>([]);
-	const [isLoadingProviders, setIsLoadingProviders] = useState(false);
 	const [isLoadingModels, setIsLoadingModels] = useState(false);
 
 	// Derive the effective agent: explicit override takes precedence, then the global default
 	const effectiveAgentId = agentId ?? defaultAgentId ?? null;
 
-	useEffect(() => {
-		if (!active || !effectiveAgentId) {
-			return;
-		}
-		let cancelled = false;
-		setIsLoadingProviders(true);
-		void fetchKanbanProviderCatalog(workspaceId)
-			.then((catalog) => {
-				if (!cancelled) {
-					setProviderCatalog(catalog);
-				}
-			})
-			.catch(() => {
-				if (!cancelled) {
-					setProviderCatalog([]);
-				}
-			})
-			.finally(() => {
-				if (!cancelled) {
-					setIsLoadingProviders(false);
-				}
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, [active, effectiveAgentId, workspaceId]);
+	// The single source of truth for "this agent's providers + default" — the same
+	// per-agent provider set that Settings → Providers and the composer's session
+	// provider switch consume (via `listAgentProviders`). Refetches on open (`active`
+	// toggles) and whenever the selected agent changes, so newly added/edited
+	// providers appear without a stale cache.
+	const {
+		providers,
+		defaultProviderId: agentDefaultProviderId,
+		isLoading: isLoadingProviders,
+	} = useAgentProviderSet({
+		workspaceId,
+		agentId: effectiveAgentId,
+		enabled: active && effectiveAgentId !== null,
+	});
 
-	// Derive the effective provider: explicit override takes precedence, then the global default
+	// CLI agents can run on their own native login ("official login"); the main
+	// agent (pi) cannot and is never offered it.
+	const supportsOfficial = effectiveAgentId !== null && agentSupportsOfficialLogin(effectiveAgentId);
+
+	// The agent's effective default provider: its stored default, else official
+	// login for a CLI agent with no configured default.
+	const effectiveDefaultProviderId =
+		agentDefaultProviderId?.trim() || (supportsOfficial ? OFFICIAL_LOGIN_PROVIDER_ID : "") || null;
+
+	// Derive the effective provider: explicit task override takes precedence, then
+	// the agent's default. The official-login sentinel has no models.
 	const savedProviderId = agentSettings?.providerId;
-	const effectiveProviderId = (savedProviderId ?? defaultProviderId ?? "").trim() || null;
+	const effectiveProviderId = (savedProviderId ?? effectiveDefaultProviderId ?? "").trim() || null;
+
+	const selectedProviderConfig = useMemo(
+		() => providers.find((p) => providerIdOfConfig(p) === effectiveProviderId) ?? null,
+		[providers, effectiveProviderId],
+	);
 
 	useEffect(() => {
-		if (!active || !effectiveAgentId || !effectiveProviderId) {
+		if (!active || !effectiveAgentId || !effectiveProviderId || isOfficialLoginProviderId(effectiveProviderId)) {
 			setProviderModels([]);
 			return;
 		}
@@ -131,6 +142,16 @@ export function useTaskAgentModelPicker({
 		};
 	}, [active, effectiveAgentId, effectiveProviderId, workspaceId]);
 
+	// Model list for the selected provider: the registry/remote models (which carry
+	// reasoning-capability metadata) when available, else the provider config's own
+	// configured model ids (for custom CLI providers not in the bundled registry).
+	const effectiveProviderModels = useMemo<RuntimeKanbanProviderModel[]>(() => {
+		if (providerModels.length > 0) {
+			return providerModels;
+		}
+		return (selectedProviderConfig?.models ?? []).map((id) => ({ id, name: id }));
+	}, [providerModels, selectedProviderConfig]);
+
 	const agentOptions = useMemo(() => {
 		const catalog = getRuntimeLaunchSupportedAgentCatalog();
 		let firstLabel = "Default";
@@ -150,61 +171,77 @@ export function useTaskAgentModelPicker({
 	}, [defaultAgentId]);
 
 	const kanbanProviderOptions = useMemo(() => {
-		let firstLabel = "Default";
-		if (defaultProviderId) {
-			const defaultProvider = providerCatalog.find((p) => p.id === defaultProviderId);
-			firstLabel = defaultProvider ? defaultProvider.name : defaultProviderId;
+		const defaultId = effectiveDefaultProviderId;
+		const firstLabel = defaultId
+			? isOfficialLoginProviderId(defaultId)
+				? OFFICIAL_LOGIN_LABEL
+				: defaultId
+			: "Default";
+		const options = [{ value: "", label: firstLabel }];
+		// Offer official login explicitly for CLI agents, unless it's already the
+		// agent default (already represented by the first option).
+		if (supportsOfficial && !isOfficialLoginProviderId(defaultId)) {
+			options.push({ value: OFFICIAL_LOGIN_PROVIDER_ID, label: OFFICIAL_LOGIN_LABEL });
 		}
-		return [
-			{ value: "", label: firstLabel },
-			// Exclude the default provider from the explicit list — it's already represented by the first option
-			...providerCatalog.filter((p) => p.id !== defaultProviderId).map((p) => ({ value: p.id, label: p.name })),
-		];
-	}, [providerCatalog, defaultProviderId]);
+		// Exclude the default provider from the explicit list — it's already the first option.
+		for (const provider of providers) {
+			const id = providerIdOfConfig(provider);
+			if (!id || id === defaultId) {
+				continue;
+			}
+			options.push({ value: id, label: id });
+		}
+		return options;
+	}, [providers, effectiveDefaultProviderId, supportsOfficial]);
 
-	// Map of provider ID → its catalog default model ID. Used by the component to
+	// Map of provider id → its configured default model id. Used by the component to
 	// auto-select the right model when the user switches providers.
 	const providerDefaultModels = useMemo(() => {
 		const map: Record<string, string> = {};
-		for (const p of providerCatalog) {
-			if (p.defaultModelId) {
-				map[p.id] = p.defaultModelId;
+		for (const provider of providers) {
+			const id = providerIdOfConfig(provider);
+			const model = provider.model?.trim();
+			if (id && model) {
+				map[id] = model;
 			}
 		}
 		return map;
-	}, [providerCatalog]);
+	}, [providers]);
 
 	// When an explicit provider override is selected, the "Default" model label should
-	// reflect that provider's default model — not the global settings model.
+	// reflect that provider's configured default model — not the global settings model.
 	const effectiveDefaultModelId = useMemo(() => {
 		if (savedProviderId) {
-			const provider = providerCatalog.find((p) => p.id === savedProviderId);
-			return provider?.defaultModelId ?? null;
+			return providerDefaultModels[savedProviderId] ?? null;
 		}
-		const inheritedProviderDefaultModelId =
-			providerCatalog.find((p) => p.id === defaultProviderId)?.defaultModelId ?? null;
+		const inheritedProviderDefaultModelId = effectiveDefaultProviderId
+			? (providerDefaultModels[effectiveDefaultProviderId] ?? null)
+			: null;
 		return defaultModelId ?? inheritedProviderDefaultModelId;
-	}, [savedProviderId, defaultModelId, defaultProviderId, providerCatalog]);
+	}, [savedProviderId, defaultModelId, effectiveDefaultProviderId, providerDefaultModels]);
 
 	const kanbanModelOptions = useMemo(() => {
 		let defaultLabel = "Default";
 		if (effectiveDefaultModelId) {
-			const defaultModel = providerModels.find((m) => m.id === effectiveDefaultModelId);
+			const defaultModel = effectiveProviderModels.find((m) => m.id === effectiveDefaultModelId);
 			defaultLabel = defaultModel ? defaultModel.name : effectiveDefaultModelId;
 		}
 		return [
 			{ value: "", label: defaultLabel },
 			// Exclude the default model from the explicit list — it's already represented by the first option
-			...providerModels.filter((m) => m.id !== effectiveDefaultModelId).map((m) => ({ value: m.id, label: m.name })),
+			...effectiveProviderModels
+				.filter((m) => m.id !== effectiveDefaultModelId)
+				.map((m) => ({ value: m.id, label: m.name })),
 		];
-	}, [providerModels, effectiveDefaultModelId]);
+	}, [effectiveProviderModels, effectiveDefaultModelId]);
 
 	return {
 		agentOptions,
 		kanbanProviderOptions,
 		kanbanModelOptions,
 		effectiveDefaultModelId,
-		providerModels,
+		effectiveDefaultProviderId,
+		providerModels: effectiveProviderModels,
 		isLoadingProviders,
 		isLoadingModels,
 		providerDefaultModels,
@@ -260,7 +297,7 @@ export function TaskAgentModelPicker({
 	onPopoverOpenChange?: (open: boolean) => void;
 	/** The default agent ID from runtimeConfig — used to decide if Kanban pickers should show by default */
 	defaultAgentId?: RuntimeAgentId | null;
-	/** The default Kanban provider ID from runtimeConfig — used to decide if model picker should show by default */
+	/** The agent's effective default provider id (from `useTaskAgentModelPicker`) — the provider used when the task carries no explicit override; decides the default-selected provider and whether the model picker shows */
 	defaultProviderId?: string | null;
 	/** The global default reasoning effort from runtimeConfig.kanbanProviderSettings.reasoningEffort */
 	defaultReasoningEffort?: RuntimeReasoningEffort | null;
@@ -282,10 +319,12 @@ export function TaskAgentModelPicker({
 	const effectiveAgentId = agentId ?? defaultAgentId ?? null;
 	const showKanbanProviderPicker = effectiveAgentId !== null;
 
-	// Show the Kanban model picker when a provider is effectively selected
-	// (either explicitly overridden, or the global default provider is set)
+	// Show the Kanban model picker when a real provider is effectively selected
+	// (either explicitly overridden, or the agent's default provider). The
+	// official-login sentinel has no models, so it never shows the model picker.
 	const effectiveProviderId = savedProviderId ?? defaultProviderId ?? null;
-	const showKanbanModelPicker = showKanbanProviderPicker && Boolean(effectiveProviderId);
+	const showKanbanModelPicker =
+		showKanbanProviderPicker && Boolean(effectiveProviderId) && !isOfficialLoginProviderId(effectiveProviderId);
 	const hasTaskKanbanSettingsOverride = agentSettings !== undefined;
 	const selectedTaskReasoningEffort = savedReasoningEffort ?? "";
 	const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
