@@ -25,6 +25,13 @@ export interface AnthropicProviderSettings {
 	apiKeyField?: ApiKeyField;
 	/** Optional per-tier Anthropic model overrides (ANTHROPIC_DEFAULT_*_MODEL). */
 	defaultModels?: AnthropicDefaultModels;
+	/**
+	 * When true, inject `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` so Claude
+	 * Code discovers the model list from the configured gateway/relay endpoint
+	 * instead of its built-in catalog. Opt-in (default off); only meaningful for a
+	 * custom Anthropic-protocol endpoint.
+	 */
+	enableGatewayModelDiscovery?: boolean;
 }
 
 // ------------------------------------------------------------------ types

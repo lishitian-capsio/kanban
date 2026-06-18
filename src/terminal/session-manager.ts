@@ -18,7 +18,7 @@ import {
 	type SessionMessageJournal,
 } from "../session/session-message-journal";
 import type { SessionMessageListener, SessionMessageSource } from "../session/session-message-source";
-import { buildAgentProviderEnv } from "../unified-proxy/env-injector";
+import { type AgentProviderEnv, buildAgentProviderEnv } from "../unified-proxy/env-injector";
 import { buildBridgeProxyEnvVars } from "../unified-proxy/network-bridge";
 import {
 	type AgentAdapterLaunchInput,
@@ -466,6 +466,21 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			},
 		});
 
+		// Build provider-specific env vars (custom baseUrl/apiKey for non-official providers).
+		// The session's selected providerId picks which registered provider to inject.
+		// Done before prepareAgentLaunch so the resolved model can reach adapters that
+		// apply it via native config rather than env (e.g. Kiro's agent JSON).
+		//
+		// OpenCode is the exception: it consumes its provider through a native
+		// OPENCODE_CONFIG projection in the adapter (provider/model/small_model +
+		// provider.<id>), not generic OPENAI_*/ANTHROPIC_* env. Injecting those shared
+		// env keys would also clobber the user's *other* OpenCode providers, so we skip
+		// the env path for it entirely.
+		const agentProviderEnv: AgentProviderEnv =
+			request.agentId === "opencode"
+				? { env: {}, usesCustomProvider: false }
+				: await buildAgentProviderEnv(request.agentId, request.providerId, request.committedProvider);
+
 		// Carry forward any session id pinned on a previous launch (in-memory or hydrated from
 		// disk after a restart) so the adapter can re-attach to that exact agent conversation.
 		const recordedAgentSessionId = entry.summary.agentSessionId ?? null;
@@ -485,20 +500,8 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			workspaceId: request.workspaceId,
 			providerId: request.providerId,
 			committedProvider: request.committedProvider,
+			model: agentProviderEnv.resolvedModelId,
 		});
-
-		// Build provider-specific env vars (custom baseUrl/apiKey for non-official providers).
-		// The session's selected providerId picks which registered provider to inject.
-		//
-		// OpenCode is the exception: it consumes its provider through a native
-		// OPENCODE_CONFIG projection in the adapter (provider/model/small_model +
-		// provider.<id>), not generic OPENAI_*/ANTHROPIC_* env. Injecting those shared
-		// env keys would also clobber the user's *other* OpenCode providers, so we skip
-		// the env path for it entirely.
-		const agentProviderEnv =
-			request.agentId === "opencode"
-				? { env: {}, usesCustomProvider: false }
-				: await buildAgentProviderEnv(request.agentId, request.providerId, request.committedProvider);
 
 		const env = buildTerminalEnvironment(request.env, launch.env, agentProviderEnv.env, buildBridgeProxyEnvVars());
 

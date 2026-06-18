@@ -391,6 +391,41 @@ describe("prepareAgentLaunch hook strategies", () => {
 		expect(config.hooks?.stop?.[0]?.command).toContain("Waiting for review");
 	});
 
+	it("writes the resolved model into the Kiro agent config (custom agent model)", async () => {
+		setupTempHome();
+		await prepareAgentLaunch({
+			taskId: "task-kiro-model",
+			agentId: "kiro",
+			binary: "kiro-cli",
+			args: ["chat"],
+			cwd: "/tmp",
+			prompt: "Do the thing",
+			workspaceId: "workspace-1",
+			model: "claude-sonnet-4-5",
+		});
+
+		const configPath = join(homedir(), ".kiro", "agents", "kanban.json");
+		const config = JSON.parse(readFileSync(configPath, "utf8")) as { model?: string };
+		expect(config.model).toBe("claude-sonnet-4-5");
+	});
+
+	it("omits the Kiro agent model when none is resolved", async () => {
+		setupTempHome();
+		await prepareAgentLaunch({
+			taskId: "task-kiro-no-model",
+			agentId: "kiro",
+			binary: "kiro-cli",
+			args: ["chat"],
+			cwd: "/tmp",
+			prompt: "Do the thing",
+			workspaceId: "workspace-1",
+		});
+
+		const configPath = join(homedir(), ".kiro", "agents", "kanban.json");
+		const config = JSON.parse(readFileSync(configPath, "utf8")) as { model?: string };
+		expect(config.model).toBeUndefined();
+	});
+
 	it("materializes task images for CLI prompts", async () => {
 		setupTempHome();
 		const launch = await prepareAgentLaunch({

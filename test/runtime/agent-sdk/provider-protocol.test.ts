@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+	AGENT_PROVIDER_CAPABILITY,
+	agentSupportsCustomEndpoint,
+	agentSupportsGenericProvider,
 	agentSupportsOfficialLogin,
 	collapseToAgentProtocol,
 	extractProtocolList,
 	getAgentProtocols,
+	getAgentProviderCapability,
+	getAgentVendorId,
 	getBaseUrlForProtocol,
 	getDefaultProtocolsForProvider,
+	getProviderCapabilityError,
 	isAgentCompatibleWithProvider,
 	isOfficialLoginProviderId,
 	normalizeProtocols,
@@ -312,6 +318,112 @@ describe("provider-protocol", () => {
 				{ protocol: "anthropic" },
 			];
 			expect(extractProtocolList(configs)).toEqual(["openai", "anthropic"]);
+		});
+	});
+
+	describe("agent provider capability", () => {
+		it("classifies BYOK agents as generic with their wire protocols", () => {
+			expect(getAgentProviderCapability("claude")).toMatchObject({
+				mode: "generic",
+				protocols: ["anthropic"],
+				customEndpoint: true,
+				officialLogin: true,
+			});
+			expect(getAgentProviderCapability("codex")).toMatchObject({ mode: "generic", protocols: ["openai"] });
+			expect(getAgentProviderCapability("opencode")).toMatchObject({
+				mode: "generic",
+				protocols: ["openai", "anthropic"],
+			});
+			expect(getAgentProviderCapability("pi")).toMatchObject({
+				mode: "generic",
+				protocols: ["openai"],
+				officialLogin: false,
+			});
+		});
+
+		it("classifies gemini and kiro as vendor agents with no custom endpoint", () => {
+			expect(getAgentProviderCapability("gemini")).toMatchObject({
+				mode: "vendor",
+				vendor: "google",
+				customEndpoint: false,
+				officialLogin: true,
+			});
+			expect(getAgentProviderCapability("kiro")).toMatchObject({
+				mode: "vendor",
+				vendor: "kiro",
+				customEndpoint: false,
+				officialLogin: true,
+			});
+		});
+
+		it("normalizes the agent id (casing/whitespace)", () => {
+			expect(getAgentProviderCapability("  Gemini ")?.vendor).toBe("google");
+			expect(getAgentProviderCapability("KIRO")?.mode).toBe("vendor");
+		});
+
+		it("treats unknown agents as generic CLI-like (back-compat, no restriction)", () => {
+			const cap = getAgentProviderCapability("some-future-agent");
+			expect(cap).toMatchObject({ mode: "generic", customEndpoint: true, officialLogin: true });
+			expect(agentSupportsGenericProvider("some-future-agent")).toBe(true);
+			expect(getAgentVendorId("some-future-agent")).toBeUndefined();
+		});
+
+		it("agentSupportsGenericProvider is true only for generic agents", () => {
+			expect(agentSupportsGenericProvider("claude")).toBe(true);
+			expect(agentSupportsGenericProvider("codex")).toBe(true);
+			expect(agentSupportsGenericProvider("gemini")).toBe(false);
+			expect(agentSupportsGenericProvider("kiro")).toBe(false);
+		});
+
+		it("agentSupportsCustomEndpoint mirrors generic capability", () => {
+			expect(agentSupportsCustomEndpoint("claude")).toBe(true);
+			expect(agentSupportsCustomEndpoint("gemini")).toBe(false);
+			expect(agentSupportsCustomEndpoint("kiro")).toBe(false);
+		});
+
+		it("getAgentVendorId returns the vendor for vendor agents only", () => {
+			expect(getAgentVendorId("gemini")).toBe("google");
+			expect(getAgentVendorId("kiro")).toBe("kiro");
+			expect(getAgentVendorId("claude")).toBeUndefined();
+		});
+
+		it("keeps the capability map consistent with AGENT_PROTOCOL_COMPATIBILITY for generic agents", () => {
+			for (const [agentId, cap] of Object.entries(AGENT_PROVIDER_CAPABILITY)) {
+				if (cap.mode === "generic") {
+					expect(cap.protocols).toEqual(getAgentProtocols(agentId));
+				} else {
+					expect(cap.protocols).toEqual([]);
+				}
+			}
+		});
+	});
+
+	describe("getProviderCapabilityError", () => {
+		it("returns null for a generic agent configuring a custom endpoint", () => {
+			expect(getProviderCapabilityError("claude", { baseUrl: "https://relay.example.com" })).toBeNull();
+			expect(
+				getProviderCapabilityError("codex", { protocols: [{ protocol: "openai", baseUrl: "https://x" }] }),
+			).toBeNull();
+		});
+
+		it("returns null for a vendor agent with no custom endpoint", () => {
+			expect(getProviderCapabilityError("gemini", { baseUrl: "" })).toBeNull();
+			expect(getProviderCapabilityError("kiro", {})).toBeNull();
+		});
+
+		it("rejects a custom baseUrl for a vendor agent with a clear message", () => {
+			const err = getProviderCapabilityError("gemini", { baseUrl: "https://my-openai-relay.example.com" });
+			expect(err).toBeTruthy();
+			expect(err).toMatch(/gemini/i);
+			expect(err).toMatch(/custom (provider )?endpoint/i);
+		});
+
+		it("rejects custom-endpoint protocols for a vendor agent", () => {
+			const err = getProviderCapabilityError("kiro", {
+				protocols: [{ protocol: "anthropic", baseUrl: "https://relay.example.com" }],
+			});
+			expect(err).toBeTruthy();
+			expect(err).toMatch(/kiro/i);
 		});
 	});
 

@@ -66,6 +66,12 @@ export interface AgentAdapterLaunchInput {
 	providerId?: string;
 	/** The workspace's selected committed provider for this agent (secret-free). */
 	committedProvider?: CommittedProviderLayer | null;
+	/**
+	 * The resolved model id for this launch (from the shared provider resolver).
+	 * Adapters that apply the model via native config rather than env (currently
+	 * Kiro's agent JSON) read this; env-driven agents get the model via env.
+	 */
+	model?: string | null;
 }
 
 export type AgentOutputTransitionDetector = (
@@ -1352,13 +1358,21 @@ const kiroAdapter: AgentSessionAdapter = {
 
 		const hooks = resolveHookContext(input);
 		const appendedSystemPrompt = await resolveHomeAgentAppendSystemPrompt(input.taskId);
-		if (hooks || appendedSystemPrompt) {
+		// Kiro is a vendor agent: it uses its official login and accepts only a model
+		// from its own catalog (no custom endpoint). The selected model is applied
+		// through its native agent config here, not via env.
+		const kiroModel = input.model?.trim() || undefined;
+		if (hooks || appendedSystemPrompt || kiroModel) {
 			const configPath = getKiroAgentConfigPath();
 			const config: Record<string, unknown> = {
 				name: KIRO_KANBAN_AGENT_NAME,
 				description: "Kanban-managed Kiro agent with hook forwarding.",
 				tools: ["*"],
 			};
+
+			if (kiroModel) {
+				config.model = kiroModel;
+			}
 
 			if (hooks) {
 				config.hooks = {

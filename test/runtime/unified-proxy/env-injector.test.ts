@@ -190,20 +190,95 @@ describe("env-injector: buildAgentProviderEnv", () => {
 		expect(agentProviderMocks.getAgentProviderConfig).not.toHaveBeenCalled();
 	});
 
-	it("injects OPENAI env vars for gemini when provider supports openai protocol", async () => {
+	it("injects GEMINI_API_KEY + GEMINI_MODEL for gemini (vendor), never OPENAI_*/baseUrl", async () => {
+		// Even if a stale baseUrl/protocols leaked onto the config, gemini is a
+		// vendor agent: it speaks only its native API, so we must NOT inject the
+		// generic OPENAI_* override (which the Gemini CLI ignores → silent failure).
 		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
 			agentId: "gemini",
-			provider: "custom-gemini",
-			baseUrl: "https://custom.gemini.com",
+			provider: "google",
 			apiKey: "gk-000",
-			protocols: [{ protocol: "openai", baseUrl: "https://custom.gemini.com" }],
+			model: "gemini-2.5-pro",
+			baseUrl: "https://leftover.example.com",
+			protocols: [{ protocol: "openai", baseUrl: "https://leftover.example.com" }],
 		});
 
 		const result = await buildAgentProviderEnv("gemini");
-		// Gemini has no protocol restrictions, so it uses the provider's protocol (openai)
 		expect(result.usesCustomProvider).toBe(true);
-		expect(result.env.OPENAI_BASE_URL).toBe("https://custom.gemini.com");
-		expect(result.env.OPENAI_API_KEY).toBe("gk-000");
+		expect(result.env).toEqual({
+			GEMINI_API_KEY: "gk-000",
+			GEMINI_MODEL: "gemini-2.5-pro",
+		});
+		expect(result.env.OPENAI_BASE_URL).toBeUndefined();
+		expect(result.env.OPENAI_API_KEY).toBeUndefined();
+		expect(result.resolvedModelId).toBe("gemini-2.5-pro");
+	});
+
+	it("injects Vertex env for gemini when a GCP project is configured", async () => {
+		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
+			agentId: "gemini",
+			provider: "vertex",
+			apiKey: "gk-vertex",
+			model: "gemini-2.5-flash",
+			gcp: { projectId: "my-proj", region: "us-central1" },
+		});
+
+		const result = await buildAgentProviderEnv("gemini");
+		expect(result.env).toEqual({
+			GOOGLE_GENAI_USE_VERTEXAI: "true",
+			GOOGLE_CLOUD_PROJECT: "my-proj",
+			GOOGLE_CLOUD_LOCATION: "us-central1",
+			GOOGLE_API_KEY: "gk-vertex",
+			GEMINI_MODEL: "gemini-2.5-flash",
+		});
+		// Vertex mode must not also set the AI-Studio key var.
+		expect(result.env.GEMINI_API_KEY).toBeUndefined();
+	});
+
+	it("injects NO env for kiro (vendor v1: official login) but surfaces the resolved model", async () => {
+		// Kiro applies its model via its native agent config, not env, and uses its
+		// official login. The custom API-key env contract is deferred, so no key env.
+		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
+			agentId: "kiro",
+			provider: "kiro",
+			apiKey: "should-be-ignored",
+			model: "kiro-model-1",
+		});
+
+		const result = await buildAgentProviderEnv("kiro");
+		expect(result.usesCustomProvider).toBe(false);
+		expect(result.env).toEqual({});
+		expect(result.resolvedModelId).toBe("kiro-model-1");
+	});
+
+	it("injects CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY when enabled on the anthropic provider", async () => {
+		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
+			agentId: "claude",
+			provider: "gateway",
+			baseUrl: "https://gateway.example.com",
+			apiKey: "sk-gw",
+			anthropic: { enableGatewayModelDiscovery: true },
+		});
+
+		const result = await buildAgentProviderEnv("claude");
+		expect(result.env).toEqual({
+			ANTHROPIC_BASE_URL: "https://gateway.example.com",
+			ANTHROPIC_AUTH_TOKEN: "sk-gw",
+			CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: "1",
+		});
+	});
+
+	it("does NOT inject the gateway flag when the option is absent or false", async () => {
+		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
+			agentId: "claude",
+			provider: "gateway",
+			baseUrl: "https://gateway.example.com",
+			apiKey: "sk-gw",
+			anthropic: { enableGatewayModelDiscovery: false },
+		});
+
+		const result = await buildAgentProviderEnv("claude");
+		expect(result.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY).toBeUndefined();
 	});
 
 	it("throws when provider protocols are incompatible with the agent", async () => {

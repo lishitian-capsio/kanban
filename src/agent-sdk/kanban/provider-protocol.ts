@@ -109,6 +109,114 @@ export class IncompatibleAgentProviderError extends Error {
 	}
 }
 
+// ------------------------------------------------------------------ agent provider capability
+
+/**
+ * How an agent accepts a configured provider:
+ *   - `"generic"` — bring-your-own-key over a wire protocol (custom endpoint +
+ *     API key injected as `*_BASE_URL` / `*_API_KEY`). claude/codex/droid/
+ *     opencode/pi.
+ *   - `"vendor"`  — the agent only speaks its vendor's native API; there is no
+ *     custom endpoint. We inject vendor-native env (or none) and constrain the
+ *     model to the vendor's catalog. gemini (Google) and kiro.
+ *
+ * This is the single source of truth for "does this agent support a generic
+ * provider", replacing the older overloaded reading of an empty
+ * {@link AGENT_PROTOCOL_COMPATIBILITY} entry as "unrestricted → default openai"
+ * (which silently mis-injected `OPENAI_*` for gemini).
+ */
+export type AgentProviderMode = "generic" | "vendor";
+
+/** Vendor identity for a {@link AgentProviderMode} `"vendor"` agent. */
+export type AgentVendorId = "google" | "kiro";
+
+export interface AgentProviderCapability {
+	mode: AgentProviderMode;
+	/** Wire protocols for generic BYOK; always `[]` for vendor agents. */
+	protocols: ProviderProtocol[];
+	/** Whether the agent has a native login to fall back to (no injected provider). */
+	officialLogin: boolean;
+	/** Whether a user-supplied custom endpoint (baseUrl) is accepted. Generic only. */
+	customEndpoint: boolean;
+	/** Vendor identity when {@link mode} is `"vendor"`. */
+	vendor?: AgentVendorId;
+}
+
+/**
+ * Per-agent provider capability. Kept hand-written (not derived) so the protocol
+ * primitives above stay untouched while this layer draws the generic-vs-vendor
+ * boundary. `protocols` MUST equal {@link AGENT_PROTOCOL_COMPATIBILITY} for
+ * generic agents and `[]` for vendor agents (asserted in tests).
+ */
+export const AGENT_PROVIDER_CAPABILITY: Record<string, AgentProviderCapability> = {
+	claude: { mode: "generic", protocols: ["anthropic"], officialLogin: true, customEndpoint: true },
+	codex: { mode: "generic", protocols: ["openai"], officialLogin: true, customEndpoint: true },
+	droid: { mode: "generic", protocols: ["anthropic", "openai"], officialLogin: true, customEndpoint: true },
+	opencode: { mode: "generic", protocols: ["openai", "anthropic"], officialLogin: true, customEndpoint: true },
+	pi: { mode: "generic", protocols: ["openai"], officialLogin: false, customEndpoint: true },
+	gemini: { mode: "vendor", protocols: [], officialLogin: true, customEndpoint: false, vendor: "google" },
+	kiro: { mode: "vendor", protocols: [], officialLogin: true, customEndpoint: false, vendor: "kiro" },
+};
+
+/**
+ * Capability for an unknown agent id. Treated as a generic CLI agent with no
+ * protocol restriction and a native login, preserving the pre-capability
+ * behavior for any future/unregistered agent.
+ */
+function defaultGenericCapability(agentId: string): AgentProviderCapability {
+	return {
+		mode: "generic",
+		protocols: getAgentProtocols(agentId),
+		officialLogin: true,
+		customEndpoint: true,
+	};
+}
+
+/** The provider capability for an agent (normalized id), synthesizing a generic default for unknown agents. */
+export function getAgentProviderCapability(agentId: string): AgentProviderCapability {
+	return AGENT_PROVIDER_CAPABILITY[agentId.trim().toLowerCase()] ?? defaultGenericCapability(agentId);
+}
+
+/** Whether an agent accepts a generic BYOK provider (custom endpoint over a wire protocol). */
+export function agentSupportsGenericProvider(agentId: string): boolean {
+	return getAgentProviderCapability(agentId).mode === "generic";
+}
+
+/** Whether an agent accepts a user-supplied custom endpoint (baseUrl). */
+export function agentSupportsCustomEndpoint(agentId: string): boolean {
+	return getAgentProviderCapability(agentId).customEndpoint;
+}
+
+/** The vendor identity for a vendor agent, or `undefined` for generic agents. */
+export function getAgentVendorId(agentId: string): AgentVendorId | undefined {
+	return getAgentProviderCapability(agentId).vendor;
+}
+
+/**
+ * Validate a provider config's endpoint fields against an agent's capability.
+ * Returns a human-facing error message when a vendor agent (no custom endpoint)
+ * is being given a custom `baseUrl`/protocol endpoint, else `null`. Used by both
+ * the API mutation layer and the add/edit dialog so an unsupported provider is
+ * rejected at edit time rather than silently doing nothing at launch.
+ */
+export function getProviderCapabilityError(
+	agentId: string,
+	input: { baseUrl?: string | null; protocols?: ProtocolConfig[] | null },
+): string | null {
+	if (agentSupportsCustomEndpoint(agentId)) {
+		return null;
+	}
+	const hasBaseUrl = Boolean(input.baseUrl?.trim());
+	const hasProtocolEndpoint = (input.protocols ?? []).some((p) => Boolean(p.baseUrl?.trim()));
+	if (!hasBaseUrl && !hasProtocolEndpoint) {
+		return null;
+	}
+	return (
+		`Agent "${agentId}" does not support a custom provider endpoint. ` +
+		`It uses its official login; configure only the fields it natively supports.`
+	);
+}
+
 // Protocol → env var names
 export const PROTOCOL_ENV_MAP: Record<ProviderProtocol, { baseUrl: string; apiKey: string }> = {
 	anthropic: { baseUrl: "ANTHROPIC_BASE_URL", apiKey: "ANTHROPIC_API_KEY" },

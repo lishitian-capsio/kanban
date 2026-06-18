@@ -1345,6 +1345,8 @@ export const runtimeAnthropicProviderSettingsSchema = z.object({
 	defaultModels: z
 		.object({ haiku: z.string().optional(), sonnet: z.string().optional(), opus: z.string().optional() })
 		.optional(),
+	/** Inject CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1 for gateway/relay model discovery (opt-in). */
+	enableGatewayModelDiscovery: z.boolean().optional(),
 });
 export type RuntimeAnthropicProviderSettings = z.infer<typeof runtimeAnthropicProviderSettingsSchema>;
 

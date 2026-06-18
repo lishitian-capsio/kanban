@@ -1,6 +1,9 @@
 import { maskApiKey } from "@runtime-api-key-mask";
 import {
 	AGENT_PROTOCOL_COMPATIBILITY,
+	type AgentVendorId,
+	agentSupportsCustomEndpoint,
+	getAgentVendorId,
 	isOfficialLoginProviderId,
 	PROVIDER_PROTOCOLS,
 	type ProviderProtocol,
@@ -65,6 +68,33 @@ const CAPABILITY_OPTIONS: readonly RuntimeKanbanProviderCapability[] = [
 	"vision",
 	"prompt-cache",
 ];
+
+/**
+ * Vendor agents (no generic BYOK endpoint) get a focused form instead of the
+ * protocol/base-URL inputs. This describes what each vendor's provider config
+ * surfaces and whether it accepts an API key entered here.
+ */
+interface VendorProviderProfile {
+	/** Whether an API key field is shown (gemini: yes → GEMINI_API_KEY; kiro: no → official login). */
+	usesApiKey: boolean;
+	/** Banner copy explaining the capability boundary. */
+	note: string;
+}
+
+const VENDOR_PROVIDER_PROFILES: Record<AgentVendorId, VendorProviderProfile> = {
+	google: {
+		usesApiKey: true,
+		note:
+			"Gemini uses Google's native API. Enter a Gemini API key (GEMINI_API_KEY) and pick a model. " +
+			"OpenAI-compatible / custom endpoints are not supported.",
+	},
+	kiro: {
+		usesApiKey: false,
+		note:
+			"Kiro uses its official login. Choose a model from Kiro's available models; the model is applied to " +
+			"Kiro's agent config. Custom provider endpoints and API keys are not configured here.",
+	},
+};
 
 interface HeaderEntry {
 	id: string;
@@ -241,6 +271,14 @@ export function KanbanAddProviderDialog({
 	initialValues?: KanbanProviderDialogInitialValues | null;
 	onSubmit: (input: AddKanbanProviderInput | UpdateKanbanProviderInput) => Promise<SaveResult>;
 }): ReactElement {
+	// Vendor agents (gemini/kiro) speak only their vendor-native API — there is no
+	// generic BYOK endpoint, so we hide the protocol/base-URL inputs and show a
+	// focused vendor form instead. `customEndpoint` is true for generic agents and
+	// when no agent is constrained.
+	const customEndpoint = useMemo(() => (agentId ? agentSupportsCustomEndpoint(agentId) : true), [agentId]);
+	const vendorId = useMemo(() => (agentId ? getAgentVendorId(agentId) : undefined), [agentId]);
+	const vendorProfile = vendorId ? VENDOR_PROVIDER_PROFILES[vendorId] : null;
+	const showApiKeyField = customEndpoint || (vendorProfile?.usesApiKey ?? false);
 	const allowedProtocols = useMemo(() => resolveAllowedProtocols(agentId), [agentId]);
 	const visibleProtocolOptions = useMemo(
 		() => PROTOCOL_OPTIONS.filter((option) => allowedProtocols.includes(option.value)),
@@ -302,7 +340,7 @@ export function KanbanAddProviderDialog({
 	const hasManualModels = draftModels.length > 0;
 	const hasModelsSource = form.modelsSourceUrl.trim().length > 0;
 	const hasBaseUrl = form.baseUrl.trim().length > 0;
-	const anthropicEnabled = form.protocol === "anthropic";
+	const anthropicEnabled = customEndpoint && form.protocol === "anthropic";
 	const anthropicPayload = useMemo(() => buildAnthropicPayload(form), [form]);
 
 	const hasChangedProviderConfiguration = useMemo(() => {
@@ -376,7 +414,8 @@ export function KanbanAddProviderDialog({
 	const canSubmit =
 		normalizedProviderId.length > 0 &&
 		form.name.trim().length > 0 &&
-		hasBaseUrl &&
+		// Generic agents require a base URL endpoint; vendor agents require at least one model.
+		(customEndpoint ? hasBaseUrl : hasManualModels || hasModelsSource) &&
 		(hasManualModels || hasModelsSource) &&
 		!duplicateProviderId &&
 		!reservedProviderId &&
@@ -525,7 +564,8 @@ export function KanbanAddProviderDialog({
 						...(JSON.stringify(form.capabilities) !== JSON.stringify(initialForm.capabilities)
 							? { capabilities: form.capabilities.length > 0 ? form.capabilities : [] }
 							: {}),
-						...(JSON.stringify(protocolConfigsPayload) !== JSON.stringify(initialProtocolPayload)
+						...(customEndpoint &&
+						JSON.stringify(protocolConfigsPayload) !== JSON.stringify(initialProtocolPayload)
 							? { protocols: protocolConfigsPayload }
 							: {}),
 						...(JSON.stringify(anthropicPayload) !== JSON.stringify(buildAnthropicPayload(initialForm))
@@ -542,7 +582,7 @@ export function KanbanAddProviderDialog({
 						defaultModelId: nextDefaultModelId,
 						modelsSourceUrl: nextModelsSourceUrl,
 						capabilities: form.capabilities.length > 0 ? form.capabilities : undefined,
-						protocols: protocolConfigsPayload,
+						protocols: customEndpoint ? protocolConfigsPayload : undefined,
 						anthropic: anthropicPayload,
 					} satisfies AddKanbanProviderInput);
 		const result = await onSubmit(payload);
@@ -558,79 +598,89 @@ export function KanbanAddProviderDialog({
 		<Dialog open={open} onOpenChange={onOpenChange} contentClassName="max-w-3xl">
 			<DialogHeader title={mode === "edit" ? "Edit provider" : "Add provider"} />
 			<DialogBody className="space-y-4">
-				<section className="rounded-lg border border-border bg-surface-1 p-3">
-					<p className="mb-2 text-[12px] text-text-secondary">Protocol</p>
-					{protocolLocked ? (
-						<div className="mb-3 flex items-center gap-2">
-							<span
+				{!customEndpoint && vendorProfile ? (
+					<section
+						className="rounded-lg border border-border bg-surface-1 p-3"
+						data-testid="vendor-capability-note"
+					>
+						<p className="text-[12px] leading-relaxed text-text-secondary">{vendorProfile.note}</p>
+					</section>
+				) : null}
+				{customEndpoint ? (
+					<section className="rounded-lg border border-border bg-surface-1 p-3">
+						<p className="mb-2 text-[12px] text-text-secondary">Protocol</p>
+						{protocolLocked ? (
+							<div className="mb-3 flex items-center gap-2">
+								<span
+									className={cn(
+										"inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider",
+										form.protocol === "anthropic"
+											? "bg-orange-500/10 text-orange-500"
+											: "bg-blue-500/10 text-blue-500",
+									)}
+								>
+									{form.protocol}
+								</span>
+								<span className="text-[12px] text-text-tertiary">
+									{PROTOCOL_OPTIONS.find((option) => option.value === form.protocol)?.description}
+								</span>
+							</div>
+						) : (
+							<div className="mb-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Provider protocol">
+								{visibleProtocolOptions.map((option) => {
+									const selected = form.protocol === option.value;
+									return (
+										<button
+											key={option.value}
+											type="button"
+											role="radio"
+											aria-checked={selected}
+											onClick={() => selectProtocol(option.value)}
+											className={cn(
+												"flex flex-col items-start rounded-md border px-3 py-2 text-left transition-colors",
+												selected
+													? "border-accent bg-accent/5 text-text-primary"
+													: "border-border bg-surface-2 text-text-secondary hover:border-border-bright hover:text-text-primary",
+											)}
+										>
+											<span className="text-[13px] font-medium">{option.label}</span>
+											<span className="text-[11px] text-text-tertiary">{option.description}</span>
+										</button>
+									);
+								})}
+							</div>
+						)}
+						<div className="flex items-center gap-2">
+							<input
+								value={form.baseUrl}
+								onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
+								placeholder={
+									form.protocol === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1"
+								}
+								aria-invalid={fieldErrors.baseUrl ? true : undefined}
 								className={cn(
-									"inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider",
-									form.protocol === "anthropic"
-										? "bg-orange-500/10 text-orange-500"
-										: "bg-blue-500/10 text-blue-500",
+									"h-8 flex-1 rounded-md border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:outline-none",
+									fieldErrors.baseUrl
+										? "border-status-red focus:border-status-red"
+										: "border-border focus:border-border-focus",
 								)}
+							/>
+							<Button
+								variant="ghost"
+								size="sm"
+								icon={<RefreshCw size={14} />}
+								disabled={!form.baseUrl.trim() || isFetchingModels}
+								onClick={() => void handleFetchModels()}
 							>
-								{form.protocol}
-							</span>
-							<span className="text-[12px] text-text-tertiary">
-								{PROTOCOL_OPTIONS.find((option) => option.value === form.protocol)?.description}
-							</span>
+								{isFetchingModels ? "Fetching..." : "Fetch models"}
+							</Button>
 						</div>
-					) : (
-						<div className="mb-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Provider protocol">
-							{visibleProtocolOptions.map((option) => {
-								const selected = form.protocol === option.value;
-								return (
-									<button
-										key={option.value}
-										type="button"
-										role="radio"
-										aria-checked={selected}
-										onClick={() => selectProtocol(option.value)}
-										className={cn(
-											"flex flex-col items-start rounded-md border px-3 py-2 text-left transition-colors",
-											selected
-												? "border-accent bg-accent/5 text-text-primary"
-												: "border-border bg-surface-2 text-text-secondary hover:border-border-bright hover:text-text-primary",
-										)}
-									>
-										<span className="text-[13px] font-medium">{option.label}</span>
-										<span className="text-[11px] text-text-tertiary">{option.description}</span>
-									</button>
-								);
-							})}
-						</div>
-					)}
-					<div className="flex items-center gap-2">
-						<input
-							value={form.baseUrl}
-							onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
-							placeholder={
-								form.protocol === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1"
-							}
-							aria-invalid={fieldErrors.baseUrl ? true : undefined}
-							className={cn(
-								"h-8 flex-1 rounded-md border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:outline-none",
-								fieldErrors.baseUrl
-									? "border-status-red focus:border-status-red"
-									: "border-border focus:border-border-focus",
-							)}
-						/>
-						<Button
-							variant="ghost"
-							size="sm"
-							icon={<RefreshCw size={14} />}
-							disabled={!form.baseUrl.trim() || isFetchingModels}
-							onClick={() => void handleFetchModels()}
-						>
-							{isFetchingModels ? "Fetching..." : "Fetch models"}
-						</Button>
-					</div>
-					<p className="mt-1 text-[12px] text-text-tertiary">
-						Base URL for the {form.protocol} endpoint. Click "Fetch models" to auto-populate.
-					</p>
-					<FieldError message={fieldErrors.baseUrl} />
-				</section>
+						<p className="mt-1 text-[12px] text-text-tertiary">
+							Base URL for the {form.protocol} endpoint. Click "Fetch models" to auto-populate.
+						</p>
+						<FieldError message={fieldErrors.baseUrl} />
+					</section>
+				) : null}
 
 				<section className="rounded-lg border border-border bg-surface-1 p-3">
 					<div className="grid gap-3 md:grid-cols-2">
@@ -668,38 +718,40 @@ export function KanbanAddProviderDialog({
 					</div>
 				</section>
 
-				<section className="rounded-lg border border-border bg-surface-1 p-3">
-					<p className="mb-1 text-[12px] text-text-secondary">API key</p>
-					<div className="relative">
-						<input
-							type="text"
-							autoComplete="off"
-							spellCheck={false}
-							value={apiKeyInputValue}
-							onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
-							onFocus={() => setApiKeyFocused(true)}
-							onBlur={() => setApiKeyFocused(false)}
-							placeholder={apiKeyPlaceholder}
-							aria-invalid={fieldErrors.apiKey ? true : undefined}
-							className={cn(
-								"h-8 w-full rounded-md border bg-surface-2 px-2 pr-9 font-mono text-[13px] text-text-primary placeholder:font-sans placeholder:text-text-tertiary focus:outline-none",
-								fieldErrors.apiKey
-									? "border-status-red focus:border-status-red"
-									: "border-border focus:border-border-focus",
-							)}
-						/>
-						<Button
-							variant="ghost"
-							size="sm"
-							disabled={!canToggleApiKey}
-							icon={showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
-							className="absolute right-1 top-1/2 -translate-y-1/2"
-							aria-label={showApiKey ? "Hide API key" : "Show API key"}
-							onClick={() => setShowApiKey((current) => !current)}
-						/>
-					</div>
-					<FieldError message={fieldErrors.apiKey} />
-				</section>
+				{showApiKeyField ? (
+					<section className="rounded-lg border border-border bg-surface-1 p-3">
+						<p className="mb-1 text-[12px] text-text-secondary">API key</p>
+						<div className="relative">
+							<input
+								type="text"
+								autoComplete="off"
+								spellCheck={false}
+								value={apiKeyInputValue}
+								onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
+								onFocus={() => setApiKeyFocused(true)}
+								onBlur={() => setApiKeyFocused(false)}
+								placeholder={apiKeyPlaceholder}
+								aria-invalid={fieldErrors.apiKey ? true : undefined}
+								className={cn(
+									"h-8 w-full rounded-md border bg-surface-2 px-2 pr-9 font-mono text-[13px] text-text-primary placeholder:font-sans placeholder:text-text-tertiary focus:outline-none",
+									fieldErrors.apiKey
+										? "border-status-red focus:border-status-red"
+										: "border-border focus:border-border-focus",
+								)}
+							/>
+							<Button
+								variant="ghost"
+								size="sm"
+								disabled={!canToggleApiKey}
+								icon={showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+								className="absolute right-1 top-1/2 -translate-y-1/2"
+								aria-label={showApiKey ? "Hide API key" : "Show API key"}
+								onClick={() => setShowApiKey((current) => !current)}
+							/>
+						</div>
+						<FieldError message={fieldErrors.apiKey} />
+					</section>
+				) : null}
 
 				{anthropicEnabled ? (
 					<section className="rounded-lg border border-border bg-surface-1 p-3">
@@ -766,25 +818,27 @@ export function KanbanAddProviderDialog({
 					</section>
 				) : null}
 
-				<section className="rounded-lg border border-border bg-surface-1 p-3">
-					<p className="mb-1 text-[12px] text-text-secondary">Model source URL</p>
-					<input
-						value={form.modelsSourceUrl}
-						onChange={(event) => setForm((current) => ({ ...current, modelsSourceUrl: event.target.value }))}
-						placeholder="https://api.example.com/v1/models"
-						aria-invalid={fieldErrors.modelsSourceUrl ? true : undefined}
-						className={cn(
-							"h-8 w-full rounded-md border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:outline-none",
-							fieldErrors.modelsSourceUrl
-								? "border-status-red focus:border-status-red"
-								: "border-border focus:border-border-focus",
-						)}
-					/>
-					<p className="mt-1 text-[12px] text-text-tertiary">
-						Optional. If set, the SDK can fetch models from a compatible `/models` endpoint.
-					</p>
-					<FieldError message={fieldErrors.modelsSourceUrl} />
-				</section>
+				{customEndpoint ? (
+					<section className="rounded-lg border border-border bg-surface-1 p-3">
+						<p className="mb-1 text-[12px] text-text-secondary">Model source URL</p>
+						<input
+							value={form.modelsSourceUrl}
+							onChange={(event) => setForm((current) => ({ ...current, modelsSourceUrl: event.target.value }))}
+							placeholder="https://api.example.com/v1/models"
+							aria-invalid={fieldErrors.modelsSourceUrl ? true : undefined}
+							className={cn(
+								"h-8 w-full rounded-md border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:outline-none",
+								fieldErrors.modelsSourceUrl
+									? "border-status-red focus:border-status-red"
+									: "border-border focus:border-border-focus",
+							)}
+						/>
+						<p className="mt-1 text-[12px] text-text-tertiary">
+							Optional. If set, the SDK can fetch models from a compatible `/models` endpoint.
+						</p>
+						<FieldError message={fieldErrors.modelsSourceUrl} />
+					</section>
+				) : null}
 
 				<section className="rounded-lg border border-border bg-surface-1 p-3">
 					<p className="mb-1 text-[12px] text-text-secondary">Models</p>

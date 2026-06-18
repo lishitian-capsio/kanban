@@ -78,6 +78,38 @@ describe("agent-provider-config", () => {
 		expect(config).toBeNull();
 	});
 
+	it("rejects a custom endpoint for a vendor agent (gemini) with a clear message", async () => {
+		await expect(
+			saveAgentProvider("gemini", {
+				agentId: "gemini",
+				provider: "google",
+				baseUrl: "https://my-openai-relay.example.com",
+				apiKey: "gk-1",
+			}),
+		).rejects.toThrow(/gemini/i);
+	});
+
+	it("rejects a custom-endpoint protocol for a vendor agent (kiro)", async () => {
+		await expect(
+			saveAgentProvider("kiro", {
+				agentId: "kiro",
+				provider: "kiro",
+				protocols: [{ protocol: "anthropic", baseUrl: "https://relay.example.com" }],
+			}),
+		).rejects.toThrow(/kiro/i);
+	});
+
+	it("allows a vendor agent provider with only native fields (no endpoint)", async () => {
+		await saveAgentProvider("gemini", {
+			agentId: "gemini",
+			provider: "google",
+			apiKey: "gk-1",
+			model: "gemini-2.5-pro",
+		});
+		resetAgentProviderConfigCache();
+		expect(getAgentProviderConfig("gemini")?.model).toBe("gemini-2.5-pro");
+	});
+
 	it("normalizes agent ids to lowercase", async () => {
 		await saveAgentProvider("CLAUDE", { agentId: "CLAUDE", provider: "anthropic", model: "claude-3" });
 		resetAgentProviderConfigCache();

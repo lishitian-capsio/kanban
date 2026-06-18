@@ -428,7 +428,8 @@ describe("KanbanAddProviderDialog", () => {
 		);
 	});
 
-	it("shows all protocols when the agent has no protocol restrictions", async () => {
+	it("hides the protocol/base-URL inputs and shows a capability note for a vendor agent (gemini)", async () => {
+		const onSubmit = vi.fn(async () => ({ ok: true }));
 		await act(async () => {
 			root.render(
 				<KanbanAddProviderDialog
@@ -436,14 +437,83 @@ describe("KanbanAddProviderDialog", () => {
 					onOpenChange={() => {}}
 					existingProviderIds={[]}
 					agentId="gemini"
-					onSubmit={async () => ({ ok: true })}
+					onSubmit={onSubmit}
 				/>,
 			);
 		});
 
-		// gemini → [] (independent protocol): treated as no constraint, both shown.
-		expect(findButtonContainingText(document.body, "OpenAI-compatible")).toBeInstanceOf(HTMLButtonElement);
-		expect(findButtonContainingText(document.body, "Anthropic-compatible")).toBeInstanceOf(HTMLButtonElement);
+		// gemini is a vendor agent: no generic protocol/base-URL selection, just a note.
+		expect(findButtonContainingText(document.body, "OpenAI-compatible")).toBeNull();
+		expect(findButtonContainingText(document.body, "Anthropic-compatible")).toBeNull();
+		expect(document.body.querySelector('[data-testid="vendor-capability-note"]')?.textContent).toMatch(/Gemini/);
+		// No base-URL input is rendered.
+		const inputs = Array.from(document.body.querySelectorAll("input"));
+		expect(inputs.find((input) => input.placeholder?.includes("api.openai.com"))).toBeUndefined();
+		// Gemini still surfaces an API key field (identified by its reveal toggle).
+		expect(document.body.querySelector('[aria-label="Show API key"]')).toBeInstanceOf(HTMLButtonElement);
+
+		// Submitting requires only id + name + a model — and never sends protocols/baseUrl.
+		const providerIdInput = inputs.find((input) => input.placeholder === "my-provider") as HTMLInputElement;
+		const providerNameInput = inputs.find((input) => input.placeholder === "My Provider") as HTMLInputElement;
+		const modelInput = inputs.find(
+			(input) => input.placeholder === "Type a model ID and press Enter",
+		) as HTMLInputElement;
+		await act(async () => {
+			setInputValue(providerIdInput, "google");
+			setInputValue(providerNameInput, "Google");
+			setInputValue(modelInput, "gemini-2.5-pro");
+		});
+		const saveButton = findButtonByText(document.body, "Add provider");
+		await act(async () => {
+			saveButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			saveButton?.click();
+		});
+		expect(onSubmit).toHaveBeenCalledTimes(1);
+		const geminiCalls = onSubmit.mock.calls as unknown as Array<[{ protocols?: unknown; models: string[] }]>;
+		const payload = geminiCalls[0]?.[0];
+		expect(payload?.protocols).toBeUndefined();
+		expect(payload?.models).toContain("gemini-2.5-pro");
+	});
+
+	it("hides the API key field for kiro (official login) and submits with a model only", async () => {
+		const onSubmit = vi.fn(async () => ({ ok: true }));
+		await act(async () => {
+			root.render(
+				<KanbanAddProviderDialog
+					open={true}
+					onOpenChange={() => {}}
+					existingProviderIds={[]}
+					agentId="kiro"
+					onSubmit={onSubmit}
+				/>,
+			);
+		});
+
+		expect(document.body.querySelector('[data-testid="vendor-capability-note"]')?.textContent).toMatch(/Kiro/);
+		// Kiro v1: no API key field (no reveal toggle), no protocol/base-URL inputs.
+		expect(document.body.querySelector('[aria-label="Show API key"]')).toBeNull();
+		expect(findButtonContainingText(document.body, "OpenAI-compatible")).toBeNull();
+
+		const inputs = Array.from(document.body.querySelectorAll("input"));
+		const providerIdInput = inputs.find((input) => input.placeholder === "my-provider") as HTMLInputElement;
+		const providerNameInput = inputs.find((input) => input.placeholder === "My Provider") as HTMLInputElement;
+		const modelInput = inputs.find(
+			(input) => input.placeholder === "Type a model ID and press Enter",
+		) as HTMLInputElement;
+		await act(async () => {
+			setInputValue(providerIdInput, "kiro");
+			setInputValue(providerNameInput, "Kiro");
+			setInputValue(modelInput, "kiro-default");
+		});
+		const saveButton = findButtonByText(document.body, "Add provider");
+		await act(async () => {
+			saveButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			saveButton?.click();
+		});
+		expect(onSubmit).toHaveBeenCalledTimes(1);
+		const kiroCalls = onSubmit.mock.calls as unknown as Array<[{ protocols?: unknown; apiKey?: unknown }]>;
+		const payload = kiroCalls[0]?.[0];
+		expect(payload?.protocols).toBeUndefined();
 	});
 
 	it("updates capability toggle state and submits the selected capabilities", async () => {

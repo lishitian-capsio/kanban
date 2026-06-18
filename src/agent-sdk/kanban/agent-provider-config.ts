@@ -26,6 +26,7 @@ import { lockedFileSystem } from "../../fs/locked-file-system";
 import { createLogger } from "../../logging";
 import {
 	collapseToAgentProtocol,
+	getProviderCapabilityError,
 	isOfficialLoginProviderId,
 	OFFICIAL_LOGIN_PROVIDER_ID,
 	type ProtocolConfig,
@@ -429,6 +430,18 @@ export async function saveAgentProvider(agentId: string, config: AgentProviderCo
 	// sentinel and must not be shadowed by a stored provider.
 	if (isOfficialLoginProviderId(cleanedId)) {
 		throw new Error(`Provider name "${OFFICIAL_LOGIN_PROVIDER_ID}" is reserved for official login`);
+	}
+
+	// Vendor agents (gemini/kiro) speak only their vendor-native API — they cannot
+	// use a generic BYOK endpoint. Reject a custom baseUrl/protocol endpoint at the
+	// write boundary so the misconfiguration surfaces here rather than silently
+	// doing nothing at launch.
+	const capabilityError = getProviderCapabilityError(id, {
+		baseUrl: cleaned.baseUrl,
+		protocols: cleaned.protocols,
+	});
+	if (capabilityError) {
+		throw new Error(capabilityError);
 	}
 
 	const existing = state.agents[id];

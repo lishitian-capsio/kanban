@@ -20,8 +20,10 @@ import type { AgentProviderConfig } from "../agent-sdk/kanban/agent-provider-con
 import { type CommittedProviderLayer, resolveAgentProvider } from "../agent-sdk/kanban/agent-provider-resolver";
 import {
 	AGENT_PROTOCOL_COMPATIBILITY,
+	type AgentVendorId,
 	agentUsesNativeProviderProjection,
 	getAgentProtocols,
+	getAgentProviderCapability,
 	IncompatibleAgentProviderError,
 	type ProtocolConfig,
 	type ProviderProtocol,
@@ -40,6 +42,13 @@ export interface AgentProviderEnv {
 	env: Record<string, string | undefined>;
 	/** Whether a non-official provider is active (for logging). */
 	usesCustomProvider: boolean;
+	/**
+	 * The resolved model id for this launch (override → committed → store), or
+	 * `null`. Adapters that apply the model via native config rather than env
+	 * (e.g. Kiro's agent JSON) read this; for env-driven agents the model is
+	 * already projected into {@link env}.
+	 */
+	resolvedModelId?: string | null;
 }
 
 // ------------------------------------------------------------------ public API
@@ -91,6 +100,18 @@ export async function buildAgentProviderEnv(
 		return { env: {}, usesCustomProvider: false };
 	}
 
+	const resolvedModelId = resolved.modelId ?? config.model ?? null;
+
+	// Vendor agents (gemini/kiro) speak only their vendor-native API — there is no
+	// generic BYOK endpoint. Branch BEFORE the protocol path so we never inject the
+	// generic *_BASE_URL / *_API_KEY override (which these CLIs ignore → silent
+	// failure). The UI/API gate (getProviderCapabilityError) already prevents a
+	// custom endpoint from being configured here.
+	const capability = getAgentProviderCapability(agentId);
+	if (capability.mode === "vendor") {
+		return buildVendorProviderEnv(capability.vendor, config, resolvedModelId);
+	}
+
 	// Resolve env vars based on provider protocols + agent compatibility.
 	// When the config predates protocols, fall back to the agent's primary
 	// protocol (e.g. claude → anthropic, codex → openai) carrying the legacy
@@ -112,7 +133,61 @@ export async function buildAgentProviderEnv(
 
 	// Honor the resolved (committed/store-folded) model over the raw config model
 	// so a workspace committed provider's model takes effect for the agent.
-	return buildDirectOverrideEnv(protocolEnv, config, resolved.modelId ?? config.model ?? null);
+	return buildDirectOverrideEnv(protocolEnv, config, resolvedModelId);
+}
+
+/**
+ * Build env for a vendor agent (gemini/kiro), which speaks only its vendor-native
+ * API — no generic `*_BASE_URL`/`*_API_KEY` override.
+ *
+ *   - `"google"` (gemini): injects the official Gemini CLI vars. With a GCP
+ *     project configured it goes the Vertex AI route
+ *     (`GOOGLE_GENAI_USE_VERTEXAI` + `GOOGLE_CLOUD_PROJECT`/`GOOGLE_CLOUD_LOCATION`
+ *     + `GOOGLE_API_KEY`); otherwise the AI-Studio route (`GEMINI_API_KEY`). The
+ *     model is `GEMINI_MODEL`.
+ *   - `"kiro"` (v1): official login only — the model is applied via Kiro's native
+ *     agent config (see the kiro adapter), not env, and the custom API-key env
+ *     contract is deferred, so NO env is injected here. `resolvedModelId` is still
+ *     returned so the adapter can apply it.
+ */
+function buildVendorProviderEnv(
+	vendor: AgentVendorId | undefined,
+	config: AgentProviderConfig,
+	model: string | null,
+): AgentProviderEnv {
+	if (vendor === "google") {
+		return buildGoogleVendorEnv(config, model);
+	}
+	// kiro (and any future vendor without env projection): no env, model via native config.
+	return { env: {}, usesCustomProvider: false, resolvedModelId: model };
+}
+
+function buildGoogleVendorEnv(config: AgentProviderConfig, model: string | null): AgentProviderEnv {
+	const env: Record<string, string | undefined> = {};
+	const projectId = config.gcp?.projectId?.trim();
+	if (projectId) {
+		// Vertex AI route.
+		env.GOOGLE_GENAI_USE_VERTEXAI = "true";
+		env.GOOGLE_CLOUD_PROJECT = projectId;
+		const region = config.gcp?.region?.trim() || config.region?.trim();
+		if (region) {
+			env.GOOGLE_CLOUD_LOCATION = region;
+		}
+		if (config.apiKey) {
+			env.GOOGLE_API_KEY = config.apiKey;
+		}
+	} else if (config.apiKey) {
+		// AI-Studio route.
+		env.GEMINI_API_KEY = config.apiKey;
+	}
+	if (model) {
+		env.GEMINI_MODEL = model;
+	}
+	return {
+		env,
+		usesCustomProvider: Object.keys(env).length > 0,
+		resolvedModelId: model,
+	};
 }
 
 /**
@@ -149,7 +224,7 @@ function buildDirectOverrideEnv(
 		env[apiKeyEnvVar] = config.apiKey;
 	}
 
-	// Anthropic-only model overrides.
+	// Anthropic-only model overrides + opt-in gateway model discovery.
 	if (resolved.matchedProtocol === "anthropic") {
 		if (model) {
 			env.ANTHROPIC_MODEL = model;
@@ -164,10 +239,14 @@ function buildDirectOverrideEnv(
 		if (defaults?.opus) {
 			env.ANTHROPIC_DEFAULT_OPUS_MODEL = defaults.opus;
 		}
+		if (config.anthropic?.enableGatewayModelDiscovery) {
+			env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = "1";
+		}
 	}
 
 	return {
 		env,
 		usesCustomProvider: Object.keys(env).length > 0,
+		resolvedModelId: model,
 	};
 }
