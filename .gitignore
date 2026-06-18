@@ -25,3 +25,7 @@ packages/desktop/runtime-child.js
 packages/desktop/runtime-child-env.js
 packages/desktop/desktop-preflight.js
 packages/desktop/cli
+# Kanban board data lives on its own branch; only the pointer travels with the code.
+# See .plan/docs/board-branch-decoupling.md and .kanban/board-ref.
+/.kanban/*
+!/.kanban/board-ref
