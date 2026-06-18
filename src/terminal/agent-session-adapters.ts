@@ -19,6 +19,7 @@ import { lockedFileSystem } from "../fs/locked-file-system";
 import { createLogger } from "../logging";
 import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-prompt";
 import { getMachineKanbanHomePath } from "../state/workspace-state";
+import { projectCodexHome } from "./codex-home-projector";
 import { configureCodexHooks, hasCodexConfigOverride } from "./codex-hook-config";
 import { createHookRuntimeEnv } from "./hook-runtime-context";
 import {
@@ -57,9 +58,10 @@ export interface AgentAdapterLaunchInput {
 	/**
 	 * Provider selected for this session (provider name = providerId). Consumed by
 	 * adapters that project provider config natively into their settings/config file
-	 * (Droid's BYOK `customModels`, OpenCode's `OPENCODE_CONFIG`), resolved together
-	 * with {@link committedProvider} via the shared resolver. Other agents inject
-	 * provider env separately via {@link buildAgentProviderEnv}.
+	 * (Droid's BYOK `customModels`, OpenCode's `OPENCODE_CONFIG`, Codex's isolated
+	 * `CODEX_HOME`), resolved together with {@link committedProvider} via the shared
+	 * resolver. Other agents inject provider env separately via
+	 * {@link buildAgentProviderEnv}.
 	 */
 	providerId?: string;
 	/** The workspace's selected committed provider for this agent (secret-free). */
@@ -758,6 +760,22 @@ const codexAdapter: AgentSessionAdapter = {
 					workspaceId: hooks.workspaceId,
 				}),
 			);
+		}
+
+		// Project an isolated CODEX_HOME for a custom provider so Codex's rich native
+		// config (named model_provider, wire_api, reasoning, auth method) is honored
+		// without touching the user's global ~/.codex. The API key itself is injected
+		// as per-spawn env by `buildAgentProviderEnv`; the generated config.toml only
+		// *references* it via env_key, so no secret is written to disk. Official login
+		// (and no-custom-provider) projects nothing, preserving Codex's native login.
+		const codexHomeProjection = await projectCodexHome({
+			agentId: input.agentId,
+			taskId: input.taskId,
+			providerId: input.providerId,
+			committedProvider: input.committedProvider,
+		});
+		if (codexHomeProjection) {
+			Object.assign(env, codexHomeProjection.env);
 		}
 
 		const trimmed = input.prompt.trim();

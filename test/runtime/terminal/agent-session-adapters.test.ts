@@ -829,3 +829,92 @@ describe("prepareAgentLaunch OpenCode native provider projection", () => {
 		expect(launch.env.OPENCODE_CONFIG).toBeUndefined();
 	});
 });
+
+describe("Codex provider projection (CODEX_HOME)", () => {
+	const originalProvidersPath = process.env.KANBAN_AGENT_PROVIDERS_PATH;
+
+	function writeCodexProviders(providers: unknown, defaultProviderId?: string): void {
+		const home = tempHome ?? setupTempHome();
+		const providersPath = join(home, "agent_providers.json");
+		writeFileSync(
+			providersPath,
+			JSON.stringify({
+				agents: { codex: { agentId: "codex", providers, defaultProviderId } },
+			}),
+		);
+		process.env.KANBAN_AGENT_PROVIDERS_PATH = providersPath;
+		resetAgentProviderConfigCache();
+	}
+
+	afterEach(() => {
+		if (originalProvidersPath === undefined) {
+			delete process.env.KANBAN_AGENT_PROVIDERS_PATH;
+		} else {
+			process.env.KANBAN_AGENT_PROVIDERS_PATH = originalProvidersPath;
+		}
+		resetAgentProviderConfigCache();
+	});
+
+	it("points CODEX_HOME at an isolated config.toml for a custom provider", async () => {
+		setupTempHome();
+		writeCodexProviders(
+			[
+				{
+					agentId: "codex",
+					provider: "my-relay",
+					model: "gpt-5-codex",
+					apiKey: "sk-secret",
+					protocols: [{ protocol: "openai", baseUrl: "https://relay.example.com/v1" }],
+				},
+			],
+			"my-relay",
+		);
+
+		const launch = await prepareAgentLaunch({
+			taskId: "task-codex-provider",
+			agentId: "codex",
+			binary: "codex",
+			args: [],
+			cwd: "/tmp",
+			prompt: "",
+			providerId: "my-relay",
+		});
+
+		const codexHome = launch.env.CODEX_HOME;
+		expect(codexHome).toBeDefined();
+		const configPath = join(codexHome ?? "", "config.toml");
+		expect(existsSync(configPath)).toBe(true);
+		const toml = readFileSync(configPath, "utf8");
+		expect(toml).toContain(`base_url = "https://relay.example.com/v1"`);
+		expect(toml).toContain(`wire_api = "responses"`);
+		expect(toml).toContain(`env_key = "OPENAI_API_KEY"`);
+		expect(toml).not.toContain("sk-secret");
+	});
+
+	it("does not set CODEX_HOME for official login (native ~/.codex preserved)", async () => {
+		setupTempHome();
+		writeCodexProviders(
+			[
+				{
+					agentId: "codex",
+					provider: "my-relay",
+					apiKey: "sk-secret",
+					protocols: [{ protocol: "openai", baseUrl: "https://relay.example.com/v1" }],
+				},
+			],
+			"official",
+		);
+
+		const launch = await prepareAgentLaunch({
+			taskId: "task-codex-official",
+			agentId: "codex",
+			binary: "codex",
+			args: [],
+			cwd: "/tmp",
+			prompt: "",
+			providerId: "official",
+		});
+
+		expect(launch.env.CODEX_HOME).toBeUndefined();
+	});
+});
