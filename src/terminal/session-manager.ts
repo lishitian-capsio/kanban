@@ -2,6 +2,7 @@
 // It owns process lifecycle, terminal protocol filtering, and summary updates
 // for command-driven agents such as Claude Code, Codex, Gemini, and shell sessions.
 
+import type { CommittedProviderLayer } from "../agent-sdk/kanban/agent-provider-resolver";
 import type {
 	RuntimeTaskHookActivity,
 	RuntimeTaskImage,
@@ -117,6 +118,12 @@ export interface StartTaskSessionRequest {
 	 * agent's default provider when unset.
 	 */
 	providerId?: string;
+	/**
+	 * The workspace's selected committed provider for this agent (secret-free).
+	 * Folded into provider selection below `providerId` so a workspace can pin a
+	 * provider/model for an agent without a per-session override.
+	 */
+	committedProvider?: CommittedProviderLayer | null;
 	autonomousModeEnabled?: boolean;
 	cwd: string;
 	prompt: string;
@@ -480,7 +487,11 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 
 		// Build provider-specific env vars (custom baseUrl/apiKey for non-official providers).
 		// The session's selected providerId picks which registered provider to inject.
-		const agentProviderEnv = await buildAgentProviderEnv(request.agentId, request.providerId);
+		const agentProviderEnv = await buildAgentProviderEnv(
+			request.agentId,
+			request.providerId,
+			request.committedProvider,
+		);
 
 		const env = buildTerminalEnvironment(request.env, launch.env, agentProviderEnv.env, buildBridgeProxyEnvVars());
 

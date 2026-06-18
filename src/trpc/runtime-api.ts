@@ -17,10 +17,11 @@ import {
 	saveAgentProvider,
 	setDefaultAgentProvider,
 } from "../agent-sdk/kanban/agent-provider-config";
+import type { CommittedProviderLayer } from "../agent-sdk/kanban/agent-provider-resolver";
 import { createAgentProviderService } from "../agent-sdk/kanban/agent-provider-service";
 import { createMcpRuntimeService, type McpRuntimeService } from "../agent-sdk/kanban/mcp-runtime-service";
 import { createKanbanMcpSettingsService } from "../agent-sdk/kanban/mcp-settings-service";
-import { type PiCommittedProvider, resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
+import { resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
 import { buildPiSystemPrompt } from "../agent-sdk/kanban/pi-system-prompt";
 import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
 import { isKanbanClearSlashCommand, KANBAN_BUILTIN_SLASH_COMMANDS } from "../agent-sdk/shared/slash-commands";
@@ -28,6 +29,7 @@ import { setRuntimeProxyStateFromConfig } from "../config/proxy-fetch";
 import type { RuntimeConfigState } from "../config/runtime-config";
 import { updateGlobalRuntimeConfig, updateRuntimeConfig } from "../config/runtime-config";
 import type {
+	RuntimeAgentId,
 	RuntimeAgentProviderConfigListResponse,
 	RuntimeAgentProviderConfigSaveRequest,
 	RuntimeAgentProviderMutationRequest,
@@ -134,15 +136,19 @@ async function resolvePiHomeAgentSystemPrompt(taskId: string, cwd: string): Prom
 }
 
 /**
- * Resolve the workspace's selected `pi` committed provider as the non-secret
- * launch-config layer fed into {@link resolvePiLaunchConfig}. Returns null (so
- * resolution falls back to the machine-home settings / defaults) when nothing is
- * selected or the lookup fails.
+ * Resolve the workspace's selected committed provider for `agentId` as the
+ * non-secret launch-config layer fed into the shared provider resolver (pi via
+ * {@link resolvePiLaunchConfig}, CLI agents via `buildAgentProviderEnv`). Returns
+ * null (so resolution falls back to the machine-home settings / defaults) when
+ * nothing is selected or the lookup fails.
  */
-async function loadSelectedCommittedProvider(scope: RuntimeTrpcWorkspaceScope): Promise<PiCommittedProvider | null> {
+async function loadSelectedCommittedProvider(
+	scope: RuntimeTrpcWorkspaceScope,
+	agentId: RuntimeAgentId = "pi",
+): Promise<CommittedProviderLayer | null> {
 	try {
 		const data = await loadWorkspaceCommittedProviders(scope.workspaceId);
-		const selected = getSelectedCommittedProvider(data, "pi");
+		const selected = getSelectedCommittedProvider(data, agentId);
 		if (!selected) {
 			return null;
 		}
@@ -218,6 +224,9 @@ export async function launchHomeAgentSession(
 		agentId: resolved.agentId,
 		binary: resolved.binary,
 		args: resolved.args,
+		// Home (sidebar) CLI sessions have no card, so the workspace's committed
+		// provider for this agent is the only non-default provider selection.
+		committedProvider: await loadSelectedCommittedProvider(scope, effectiveAgentId),
 		autonomousModeEnabled: scopedRuntimeConfig.agentAutonomousModeEnabled,
 		cwd,
 		prompt,
@@ -414,8 +423,10 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					args: resolved.args,
 					// Per-session provider selection: the card's agentSettings.providerId
 					// picks which of the agent's registered providers to inject. Falls
-					// back to the agent's default provider when unset.
+					// back to the workspace's committed provider for this agent, then the
+					// agent's default provider, when unset.
 					providerId: body.agentSettings?.providerId ?? undefined,
+					committedProvider: await loadSelectedCommittedProvider(workspaceScope, effectiveAgentId),
 					autonomousModeEnabled: scopedRuntimeConfig.agentAutonomousModeEnabled,
 					cwd: taskCwd,
 					prompt: body.prompt,

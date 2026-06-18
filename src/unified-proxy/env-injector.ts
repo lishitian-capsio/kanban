@@ -16,15 +16,11 @@
 // Auth-gateway translation (when an extra provider speaks a different protocol)
 // is planned for later.
 
-import {
-	type AgentProviderConfig,
-	getAgentProviderConfig,
-	getAgentProviderSet,
-	normalizeProviderId,
-} from "../agent-sdk/kanban/agent-provider-config";
+import type { AgentProviderConfig } from "../agent-sdk/kanban/agent-provider-config";
+import { type CommittedProviderLayer, resolveAgentProvider } from "../agent-sdk/kanban/agent-provider-resolver";
 import {
 	AGENT_PROTOCOL_COMPATIBILITY,
-	isOfficialLoginProviderId,
+	getAgentProtocols,
 	type ProtocolConfig,
 	type ProviderProtocol,
 	resolveAnthropicApiKeyEnvVar,
@@ -40,39 +36,66 @@ export interface AgentProviderEnv {
 	usesCustomProvider: boolean;
 }
 
+/**
+ * Thrown when the resolved provider's wire protocol is one the agent cannot
+ * speak (e.g. a Codex session pointed at an Anthropic-only provider). Surfaced to
+ * the user instead of silently launching with no override, which would quietly
+ * use the agent's native login against the wrong intent.
+ */
+export class IncompatibleAgentProviderError extends Error {
+	constructor(
+		readonly agentId: string,
+		readonly providerProtocols: ProviderProtocol[],
+		readonly agentProtocols: ProviderProtocol[],
+	) {
+		const provider = providerProtocols.join("/") || "(unknown)";
+		const agent = agentProtocols.join("/") || "(unrestricted)";
+		super(
+			`Provider speaks the "${provider}" protocol, which agent "${agentId}" cannot use (supports "${agent}"). ` +
+				`Pick a compatible provider or use official login.`,
+		);
+		this.name = "IncompatibleAgentProviderError";
+	}
+}
+
 // ------------------------------------------------------------------ public API
 
 /**
- * Build provider-related env vars for a CLI agent based on its agent-level
- * provider config. If the agent has a non-official provider selected and that
- * provider has a baseUrl, the env vars redirect to it.
+ * Build provider-related env vars for a CLI agent.
  *
- * `providerId` selects which of the agent's registered providers to use; when
- * omitted (or unknown) the agent's default provider is used.
+ * Provider *selection* runs through the shared {@link resolveAgentProvider}
+ * (task/card override → workspace committed provider → machine-home store →
+ * agent default / official login); this adapter turns the result into the env
+ * vars that redirect the agent's API calls.
  *
- * Returns `{ env: {}, usesCustomProvider: false }` when the official provider
- * is selected, no custom provider config exists, or the provider's protocols
- * are incompatible with the agent.
+ * `providerId` is the card/task-level override; `committedProvider` is the
+ * workspace's selected committed provider for this agent (secret-free). When the
+ * official sentinel is selected (explicitly or as the agent default), NO env is
+ * injected and the chain never falls through to a custom provider, so the
+ * agent's native login is preserved.
+ *
+ * Returns `{ env: {}, usesCustomProvider: false }` for official login or when no
+ * custom provider config exists. Throws {@link IncompatibleAgentProviderError}
+ * when the resolved provider's protocols are incompatible with the agent.
  */
-export async function buildAgentProviderEnv(agentId: string, providerId?: string): Promise<AgentProviderEnv> {
-	// Official login: the agent uses its own native login (e.g. claude's
-	// ~/.claude OAuth). Inject NO provider env and — crucially — never fall
-	// through to a custom default, which would clobber the official session.
-	// This applies both when official is explicitly selected for the session and
-	// when it is the agent's default (an unmatched sentinel defaultProviderId).
-	const effectiveProviderId =
-		providerId !== undefined ? normalizeProviderId(providerId) : getAgentProviderSet(agentId)?.defaultProviderId;
-	if (isOfficialLoginProviderId(effectiveProviderId)) {
+export async function buildAgentProviderEnv(
+	agentId: string,
+	providerId?: string,
+	committedProvider?: CommittedProviderLayer | null,
+): Promise<AgentProviderEnv> {
+	const resolved = resolveAgentProvider(
+		{ agentId, providerIdOverride: providerId, committedProvider },
+		// CLI agents fall back to the agent's default provider when an explicit
+		// selection is unknown (long-standing behavior).
+		{ defaultProviderFallback: true },
+	);
+
+	if (resolved.kind === "official-login") {
 		return { env: {}, usesCustomProvider: false };
 	}
 
-	// Selected provider, falling back to the agent's default when the selection
-	// is missing or unknown.
-	const config =
-		(providerId !== undefined ? getAgentProviderConfig(agentId, providerId) : null) ??
-		getAgentProviderConfig(agentId);
-
-	// No per-agent config → no custom provider override.
+	// No machine-home config → no secret/protocol to inject → no custom override.
+	const config = resolved.config;
 	if (!config) {
 		return { env: {}, usesCustomProvider: false };
 	}
@@ -85,14 +108,20 @@ export async function buildAgentProviderEnv(agentId: string, providerId?: string
 	const fallbackProtocol: ProviderProtocol = agentProtocols[0] ?? "openai";
 	const protocols: ProtocolConfig[] = config.protocols ?? [{ protocol: fallbackProtocol, baseUrl: config.baseUrl }];
 
-	const resolved = resolveProtocolEnvVars(protocols, agentId);
-	if (!resolved) {
-		// Agent not compatible with the provider's protocols —
-		// these don't support *_BASE_URL override, so skip.
-		return { env: {}, usesCustomProvider: false };
+	const protocolEnv = resolveProtocolEnvVars(protocols, agentId);
+	if (!protocolEnv) {
+		// Agent not compatible with the provider's protocols — surface it instead
+		// of silently launching with no override.
+		throw new IncompatibleAgentProviderError(
+			agentId,
+			protocols.map((p) => p.protocol),
+			getAgentProtocols(agentId),
+		);
 	}
 
-	return buildDirectOverrideEnv(resolved, config);
+	// Honor the resolved (committed/store-folded) model over the raw config model
+	// so a workspace committed provider's model takes effect for the agent.
+	return buildDirectOverrideEnv(protocolEnv, config, resolved.modelId ?? config.model ?? null);
 }
 
 /**
@@ -111,6 +140,7 @@ function buildDirectOverrideEnv(
 		matchedProtocol: ProviderProtocol;
 	},
 	config: AgentProviderConfig,
+	model: string | null,
 ): AgentProviderEnv {
 	const env: Record<string, string | undefined> = {};
 
@@ -130,8 +160,8 @@ function buildDirectOverrideEnv(
 
 	// Anthropic-only model overrides.
 	if (resolved.matchedProtocol === "anthropic") {
-		if (config.model) {
-			env.ANTHROPIC_MODEL = config.model;
+		if (model) {
+			env.ANTHROPIC_MODEL = model;
 		}
 		const defaults = config.anthropic?.defaultModels;
 		if (defaults?.haiku) {

@@ -203,7 +203,7 @@ describe("env-injector: buildAgentProviderEnv", () => {
 		expect(result.env.OPENAI_API_KEY).toBe("gk-000");
 	});
 
-	it("returns empty env when provider protocols are incompatible with agent", async () => {
+	it("throws when provider protocols are incompatible with the agent", async () => {
 		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
 			agentId: "codex",
 			provider: "anthropic-only-provider",
@@ -212,11 +212,9 @@ describe("env-injector: buildAgentProviderEnv", () => {
 			protocols: [{ protocol: "anthropic", baseUrl: "https://anthropic-only.example.com" }],
 		});
 
-		// codex supports openai, provider only supports anthropic
-		// resolveProtocolEnvVars returns null (no compatible protocol found)
-		const result = await buildAgentProviderEnv("codex");
-		expect(result.usesCustomProvider).toBe(false);
-		expect(result.env).toEqual({});
+		// codex supports only openai; the provider speaks only anthropic. Rather
+		// than silently launching with no override, this surfaces an error.
+		await expect(buildAgentProviderEnv("codex")).rejects.toThrow(/cannot use/i);
 	});
 
 	it("returns empty env when provider config is null (not found)", async () => {
@@ -294,6 +292,56 @@ describe("env-injector: buildAgentProviderEnv", () => {
 			expect(result.env).toEqual({});
 			// The fallback chain must not even be consulted.
 			expect(agentProviderMocks.getAgentProviderConfig).not.toHaveBeenCalled();
+		});
+	});
+
+	describe("workspace committed provider", () => {
+		it("selects the committed provider for a supporting agent and applies its model", async () => {
+			// The machine-home store holds the secret + protocol for the committed
+			// provider id; the committed record (secret-free) selects it and supplies
+			// the model.
+			agentProviderMocks.getAgentProviderConfig.mockImplementation((_agentId: string, providerId?: string) =>
+				providerId === "my-relay"
+					? {
+							agentId: "claude",
+							provider: "my-relay",
+							apiKey: "sk-relay",
+							protocols: [{ protocol: "anthropic", baseUrl: "https://relay.local/v1" }],
+						}
+					: null,
+			);
+
+			const result = await buildAgentProviderEnv("claude", undefined, {
+				providerId: "my-relay",
+				modelId: "committed-opus",
+			});
+
+			expect(result.usesCustomProvider).toBe(true);
+			expect(result.env).toEqual({
+				ANTHROPIC_BASE_URL: "https://relay.local/v1",
+				ANTHROPIC_AUTH_TOKEN: "sk-relay",
+				ANTHROPIC_MODEL: "committed-opus",
+			});
+		});
+
+		it("lets a card-level provider override win over the committed provider", async () => {
+			agentProviderMocks.getAgentProviderConfig.mockImplementation((_agentId: string, providerId?: string) => {
+				if (providerId === "card-relay") {
+					return {
+						agentId: "claude",
+						provider: "card-relay",
+						apiKey: "sk-card",
+						protocols: [{ protocol: "anthropic", baseUrl: "https://card.local" }],
+					};
+				}
+				return null;
+			});
+
+			const result = await buildAgentProviderEnv("claude", "card-relay", { providerId: "committed-relay" });
+			expect(result.env).toEqual({
+				ANTHROPIC_BASE_URL: "https://card.local",
+				ANTHROPIC_AUTH_TOKEN: "sk-card",
+			});
 		});
 	});
 

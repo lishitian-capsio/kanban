@@ -6,6 +6,7 @@ import { Effort } from "../ai/model-thinking";
 import { type GeneratedProvider, getBundledModel, getBundledModels, getBundledProviders } from "../ai/models";
 import type { Api, Model } from "../ai/types";
 import { getAgentProviderConfig } from "./agent-provider-config";
+import { type CommittedProviderLayer, resolveAgentProvider } from "./agent-provider-resolver";
 
 export const PI_DEFAULT_PROVIDER_ID = "anthropic";
 export const PI_DEFAULT_MODEL_ID = "claude-sonnet-4-20250514";
@@ -139,13 +140,11 @@ export function assertResolvedPiModel(
  * committed provider. This is the "workspace layer" in the resolution chain; it
  * never carries secrets (the API key still comes from the machine-home settings
  * store by providerId).
+ *
+ * Alias of the agent-agnostic {@link CommittedProviderLayer} — pi resolution
+ * shares the shared {@link resolveAgentProvider} entry point.
  */
-export interface PiCommittedProvider {
-	providerId?: string | null;
-	modelId?: string | null;
-	baseUrl?: string | null;
-	reasoningEffort?: RuntimeReasoningEffort | null;
-}
+export type PiCommittedProvider = CommittedProviderLayer;
 
 export interface PiLaunchInput {
 	providerIdOverride?: string | null;
@@ -155,130 +154,39 @@ export interface PiLaunchInput {
 }
 
 /**
- * One source's contribution to the launch config. `null` means "this source did
- * not supply this field" — it never carries empty strings, so merging is a plain
- * nullish-coalescing fold (first non-null wins, highest-priority source first).
- */
-interface PiLaunchLayer {
-	providerId: string | null;
-	modelId: string | null;
-	baseUrl: string | null;
-	reasoningEffort: RuntimeReasoningEffort | null;
-}
-
-/** Trim a possibly-null string and collapse empty/whitespace-only values to `null`. */
-function normalizeOptional(value?: string | null): string | null {
-	const trimmed = value?.trim();
-	return trimmed ? trimmed : null;
-}
-
-/**
- * Layer 1 — explicit per-session overrides (the card's `agentSettings`). There is
- * no per-session override for `baseUrl`, so it is always absent at this layer.
- */
-function resolveOverrideLayer(input: PiLaunchInput): PiLaunchLayer {
-	return {
-		providerId: normalizeOptional(input.providerIdOverride),
-		modelId: normalizeOptional(input.modelIdOverride),
-		baseUrl: null,
-		reasoningEffort: input.reasoningEffortOverride ?? null,
-	};
-}
-
-/** Layer 2 — the workspace's selected committed provider (always secret-free). */
-function resolveCommittedProviderLayer(provider: PiCommittedProvider | null): PiLaunchLayer {
-	return {
-		providerId: normalizeOptional(provider?.providerId),
-		modelId: normalizeOptional(provider?.modelId),
-		baseUrl: normalizeOptional(provider?.baseUrl),
-		reasoningEffort: provider?.reasoningEffort ?? null,
-	};
-}
-
-/**
- * Layer 3 — the user's saved per-agent provider settings (machine-home store).
- * Returns an all-`null` layer when the store is unavailable, throws, or has no
- * pi config, so callers never need a try/catch of their own.
- *
- * `providerId` is the provider already resolved by the higher-priority layers
- * (override/profile). When set, the store is read for *that* provider, so its
- * model/baseUrl come from the provider being switched to — not the agent's
- * default. When `null`, the agent's default provider is used (the original
- * behavior). This is what makes a provider-only session override correct: the
- * caller passes a `providerIdOverride` with no model/baseUrl and still launches
- * with the chosen provider's own model + endpoint.
- */
-function resolveStoreLayer(providerId: string | null): PiLaunchLayer {
-	const empty: PiLaunchLayer = { providerId: null, modelId: null, baseUrl: null, reasoningEffort: null };
-	try {
-		const agentConfig = getAgentProviderConfig("pi", providerId ?? undefined);
-		if (!agentConfig) {
-			return empty;
-		}
-		return {
-			providerId: normalizeOptional(agentConfig.provider),
-			modelId: normalizeOptional(agentConfig.model),
-			baseUrl: normalizeOptional(agentConfig.baseUrl),
-			// The store value is not validated against the effort enum here, matching
-			// historical behavior — it is cast and passed through as-is.
-			reasoningEffort: normalizeOptional(agentConfig.reasoning?.effort) as RuntimeReasoningEffort | null,
-		};
-	} catch {
-		// Config layer unavailable.
-		return empty;
-	}
-}
-
-/**
  * Resolve the full launch configuration for a pi agent session.
  *
- * Resolution chain (highest priority first):
- *   1. explicit per-session overrides (`*Override` — the card's agentSettings),
- *   2. the workspace's selected committed provider (`committedProvider`),
- *   3. the user's saved provider settings (machine-home Settings store),
- *   4. built-in defaults.
+ * Provider/model/reasoning *selection* runs through the shared
+ * {@link resolveAgentProvider} (override → committed provider → machine-home store),
+ * then this adapter layers pi's two specifics on top:
+ *   - the built-in defaults (`anthropic` / `claude-sonnet`) when nothing resolved,
+ *   - the API key, resolved separately (env first, then the machine-home store) so
+ *     committed records stay secret-free.
  *
- * The store layer is consulted only when a *core* field (provider/model/baseUrl)
- * is still unresolved after the override and committed-provider layers. This is
- * deliberate and load-bearing: the store's `reasoningEffort` is filled in that same
- * pass, so when override/committed-provider already supply all three core fields the
- * store's reasoningEffort is intentionally not applied.
- *
- * Secrets are never part of a committed provider: the API key is resolved separately
- * from the machine-home store (by providerId), so committed records stay secret-free.
+ * pi never uses the `defaultProviderFallback` the CLI agents do: an unknown
+ * explicit provider selection must not silently borrow the default provider's
+ * model/endpoint. pi also never resolves to official login (it has no native
+ * login), so the `official-login` result is defended against but unreachable.
  */
 export function resolvePiLaunchConfig(input?: PiLaunchInput): PiLaunchConfig {
-	const override = resolveOverrideLayer(input ?? {});
-	const committed = resolveCommittedProviderLayer(input?.committedProvider ?? null);
+	const resolved = resolveAgentProvider({
+		agentId: "pi",
+		providerIdOverride: input?.providerIdOverride,
+		modelIdOverride: input?.modelIdOverride,
+		reasoningEffortOverride: input?.reasoningEffortOverride,
+		committedProvider: input?.committedProvider,
+	});
 
-	// Layers 1 + 2 (in-memory): override wins, then the committed provider.
-	let providerId = override.providerId ?? committed.providerId;
-	let modelId = override.modelId ?? committed.modelId;
-	let baseUrl = override.baseUrl ?? committed.baseUrl;
-	let reasoningEffort = override.reasoningEffort ?? committed.reasoningEffort;
-
-	// Layer 3 (machine-home store): only when a core field still needs it. The
-	// store is read for the provider resolved so far (override/committed-provider),
-	// so a provider-only switch pulls that provider's model/baseUrl rather than the
-	// agent default's.
-	if (providerId === null || modelId === null || baseUrl === null) {
-		const store = resolveStoreLayer(providerId);
-		providerId ??= store.providerId;
-		modelId ??= store.modelId;
-		baseUrl ??= store.baseUrl;
-		reasoningEffort ??= store.reasoningEffort;
-	}
-
-	// Layer 4 (built-in defaults): provider/model only — baseUrl/reasoning stay null.
-	const resolvedProviderId = providerId ?? PI_DEFAULT_PROVIDER_ID;
-	const resolvedModelId = modelId ?? PI_DEFAULT_MODEL_ID;
+	const fields = resolved.kind === "provider" ? resolved : null;
+	const resolvedProviderId = fields?.providerId ?? PI_DEFAULT_PROVIDER_ID;
+	const resolvedModelId = fields?.modelId ?? PI_DEFAULT_MODEL_ID;
 
 	return {
 		providerId: resolvedProviderId,
 		modelId: resolvedModelId,
 		apiKey: resolvePiApiKey(resolvedProviderId),
-		baseUrl,
-		reasoningEffort,
+		baseUrl: fields?.baseUrl ?? null,
+		reasoningEffort: fields?.reasoningEffort ?? null,
 	};
 }
 
