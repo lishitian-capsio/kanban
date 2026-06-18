@@ -432,6 +432,15 @@ export async function saveAgentProvider(agentId: string, config: AgentProviderCo
 	}
 
 	const existing = state.agents[id];
+	// Preserve the stored secret when an edit omits it. The web client never
+	// receives the apiKey (it is redacted out of the provider set it merges edits
+	// onto), so an edit that does not re-enter the key must keep the existing one
+	// rather than wipe it. Providing a new key still overwrites; a brand-new
+	// provider (no prior) carries whatever the caller supplied.
+	const prior = existing?.providers.find((p) => providerIdOf(p) === cleanedId) ?? null;
+	if (prior && cleaned.apiKey === undefined && prior.apiKey !== undefined) {
+		cleaned.apiKey = prior.apiKey;
+	}
 	const providers = existing ? existing.providers.filter((p) => providerIdOf(p) !== cleanedId) : [];
 	providers.push(cleaned);
 	const defaultProviderId = existing?.defaultProviderId ?? cleanedId;

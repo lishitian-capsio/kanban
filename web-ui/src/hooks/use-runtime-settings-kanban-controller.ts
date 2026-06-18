@@ -6,7 +6,7 @@ import { showAppToast } from "@/components/app-toaster";
 import { getRuntimeKanbanProviderSettings } from "@/runtime/native-agent";
 import {
 	completeKanbanDeviceAuth,
-	fetchAgentProviderConfigs,
+	fetchAgentProviderSets,
 	fetchKanbanProviderCatalog,
 	fetchKanbanProviderModels,
 	runKanbanProviderOauthLogin,
@@ -838,11 +838,20 @@ export function useRuntimeSettingsKanbanController(
 	const updateCustomProvider = useCallback(
 		async (input: UpdateKanbanProviderInput, agentId: RuntimeAgentId = "pi"): Promise<SaveResult> => {
 			try {
-				// Fetch existing config to merge updates into.
+				// Fetch the existing config to merge updates into. The edit dialog only
+				// sends the fields that changed, so untouched fields must come from the
+				// *provider being edited* — locate it in the agent's full provider set by
+				// id. (Using the default-provider-only view here silently merged edits
+				// onto the agent's default provider, clobbering the edited provider's own
+				// fields.) The set is secret-free; the omitted apiKey is preserved server-side.
 				let existingConfig: RuntimeAgentProviderConfig | null = null;
 				try {
-					const configs = await fetchAgentProviderConfigs(workspaceId);
-					existingConfig = configs.agents[agentId] ?? null;
+					const sets = await fetchAgentProviderSets(workspaceId);
+					const normalizedId = input.providerId.trim().toLowerCase();
+					existingConfig =
+						sets.agents[agentId]?.providers.find(
+							(provider) => provider.provider?.trim().toLowerCase() === normalizedId,
+						) ?? null;
 				} catch {
 					// If fetch fails, start from empty.
 				}

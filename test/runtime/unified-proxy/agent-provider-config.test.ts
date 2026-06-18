@@ -156,6 +156,67 @@ describe("agent-provider-config", () => {
 		expect(getAgentProviderConfig("claude", "nope")).toBeNull();
 	});
 
+	it("preserves the stored apiKey when an edit omits it", async () => {
+		// The web client never receives the apiKey (it is redacted out of the
+		// provider set it merges edits onto), so an edit that does not re-enter the
+		// key must not wipe the stored one.
+		await saveAgentProvider("claude", {
+			agentId: "claude",
+			provider: "my-relay",
+			model: "model-1",
+			baseUrl: "https://relay.local",
+			apiKey: "sk-relay",
+		});
+		// Edit: change the model + baseUrl, omit apiKey entirely.
+		await saveAgentProvider("claude", {
+			agentId: "claude",
+			provider: "my-relay",
+			model: "model-2",
+			baseUrl: "https://relay.example.com",
+		});
+		resetAgentProviderConfigCache();
+
+		const config = getAgentProviderConfig("claude", "my-relay");
+		expect(config!.model).toBe("model-2");
+		expect(config!.baseUrl).toBe("https://relay.example.com");
+		// The stored secret survives the edit.
+		expect(config!.apiKey).toBe("sk-relay");
+	});
+
+	it("overwrites the apiKey when an edit provides a new one", async () => {
+		await saveAgentProvider("claude", {
+			agentId: "claude",
+			provider: "my-relay",
+			apiKey: "sk-old",
+		});
+		await saveAgentProvider("claude", {
+			agentId: "claude",
+			provider: "my-relay",
+			apiKey: "sk-new",
+		});
+		resetAgentProviderConfigCache();
+
+		expect(getAgentProviderConfig("claude", "my-relay")!.apiKey).toBe("sk-new");
+	});
+
+	it("scopes apiKey preservation to the edited provider only", async () => {
+		// Default + non-default, each with its own key.
+		await saveAgentProvider("claude", { agentId: "claude", provider: "anthropic", apiKey: "sk-a" });
+		await saveAgentProvider("claude", { agentId: "claude", provider: "my-relay", apiKey: "sk-b" });
+		// Edit the non-default provider, omitting its key.
+		await saveAgentProvider("claude", {
+			agentId: "claude",
+			provider: "my-relay",
+			model: "relay-model",
+		});
+		resetAgentProviderConfigCache();
+
+		// The edited provider keeps its own key (not the default's).
+		expect(getAgentProviderConfig("claude", "my-relay")!.apiKey).toBe("sk-b");
+		// The default provider is untouched.
+		expect(getAgentProviderConfig("claude", "anthropic")!.apiKey).toBe("sk-a");
+	});
+
 	it("changes the default provider via setDefaultAgentProvider", async () => {
 		await saveAgentProvider("claude", { agentId: "claude", provider: "anthropic" });
 		await saveAgentProvider("claude", { agentId: "claude", provider: "my-relay" });

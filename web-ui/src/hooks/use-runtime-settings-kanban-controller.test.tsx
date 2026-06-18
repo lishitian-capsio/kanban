@@ -13,7 +13,7 @@ import type {
 const fetchKanbanProviderCatalogMock = vi.hoisted(() => vi.fn());
 const fetchKanbanProviderModelsMock = vi.hoisted(() => vi.fn());
 const saveAgentProviderConfigMock = vi.hoisted(() => vi.fn());
-const fetchAgentProviderConfigsMock = vi.hoisted(() => vi.fn());
+const fetchAgentProviderSetsMock = vi.hoisted(() => vi.fn());
 const runKanbanProviderOauthLoginMock = vi.hoisted(() => vi.fn());
 const startKanbanDeviceAuthMock = vi.hoisted(() => vi.fn());
 const completeKanbanDeviceAuthMock = vi.hoisted(() => vi.fn());
@@ -21,7 +21,7 @@ const isLocalhostAccessMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/runtime/runtime-config-query", () => ({
 	saveAgentProviderConfig: saveAgentProviderConfigMock,
-	fetchAgentProviderConfigs: fetchAgentProviderConfigsMock,
+	fetchAgentProviderSets: fetchAgentProviderSetsMock,
 	fetchKanbanProviderCatalog: fetchKanbanProviderCatalogMock,
 	fetchKanbanProviderModels: fetchKanbanProviderModelsMock,
 	runKanbanProviderOauthLogin: runKanbanProviderOauthLoginMock,
@@ -58,6 +58,9 @@ interface HookSnapshot {
 	refreshProviderModels: () => Promise<{ ok: boolean; message?: string }>;
 	addCustomProvider: (
 		input: Parameters<ReturnType<typeof useRuntimeSettingsKanbanController>["addCustomProvider"]>[0],
+	) => Promise<{ ok: boolean; message?: string }>;
+	updateCustomProvider: (
+		input: Parameters<ReturnType<typeof useRuntimeSettingsKanbanController>["updateCustomProvider"]>[0],
 	) => Promise<{ ok: boolean; message?: string }>;
 	runOauthLogin: () => Promise<{ ok: boolean; message?: string }>;
 }
@@ -196,6 +199,7 @@ function HookHarness({
 			saveProviderSettings: state.saveProviderSettings,
 			refreshProviderModels: state.refreshProviderModels,
 			addCustomProvider: state.addCustomProvider,
+			updateCustomProvider: state.updateCustomProvider,
 			runOauthLogin: state.runOauthLogin,
 		});
 	}, [onSnapshot, state]);
@@ -212,7 +216,8 @@ describe("useRuntimeSettingsKanbanController", () => {
 		fetchKanbanProviderCatalogMock.mockReset();
 		fetchKanbanProviderModelsMock.mockReset();
 		saveAgentProviderConfigMock.mockReset();
-		fetchAgentProviderConfigsMock.mockReset();
+		fetchAgentProviderSetsMock.mockReset();
+		fetchAgentProviderSetsMock.mockResolvedValue({ agents: {} });
 		runKanbanProviderOauthLoginMock.mockReset();
 		startKanbanDeviceAuthMock.mockReset();
 		completeKanbanDeviceAuthMock.mockReset();
@@ -1009,6 +1014,83 @@ describe("useRuntimeSettingsKanbanController", () => {
 		expect(requireSnapshot(latestSnapshot).providerCatalogIds).toEqual(["cline"]);
 		expect(requireSnapshot(latestSnapshot).providerModelIds).toEqual(["qwen2.5-coder:32b"]);
 		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(false);
+	});
+
+	it("edits a non-default provider against its own config, not the agent default", async () => {
+		const config = createRuntimeConfigResponse({ providerId: "anthropic" });
+		let latestSnapshot: HookSnapshot | null = null;
+		fetchKanbanProviderCatalogMock.mockResolvedValue([]);
+		fetchKanbanProviderModelsMock.mockResolvedValue([]);
+		// The agent has two providers: the default "anthropic" (A) and a non-default
+		// "my-relay" (B). Both are secret-free (apiKey redacted out of the set view).
+		fetchAgentProviderSetsMock.mockResolvedValue({
+			agents: {
+				pi: {
+					agentId: "pi",
+					defaultProviderId: "anthropic",
+					providers: [
+						{
+							agentId: "pi",
+							provider: "anthropic",
+							model: "a-model",
+							models: ["a-model"],
+							protocols: [{ protocol: "anthropic", baseUrl: "https://api.anthropic.com" }],
+						},
+						{
+							agentId: "pi",
+							provider: "my-relay",
+							model: "relay-1",
+							models: ["relay-1", "relay-2"],
+							protocols: [{ protocol: "openai", baseUrl: "https://relay.local" }],
+						},
+					],
+				},
+			},
+		});
+		saveAgentProviderConfigMock.mockResolvedValue({
+			ok: true,
+			config: { agentId: "pi", provider: "my-relay", model: "relay-2" },
+		});
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					open={true}
+					workspaceId="workspace-1"
+					config={config}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+			await flushAsyncWork();
+		});
+		await act(async () => {
+			await flushAsyncWork();
+		});
+
+		// Edit only the default model of the non-default provider. Every untouched
+		// field must come from "my-relay" (B), never the agent default "anthropic" (A).
+		await act(async () => {
+			expect(
+				await requireSnapshot(latestSnapshot).updateCustomProvider({
+					providerId: "my-relay",
+					defaultModelId: "relay-2",
+				}),
+			).toEqual({ ok: true });
+		});
+
+		const savedConfig = saveAgentProviderConfigMock.mock.calls.at(-1)?.[2] as Record<string, unknown>;
+		expect(savedConfig.provider).toBe("my-relay");
+		// The changed field is applied...
+		expect(savedConfig.model).toBe("relay-2");
+		// ...and untouched fields come from B, not the default A.
+		expect(savedConfig.protocols).toEqual([{ protocol: "openai", baseUrl: "https://relay.local" }]);
+		expect(savedConfig.models).toEqual(["relay-1", "relay-2"]);
+		// No apiKey is sent (the user did not re-enter one); the server preserves it.
+		expect(savedConfig).not.toHaveProperty("apiKey");
+		// The derived legacy scalar baseUrl is never written top-level.
+		expect(savedConfig).not.toHaveProperty("baseUrl");
 	});
 
 	it("applies OAuth login results to the local settings state (device auth, remote)", async () => {
