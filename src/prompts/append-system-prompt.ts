@@ -2,7 +2,7 @@ import { realpathSync } from "node:fs";
 
 import packageJson from "../../package.json" with { type: "json" };
 
-import type { RuntimeAgentId } from "../core/api-contract";
+import type { RuntimeAgentId, RuntimeVaultMode } from "../core/api-contract";
 import { isHomeAgentSessionId, parseHomeAgentSessionId } from "../core/home-agent-session";
 import { resolveKanbanCommandParts } from "../core/kanban-command";
 import { buildShellCommandLine } from "../core/shell";
@@ -34,12 +34,26 @@ export interface RenderAppendSystemPromptOptions {
 	 */
 	vaultTypes?: readonly VaultTypeDefinition[];
 	/**
-	 * The workspace's vault-takeover switch (see `RuntimeVaultSettings.managed`).
-	 * When false (the default), the agent only touches the vault under an explicit
-	 * instruction. When true, we inject a "proactive management" directive that
-	 * authorizes the agent to create/maintain vault documents on its own initiative.
+	 * The workspace's vault-takeover mode (see `RuntimeVaultSettings.vaultMode`), a
+	 * strictly progressive four-tier enum. It decides how much vault guidance is
+	 * injected, each tier a superset of the previous one:
+	 *   - `off` (the default): no vault content at all.
+	 *   - `cli-only`: the vault intro + vault CLI command reference.
+	 *   - `on-demand`: also the per-workspace document-type index.
+	 *   - `managed`: also the proactive-management directive.
 	 */
-	vaultManaged?: boolean;
+	vaultMode?: RuntimeVaultMode;
+}
+
+const VAULT_MODE_RANK: Record<RuntimeVaultMode, number> = {
+	off: 0,
+	"cli-only": 1,
+	"on-demand": 2,
+	managed: 3,
+};
+
+function vaultModeAtLeast(mode: RuntimeVaultMode, threshold: RuntimeVaultMode): boolean {
+	return VAULT_MODE_RANK[mode] >= VAULT_MODE_RANK[threshold];
 }
 
 const APPEND_PROMPT_AGENT_IDS: readonly RuntimeAgentId[] = ["claude", "codex", "droid", "kiro", "gemini", "opencode"];
@@ -76,26 +90,32 @@ function renderLinearSetupGuidanceForAgent(agentId: RuntimeAgentId | null): stri
 }
 
 /**
- * Render the "knowledge vault document types" section as skill-style progressive
- * disclosure: list each discovered type by name + one-line description + its create
- * command (the light index), and instruct the agent to load a type's full authoring
- * prompt on demand via `vault type show` before writing a document of that type.
- *
- * This is type-agnostic — there are no per-type branches. When no types are defined,
- * it degrades to generic vault-document guidance that still points at the discovery
- * commands. Pure and side-effect-free so the rendering logic is unit-testable.
+ * Render the "knowledge vault documents" intro paragraph — the type-agnostic
+ * framing of what the vault is, that reading/editing docs is allowed work, and
+ * that tasks and documents are independent. Injected from the `cli-only` tier up.
+ * Pure and side-effect-free so the rendering logic is unit-testable.
  */
-function renderVaultDocumentTypesSection(types: readonly VaultTypeDefinition[], kanbanCommand: string): string {
-	const intro = `# Knowledge vault documents
+function renderVaultIntroSection(): string {
+	return `# Knowledge vault documents
 
 Kanban tracks structured knowledge as documents in a git-backed vault: each document is a markdown file with YAML frontmatter under \`.kanban/files/docs/<type>/\`, managed through the \`vault doc\` CLI commands listed below. Reading and editing vault documents is allowed work for you; it is not implementation work, so do not redirect it to task creation. Document history lives in git, so there is no separate version-history or revert command.
 
 Tasks and vault documents are independent things. There is no ordering, hierarchy, or parent-child relationship between them: a document does not own or contain tasks, and a task does not belong under a document. A document may optionally reference tasks through its frontmatter, but this is an optional lateral reference, not a hierarchy.`;
+}
 
+/**
+ * Render the "document type index" as skill-style progressive disclosure: list each
+ * discovered type by name + one-line description + its create command (the light
+ * index), and instruct the agent to load a type's full authoring prompt on demand
+ * via `vault type show` before writing a document of that type.
+ *
+ * This is type-agnostic — there are no per-type branches. When no types are defined,
+ * it degrades to generic vault-document guidance that still points at the discovery
+ * commands. Injected from the `on-demand` tier up. Pure and side-effect-free.
+ */
+function renderVaultTypeIndexSection(types: readonly VaultTypeDefinition[], kanbanCommand: string): string {
 	if (types.length === 0) {
-		return `${intro}
-
-No document types are defined in this workspace yet. You can still create a document of any type with \`${kanbanCommand} vault doc create --type <type>\`. To discover the types a workspace offers, run \`${kanbanCommand} vault type list\`; before authoring a document of a given type, run \`${kanbanCommand} vault type show --type <type>\` to read that type's authoring guidance and follow it.`;
+		return `No document types are defined in this workspace yet. You can still create a document of any type with \`${kanbanCommand} vault doc create --type <type>\`. To discover the types a workspace offers, run \`${kanbanCommand} vault type list\`; before authoring a document of a given type, run \`${kanbanCommand} vault type show --type <type>\` to read that type's authoring guidance and follow it.`;
 	}
 
 	const typeLines = [...types]
@@ -108,12 +128,125 @@ No document types are defined in this workspace yet. You can still create a docu
 		})
 		.join("\n");
 
-	return `${intro}
-
-This workspace defines the following document types (a light index — name and one-line purpose only):
+	return `This workspace defines the following document types (a light index — name and one-line purpose only):
 ${typeLines}
 
 Each type is self-governing: it carries its own authoring prompt describing which frontmatter fields to set, what the body should contain, and how its status flows. Before you create or update a document of a given type, FIRST run \`${kanbanCommand} vault type show --type <type>\` to read that type's full authoring prompt, then write the document exactly as that prompt instructs. The list above intentionally omits those rules — load them on demand for the type you are about to write.`;
+}
+
+/**
+ * Render the vault CLI command reference (the `## vault type list` … `## vault doc
+ * delete` sections). Extracted from the main template so it can be gated by the
+ * vault mode — injected from the `cli-only` tier up, omitted entirely when off.
+ * Pure and side-effect-free.
+ */
+function renderVaultCliReference(kanbanCommand: string): string {
+	return `## vault type list
+
+Purpose: list the workspace's document types as a light index (name + description + metadata, without each type's authoring prompt). Use this to discover which types exist.
+
+Command:
+\`${kanbanCommand} vault type list [--project-path <path>]\`
+
+Parameters:
+- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
+
+## vault type show
+
+Purpose: show a type's full definition, including the self-governing authoring prompt (body). Run this before creating or updating a document of that type, and follow the prompt it returns.
+
+Command:
+\`${kanbanCommand} vault type show --type <type> [--project-path <path>]\`
+
+Parameters:
+- \`--type <type>\` required type id (e.g. \`requirement\`).
+- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
+
+## vault doc list
+
+Purpose: list knowledge-vault documents for a workspace, optionally filtered by type.
+
+Command:
+\`${kanbanCommand} vault doc list [--type <type>] [--project-path <path>]\`
+
+Parameters:
+- \`--type <type>\` optional document type filter, e.g. \`requirement\`.
+- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
+
+## vault doc show
+
+Purpose: show a single vault document (frontmatter + markdown body).
+
+Command:
+\`${kanbanCommand} vault doc show --id <id> [--project-path <path>]\`
+
+Parameters:
+- \`--id <id>\` required document ID.
+- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
+
+## vault doc create
+
+Purpose: create a vault document of a given type. Run \`vault type show --type <type>\` first to learn the type's required frontmatter and body; the type's default frontmatter is applied before your \`--set\` overrides.
+
+Command:
+\`${kanbanCommand} vault doc create --type <type> --title "<text>" [--body "<markdown>"] [--body-file <path>] [--set key=value ...] [--project-path <path>]\`
+
+Parameters:
+- \`--type <type>\` required document type, e.g. \`requirement\`.
+- \`--title "<text>"\` required document title.
+- \`--body "<markdown>"\` optional markdown body (the document's main content, per the type's authoring prompt).
+- \`--body-file <path>\` optional path to read the markdown body from a file.
+- \`--set key=value\` optional frontmatter field, repeatable (e.g. \`--set status=proposed --set priority=high\`).
+- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
+
+## vault doc update
+
+Purpose: update a vault document. Omitted fields are left unchanged.
+
+Command:
+\`${kanbanCommand} vault doc update --id <id> [--title "<text>"] [--body "<markdown>"] [--body-file <path>] [--set key=value ...] [--project-path <path>]\`
+
+Parameters:
+- \`--id <id>\` required document ID.
+- \`--title "<text>"\` optional replacement title (re-slugs the filename).
+- \`--body "<markdown>"\` optional replacement markdown body.
+- \`--body-file <path>\` optional path to read the replacement body from a file.
+- \`--set key=value\` optional frontmatter field to set, repeatable (e.g. \`--set status=clarified\`).
+- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
+
+Notes:
+- Provide at least one of \`--title\`, \`--body\`, \`--body-file\`, or \`--set\` in addition to \`--id\`.
+
+## vault doc delete
+
+Purpose: permanently delete a vault document.
+
+Command:
+\`${kanbanCommand} vault doc delete --id <id> [--project-path <path>]\`
+
+Parameters:
+- \`--id <id>\` required document ID to delete.
+- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.`;
+}
+
+/**
+ * Render the vault "documents" prompt section for the given mode: the intro from
+ * `cli-only` up, plus the type index from `on-demand` up. Returns an empty string
+ * for `off`. Pure and side-effect-free.
+ */
+function renderVaultDocumentsSection(
+	mode: RuntimeVaultMode,
+	types: readonly VaultTypeDefinition[],
+	kanbanCommand: string,
+): string {
+	if (!vaultModeAtLeast(mode, "cli-only")) {
+		return "";
+	}
+	const sections = [renderVaultIntroSection()];
+	if (vaultModeAtLeast(mode, "on-demand")) {
+		sections.push(renderVaultTypeIndexSection(types, kanbanCommand));
+	}
+	return sections.join("\n\n");
 }
 
 /**
@@ -123,12 +256,9 @@ Each type is self-governing: it carries its own authoring prompt describing whic
  * flips that posture: it authorizes the agent to maintain the vault on its own
  * initiative, while deliberately NOT hardcoding a procedure — what to write and when
  * is governed by each type's self-describing authoring prompt (`vault type show`).
- * Returns an empty string when the switch is off, so OFF injects nothing.
+ * Injected only at the `managed` tier; lower tiers omit it. Pure/side-effect-free.
  */
-function renderVaultManagedDirective(managed: boolean, kanbanCommand: string): string {
-	if (!managed) {
-		return "";
-	}
+function renderVaultManagedDirective(kanbanCommand: string): string {
 	return `# Proactive vault management is ENABLED
 
 For this workspace, vault management has been handed to you: you are authorized to proactively create and maintain knowledge-vault documents, not only when explicitly told to. At appropriate moments — for example when a conversation surfaces a durable fact, decision, requirement, or other knowledge that matches a document type — you may create or update the relevant vault document yourself, without waiting for an explicit request.
@@ -194,9 +324,13 @@ export function resolveAppendSystemPromptCommandPrefix(
 export function renderAppendSystemPrompt(commandPrefix: string, options: RenderAppendSystemPromptOptions = {}): string {
 	const kanbanCommand = commandPrefix.trim() || DEFAULT_COMMAND_PREFIX;
 	const selectedAgentId = options.agentId ?? null;
-	const vaultTypesSection = renderVaultDocumentTypesSection(options.vaultTypes ?? [], kanbanCommand);
-	const vaultManagedDirective = renderVaultManagedDirective(options.vaultManaged ?? false, kanbanCommand);
-	const vaultManagedBlock = vaultManagedDirective ? `\n${vaultManagedDirective}\n` : "";
+	const vaultMode = options.vaultMode ?? "off";
+	const vaultDocumentsSection = renderVaultDocumentsSection(vaultMode, options.vaultTypes ?? [], kanbanCommand);
+	const vaultManagedDirective = vaultModeAtLeast(vaultMode, "managed") ? renderVaultManagedDirective(kanbanCommand) : "";
+	const vaultIntroAndManaged = [vaultDocumentsSection, vaultManagedDirective].filter(Boolean).join("\n\n");
+	const vaultIntroBlock = vaultIntroAndManaged ? `\n${vaultIntroAndManaged}\n` : "";
+	const vaultCliReference = vaultModeAtLeast(vaultMode, "cli-only") ? renderVaultCliReference(kanbanCommand) : "";
+	const vaultCliReferenceBlock = vaultCliReference ? `${vaultCliReference}\n\n` : "";
 	return `# Kanban Sidebar
 
 You are the Kanban sidebar agent for this workspace. Help the user interact with their Kanban board directly from this side panel. When the user asks to add tasks, create tasks, break work down, link tasks, or start tasks, prefer using the Kanban CLI yourself instead of describing manual steps.
@@ -217,9 +351,7 @@ If the user asks you to write code, fix a bug, implement a feature, refactor, or
 - Tasks can also enable automatic review actions: auto-commit or auto-open-pr once completed, which then moves the task to done and kicks off any linked tasks. Combining auto-review with linking is how you can set up fully autonomous pipelines when the user wants it. For example, enabling auto-commit on each task in a chain: task A finishes, auto-commits and is moved to done, task B auto-starts from backlog, auto-commits and is moved to done, task C auto-starts, and so on.
 - If your current working directory is inside \`.kanban/worktrees/\`, you are inside a Kanban task worktree. In that case, create or manage tasks against the main workspace path, not the task worktree path. Pass the main workspace with \`--project-path\`.
 - If a task command fails because the runtime is unavailable, tell the user to start Kanban in that workspace first with \`${kanbanCommand}\`, then retry the task command.
-
-${vaultTypesSection}
-${vaultManagedBlock}
+${vaultIntroBlock}
 # Command Prefix
 
 Use this prefix for every Kanban command in this session:
@@ -368,94 +500,7 @@ Parameters:
 - \`--task-id <task_id>\` required task ID.
 - \`--project-path <path>\` optional workspace path. If not already registered in Kanban, it is auto-added for git repos.
 
-## vault type list
-
-Purpose: list the workspace's document types as a light index (name + description + metadata, without each type's authoring prompt). Use this to discover which types exist.
-
-Command:
-\`${kanbanCommand} vault type list [--project-path <path>]\`
-
-Parameters:
-- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
-
-## vault type show
-
-Purpose: show a type's full definition, including the self-governing authoring prompt (body). Run this before creating or updating a document of that type, and follow the prompt it returns.
-
-Command:
-\`${kanbanCommand} vault type show --type <type> [--project-path <path>]\`
-
-Parameters:
-- \`--type <type>\` required type id (e.g. \`requirement\`).
-- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
-
-## vault doc list
-
-Purpose: list knowledge-vault documents for a workspace, optionally filtered by type.
-
-Command:
-\`${kanbanCommand} vault doc list [--type <type>] [--project-path <path>]\`
-
-Parameters:
-- \`--type <type>\` optional document type filter, e.g. \`requirement\`.
-- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
-
-## vault doc show
-
-Purpose: show a single vault document (frontmatter + markdown body).
-
-Command:
-\`${kanbanCommand} vault doc show --id <id> [--project-path <path>]\`
-
-Parameters:
-- \`--id <id>\` required document ID.
-- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
-
-## vault doc create
-
-Purpose: create a vault document of a given type. Run \`vault type show --type <type>\` first to learn the type's required frontmatter and body; the type's default frontmatter is applied before your \`--set\` overrides.
-
-Command:
-\`${kanbanCommand} vault doc create --type <type> --title "<text>" [--body "<markdown>"] [--body-file <path>] [--set key=value ...] [--project-path <path>]\`
-
-Parameters:
-- \`--type <type>\` required document type, e.g. \`requirement\`.
-- \`--title "<text>"\` required document title.
-- \`--body "<markdown>"\` optional markdown body (the document's main content, per the type's authoring prompt).
-- \`--body-file <path>\` optional path to read the markdown body from a file.
-- \`--set key=value\` optional frontmatter field, repeatable (e.g. \`--set status=proposed --set priority=high\`).
-- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
-
-## vault doc update
-
-Purpose: update a vault document. Omitted fields are left unchanged.
-
-Command:
-\`${kanbanCommand} vault doc update --id <id> [--title "<text>"] [--body "<markdown>"] [--body-file <path>] [--set key=value ...] [--project-path <path>]\`
-
-Parameters:
-- \`--id <id>\` required document ID.
-- \`--title "<text>"\` optional replacement title (re-slugs the filename).
-- \`--body "<markdown>"\` optional replacement markdown body.
-- \`--body-file <path>\` optional path to read the replacement body from a file.
-- \`--set key=value\` optional frontmatter field to set, repeatable (e.g. \`--set status=clarified\`).
-- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
-
-Notes:
-- Provide at least one of \`--title\`, \`--body\`, \`--body-file\`, or \`--set\` in addition to \`--id\`.
-
-## vault doc delete
-
-Purpose: permanently delete a vault document.
-
-Command:
-\`${kanbanCommand} vault doc delete --id <id> [--project-path <path>]\`
-
-Parameters:
-- \`--id <id>\` required document ID to delete.
-- \`--project-path <path>\` optional workspace path. If omitted, uses the current working directory workspace.
-
-# Workflow Notes
+${vaultCliReferenceBlock}# Workflow Notes
 
 - Prefer \`task list\` first when task IDs or dependency IDs are needed.
 - To create multiple linked tasks, create tasks first, then call \`task link\` for each dependency edge.
@@ -485,24 +530,24 @@ async function loadVaultTypesForHomeSession(taskId: string): Promise<readonly Va
 }
 
 /**
- * Load the workspace's vault-takeover switch for the home session encoded in
+ * Load the workspace's vault-takeover mode for the home session encoded in
  * `taskId`. Mirrors {@link loadVaultTypesForHomeSession}: resolves the repo path
- * from the parsed workspace id and degrades to `false` — never throws — when the
+ * from the parsed workspace id and degrades to `"off"` — never throws — when the
  * workspace is unknown or the read fails, so prompt rendering always succeeds.
  */
-async function loadVaultManagedForHomeSession(taskId: string): Promise<boolean> {
+async function loadVaultModeForHomeSession(taskId: string): Promise<RuntimeVaultMode> {
 	const parts = parseHomeAgentSessionId(taskId);
 	if (!parts) {
-		return false;
+		return "off";
 	}
 	try {
 		const repoPath = await resolveRepoPathForWorkspaceId(parts.workspaceId);
 		if (!repoPath) {
-			return false;
+			return "off";
 		}
-		return (await new VaultSettingsStore(repoPath).get()).managed;
+		return (await new VaultSettingsStore(repoPath).get()).vaultMode;
 	} catch {
-		return false;
+		return "off";
 	}
 }
 
@@ -513,13 +558,13 @@ export async function resolveHomeAgentAppendSystemPrompt(
 	if (!isHomeAgentSessionId(taskId)) {
 		return null;
 	}
-	const [vaultTypes, vaultManaged] = await Promise.all([
+	const [vaultTypes, vaultMode] = await Promise.all([
 		loadVaultTypesForHomeSession(taskId),
-		loadVaultManagedForHomeSession(taskId),
+		loadVaultModeForHomeSession(taskId),
 	]);
 	return renderAppendSystemPrompt(resolveAppendSystemPromptCommandPrefix(options), {
 		agentId: resolveHomeAgentId(taskId),
 		vaultTypes,
-		vaultManaged,
+		vaultMode,
 	});
 }

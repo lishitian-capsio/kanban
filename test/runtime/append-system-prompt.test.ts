@@ -73,7 +73,7 @@ describe("resolveAppendSystemPromptCommandPrefix", () => {
 });
 
 describe("renderAppendSystemPrompt", () => {
-	it("renders Kanban sidebar guidance and command reference", () => {
+	it("always renders the Kanban sidebar guidance and task command reference", () => {
 		const rendered = renderAppendSystemPrompt("kanban");
 		expect(rendered).toContain("Kanban sidebar agent");
 		expect(rendered).toContain("kanban task create");
@@ -83,18 +83,6 @@ describe("renderAppendSystemPrompt", () => {
 		expect(rendered).toContain("Provide exactly one of");
 		expect(rendered).toContain("task delete --column done");
 		expect(rendered).toContain("kanban task link");
-		expect(rendered).toContain("kanban vault doc create");
-		expect(rendered).toContain("kanban vault doc list");
-		expect(rendered).toContain("kanban vault doc update");
-		expect(rendered).toContain("kanban vault doc delete");
-		// The vault-types section is type-agnostic and the progressive-disclosure commands are referenced.
-		expect(rendered).toContain("kanban vault type list");
-		expect(rendered).toContain("kanban vault type show");
-		expect(rendered).toContain("Tasks and vault documents are independent things");
-		// With no types supplied, the section degrades to generic guidance — no hardcoded requirement type.
-		expect(rendered).toContain("No document types are defined in this workspace yet");
-		expect(rendered).not.toContain("--type requirement");
-		expect(rendered).not.toContain("proposed | clarified | parked | invalid");
 		// The requirement subsystem and its bespoke CLI are retired in favor of vault documents.
 		expect(rendered).not.toContain("kanban requirement");
 		expect(rendered).not.toContain("requirement history");
@@ -112,6 +100,21 @@ describe("renderAppendSystemPrompt", () => {
 		expect(rendered).not.toContain("codex mcp add linear --url https://mcp.linear.app/mcp");
 	});
 
+	it("injects NO vault content at all when vaultMode is off (default), keeping task CLI reference", () => {
+		const rendered = renderAppendSystemPrompt("kanban", { vaultTypes: SAMPLE_VAULT_TYPES });
+		// Task CLI reference is always present.
+		expect(rendered).toContain("kanban task create");
+		expect(rendered).toContain("## task start");
+		// No vault intro / type index / vault CLI reference / directive.
+		expect(rendered).not.toContain("# Knowledge vault documents");
+		expect(rendered).not.toContain("Tasks and vault documents are independent things");
+		expect(rendered).not.toContain("No document types are defined in this workspace yet");
+		expect(rendered).not.toContain("This workspace defines the following document types");
+		expect(rendered).not.toContain("## vault type list");
+		expect(rendered).not.toContain("kanban vault doc create");
+		expect(rendered).not.toContain("Proactive vault management is ENABLED");
+	});
+
 	it("renders only the active-agent Linear MCP guidance when an agent is provided", () => {
 		const rendered = renderAppendSystemPrompt("kanban", {
 			agentId: "codex",
@@ -123,56 +126,75 @@ describe("renderAppendSystemPrompt", () => {
 		expect(rendered).not.toContain("droid mcp add linear https://mcp.linear.app/mcp --type http");
 	});
 
-	it("renders a progressive-disclosure index from the supplied vault types", () => {
-		const rendered = renderAppendSystemPrompt("kanban", { vaultTypes: SAMPLE_VAULT_TYPES });
+	it("cli-only injects the vault intro + vault CLI reference but NOT the type index", () => {
+		const rendered = renderAppendSystemPrompt("kanban", { vaultMode: "cli-only", vaultTypes: SAMPLE_VAULT_TYPES });
+		// Intro present.
+		expect(rendered).toContain("# Knowledge vault documents");
+		expect(rendered).toContain("Tasks and vault documents are independent things");
+		// Vault CLI reference present.
+		expect(rendered).toContain("## vault type list");
+		expect(rendered).toContain("## vault doc delete");
+		expect(rendered).toContain("kanban vault doc create");
+		// Type index absent — neither the populated list nor the empty-state fallback.
+		expect(rendered).not.toContain("This workspace defines the following document types");
+		expect(rendered).not.toContain("No document types are defined in this workspace yet");
+		expect(rendered).not.toContain("- `requirement` — A customer-facing problem statement.");
+		// No proactive directive.
+		expect(rendered).not.toContain("Proactive vault management is ENABLED");
+	});
 
+	it("on-demand adds the progressive-disclosure type index on top of cli-only", () => {
+		const rendered = renderAppendSystemPrompt("kanban", { vaultMode: "on-demand", vaultTypes: SAMPLE_VAULT_TYPES });
+
+		expect(rendered).toContain("# Knowledge vault documents");
+		expect(rendered).toContain("## vault type list");
 		// Each type appears as a light index entry: name + one-line description + create command.
 		expect(rendered).toContain("- `requirement` — A customer-facing problem statement.");
 		expect(rendered).toContain("kanban vault doc create --type requirement");
 		expect(rendered).toContain("- `customer` — A customer or account the work serves.");
-		expect(rendered).toContain("kanban vault doc create --type customer");
 		// The agent is told to load the full authoring prompt on demand before writing.
 		expect(rendered).toContain("kanban vault type show --type <type>");
 		expect(rendered).toContain("FIRST run");
 		// The authoring prompt bodies themselves are NOT inlined (that is the deferred tier).
 		expect(rendered).not.toContain("Authoring prompt for requirements.");
-		// When types exist, the empty-state fallback is not rendered.
-		expect(rendered).not.toContain("No document types are defined in this workspace yet");
+		// No proactive directive yet.
+		expect(rendered).not.toContain("Proactive vault management is ENABLED");
 	});
 
-	it("sorts vault types by id regardless of input order", () => {
+	it("on-demand falls back to the empty-state index when no types are supplied", () => {
+		const rendered = renderAppendSystemPrompt("kanban", { vaultMode: "on-demand" });
+		expect(rendered).toContain("No document types are defined in this workspace yet");
+		expect(rendered).not.toContain("--type requirement");
+		expect(rendered).not.toContain("proposed | clarified | parked | invalid");
+	});
+
+	it("on-demand sorts vault types by id regardless of input order", () => {
 		const rendered = renderAppendSystemPrompt("kanban", {
+			vaultMode: "on-demand",
 			vaultTypes: [SAMPLE_VAULT_TYPES[1], SAMPLE_VAULT_TYPES[0]],
 		});
 
 		expect(rendered.indexOf("`customer`")).toBeLessThan(rendered.indexOf("`requirement`"));
 	});
 
-	it("omits the dash summary for a type without a description", () => {
+	it("on-demand omits the dash summary for a type without a description", () => {
 		const rendered = renderAppendSystemPrompt("kanban", {
+			vaultMode: "on-demand",
 			vaultTypes: [{ type: "note", label: "Note", slugField: "title", body: "" }],
 		});
 
 		expect(rendered).toContain("- `note`. Create with `kanban vault doc create --type note`.");
 	});
 
-	it("does not inject the takeover guidance when vault management is off (default)", () => {
-		const rendered = renderAppendSystemPrompt("kanban");
-		expect(rendered).not.toContain("Proactive vault management is ENABLED");
-		expect(rendered).not.toContain("you are authorized to proactively");
-	});
-
-	it("does not inject the takeover guidance when vaultManaged is explicitly false", () => {
-		const rendered = renderAppendSystemPrompt("kanban", { vaultManaged: false });
-		expect(rendered).not.toContain("Proactive vault management is ENABLED");
-	});
-
-	it("injects the takeover guidance when vaultManaged is true", () => {
-		const rendered = renderAppendSystemPrompt("kanban", { vaultManaged: true, vaultTypes: SAMPLE_VAULT_TYPES });
+	it("managed adds the proactive-takeover directive on top of on-demand", () => {
+		const rendered = renderAppendSystemPrompt("kanban", { vaultMode: "managed", vaultTypes: SAMPLE_VAULT_TYPES });
 		expect(rendered).toContain("Proactive vault management is ENABLED");
 		expect(rendered).toContain("you are authorized to proactively");
 		// It still points the agent at the per-type authoring prompts rather than hardcoding a flow.
 		expect(rendered).toContain("kanban vault type show --type <type>");
+		// And it still carries everything from the lower tiers.
+		expect(rendered).toContain("## vault type list");
+		expect(rendered).toContain("- `requirement` — A customer-facing problem statement.");
 	});
 });
 

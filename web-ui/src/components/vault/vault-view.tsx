@@ -204,9 +204,9 @@ export function VaultView({
 				selection={selection}
 				onSelect={handleSelectSurface}
 				onOpenSearch={() => setSearchOpen(true)}
-				managed={vaultSettings.managed}
-				onManagedChange={(next) => void vaultSettings.setManaged(next)}
-				managedDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
+				vaultMode={vaultSettings.vaultMode}
+				onVaultModeChange={(next) => void vaultSettings.setVaultMode(next)}
+				vaultModeDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
 			/>
 			<VaultSearchPanel
 				workspaceId={workspaceId}

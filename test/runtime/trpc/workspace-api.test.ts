@@ -565,19 +565,23 @@ describe("createWorkspaceApi vault settings", () => {
 		await rm(repoPath, { recursive: true, force: true });
 	});
 
-	it("defaults to unmanaged, then round-trips an update and broadcasts", async () => {
+	it("defaults to vaultMode off, then round-trips an update and broadcasts", async () => {
 		const api = createApi();
 
-		expect((await api.getVaultSettings(scope())).settings).toEqual({ managed: false });
+		expect((await api.getVaultSettings(scope())).settings).toEqual({ vaultMode: "off" });
 
-		const updated = await api.updateVaultSettings(scope(), { managed: true });
-		expect(updated.settings).toEqual({ managed: true });
+		const updated = await api.updateVaultSettings(scope(), { vaultMode: "managed" });
+		expect(updated.settings).toEqual({ vaultMode: "managed" });
 		expect(broadcastRuntimeWorkspaceStateUpdated).toHaveBeenCalledWith("workspace-1", repoPath);
 
-		expect((await api.getVaultSettings(scope())).settings).toEqual({ managed: true });
+		expect((await api.getVaultSettings(scope())).settings).toEqual({ vaultMode: "managed" });
 
-		const reverted = await api.updateVaultSettings(scope(), { managed: false });
-		expect(reverted.settings).toEqual({ managed: false });
-		expect((await api.getVaultSettings(scope())).settings).toEqual({ managed: false });
+		const stepped = await api.updateVaultSettings(scope(), { vaultMode: "cli-only" });
+		expect(stepped.settings).toEqual({ vaultMode: "cli-only" });
+		expect((await api.getVaultSettings(scope())).settings).toEqual({ vaultMode: "cli-only" });
+
+		const reverted = await api.updateVaultSettings(scope(), { vaultMode: "off" });
+		expect(reverted.settings).toEqual({ vaultMode: "off" });
+		expect((await api.getVaultSettings(scope())).settings).toEqual({ vaultMode: "off" });
 	});
 });

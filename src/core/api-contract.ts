@@ -550,17 +550,27 @@ export type RuntimeVaultSearchResponse = z.infer<typeof runtimeVaultSearchRespon
 // ---------------------------------------------------------------------------
 // Vault settings
 //
-// Workspace-level vault preferences. `managed` is the vault-takeover switch: when
-// false (the default), the sidebar agent only reads/writes vault documents under
-// an explicit instruction — it never acts on its own. When true, the agent is
-// authorized to proactively create and maintain vault documents at appropriate
-// moments, following each type's self-governing authoring prompt. The setting is
-// repo-scoped and committed alongside the docs (`<repo>/.kanban/files/
-// settings.json`), so it travels with the vault.
+// Workspace-level vault preferences. `vaultMode` is the vault-takeover switch, a
+// strictly progressive four-tier enum where each tier is a superset of the one
+// before it. It governs how much vault guidance is injected into the sidebar
+// agent's system prompt:
+//   - `off`        (the default): nothing — no vault intro, type index, vault CLI
+//                  reference, or proactive directive is injected at all.
+//   - `cli-only`   : the "knowledge vault documents" intro + the vault CLI command
+//                  reference, but NOT the per-workspace document-type index.
+//   - `on-demand`  : everything in `cli-only` plus the document-type index.
+//   - `managed`    : everything in `on-demand` plus the proactive-management
+//                  directive that authorizes the agent to create/maintain vault
+//                  documents on its own initiative.
+// The setting is repo-scoped and committed alongside the docs (`<repo>/.kanban/
+// files/settings.json`), so it travels with the vault.
 // ---------------------------------------------------------------------------
 
+export const runtimeVaultModeSchema = z.enum(["off", "cli-only", "on-demand", "managed"]);
+export type RuntimeVaultMode = z.infer<typeof runtimeVaultModeSchema>;
+
 export const runtimeVaultSettingsSchema = z.object({
-	managed: z.boolean().default(false),
+	vaultMode: runtimeVaultModeSchema.default("off"),
 });
 export type RuntimeVaultSettings = z.infer<typeof runtimeVaultSettingsSchema>;
 
@@ -570,7 +580,7 @@ export const runtimeVaultSettingsGetResponseSchema = z.object({
 export type RuntimeVaultSettingsGetResponse = z.infer<typeof runtimeVaultSettingsGetResponseSchema>;
 
 export const runtimeVaultSettingsUpdateRequestSchema = z.object({
-	managed: z.boolean(),
+	vaultMode: runtimeVaultModeSchema,
 });
 export type RuntimeVaultSettingsUpdateRequest = z.infer<typeof runtimeVaultSettingsUpdateRequestSchema>;
 

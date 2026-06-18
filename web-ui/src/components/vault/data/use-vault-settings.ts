@@ -1,19 +1,20 @@
 import { useCallback, useState } from "react";
 
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
+import type { RuntimeVaultMode } from "@/runtime/types";
 import { useTrpcQuery } from "@/runtime/use-trpc-query";
 
 export interface UseVaultSettingsResult {
-	managed: boolean;
+	vaultMode: RuntimeVaultMode;
 	isLoading: boolean;
 	errorMessage: string | null;
 	isMutating: boolean;
-	setManaged: (next: boolean) => Promise<void>;
+	setVaultMode: (next: RuntimeVaultMode) => Promise<void>;
 }
 
 /**
- * Owns the workspace's vault settings: reads the vault-takeover switch via
- * `workspace.getVaultSettings` and flips it through `workspace.updateVaultSettings`,
+ * Owns the workspace's vault settings: reads the vault-takeover mode via
+ * `workspace.getVaultSettings` and changes it through `workspace.updateVaultSettings`,
  * refetching afterwards. Self-contained (not part of the workspace-state payload),
  * mirroring {@link useVaultViews}. Idle when no workspace is selected.
  */
@@ -31,14 +32,14 @@ export function useVaultSettings(workspaceId: string | null): UseVaultSettingsRe
 
 	const query = useTrpcQuery({ enabled, queryFn, retainDataOnError: true });
 
-	const setManaged = useCallback(
-		async (next: boolean): Promise<void> => {
+	const setVaultMode = useCallback(
+		async (next: RuntimeVaultMode): Promise<void> => {
 			if (!workspaceId) {
 				return;
 			}
 			setIsMutating(true);
 			try {
-				await getRuntimeTrpcClient(workspaceId).workspace.updateVaultSettings.mutate({ managed: next });
+				await getRuntimeTrpcClient(workspaceId).workspace.updateVaultSettings.mutate({ vaultMode: next });
 				await query.refetch();
 			} finally {
 				setIsMutating(false);
@@ -48,10 +49,10 @@ export function useVaultSettings(workspaceId: string | null): UseVaultSettingsRe
 	);
 
 	return {
-		managed: query.data?.managed ?? false,
+		vaultMode: query.data?.vaultMode ?? "off",
 		isLoading: query.isLoading,
 		errorMessage: query.isError ? (query.error?.message ?? "Could not load vault settings.") : null,
 		isMutating,
-		setManaged,
+		setVaultMode,
 	};
 }

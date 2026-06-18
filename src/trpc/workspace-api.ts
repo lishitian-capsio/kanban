@@ -508,7 +508,7 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 			return { identity };
 		},
 		updateVaultSettings: async (workspaceScope, input) => {
-			const settings = await new VaultSettingsStore(workspaceScope.workspacePath).set({ managed: input.managed });
+			const settings = await new VaultSettingsStore(workspaceScope.workspacePath).set({ vaultMode: input.vaultMode });
 			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
 			return { settings };
 		},

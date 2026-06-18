@@ -1,15 +1,21 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { VaultSettingsStore } from "../../../src/vault/vault-settings-store";
+import { migrateRawVaultSettings, VaultSettingsStore } from "../../../src/vault/vault-settings-store";
 
 let repoPath: string;
 let store: VaultSettingsStore;
 
-const settingsPath = () => join(repoPath, ".kanban", "files", "settings.json");
+const filesDir = () => join(repoPath, ".kanban", "files");
+const settingsPath = () => join(filesDir(), "settings.json");
+
+async function writeRawSettings(raw: unknown): Promise<void> {
+	await mkdir(filesDir(), { recursive: true });
+	await writeFile(settingsPath(), JSON.stringify(raw), "utf8");
+}
 
 beforeEach(async () => {
 	repoPath = await mkdtemp(join(tmpdir(), "kanban-vault-settings-store-"));
@@ -20,29 +26,64 @@ afterEach(async () => {
 	await rm(repoPath, { recursive: true, force: true });
 });
 
+describe("migrateRawVaultSettings", () => {
+	it("maps legacy managed=true to vaultMode 'managed'", () => {
+		expect(migrateRawVaultSettings({ managed: true })).toEqual({ vaultMode: "managed" });
+	});
+
+	it("maps legacy managed=false to vaultMode 'off'", () => {
+		expect(migrateRawVaultSettings({ managed: false })).toEqual({ vaultMode: "off" });
+	});
+
+	it("maps an empty/legacy object with no managed field to vaultMode 'off'", () => {
+		expect(migrateRawVaultSettings({})).toEqual({ vaultMode: "off" });
+	});
+
+	it("passes a new-shape vaultMode value through unchanged", () => {
+		expect(migrateRawVaultSettings({ vaultMode: "on-demand" })).toEqual({ vaultMode: "on-demand" });
+	});
+
+	it("returns non-object input unchanged so schema validation can reject it", () => {
+		expect(migrateRawVaultSettings(null)).toBeNull();
+		expect(migrateRawVaultSettings("nope")).toBe("nope");
+	});
+});
+
 describe("VaultSettingsStore.get", () => {
-	it("defaults to unmanaged when no settings file exists", async () => {
+	it("defaults to vaultMode 'off' when no settings file exists", async () => {
 		const settings = await store.get();
-		expect(settings).toEqual({ managed: false });
+		expect(settings).toEqual({ vaultMode: "off" });
+	});
+
+	it("migrates a legacy managed=true file to vaultMode 'managed' on read", async () => {
+		await writeRawSettings({ managed: true });
+		expect(await store.get()).toEqual({ vaultMode: "managed" });
+	});
+
+	it("migrates a legacy managed=false file to vaultMode 'off' on read", async () => {
+		await writeRawSettings({ managed: false });
+		expect(await store.get()).toEqual({ vaultMode: "off" });
 	});
 });
 
 describe("VaultSettingsStore.set", () => {
-	it("persists managed=true and reads it back", async () => {
-		const written = await store.set({ managed: true });
-		expect(written).toEqual({ managed: true });
+	it("persists each vaultMode tier and reads it back", async () => {
+		for (const vaultMode of ["off", "cli-only", "on-demand", "managed"] as const) {
+			const written = await store.set({ vaultMode });
+			expect(written).toEqual({ vaultMode });
 
-		const onDisk = JSON.parse(await readFile(settingsPath(), "utf8"));
-		expect(onDisk).toEqual({ managed: true });
+			const onDisk = JSON.parse(await readFile(settingsPath(), "utf8"));
+			expect(onDisk).toEqual({ vaultMode });
 
-		const reread = await new VaultSettingsStore(repoPath).get();
-		expect(reread).toEqual({ managed: true });
+			const reread = await new VaultSettingsStore(repoPath).get();
+			expect(reread).toEqual({ vaultMode });
+		}
 	});
 
-	it("can toggle managed back to false", async () => {
-		await store.set({ managed: true });
-		const written = await store.set({ managed: false });
-		expect(written).toEqual({ managed: false });
-		expect(await store.get()).toEqual({ managed: false });
+	it("can move the mode back down to 'off'", async () => {
+		await store.set({ vaultMode: "managed" });
+		const written = await store.set({ vaultMode: "off" });
+		expect(written).toEqual({ vaultMode: "off" });
+		expect(await store.get()).toEqual({ vaultMode: "off" });
 	});
 });

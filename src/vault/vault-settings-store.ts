@@ -14,15 +14,39 @@ const FILES_DIR = "files";
 const SETTINGS_FILENAME = "settings.json";
 
 /**
+ * Migrate a raw on-disk vault-settings object to the current `vaultMode` shape.
+ *
+ * The setting started life as a boolean `managed` flag and was later promoted to
+ * the four-tier {@link RuntimeVaultMode} enum. To keep existing workspaces working
+ * we map the legacy field on read: `managed: true` → `"managed"`, and `managed:
+ * false` (or an absent field) → `"off"`. New-shape objects (already carrying
+ * `vaultMode`) pass through untouched, and non-object input is returned as-is so
+ * the schema validation downstream can reject it with a clear error.
+ *
+ * Pure and side-effect-free so the migration is unit-testable.
+ */
+export function migrateRawVaultSettings(raw: unknown): unknown {
+	if (typeof raw !== "object" || raw === null) {
+		return raw;
+	}
+	const record = raw as Record<string, unknown>;
+	if ("vaultMode" in record) {
+		return record;
+	}
+	return { vaultMode: record.managed === true ? "managed" : "off" };
+}
+
+/**
  * Repo-scoped store for workspace-level vault settings — currently just the
- * vault-takeover switch ({@link RuntimeVaultSettings.managed}). Persisted as a
+ * vault-takeover switch ({@link RuntimeVaultSettings.vaultMode}). Persisted as a
  * single committed file at `<repo>/.kanban/files/settings.json`, sibling to the
  * doc/view shards, so the setting travels with the vault.
  *
- * Reads degrade to the schema defaults (`managed: false`) when the file is
- * absent. Writes serialize on the **same directory lock as the document, blob,
- * and view channels** (the shared `files/` dir) so settings writes never
- * interleave with doc writes.
+ * Reads degrade to the schema defaults (`vaultMode: "off"`) when the file is
+ * absent, and migrate the legacy boolean `managed` shape via
+ * {@link migrateRawVaultSettings}. Writes serialize on the **same directory lock
+ * as the document, blob, and view channels** (the shared `files/` dir) so
+ * settings writes never interleave with doc writes.
  */
 export class VaultSettingsStore {
 	private readonly filesDir: string;
@@ -39,7 +63,7 @@ export class VaultSettingsStore {
 		if (raw === null) {
 			return runtimeVaultSettingsSchema.parse({});
 		}
-		const parsed = runtimeVaultSettingsSchema.safeParse(raw);
+		const parsed = runtimeVaultSettingsSchema.safeParse(migrateRawVaultSettings(raw));
 		if (!parsed.success) {
 			throw new Error(
 				`Invalid vault settings file at ${this.settingsPath}. Fix or remove the file. ` +
