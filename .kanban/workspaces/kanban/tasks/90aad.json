@@ -10,11 +10,10 @@
     "name": "Shitian",
     "email": "shitian@capsio.ai"
   },
-  "originHomeSessionId": "__home_agent__:kanban:claude:72348aac-9729-4e5e-8873-220358cc04d9",
   "baseRef": "main",
   "createdAt": 1781776282267,
-  "updatedAt": 1781776282267,
-  "column": "backlog",
+  "updatedAt": 1781776301957,
+  "column": "in_progress",
   "rank": "a0",
   "dependsOn": []
 }
