@@ -1,0 +1,19 @@
+{
+  "id": "798c1",
+  "title": "Provider 表单字段校验",
+  "prompt": "填写表单多数字段缺校验：自定义 headers 的 key/value 不校验是否合法 HTTP header；timeout 仅校验 >0 无上界/区间提示；defaultModelId 不校验是否在 models[] 列表内；base URL 不校验是否合法 URL；apiKey 无任何校验。加上合理的字段级校验与错误提示，避免存进无效配置后到运行时才报错。相关：web-ui/src/components/shared/kanban-add-provider-dialog.tsx。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781662462292,
+  "updatedAt": 1781681529405,
+  "column": "trash",
+  "rank": "aLHV",
+  "dependsOn": []
+}

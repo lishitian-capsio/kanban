@@ -1,0 +1,18 @@
+{
+  "id": "7450b",
+  "title": "Fix CJS/ESM mismatch in dist/cli.js build (node:crypto import in CommonJS bundle…",
+  "prompt": "Running 'kanban --host <ip>' crashes at startup with: dist/cli.js:24802 'import { randomBytes, timingSafeEqual } from \"node:crypto\";' -> error: Cannot use import statement with CommonJS-only features; note: This file is CommonJS because 'module' was used (Bun v1.3.14).\n\nThe build (npm run link -> npm run build) succeeds and produces dist/cli.js via scripts/build.mjs (esbuild). But the emitted bundle is CommonJS (references 'module') while still containing a leftover ESM import for node:crypto, which Bun refuses to load.\n\nTask: Investigate scripts/build.mjs esbuild configuration. Ensure a consistent output format/platform (platform: 'node', correct format) so node builtins like node:crypto are emitted as require() rather than a raw ESM import, or otherwise eliminate the mixed CJS/ESM output. Verify that after 'npm run link', running 'kanban --host <ip>' boots cleanly without the import error.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781058495676,
+  "updatedAt": 1781059170797,
+  "column": "trash",
+  "rank": "aP",
+  "dependsOn": []
+}

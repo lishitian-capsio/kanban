@@ -1,0 +1,19 @@
+{
+  "id": "2ff6e",
+  "title": "Bug:编辑 provider 多个字段未真正保存,重新获取仍是旧值",
+  "prompt": "Bug 现象:在「编辑 provider」时,很多字段改了之后并没有真正保存下来 —— 重新获取(重开对话框 / 刷新 / 重新 list)后还是改之前的旧值。\n\n请先用系统化调试定位根因,不要直接猜着改。重点排查这几条链路:\n1. 前端:编辑表单提交时,是否把**所有**改动字段都发给了保存 mutation,还是只发了部分?是否有字段在提交前被丢弃/被默认值覆盖?\n2. 保存路径(tRPC saveAgentProvider / 相关 mutation):是否只持久化了部分字段?是否做了「字段级 merge」却漏掉了某些字段?provider 集合 + default 的写入是否完整落盘到对应 store(machine-home agent_providers.json 里的 secret 部分 + 仓库内 committed provider 部分)?\n3. 读取路径:list/get 时是否从正确的 store 读、是否被某层缓存或 legacy 单 provider 迁移逻辑覆盖回旧值?\n4. 已知相关设计点,排查时注意别误伤:\n   - API key 是 secret,会从前端被 strip,catalog 里只给派生的 apiKeyPreview(非 secret)。要分清「key 没保存」和「key 保存了但前端按设计看不到明文」—— 确认非 secret 字段(名称、baseUrl/protocol、model 等)的保存是否正确,以及 key 的真正保存路径是否 OK。\n   - protocols[] 是真相,baseUrl 是读时派生镜像(collapseToAgentProtocol),不要把派生镜像当成可独立保存的字段。\n   - committed provider(非 secret、随仓库)与 machine-home 的 secret 是分开存的,保存时两边都要写到位。\n\n交付:plan 里先给出**确切根因**(哪条链路、哪个字段、为什么没落盘)+ 复现步骤,确认后再修;含覆盖该字段保存往返的单测。GATE:web:typecheck 干净。不要改与本任务无关的预存测试失败。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781759886529,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL6",
+  "dependsOn": []
+}

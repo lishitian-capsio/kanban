@@ -1,0 +1,19 @@
+{
+  "id": "d887e",
+  "title": "修复：任务 owner 徽章未显示邮箱",
+  "prompt": "Bug：任务卡片/任务头部的 owner 徽章只显示了 owner 的名字（name），没有显示邮箱（email）。\n\n背景（代码线索）：\n- task owner = git identity 对象 { name, email }（worktree 98e4e 实现）。默认在持久化层 applyDefaultTaskOwner 通过 readGitUserIdentity 从 repo git-config 填充，覆盖 web-ui + CLI 两条创建路径。\n- shard store schema 已携带 owner（extends object schema）。CLI 支持 --owner \"Name <email>\"。\n- web-ui 有 owner badge + 按 owner 过滤的下拉。\n\n请排查：owner.email 是否真的存到了 task shard（task list 的 JSON 里 owner 是否含 email），还是仅 name 落盘 / email 丢失；以及 web-ui owner badge 组件渲染时是否根本没渲染 email 字段（只用了 owner.name）。\n\n确认是『数据里有 email 但 UI 没渲染』还是『数据里就缺 email』后再修。期望：owner 徽章/相关 UI 能展示邮箱（具体展示形式——如 hover tooltip 显示完整 name <email>，或徽章副标题——按现有设计风格定，保持与 dark theme + 现有 badge 一致）。配回归测试。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781745363335,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aLAV",
+  "dependsOn": []
+}

@@ -1,0 +1,19 @@
+{
+  "id": "ee9f3",
+  "title": "聊天侧边栏可分离为浮动窗口",
+  "prompt": "把看板的聊天侧边栏（home/sidebar chat panel）做成一个停靠位置可切换、且可分离为浮动窗口的面板。把『停靠状态』统一建模为 dock = 'left' | 'right' | 'float'。\n\n交互方式：在聊天面板顶部用一组『各自独立的按钮』来切换状态，每个按钮对应一个明确的目标状态，不要用单个循环切换（cycle）按钮：\n- 『停靠到左侧』按钮（lucide PanelLeft）：dock = 'left'\n- 『停靠到右侧』按钮（lucide PanelRight）：dock = 'right'\n- 『分离为浮动窗口』按钮（lucide PictureInPicture2 或 Maximize2）：dock = 'float'\n当前所处状态对应的按钮应高亮/选中（active 态），点其他按钮即切到对应状态。\n\n需求 A — 左右停靠互换：\n- 默认停靠在右侧；通过上面的左/右按钮在左边栏与右边栏之间互换停靠。\n- 切换后整体布局正确（聊天面板与主看板区域左右关系互换，不重叠、不挤压），多线程 home chat（HomeThreadBar 等）在两侧都正常。\n\n需求 B — 分离为浮动窗口：\n- 点『分离』按钮后内容脱离固定栏，变成可自由拖动、可调整大小、可关闭的浮动面板覆盖在应用之上。\n- 浮动状态下：标题栏可拖拽、关闭按钮（点关闭回到上一次的左/右停靠状态）、合理的初始位置与尺寸、最小尺寸约束。浮动面板上也提供『停靠到左侧/右侧』按钮以重新 dock 回去。\n\n通用约束：\n- 复用现有聊天面板组件，不要复制一份 JSX；把 dock 状态（left/right/float）与浮动定位逻辑抽到一个 hook（建议用 react-use 的 useDrag/useMeasure 或成熟库如 react-rnd，优先评估第三方库降低维护成本）。\n- dock 状态、浮动开关、浮动位置与尺寸都持久化到 localStorage，刷新后保留。\n- 遵循 web-ui 暗色主题设计 token（surface/border/text）、Radix 原语、lucide 图标，样式用 Tailwind class，不写 dark: 前缀；处理好浮动态的 z-index 与不遮挡关键交互。\n\n先定位现有的聊天侧边栏组件（多线程 home chat、sidebar 容器、主布局的左右栏结构），评估改造点，再实现。完成后跑 web:typecheck 与相关 lint 保证通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781758813436,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL7",
+  "dependsOn": []
+}

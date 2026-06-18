@@ -1,0 +1,19 @@
+{
+  "id": "01376",
+  "title": "[P1] board worktree 生命周期 + board-ref 指针",
+  "prompt": "设计文档见 .plan/docs/board-branch-decoupling.md(已 tag: design/board-branch-decoupling)。本任务属于「看板数据迁到专用分支(方案 C)」分阶段实施的一部分,严格按设计文档执行,只做本阶段范围。\n\nP1 范围:见设计文档 §3.2/§3.5/§3.6、§8 P1。依赖 P0 的路径二分已就绪。\n- 新增 src/workspace/board-worktree.ts(仿 task-worktree.ts):ensure/create board worktree 于 <repo>/.kanban/worktrees/__board__/<label>/,orphan 分支创建(git worktree add --orphan 或 plumbing 兜底老版本 git),创建锁、路径校验、probe。\n- 新增 src/state/board-ref.ts:读写代码树 .kanban/board-ref 指针({version,branch})。\n- ensureBoardWorktree 接入 prepareRepoRuntimeHome;让 boardDataHome 指向 board worktree 内的 .kanban。\n- 本阶段不做迁移/同步/UI;先让 board 数据能在 board worktree 里读写。typecheck/测试通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781758494084,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL6V",
+  "dependsOn": []
+}

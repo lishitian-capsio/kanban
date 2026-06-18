@@ -1,0 +1,19 @@
+{
+  "id": "411e1",
+  "title": "统一 agent provider 启动解析链",
+  "prompt": "实现一个共享的 agent provider launch resolver，供 pi 与外部 CLI agent 复用。目标：把当前分散在 pi-provider-config、env-injector、runtime-api 里的 provider 选择逻辑收敛为统一入口。解析优先级应覆盖：任务/卡片级 provider/model/reasoning override、workspace committed provider、machine-home agent provider 设置、agent 默认/official login。要求保留现有 provider protocol compatibility 校验；official login 仍不能误 fallback 到第三方 provider；API key 仍只从机器本地配置或环境解析，不写入 repo committed provider。更新 runtime-api/terminal session 启动路径，使非 pi CLI agent 也能拿到统一解析结果。补充或更新测试覆盖 pi 现有行为不回退、CLI agent providerId override、workspace committed provider 对支持 agent 生效、不兼容协议报错。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781770230908,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL2",
+  "dependsOn": []
+}

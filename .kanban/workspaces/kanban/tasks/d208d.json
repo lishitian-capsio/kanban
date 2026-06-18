@@ -1,0 +1,19 @@
+{
+  "id": "d208d",
+  "title": "收口 Claude/Gemini/Kiro provider 策略",
+  "prompt": "在共享 agent provider launch resolver 接入后，收口 Claude/Gemini/Kiro 的 provider 行为边界。Claude：保留当前 ANTHROPIC_BASE_URL/ANTHROPIC_API_KEY/ANTHROPIC_MODEL/ANTHROPIC_DEFAULT_*_MODEL env projector，并评估补充 CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1 的可配置支持；不要引入不必要的 native config 文件。Gemini：不要宣称支持泛 OpenAI-compatible provider；仅支持 Gemini CLI 官方 GEMINI_API_KEY/GEMINI_MODEL/GOOGLE_API_KEY/Vertex 相关路径。Kiro：不要做泛 BYOK provider；仅支持其官方 auth/API key 与 custom agent model 能力，model 必须来自 Kiro 可用模型列表。实现上要让不支持 generic provider 的 agent 在 UI/API 层给出明确能力反馈，避免用户选择后静默失败。补充测试覆盖 capability gating、错误消息、Claude 现有 env 注入不回退。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781764591721,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL1l",
+  "dependsOn": []
+}

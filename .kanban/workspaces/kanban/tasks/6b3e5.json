@@ -1,0 +1,19 @@
+{
+  "id": "6b3e5",
+  "title": "[P0] 路径二分:抽象 committed 看板数据根(纯重构)",
+  "prompt": "设计文档见 .plan/docs/board-branch-decoupling.md(已 tag: design/board-branch-decoupling)。本任务属于「看板数据迁到专用分支(方案 C)」分阶段实施的一部分,严格按设计文档执行,只做本阶段范围。\n\nP0 范围(地基,纯重构,行为不变):引入 BoardDataLocation 概念,把 committed 看板数据根从写死的 <repo>/.kanban 抽象出来。默认仍指向 <repo>/.kanban,所以行为零变化。\n- 见设计文档 §3.3「路径根二分」、§5 模块清单、§8 P0。\n- 在 src/state/workspace-state.ts 把 getWorkspaceDirectoryPath 等派生入口的根入参显式区分 runtimeHome(机器本地)vs boardDataHome(committed);loadWorkspaceContext 计算 { runtimeHome, boardDataHome },此阶段两者都 = <repo>/.kanban。\n- task-shard-store / vault-document-store / file-library-store 改成接收 boardData 根(签名尽量不变,传不同 dir)。\n- 验证:现有测试零回归;typecheck/biome 通过。不引入 board worktree、不改 gitignore、不动迁移。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781758492891,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL8",
+  "dependsOn": []
+}

@@ -1,0 +1,18 @@
+{
+  "id": "0f13f",
+  "title": "调研+设计：需求条目管理功能",
+  "prompt": "目标：为 Kanban 项目设计一个【需求条目管理】功能（独立于现有 task 卡片）。本任务只做调研与方案设计，产出设计文档/计划，不要直接实现功能代码。\n\n需求背景：\n- 用户希望在 Kanban 里维护一份「需求条目」清单（类似 PRD / 需求项），支持增删改查、写描述、设优先级。\n- 需求条目是独立的实体，区别于现有看板上的 task 卡片（task 是给 coding agent 执行的工作单元）。\n- 后续可能把需求条目关联/拆分到 task 卡片，但本期先聚焦需求条目本身的管理。\n\n调研要点：\n1. 通读现有数据层与持久化方式（task 是怎么存储的，schema/迁移在哪里，参考 src/ 下相关模块），给出需求条目实体应如何建模与存储。\n2. 梳理现有 CLI 命令结构（src/cli.ts 及其子命令），提出新增需求条目相关命令的设计。\n3. 梳理后端/runtime 层（runtime-api.ts / runtime-server.ts 等）如何暴露数据给 web-ui，给出需求条目的接口设计。\n4. web-ui 前端形态给出建议方案：是新增独立『需求』页面/视图，还是集成进现有看板。对比利弊并给推荐，附简单的 UI 结构示意。遵循 AGENTS.md 里的 web-ui 技术栈与设计 token 约定。\n5. 列出实现拆分建议（数据层 / 后端接口 / CLI / web-ui 各自的子任务），以及它们之间的依赖关系，方便后续在 Kanban 上拆成多个可并行/有依赖的 task。\n\n交付物：一份清晰的设计方案（可写在 .plan/ 下的 markdown 文档里），包含数据模型、CLI/接口设计、UI 建议、以及推荐的实现任务拆分与依赖图。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1780973385192,
+  "updatedAt": 1780994064159,
+  "column": "trash",
+  "rank": "aU",
+  "dependsOn": []
+}

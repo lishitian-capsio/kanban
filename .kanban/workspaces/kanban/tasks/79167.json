@@ -1,0 +1,19 @@
+{
+  "id": "79167",
+  "title": "Vault 通用 wikilink 引擎（解析/解析链接/索引）",
+  "prompt": "把 vault 的 [[wikilink]] 从『仅 customer 字段』升级为通用的链接引擎。当前只在 frontmatter 检测 [[ ]]，且 picker/反链只服务 customer 字段（web-ui/src/components/vault/customer/*）。本任务做地基，UI 在 B2/B3。\n\n范围：\n- 链接解析：任意 frontmatter 字段值 + 【正文】中的 [[target]] / [[target|label]] 都被提取为链接。复用并推广 src/vault/vault-document.ts 的 extractWikilinks（目前正文未解析）。\n- 链接解析（resolve）：按 title 优先（大小写不敏感）、再按 slug/filename 回退，支持 alias（若引入 aliases frontmatter 字段）。给出已解析/未解析状态。\n- 反链索引：构建 doc→outgoingLinks 和反向 backlinks（谁链接到我），按来源字段/关系类型分组。提供后端查询接口（tRPC + api-contract Zod 契约）。\n- 类型无关、与具体 doc type 解耦；不要把逻辑写死在 customer 里。保留 customer 现有行为向后兼容。\n- 复用 SDK/契约真实类型，遵循 TS 原则（无 any、无 inline import）。补单测：正文+frontmatter 链接提取、解析、反链分组、未解析链接。\n后续 B2（编辑器补全/渲染）、B3（反链面板）依赖本任务。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781246344621,
+  "updatedAt": 1781251466493,
+  "column": "trash",
+  "rank": "aLe",
+  "dependsOn": []
+}

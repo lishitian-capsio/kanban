@@ -1,0 +1,19 @@
+{
+  "id": "32018",
+  "title": "为 Codex 实现 native provider projector",
+  "prompt": "基于共享 agent provider launch resolver，为 Codex 启动路径实现原生 provider projector。目标：不要只依赖 OPENAI_BASE_URL/OPENAI_API_KEY 环境变量，而是在每次 Codex session 启动时生成隔离的 CODEX_HOME 配置，避免污染用户全局 ~/.codex。生成内容应包含 config.toml 与安全的 auth/env 处理：model_provider、model、model_reasoning_effort、model_context_window、model_auto_compact_token_limit、model_reasoning_summary、model_supports_reasoning_summaries、preferred_auth_method，以及 [model_providers.<id>] 的 name/base_url/wire_api。OpenAI-compatible 第三方 provider 应默认 wire_api = responses；对不支持 reasoning summary 的 provider 能显式关闭。API key 不应进入 repo committed state；优先使用 env_key 或隔离 auth 方案。保持 Codex official login 行为不变。补充测试：临时 CODEX_HOME 生成、Responses API 配置、reasoning summary 关闭、official login 不注入第三方配置、不会修改真实 ~/.codex。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781764517785,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL1G",
+  "dependsOn": []
+}

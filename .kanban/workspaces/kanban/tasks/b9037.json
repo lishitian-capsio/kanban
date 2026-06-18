@@ -1,0 +1,18 @@
+{
+  "id": "b9037",
+  "title": "把需求管理接入 kanban sidebar agent",
+  "prompt": "让 kanban sidebar agent(侧边栏看板助手)能通过对话管理需求,补上目前的缺口:agent 指令里只有 task 命令族,完全没有 requirement,导致需求管理对 agent 是个孤岛。\n\n【重要前置依赖】本任务依赖「精简需求管理」任务先完成。接入时只能写最终保留的命令集,绝不要把 review / reconcile / confirm-link / reject-link / proposed 这些即将被移除的命令写进 agent 指令。\n\n== 要做 ==\n在 kanban sidebar agent 的系统提示/指令模板里(先定位它在代码中的生成处,搜 sidebar/persona/CLI Reference 相关 prompt 构建逻辑)补上:\n\n1. CLI Reference — requirement 的保留命令及参数:\n   - create / list / show / update / delete\n   - link-task / unlink-task(单一 confirmed 关联)\n   - history / revert\n   用与现有 task 命令参考一致的写法(用途 + 参数 + 命令前缀)。\n\n2. 职责说明 — agent 可通过对话创建/查看/修改需求,并把需求与任务做【可选的横向关联】。必须明确:任务与需求是两份独立清单,没有先后/从属,关联可有可无,不是层级。\n\n3. 触发词/路由 — 识别诸如「加需求/记个需求/看需求列表/改这条需求/把这个任务挂到某需求/看需求版本历史/回滚需求」等意图,路由到对应 requirement 命令。\n\n== 约束 ==\n- 与「精简需求管理」任务的最终命令集严格一致,不引用已删命令。\n- 沿用现有 sidebar agent prompt 的结构与语气,不另起体例。\n- 不改 CLI 行为本身,只接入 agent 的指令/路由层。\n- 改完确认 agent 指令里 requirement 段落完整、无已删命令残留。\n\n先读 sidebar agent 的 prompt 构建代码与现有 task 命令在其中的写法,对齐后再加 requirement 段落。遵循仓库 TS 规范,no any。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781141106821,
+  "updatedAt": 1781144383402,
+  "column": "trash",
+  "rank": "aLx",
+  "dependsOn": []
+}

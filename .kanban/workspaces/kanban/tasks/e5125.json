@@ -1,0 +1,18 @@
+{
+  "id": "e5125",
+  "title": "Remove beta feedback banner from project navigation panel",
+  "prompt": "Remove the entire beta feedback banner from the web-ui.\n\nContext:\n- The banner is the feedback component in web-ui/src/components/project-navigation-panel.tsx (around line 566-586). It renders the text \"Kanban is in beta. Help us improve by sharing your experience.\" plus a \"Send feedback\" / \"Report issue\" button.\n\nRequirements:\n1. Remove the entire banner component (the JSX block with the beta sentence AND the feedback/report button) and remove where it is rendered in the panel.\n2. Clean up any now-unused props, imports, helpers, constants (e.g. shouldShowFeaturebaseFeedback, featurebaseFeedbackState, GITHUB_ISSUES_URL, Info/ExternalLink icons) that become dead after removal. Do not leave unused code.\n3. Update or remove the related tests in web-ui/src/components/project-navigation-panel.test.tsx that assert on the banner text (around lines 195 and 209).\n4. Ensure the project still type-checks, lints, and tests pass.\n\nNote: This is only about the in-app banner. Do NOT touch web-ui/src/hooks/kanban-access-blocked-fallback.tsx (that is a separate enterprise-access message).",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1780903537285,
+  "updatedAt": 1780907035544,
+  "column": "trash",
+  "rank": "ab",
+  "dependsOn": []
+}

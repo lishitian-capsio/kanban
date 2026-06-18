@@ -1,0 +1,19 @@
+{
+  "id": "cfa86",
+  "title": "任务系统独立：Tasks 成为独立 Tab + 任务专家 agent（核心编排架构第一步）",
+  "prompt": "把当前任务系统独立成一个领域：Tasks 前端 Tab + 任务专家 agent，并让 Kanban 核心 agent 通过 **A2A** 对接任务专家。这是把 Kanban 核心 agent 演进为「无领域逻辑的编排者 / A2A 客户端」的第一步。范围只做任务这一个领域；MCP、Vault 身份等更大的架构暂缓（Vault 身份目前未收敛、已搁置）。注意：本任务从 v1 就走 A2A，不做会被丢弃的进程内 subagent 过渡版。\n\n## 范围（两面）\n1. 前端：把看板从「默认/隐式主视图」做成一个一等的 **Tasks 顶栏 Tab**，与 Vault tab 平级。参考 Vault 前端怎么做成 tab（web-ui/src/components/vault/**、VaultView 的 initialView、顶栏入口结构）——只借鉴 tab 实现模式。\n2. Agent：把任务领域知识从 Kanban 侧边栏/home「核心 agent」的系统提示里剥出来（当前焊死在 src/agent-sdk/kanban/append-system-prompt.ts），收成一个自包含的「任务专家 agent」（系统提示=任务语义，工具=kanban `task …` CLI）。核心 agent 不再内置任务语义，只保留：身份 + 编排 + 「任务类意图→委派任务专家」。\n\n## 对接机制：v1 走 A2A\n- 委派契约（传输无关、要设计稳）：核心收意图 → 委派给任务专家 → 专家用 task CLI 干活 → 回结果/摘要（+可选结构化载荷，如新建 task id）→ 核心转述。围绕「派活→收结果」。\n- 任务专家 = **A2A server**：well-known 暴露 Agent Card（身份/skills/端点/capabilities/auth）；实现 A2A 方法（message/send，按需 message/stream SSE、tasks/get、tasks/cancel）；**A2A wrapper** 把进来的 A2A message 映射成一个任务专家 CLI agent 会话、把输出映射回 A2A Task 的 artifact 与生命周期（submitted→working→completed/failed）。\n- 核心 = **A2A client**：核心 CLI agent 自身不说 A2A，给它一个 delegate 工具/MCP（runtime 提供），底层做 A2A 客户端：发现 Agent Card → message/send → 收结果。（备选：runtime 居中替核心做 A2A。）\n- 发现/注册：runtime 维护专家 Agent Card 注册表，v1 只注册任务专家；以后加专家=注册一张卡，核心不动。\n- 用 A2A 的 JS/TS SDK，不手搓 JSON-RPC（先查 node_modules / 官方 @a2a-js/sdk 之类，确认 Bun 兼容）。\n- 本地传输：v1 跑 localhost（倾向 in-process HTTP 端点），auth 最小化；注意 loopback/NO_PROXY 要 bypass，别被 shell 代理劫持。\n- 简化：核心→专家的委派任务本身是短任务（board CLI 操作快返回）；真正长跑的编码发生在 task start 之后、由该任务自己的 worktree 会话执行，经现有看板/会话通道观测，不走这条 A2A task。但 Agent Card 要声明 streaming/push 能力，给将来回传长任务进度留门。\n\n## 要研究/定的点（写进设计文档）\n- A2A client 落点：核心 delegate 工具（推荐）vs runtime 居中。\n- A2A server 形态：in-process HTTP（推荐）vs 子进程。\n- TS A2A SDK 选型与 Bun 兼容性。\n- Agent Card skill 粒度：粗（「任务管理」单 skill，推荐）vs 按动作拆细。\n- 与现有 home 多线程 per-thread agent 机制的关系。\n\n## 要求\n- 设计优先：先出设计文档（.plan/docs/）：核心编排者边界、Tasks tab 前端方案、任务专家 agent 定义与解耦边界、委派契约、A2A 选型（SDK/server&client 落点/Agent Card schema/Task 映射/注册发现/本地传输与鉴权）、与 per-thread agent 关系。再给推荐的最小实现切片。\n- 先摸现状：src/core/agent-catalog.ts、append-system-prompt.ts、各 CLI agent 启动/会话适配层、顶栏 tab/VaultView 结构、task CLI 命令层。\n- 交付：可评审设计 + Tasks-tab 前端 + 「核心 ──A2A──▶ 任务专家」的端到端最小闭环（对核心说「建个任务」，经 A2A 委派、任务真被建出来、核心转述结果）。\n- 遵循 AGENTS.md / web-ui 规范（Tailwind v4 / Radix / lucide、无 any、SDK 类型优先等）。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781250005355,
+  "updatedAt": 1781259561354,
+  "column": "trash",
+  "rank": "aLZV",
+  "dependsOn": []
+}

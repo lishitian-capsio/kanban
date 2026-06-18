@@ -1,0 +1,18 @@
+{
+  "id": "97a1e",
+  "title": "后端:广播 home 线程会话状态+未读+完成事件",
+  "prompt": "为 sidebar 多线程 home chat 铺设注意力调度所需的后端数据通道。会话的 session state machine 已有明确状态(in_progress → awaiting_review 等,Claude 的 Stop hook 触发 transitionToReview / applySessionEvent)。把每个 home 线程对应会话的以下三类信号暴露到 home 线程层,使前端 HomeThreadBar 能实时订阅:(1) 会话状态:运行中(in_progress)、待查看(awaiting_review)、空闲、出错/中断;(2) 未读 delta:某线程在用户未查看期间新增的消息数量(需要一个 last-seen/已读位点的概念,可放在 home 线程注册表 threads.json 或会话层);(3) 完成事件:线程进入 awaiting_review 的一次性事件,供前端弹通知。优先复用现有 task_chat_message 通道与 wire 契约,必要时新增轻量字段或事件,不要新造会话消息模型。注意 home 线程注册表已持久化在 <repo>/.kanban/workspaces/<id>/threads.json,相关逻辑在 src/session/home-thread-registry.ts 与 workspace-state.ts。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781244625935,
+  "updatedAt": 1781251466493,
+  "column": "trash",
+  "rank": "aLf",
+  "dependsOn": []
+}

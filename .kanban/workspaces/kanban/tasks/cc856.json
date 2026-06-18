@@ -1,0 +1,19 @@
+{
+  "id": "cc856",
+  "title": "Provider 表单暴露 apiKeyField（auth_token / api_key）",
+  "prompt": "后端已支持 apiKeyField: \"auth_token\" | \"api_key\"（src/agent-sdk/kanban/agent-provider-config.ts:43），它决定 Anthropic 协议注入 ANTHROPIC_AUTH_TOKEN 还是 ANTHROPIC_API_KEY。但填写表单没有这个字段，默认永远 auth_token（provider-protocol.ts:15），需要 x-api-key 风格的 relay 只能手改 ~/.kanban 下的 agent_providers.json。在表单里为 Anthropic 协议暴露该选择（auth_token / api_key），默认 auth_token，编辑时回显，并正确接到 env 注入逻辑（src/unified-proxy/env-injector.ts）。\n\n附带处理（Anthropic 专属字段拆到协议特化层）：当前通用的 AgentProviderConfig 是个扁平、什么都 optional 的结构，却塞着只对 Anthropic 协议有意义的字段——apiKeyField 和 anthropicDefaultModels（agent-provider-config.ts:38,45）。给非 Anthropic provider 设这些字段会被 env 注入静默忽略（env-injector.ts:107-129），存了就是死数据，也误导维护者。本任务在加 apiKeyField UI 的同时，把这两个字段从『所有 agent 通用』收敛为『仅 Anthropic 协议特化』：表单层仅在启用 Anthropic 协议时才显示/采集它们；存储与类型层让它们明确属于协议特化区，而非通用 config 的顶层 optional 字段。这是『划清边界、而非强行统一』方向的第一刀。\n\n边界：不要试图统一 pi 与 CLI/terminal agent 的底层 provider 解析机制（两者机制本就不同，是有意为之）；本任务只动 Anthropic 协议字段的归属与 UI。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781662454376,
+  "updatedAt": 1781681529405,
+  "column": "trash",
+  "rank": "aLLV",
+  "dependsOn": []
+}

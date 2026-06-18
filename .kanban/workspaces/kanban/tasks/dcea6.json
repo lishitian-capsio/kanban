@@ -1,0 +1,19 @@
+{
+  "id": "dcea6",
+  "title": "[P5] 收尾:作废 9d884、文档、冲突 UI 打磨",
+  "prompt": "设计文档见 .plan/docs/board-branch-decoupling.md(已 tag: design/board-branch-decoupling)。本任务属于「看板数据迁到专用分支(方案 C)」分阶段实施的一部分,严格按设计文档执行,只做本阶段范围。\n\nP5 范围:见设计文档 §8 P5。依赖 P4。\n- 确认并清理「切分支前自动提交 .kanban」补丁路径(任务 9d884 已删除;若代码中存在相关补丁则回退/移除)。\n- 在 AGENTS.md / 文档记录:二分根(runtimeHome vs boardDataHome)、三条 git 线(代码主树 / 任务代码 kanban/task / 看板数据 kanban/board)、board-ref 指针机制。\n- 冲突 surface UI 打磨;端到端复核 clone-即用 + 切代码分支干净。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781758499909,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL2V",
+  "dependsOn": []
+}

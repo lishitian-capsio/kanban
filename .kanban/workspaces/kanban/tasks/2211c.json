@@ -1,0 +1,18 @@
+{
+  "id": "2211c",
+  "title": "设计：Files 升格为统一知识 vault（需求作为首个文档类型）",
+  "prompt": "产出一份设计方案文档（先设计、不实现，plan mode 给计划）：把 kanban 的 Files 库升格成统一的、git-backed 的知识 vault（Notion/Obsidian 形态），需求只是其中一个文档类型。\n\n== 北极星 ==\n需求面向客户、任务面向结果，两者朝向相反故零连接。逻辑链：需求只装「删掉对话就消失」的东西 → 需求就是一份 markdown → 参考 Notion（页面+属性） → 放进 Files 一体化 → Files 做成完整产品。\n\n== 参照（借约定，不集成不依赖） ==\n用户自家的 markdown 知识 app 在 /home/developer/code/tolaria，它已经是这个产品的成熟形态，请研读其约定后借鉴：markdown + YAML frontmatter、`type:` 当集合/schema、`template`、saved-views（YAML 存过滤/排序）、wikilink 关系。重点看 docs/ARCHITECTURE.md、docs/ABSTRACTIONS.md、src/types.ts、demo-vault-v2/（真实样例）、mcp-server/（不依赖 Tauri、可独立复用）。注意：tolaria 是「图优先」，没有 table/board 视图——那正是 kanban 看板引擎要补的长板。不要把 kanban 和 tolaria 做集成或依赖，只借设计与约定。\n\n== 现状调研 ==\n先摸清 kanban Files 现状：FileLibraryStore（<repo>/.kanban/files，manifest + 哈希 blob，mime v4，LFS .gitattributes，getBytes/getPath）、tRPC+CLI CRUD、web-ui Files 面板（首屏 tab、拖拽、自包含 tRPC）。再摸清现需求存储：分片 requirement-store（requirements/ + requirement-versions/ + requirement-task-links/）、RuntimeRequirement* 契约、版本历史/revert、web-ui 需求视图。\n\n== 设计需覆盖 ==\n1) type-无关文档引擎：每个文档 = markdown + frontmatter + `type`。引擎先支持「需求」一个 type，但架构上让加 type（客户/Person、决策/ADR、Spec、Note 会议纪要、Reference 约定、Roadmap）= 新增 type 定义 + 视图，几乎免费。\n2) 文档落盘格式：markdown 文档以普通可读 `.md` 落盘（带 frontmatter、人能看的路径），不塞哈希 blob——理由：git diff 有意义 + 给 tolaria 互通留门（同格式零迁移）。二进制附件继续走原 blob 通道。给出 Files 库如何同时容纳「可读文档」与「blob 附件」的存储设计。\n3) 需求 = 文档：frontmatter 放 status/priority/customer。重塑生命周期为「问题状态」（在提/已澄清/失效/搁置），别用交付味的 done。退役分片 requirement-store（含 2-3 条现有需求迁移 + 版本历史归宿，倾向靠 git 历史）。\n4) 视图层：需求/文档 UI = 在 Files 之上解析 frontmatter 的视图；table + board（按 status 分组）复用 kanban 自己的看板引擎；新建走 markdown 模板。md 编辑器 + 预览（不做块编辑器）。\n5) 客户锚点：客户也是一个文档（type: Customer），需求 wikilink/frontmatter 指向它，客户材料作附件挂其名下。\n6) 聊天→文档结晶：给「把 home 侧边栏的一段对话提炼成需求/决策/纪要落进 vault」留入口/接口。说明它如何复用昨天的统一 SessionMessage 模型（该模型是 vault 的引擎，把任意 agent 对话渲染成统一 markdown；原始 journal 日志不搬进 Files）。\n7) 清旧范式死肉：排查移除 proposed/draft 评审面、source=human/agent、requirement-task-links 残留等。\n\n== 边界（明确挡在 Files 外） ==\n任务（面向结果、住看板、独立存储）；运行时/密钥/索引（~/.kanban 机器本地）；原始会话日志（messages.jsonl 是日志不是文档，存储不动）。\n\n== MVP 纪律 ==\n先跑「需求」type；跳过 块编辑器、实时协作/CRDT、权限分享、公式/rollup/relation。多视图（日历/画廊）列后面。\n\n== 交付物 ==\n一份 markdown 设计文档放 .plan/docs/，含：受影响文件清单、契约改动点（注意 web:typecheck）、分阶段实现里程碑建议（哪些可并行）、迁移/退役方案、风险。务必先在 plan mode 给计划，不要直接改实现代码。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781231441920,
+  "updatedAt": 1781244831023,
+  "column": "trash",
+  "rank": "aLlV",
+  "dependsOn": []
+}

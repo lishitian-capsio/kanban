@@ -1,0 +1,19 @@
+{
+  "id": "6f4e2",
+  "title": "为 OpenCode 实现 native provider projector",
+  "prompt": "基于共享 agent provider launch resolver，为 OpenCode 启动路径实现原生 provider projector。目标：不要只通过通用 OPENAI_* / ANTHROPIC_* env 注入；应生成/合并临时 opencode 配置并通过 OPENCODE_CONFIG 指向，使用 OpenCode 官方配置形态：provider、model、small_model，以及 provider.<id> 下的 npm/options.baseURL/options.apiKey/models。OpenAI Responses API provider 应使用 @ai-sdk/openai；OpenAI chat-compatible provider 使用 @ai-sdk/openai-compatible；Anthropic-compatible provider 使用合适的 Anthropic provider 配置。保持现有 hooks/plugin OPENCODE_CONFIG 逻辑可组合，避免覆盖用户基础配置。API key 不写入 repo committed state，临时文件仅用于 session。补充测试覆盖 OpenAI/Anthropic 两类 protocol、与 hooks 配置合并、official login 或未配置 provider 时不生成错误配置。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781764540815,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL1d",
+  "dependsOn": []
+}

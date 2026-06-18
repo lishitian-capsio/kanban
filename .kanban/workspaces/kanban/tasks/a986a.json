@@ -1,0 +1,18 @@
+{
+  "id": "a986a",
+  "title": "CLI agent 轻量转录捕获",
+  "prompt": "给 CLI/terminal agent（先针对 claude code）增加轻量转录捕获，把会话进行中的输出按回合追加为统一会话消息模型（见前置任务\"统一会话消息模型\"）的 assistant 消息，使 CLI agent 也拥有可读的多轮消息历史。\n\n现状：src/terminal/session-manager.ts 用 PTY 跑 CLI agent，输出只进 src/terminal/terminal-state-mirror.ts 的内存镜像（10000 行 scrollback），没有结构化消息。\n\n任务：\n1. 在 TerminalSessionManager 里，让 terminal session 实现前置任务定义的 agent 无关消息源接口（SessionMessageSource）。\n2. 复用 terminal-state-mirror 的快照与回合边界，把 PTY 输出按回合转成轻量 KanbanTaskMessage（用户输入→user 消息，agent 输出块→assistant 消息）。不强行解析每个工具调用，保真度先够用。\n3. 通过现有 onMessage 事件把这些消息发到 runtime-state-hub.ts，让侧边栏/任务卡能像 pi 一样实时渲染 CLI agent 的对话。\n4. 仅做内存中的捕获与广播，落盘放到后续任务。\n\n依赖：需先完成\"统一会话消息模型（agent 无关契约）\"。遵循仓库 TypeScript 规范：无 any、无 inline import。完成后跑 typecheck/相关测试。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781156049652,
+  "updatedAt": 1781171115058,
+  "column": "trash",
+  "rank": "aLu",
+  "dependsOn": []
+}

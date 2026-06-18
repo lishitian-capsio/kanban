@@ -1,0 +1,19 @@
+{
+  "id": "c7fa6",
+  "title": "[P3] board commit + push/pull 同步",
+  "prompt": "设计文档见 .plan/docs/board-branch-decoupling.md(已 tag: design/board-branch-decoupling)。本任务属于「看板数据迁到专用分支(方案 C)」分阶段实施的一部分,严格按设计文档执行,只做本阶段范围。\n\nP3 范围:见设计文档 §3.7、§4(5)、§4(6)、§8 P3。依赖 P2。\n- 写 board 后用 kanban/board 专用 git identity(仿 turn-checkpoints.ts)在 board worktree 里 add/commit。\n- 去抖(~5s)自动 push;启动 fetch + ff board worktree;push 被拒(remote 领先)则 fetch+merge/rebase,分片冲突 surface 不自动毁数据(可为 board.json 配 union merge driver)。\n- pull 带来新 commit 后在同一流程末尾重新 loadShardedBoard + broadcastRuntimeWorkspaceStateUpdated 刷新内存与前端(复用现有广播,不加 watcher)。\n- 验证:多机 push/pull + 冲突 surface 手测。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781758496571,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL4V",
+  "dependsOn": []
+}

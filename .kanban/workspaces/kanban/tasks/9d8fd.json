@@ -1,0 +1,19 @@
+{
+  "id": "9d8fd",
+  "title": "方案调研:看板数据迁到专用分支(与代码分支解耦)",
+  "prompt": "这是一个【只出设计/调研方案、不写实现代码】的任务。请先全面调研现状,产出一份完整设计文档(可写到 .plan/docs/ 下),不要改动产品代码。\n\n## 背景与目标\n当前 Kanban 把看板数据(.kanban/workspaces/<ws>/tasks/*.json、board.json、requirement 分片、files 清单等)作为【被 git 跟踪、提交进当前代码分支工作区】的文件存储(见 .kanban/.gitignore 的 denylist 策略、board sharding、requirement sharding)。\n\n由此产生的问题:\n1) 运行中的 runtime 持续重写 tasks/*.json → 主工作区永远脏 → git switch / Git History 双击切分支被挡(error: local changes would be overwritten)。\n2) 概念错位:看板是 workspace 级的东西,却绑死在'当前 checkout 的代码分支'上 —— 切代码分支换一套看板、合并分支还要合并看板文件。\n\n已确认的产品约束(硬约束,不可违反):\n- 看板完整状态(column/rank/依赖/spec)必须能随仓库走,别人 clone 后能接着之前的看板记录继续(clone-即用)。\n- 因此【不允许】用'把易变状态挪到机器本地/gitignore 掉/取消跟踪'来回避问题——那会破坏 clone-即用。\n\n## 选定方向:方案 C —— 看板数据放到一条专用分支,与代码分支彻底解耦\n核心模型(已和用户对齐,请据此细化落地方案):\n- 另起一条专用分支(默认名 kanban/board,与代码分支平行、永不合并;倾向 orphan 分支)。\n- 代码工作树里把 .kanban 看板数据 gitignore 掉 → 用户的代码分支不再跟踪这些文件 → 切代码分支干净、零阻力(不侵入现有分支)。\n- Kanban 后台单独维护一个【专用 worktree】(另一个目录)把这条分支 checkout 在那里;runtime 的看板读写/提交都指向这个 board worktree,与主代码工作树在哪条分支无关。\n- 每次启动:runtime 确保该 board worktree 存在且在目标分支上,从中加载看板状态。\n- 任务代码不受影响:任务 worktree 仍从任务的 baseRef 切出,代码 commit 仍归到各自 baseRef;kanban/board 分支【永不接收任务代码】,只装看板 JSON。这两条 git 线必须保持独立。\n\n## 本任务必须敲定的设计点\n1) board worktree 落地:放哪个目录(机器本地、gitignore)、如何创建/复用、与现有 .kanban/worktrees 任务 worktree 体系的关系、runtime 看板读写路径如何从 <repoPath>/.kanban 改成指向 board worktree。\n2) 【分支名指针,关键】'看板在哪条分支'这个信息必须随仓库走,否则别人 clone 后不知道去哪条分支加载、clone-即用失效。设计一个【随代码树提交的小指针文件】(例如代码树里唯一不被 gitignore 的 .kanban/board-ref,内容是分支名),作为发现入口。注意不能把指针存在 board 分支自身(鸡生蛋)。\n3) 分支名可配置:Settings 里可改看板数据分支名,默认 kanban/board。\n4) 【改名迁移】改分支名时必须带数据迁移(基于旧分支 tip 建新分支,数据/历史带过去)、更新提交的指针、同步远端(删旧推新),不能弃旧分支重开导致看板变空。\n5) push/pull 同步策略:要支持 clone-即用与多机/交接,需定何时拉、何时推(启动拉、变更推?自动 vs 手动?),并让同步状态在 UI 可见(避免'飘'的体感)。多人/多机并发改看板时这条分支的合并/冲突处理(分片已减冲突,但仍需策略)。\n6) 切分支后 runtime 看板内存与磁盘一致性:确认主代码工作树切分支【不再影响】看板(因为已解耦);board worktree 自身变更后 runtime 如何 reload。\n7) 【迁移路径】从现状(看板数据已经提交在各代码分支的工作区里)迁移到 C:如何把现有 tasks/board 数据收集出来、建出 kanban/board 分支、并把代码分支里已提交的 .kanban 数据从代码分支移除并改为 gitignore;要幂等、可回滚思路、对已有仓库与全新仓库都要覆盖。\n\n## 产出要求\n- 一份设计文档:现状梳理(关键文件/路径/读写入口)、C 的完整架构、上面 7 点的明确决策与取舍、风险与体感分析、分阶段实施拆解(后续可据此拆成多个实现任务)。\n- 明确列出会触及哪些模块(如 src/state/*shard-store、kanban-paths.ts、task-worktree.ts、git-sync.ts、workspace-state、.kanban/.gitignore、Settings)。\n- 不要写实现代码。先调研后成文。\n\n注:现有另有一个'切分支前自动提交 .kanban'的补丁任务(9d884),若 C 采纳则它作废——在文档里说明二者关系即可。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781751018050,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL8V",
+  "dependsOn": []
+}

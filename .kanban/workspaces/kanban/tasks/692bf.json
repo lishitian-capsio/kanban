@@ -1,0 +1,19 @@
+{
+  "id": "692bf",
+  "title": "修复:首页聊天切到 pi 发消息报 No active pi session",
+  "prompt": "Bug:在 Kanban 首页(侧边栏)home 聊天里把 agent 切换到 pi 后发送消息,报错:\\n\\n  Pi agent send failed: No active pi session for task __home_agent__:kanban:pi. You can send another message to continue.\\n\\n复现:home 聊天 agent 选择 pi → 发消息 → 报上述错。\\n\\n预期:切到 pi 后第一条消息应能正常发送 —— 要么发送路径在没有活跃 pi session 时【惰性启动】该 pi session 再投递消息,要么如果 pi 启动失败(provider/登录/模型未配置),给出明确的、可操作的错误提示,而不是这条找不到 session 的内部错误。\\n\\n排查方向(先定位再改):\\n- home(sidebar)聊天的 session 模型:synthetic home session id 形如 __home_agent__:<workspaceId>:<agentId>(见 src/core/home-agent-session.ts、parseHomeAgentSessionId)。这里 taskId = __home_agent__:kanban:pi。\\n- pi 的 session 服务是 InMemoryPiTaskSessionService(src/agent-sdk/kanban/),CLI/terminal agent 走 TerminalSessionManager;两者都 implements SessionMessageSource。对照 getTaskChatMessages 在 pi 无 session 时 fallback 到 terminal manager 的做法,看 sendTaskChatMessage / pi send 路径在 pi 无活跃 session 时为什么直接抛错而不启动。\\n- 确认是「发送前没有先 startTaskSession 启动 pi」还是「pi 启动了但失败/被回收」。注意 home 多线程改动(use-home-threads、startTaskSession 按 home taskId 解析 agent)是否覆盖了 pi 这条路径。\\n- 也排查 pi 是否因 provider/OAuth/模型未配置而启动失败(pi=main agent,用 Cline-hosted 或所选 provider);若是配置问题,错误信息要指向「去配置 pi 的 provider」。\\n\\n要求:\\n- 修好后,home 聊天切到 pi 能正常发首条消息并得到回复(或在确实无法启动时给出明确指引)。\\n- 不要破坏 claude/codex 等 CLI agent 在 home 聊天里的现有行为,也不要破坏 home 多线程。\\n- typecheck / 相关单测通过。\\n\\n请先说明根因(是缺少惰性启动,还是 pi 启动失败)再动手。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781745935853,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL9V",
+  "dependsOn": []
+}

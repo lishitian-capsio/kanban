@@ -1,0 +1,19 @@
+{
+  "id": "00c4a",
+  "title": "[P4] 设置(分支名+改名迁移)+ 同步状态 UI",
+  "prompt": "设计文档见 .plan/docs/board-branch-decoupling.md(已 tag: design/board-branch-decoupling)。本任务属于「看板数据迁到专用分支(方案 C)」分阶段实施的一部分,严格按设计文档执行,只做本阶段范围。\n\nP4 范围:见设计文档 §4(3)、§4(4)、§4(5) UI、§8 P4。依赖 P3。\n- workspace 级设置 boardBranch(默认 kanban/board),照 VaultSettingsStore + tRPC 模板;board-ref 为权威发现源,设置改动触发改名迁移并同步写 board-ref。\n- 改名迁移:基于旧分支 tip 建新分支(git branch new old)→ board worktree 切到 new → 更新提交 board-ref+设置 → 远端 push new 后 delete old(留 kanban/board-archive/<ts> tag 作回滚锚);任一步失败回滚停在旧分支、UI 报错;绝不弃旧重开。\n- 同步状态 UI:顶栏徽标 [已同步/同步中/落后N/冲突](数据源 probeGitWorkspaceState 的 ahead/behind)+ 手动立即推送/拉取 + 暂停自动同步开关。\n- 验证:改名迁移端到端;UI 状态正确。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781758498262,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL4",
+  "dependsOn": []
+}

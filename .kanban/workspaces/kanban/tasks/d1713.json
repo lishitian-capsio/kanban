@@ -1,0 +1,19 @@
+{
+  "id": "d1713",
+  "title": "Vault 注入分层开关（四档：off/cli-only/on-demand/managed）",
+  "prompt": "把 vault 接管开关从布尔 `managed` 升级为四档枚举，让系统提示词里的 vault 注入内容按档位递进。这修复用户反馈的 bug：开关关闭时，vault 文档类型索引仍被注入到 home/sidebar agent 的系统提示词里。\n\n## 背景：当前行为\n`src/prompts/append-system-prompt.ts` 里 vault 内容分三块，受开关控制方式不一致：\n1. `renderVaultDocumentTypesSection`（第 88 行）：'# Knowledge vault documents' 介绍段 + 文档类型索引列表。**当前无论开关都注入**。\n2. vault CLI 命令参考（主模板第 371-456 行的 '## vault type list' 到 '## vault doc delete'）：**当前硬编码在主模板里，始终注入**。\n3. `renderVaultManagedDirective`（第 128 行）：'# Proactive vault management is ENABLED' 主动接管指令。**仅这块受 `vaultManaged` 布尔控制**。\n\n开关来源：`loadVaultManagedForHomeSession` → `VaultSettingsStore(repoPath).get()).managed`（`src/vault/vault-settings-store.ts`），wire 契约在 `src/core/api-contract.ts` 的 `RuntimeVaultSettings`，tRPC `workspace.get/updateVaultSettings`，前端开关在 web-ui 的 VaultSidebar（Management section，Radix toggle）。\n\n## 目标：四档枚举\n把 `RuntimeVaultSettings.managed: boolean` 改成 `vaultMode: 'off' | 'cli-only' | 'on-demand' | 'managed'`（严格递进，每档是上一档超集）：\n- **off**：完全不注入任何 vault 内容（介绍段、类型索引、vault CLI 参考、主动指令都不注入）。注意：task 相关的 CLI 参考必须保留。\n- **cli-only**：注入 '# Knowledge vault documents' 介绍段 + vault CLI 命令参考（## vault type list ... ## vault doc delete），但**不**注入类型索引列表。\n- **on-demand**：在 cli-only 基础上 + 文档类型索引列表（等于当前 managed=false 的内容）。\n- **managed**：在 on-demand 基础上 + 主动接管指令（等于当前 managed=true）。\n\n## 实现要点\n1. **拆分 render 逻辑**：把当前硬编码在主模板里的 vault CLI 参考块（## vault type list 到 ## vault doc delete）抽成独立函数，使其可被档位 gate。把 `renderVaultDocumentTypesSection` 拆成「介绍段」与「类型索引列表」两部分，让 cli-only 只渲染介绍段、on-demand 才追加类型索引。保持纯函数、可单测（现有测试在 test 目录，找 renderVaultDocumentTypesSection / renderVaultManagedDirective 的单测一并更新）。\n2. **wire 契约**：`api-contract.ts` 改 `RuntimeVaultSettings`。注意 web-ui 通过 @runtime-contract 共享类型，改完要保证 web:typecheck 通过。\n3. **持久化迁移**：`VaultSettingsStore` 读旧数据时做迁移：旧 `managed:true` → `'managed'`；旧 `managed:false` 或字段缺失 → `'off'`；新建工作区默认 `'off'`。（用户诉求是『没开就不注入』，所以默认 off。）\n4. **append-system-prompt.ts**：`loadVaultManagedForHomeSession` 改成读取 vaultMode；`renderAppendSystemPrompt` / `RenderAppendSystemPromptOptions` 用 vaultMode 决定注入哪几块。\n5. **web-ui**：VaultSidebar 的开关从 on/off toggle 改成四档选择器（Radix Select 或分段控件，沿用 surface/ token 设计规范）；tRPC updateVaultSettings 传 vaultMode。\n6. **测试 + gate**：更新/新增 append-system-prompt 渲染单测覆盖四档；运行 web:typecheck 必须 clean。注意从 worktree 跑 vitest 要 --exclude='**/.kanban/**'（见 AGENTS.md 注意事项）。\n\n## 验收\n- 四档枚举贯通：store → 契约 → append-system-prompt → web-ui 选择器。\n- off 档下系统提示词里没有任何 vault 段落（介绍/索引/CLI/指令），但 task CLI 参考完好。\n- 旧数据迁移正确（managed:true→managed，false/缺失→off）。\n- web:typecheck 通过，相关单测通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781769219966,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL1",
+  "dependsOn": []
+}

@@ -1,0 +1,18 @@
+{
+  "id": "f3525",
+  "title": "Requirement Review: agent 审阅需求并直接修订",
+  "prompt": "实现 Requirement Review 能力——类比 code review，由 agent 对工作区现有需求做一轮审阅并直接修订。依赖已完成的'需求版本历史（数据层 + CLI）'任务（每次修订都进版本历史，来源标记为 agent，可回滚）。\n\n审阅维度（review gates）：\n1. 重复：两条需求实为同一件事 → 合并。\n2. 太杂：一条需求混了多个不相干意图 → 拆分。\n3. 不合格：描述含糊 / 无验收标准 / 缺优先级 → 补全。\n4. 空挂或该收尾：需求下无任务，或下属任务全完成但仍为 active → 调整 status。\n5. 错配：任务挂错需求 → 重新归属（若此时 task↔requirement 关联已存在；若尚未实现则跳过该维度并说明）。\n6. 过期：长期未动的 active 需求 → 提示或归档。\n\n行为约定（关键）：审阅结果【直接落库修改】，不再逐条等人批准——安全网是版本历史（可 diff、可回滚）。每次改动通过现有 requirement update/delete 接口写入，source 标记为 agent。\n\n交付：一个可被 kanban agent 调用的审阅入口（建议作为 requirement review 子命令或等价能力），跑完输出一份结构化报告：每条需求改了什么、为什么、对应版本号。遵循仓库 TypeScript 规范，no any。先读 requirement CLI 与 requirements-state 了解现状。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1780990420766,
+  "updatedAt": 1781144383401,
+  "column": "trash",
+  "rank": "aO",
+  "dependsOn": []
+}

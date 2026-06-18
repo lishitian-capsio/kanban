@@ -1,0 +1,19 @@
+{
+  "id": "27f5b",
+  "title": "接管地基:状态机跃迁进程内 hook → 渲染 prompt 注入发起 home session(prompt 驱动 + 可扩展)",
+  "prompt": "背景与决策:见 vault decision 43f28「Kanban agent 可扩展接管(prompt 驱动),task agent 执行」(accepted)。**先完整读它。** 核心:kanban agent=接管者(脑子,prompt 驱动),task agent=执行者;默认裸 prompt,接管=可自定义扩展(prompt 写,不写死代码);不做收敛判定;无 websocket(进程内 hook);多 agent 经统一投递接缝。\n\n本任务只做**最薄的接管地基**,不做任何接管的『智能/策略』(那是 prompt 扩展的事):\n\n1. **任务↔发起线程绑定(核心)**:创建任务时除现有 agentId/owner(KANBAN_SESSION_TASK_ID / resolveCreateTaskAgentId / home-agent-task-default)外,绑定**发起 home 线程/session id**。home session id 形如 __home_agent__:workspaceId:agentId:threadId(parseHomeAgentSessionId)。最小侵入、向后兼容(老任务无字段时降级)。创建时总是绑定,是否注入在出口按开关动态 gate。\n\n2. **每线程接管开关 + 可选扩展加载点**:home 线程级开关(threads.json / home-thread 模型),默认 OFF。范式参考 workspace 级 vault takeover(VaultSettingsStore + Radix toggle)但挂每线程。预留『挂哪个接管扩展』的字段(扩展本身 = prompt 文档,按 vault-types-are-skills 的方式,本任务不实现扩展内容,只留加载点)。\n\n3. **进程内跃迁 hook → 渲染 prompt 注入(无 websocket)**:在 runtime 状态机跃迁点(transitionToReview / task done / 失败等)做**进程内 hook**:查发起线程接管开关,ON → 把事件渲染成一段 prompt(任务 id + 状态 + 摘要 + 该线程挂的接管扩展 prompt,如有)→ 调 session manager 注入发起 home session 并触发执行。**不轮询、不 websocket、不写 per-stage handler、不做收敛判定。**\n\n4. **统一投递接缝(多 agent)**:在 SessionMessageSource / 两套 manager 上抽一个『向本 home session 投递 prompt 并触发执行』的方法。pi=enqueue user message + run;CLI/terminal=writeInput(prompt)+回车。hook 用 parseHomeAgentSessionId 解析背后 agent 调对应实现。注入前确保 session 活:CLI 已退出则复用 claude session resume(--session-id/--resume)或在该线程 cwd 重新拉起。行为层 agent-中立(纯文本 prompt + 现成 CLI 动词)。\n\n范围控制:**只做绑定 + 开关/扩展加载点 + 进程内注入 hook + 统一投递接缝 + CLI liveness。** 接管的策略/分层/具体行为 = prompt 扩展,不在本任务写代码。事件源做成『状态机跃迁通用』,但 v1 实接通 plan-ready / review / done / failure 的注入;v2(中途 in_progress input 解阻塞)单独立项。auto-review/link 不变,收编为接管者可委派的快捷动作。\n\n交付:先 systematic-debugging/调研(现有 home 线程模型、session manager 入站/resume 路径、跃迁点),plan(绑定 + 开关/扩展点 + 进程内 hook 注入路径 + 统一接缝 + liveness + 兼容降级 + v2 边界),确认后实现,含单测。GATE:web:typecheck 干净。不要改与本任务无关的预存测试失败。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781765314149,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL4G",
+  "dependsOn": []
+}

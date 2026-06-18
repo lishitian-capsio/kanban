@@ -1,0 +1,19 @@
+{
+  "id": "39193",
+  "title": "[P2] 迁移:代码分支解耦到 kanban/board(三态幂等可回滚)",
+  "prompt": "设计文档见 .plan/docs/board-branch-decoupling.md(已 tag: design/board-branch-decoupling)。本任务属于「看板数据迁到专用分支(方案 C)」分阶段实施的一部分,严格按设计文档执行,只做本阶段范围。\n\nP2 范围:见设计文档 §7、§8 P2。依赖 P1。\n- 新增迁移 migrateDecoupleBoardToBranch 接入 prepareRepoRuntimeHome 迁移链(廉价 precheck→workspace-dir 锁→锁内 recheck→干活,幂等)。\n- 覆盖三态:① 现有仓库(代码分支已提交 .kanban 数据):建 orphan kanban/board+board worktree,复制 committed 数据进去 commit,写 board-ref,代码分支 root .gitignore 追加 '/.kanban/* + !/.kanban/board-ref' 并 git rm -r --cached .kanban(保留 board-ref),commit;② 全新仓库:首启初始化空 board 分支;③ clone 后:有 board-ref+remote 分支则 fetch+worktree add --track,无则按全新初始化并提示。\n- 回滚思路:rm --cached 不删历史(可 revert 恢复跟踪);删 board-ref+board 分支回到现状。半迁移崩溃容忍(锁+recheck+每步幂等)。\n- 验证:三态集成测试;切代码分支不再脏的端到端验证。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781758495279,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL5l",
+  "dependsOn": []
+}

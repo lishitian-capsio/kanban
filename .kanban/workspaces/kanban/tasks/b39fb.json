@@ -1,0 +1,18 @@
+{
+  "id": "b39fb",
+  "title": "精简 settings/agent 页面为「安装/选择」专用",
+  "prompt": "把 settings/agent 页面收敛为纯「安装 / 选择」层：只保留(决定装了哪些 agent、当前选哪个、安装按钮、autonomous 开关)，移除整个单 agent 配置区——这些配置已迁到 Kanban agent 输入框内联完成（见前置任务 798c7）。\n\n核心心智模型（已与产品方拍板）：\n- 配置单位是 agent 本身，配置跟着 agent 走，全局 per-agent。\n- settings/agent 只是安装/选择 agent 的功能开关层；单 agent 的具体配置一律不在此处。\n\n现状（已调研）：\n- settings 主体 runtime-settings-dialog.tsx：\n  - 保留类：AgentRow 单选(selectedAgentId)、安装按钮、agentAutonomousModeEnabled 开关。\n  - 移除类：pi 的 KanbanSetupSection（kanban-setup-section.tsx）整块——provider、model、API Key、baseURL、reasoning effort、OAuth、AWS/GCP、MCP server。\n- 底层 saveKanbanProviderSettings / provider-settings-store 数据流要保留（输入框侧复用，勿破坏）。\n\n实现要点：\n- 从 settings 移除整个单 agent 配置区，保留安装与选择能力。\n- 清理迁移后产生的死代码/空壳/无用 import，遵循架构原则（避免只转发 props 的薄壳层）。\n- 遵循 web-ui 设计系统与暗色主题。\n\n依赖：本任务依赖前置任务 798c7（输入框内联配置）先落地，避免「旧入口已删、新家未建」的空档。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781241877066,
+  "updatedAt": 1781251466493,
+  "column": "trash",
+  "rank": "aLaV",
+  "dependsOn": []
+}

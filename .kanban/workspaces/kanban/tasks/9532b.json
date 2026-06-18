@@ -1,0 +1,19 @@
+{
+  "id": "9532b",
+  "title": "Vault: getDocumentHistory(git log -p)端点 + CLI",
+  "prompt": "目标:为 vault 文档加一个文档历史查询端点 + CLI 子命令,基于 git。设计文档(.plan/docs/files-as-knowledge-vault.md)里 B 区已把它标为 'a later task',现在 src/trpc / src/vault / src/commands 里都还没有。\n\n背景:\n- vault 文档是 <repo>/.kanban/files/docs/<type>/<slug>-<id>.md 的纯文本 markdown,历史天然在 git 里(B5/B6 已把 requirement-versions 退役,git 就是版本记录)。\n- VaultDocumentStore 在 src/vault/vault-document-store.ts,按 id 定位文件(rename 会 git-mv),可复用它把 id 解析成相对路径。\n\n要做:\n1) 在 vault 引擎/store 层加 getDocumentHistory(id):shell 出 'git log -p --follow -- <docRelPath>'(--follow 以跟踪 rename),解析成结构化条目数组(commit hash、author、日期、message、可选 diff/patch)。注意文件路径可能因 slug 改名变过,--follow 必需。返回类型放进契约。\n2) 契约(src/core/api-contract.ts):新增 runtimeVaultDocumentHistory* 的 request/response schema(沿用现有 vault doc 端点家族的命名风格),additive,保证 web:typecheck 通过。\n3) tRPC:在 src/trpc/workspace-api.ts + app-router.ts 加 getDocumentHistory 查询端点。\n4) CLI:在 src/commands/vault.ts 加 'doc history --id <id>' 子命令,输出 JSON。\n5) 测试:在临时 git 仓库里建文档→改两次→断言历史条目顺序/数量/message;覆盖经过 rename(改 title 触发 git-mv)后 --follow 仍能拿到完整历史。保持 vault 引擎不引入 agent-sdk import 以便 vitest 可测。\n\n约束:遵守 AGENTS.md(无 any、无 inline import、复用 SDK/既有 helper)。注意 commander 嵌套子命令共享 --project-path 时用 this.optsWithGlobals()(AGENTS.md 里有记录)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781489040737,
+  "updatedAt": 1781511129115,
+  "column": "trash",
+  "rank": "aLW",
+  "dependsOn": []
+}

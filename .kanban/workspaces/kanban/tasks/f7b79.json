@@ -1,0 +1,19 @@
+{
+  "id": "f7b79",
+  "title": "任意任务都能切换 agent 并真正生效(不重烧额度)",
+  "prompt": "目标:让【任何任务、任何状态(backlog/in_progress/review/done)】都能切换 agent,并且切了一定真生效——杜绝『task.agentId 改了、实际跑的还是旧 agent』这种静默不一致。切换要省额度:新 agent 继承 worktree 的代码进度接着干,不把原始 prompt 从头重跑。\n\n## 背景:本轮实测暴露的根因(已定位,先读)\n- agent 解析在 src/trpc/runtime-api.ts:307 startTaskSession,effectiveAgentId(约 :346)= previousTerminalAgentId ?? homeThreadAgentId ?? body.agentId ?? selectedAgentId。\n- TerminalSessionManager 里任务一旦建过某 agent 的会话,会话 summary 会『粘住』:重启走『用记录的 session-id --resume』那条路(见 :171-172 注释 + claude adapter),把 agent 重新 pin 回旧 agent,无视改过的 task.agentId。\n- 实测:把 task.agentId 从 codex 改成 claude 后,task start / kill 进程重起,session.agentId 仍是 codex;只有把任务删掉重建(清掉粘住的会话)才换得动。这就是要修的 bug。\n- 既有可复用零件(不用重构):① per-task worktree 是 agent 无关的(.kanban/worktrees/<id>/,代码进度与 agent 无关,换 agent 不该动它);② closeTaskSession 停会话原语在 src/terminal/session-manager.ts 和 src/agent-sdk/kanban/pi-task-session-service.ts 都已实现(停进程+丢内存条目+清该会话 transcript,不动 worktree),现被 home 线程硬关闭使用;③ task.agentId 已可持久化、可改(CLI task update --agent-id,web-ui 卡片 agent 选择)。\n\n## 要做的(targeted,非重写)\n1. 【切 agent 必生效】切换/启动时检测:若该任务存在 live 或记录的会话且其 agent ≠ task.agentId → 先 closeTaskSession 关掉旧会话,再以 task.agentId 起新会话。核心:agent 变了就【绝不 resume 旧 agent 的会话】;agent 没变才走正常 resume。\n   - 修正 effectiveAgentId 解析:当前 task.agentId(卡片 override)应优先于『粘住的 previousTerminalAgentId』;previousTerminalAgentId 只在 agent 未变时用于 resume。理清 resumeFromTrash 路径不要再把旧 agent 强行带回。\n   - 保证任何列的任务都能切:backlog 仅改字段(下次 start 用新 agent);in_progress 有活会话→停旧起新;review/done→改字段,后续启动用新 agent。\n2. 【干净的切换/重启操作】暴露一个明确的『以新 agent 重启/切换』编排(close→update→start),CLI + web-ui 都要有。顺带补 CLI task stop(原地停会话,不 done/不 delete)与 restart。\n3. 【不重烧额度】close 只清会话 transcript,【不动 worktree】→ 新 agent 落在同一 worktree 继承代码进度。换 agent 后给新 agent 的开场白用『基于当前 worktree 现状继续本任务』的措辞,而不是把原始 prompt 整段重发重做。\n   - 【硬约束】不做跨 agent 的会话/上下文共享(这是既定策略 no-cross-agent-session-sharing):新 agent 不导入旧 agent 的对话记录,只继承 worktree 文件状态。已与用户确认接受此语义(切运行中任务会丢旧 agent 对话、接代码继续,无交接摘要)。\n4. 【一致性兜底】task.agentId 与活会话 agent 不允许长期不一致;若检测到不一致,以 task.agentId 为准并收敛(关旧会话)。\n\n## plan 阶段先定的交互点\n- 切『正在运行』的任务的 agent 时:是【自动停旧+以新 agent 重启】,还是【弹确认】(提示会丢失旧 agent 当前对话、worktree 代码保留)?给出推荐与理由。\n- 开场白构造:复用现有 prompt 还是新增『继续』模板;不得违反 no-cross-agent-session-sharing。\n\n## 约束\n- 复用 closeTaskSession,不要新造停会话机制。\n- pi 路径与 terminal/CLI agent 路径都要覆盖(两个 session 服务)。\n- 不破坏 home 多线程(每线程自带 agent)、trash-restore、现有 per-agent 独立会话与 resume(同 agent 仍能 resume 自己的会话)。\n- typecheck / 相关单测通过;补测覆盖『改 agent 后 start 必用新 agent、session.agentId 收敛、worktree 不被清』。\n\n先给方案(含上面两个交互点的决策)再实现。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781770878127,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aL1t",
+  "dependsOn": []
+}

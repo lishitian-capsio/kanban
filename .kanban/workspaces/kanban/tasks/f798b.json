@@ -1,0 +1,19 @@
+{
+  "id": "f798b",
+  "title": "修复：聊天输入框打 / 无任何斜杠指令提示（pi 未暴露 listSlashCommands）",
+  "prompt": "Bug：在聊天 composer 输入框里打 '/' 时没有任何斜杠指令提示/自动补全（pi 的输入框同样表现），连唯一真正生效的 /clear 都发现不了。\n\n根因（已排查）：\n- 斜杠指令框架是有的，但 pi 没暴露任何指令：src/agent-sdk/kanban/pi-task-session-service.ts 的 listSlashCommands() 直接返回 []。这正是 pi 输入框打 / 没提示的原因。\n- /clear 是在发送层（src/trpc/runtime-api.ts）硬编码拦截路由到 piService.clearTaskSession() 的，它并不在 listSlashCommands() 返回的列表里，所以前端补全永远看不到它。\n- getKanbanSlashCommands 后端实现（runtime-api.ts）最终就是调 piService.listSlashCommands(workspacePath)。\n\n前端机制（已读通，前端是好的，无需改动其触发/渲染逻辑，只需后端给出非空列表）：\n- 拉取：composer 检测到当前 token 为 '/' 开头（activeToken.kind==='slash'）时触发 tRPC getKanbanSlashCommands.query()，120ms 防抖、按 workspace 缓存、一会话拉一次。\n- 检测：kanban-chat-composer-completion.ts 的 detectActiveKanbanComposerToken(value,cursorIndex) 从光标往前扫到空白边界，要求 '/' 在 token 起始且前面是词边界、'/' 后不含空格或第二个 '/'，返回 {kind:'slash',start,end,query}，query='/'后已输入部分用于过滤。\n- 渲染：Radix Popover 的 InlineCompletionPicker 锚定 textarea、side='top' 显示在上方，支持上下/Tab/hover 选择。\n- 过滤：composer 用 activeToken.query 同时匹配 command.name 与 command.description。\n- 回填：选中后 buildSlashCommandInsertText(name)→'/name'，applyKanbanComposerCompletion 替换原 token 并智能补空格、移动光标。\n- 契约：src/core/api-contract.ts 的 RuntimeSlashCommand={name, instructions, description?}；UI 用 name 做 label '/name'、description 做副标题+过滤，instructions 目前前端未用（预留给 agent 语义指引）。\n\n期望修复：至少让内置 /clear 出现在 composer 的斜杠补全列表里（把内置的 /clear 纳入 getKanbanSlashCommands 返回，带 description），保证 pi 与其他 agent 输入 '/' 都能看到提示。让内置指令成为单一来源（slash-commands.ts 已有 KANBAN_BUILTIN_SLASH_COMMANDS=[{name:'clear',description:'...'}] 与 isKanbanClearSlashCommand 解析器；解析与列表应共用同一份定义，避免漂移）。\n\n注意可见范围：/clear 走发送层硬编码拦截——确认它对终端 agent（claude/codex 等）是否也实际生效，避免给某 agent 列出一个对它无效的指令。配回归测试 + 验证前端（尤其 pi）打 '/' 能看到补全。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781745946944,
+  "updatedAt": 1781776062124,
+  "column": "trash",
+  "rank": "aLA",
+  "dependsOn": []
+}

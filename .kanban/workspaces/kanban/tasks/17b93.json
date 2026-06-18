@@ -1,0 +1,19 @@
+{
+  "id": "17b93",
+  "title": "[provider] 每 agent 多 provider 池 + 会话级选中（后端）",
+  "prompt": "背景：commit a3bf6c9 的 src/agent-sdk/kanban/agent-provider-config.ts 目前每个 agent 只存【单个】provider 配置(provider 字段是单数)。产品决定要支持『会话 A 用甲、会话 B 用乙』并行——所以需要每个 agent 可登记【多个】provider，并在【新建会话时】选其中一个，按会话注入。\n\n任务（后端）：\n1. 把 agent-provider-config 的模型从『每 agent 单 provider』升级为『每 agent 一组命名 provider + 一个默认』。持久化仍在 ~/.kanban/settings/agent_providers.json（非密）；密钥仍存 machine-home secrets。CRUD（agent-provider-service.ts、runtime-api.ts 的 listAgentProviderConfigs/saveAgentProviderConfig）相应扩展为按 (agentId, providerId) 增删改查。\n2. startTaskSession/起会话链路：agentSettings.providerId 已被 contract 接受，但要全链路打通到 env 注入——把 src/unified-proxy/env-injector.ts 的 buildAgentProviderEnv(agentId) 改为可按传入的 providerId 解析具体 provider（而非该 agent 的唯一 config）。session-manager.ts 起会话时把会话选中的 providerId 传进去。\n3. 没选时回落到该 agent 的默认 provider / 官方。\n\n依赖：先做『claude 改按会话注 env』那个任务（同样改 env-injector.ts，避免冲突）。\n验收：可为 claude 登记多个 provider；两个 claude 会话分别指定不同 providerId 启动时各自注入不同 ANTHROPIC_BASE_URL/key，互不影响；contract(src/core/api-contract.ts)与 tRPC 更新；单测通过。不要动 .kanban/ 运行时数据。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781489134742,
+  "updatedAt": 1781511129115,
+  "column": "trash",
+  "rank": "aLU",
+  "dependsOn": []
+}

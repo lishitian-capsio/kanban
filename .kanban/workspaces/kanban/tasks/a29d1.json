@@ -1,0 +1,18 @@
+{
+  "id": "a29d1",
+  "title": "web-ui: 需求详情的版本历史 + diff + 回滚",
+  "prompt": "在现有 Requirements 详情面板（web-ui/src/components/requirements/requirement-detail-panel.tsx）中增加版本历史能力。依赖已完成的'需求版本历史（数据层 + CLI）'任务。\n\n要求：\n1. 详情面板里新增'历史'区：按时间倒序列出该需求的版本，每条显示时间戳、来源（human / agent review）。\n2. 选中两个版本可看 diff（title/description/priority/status 字段级对比）。\n3. 一键回滚到某个旧版本（回滚本身记为一条新版本，由数据层处理）。\n4. 版本数据从已有的 workspace 同步流（useWorkspaceSync）读取，不另起数据通道。\n\n遵循 web-ui 规范：Tailwind v4 + Radix + Lucide + design tokens，always-dark，不用 dark: 前缀。复用 src/components/ui 下的 primitives 与 requirement-meta 里的 priority/status 展示。先读 requirement-detail-panel.tsx 与 requirements-view.tsx 了解现状。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1780990409806,
+  "updatedAt": 1780997746554,
+  "column": "trash",
+  "rank": "aQ",
+  "dependsOn": []
+}
