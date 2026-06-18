@@ -16,6 +16,7 @@ import {
 	commitBoardWorktree,
 	fetchAndFastForwardBoardWorktree,
 	getBoardWorktreeAheadBehind,
+	getBoardWorktreePath,
 	pullBoardWorktree,
 	pushBoardWorktree,
 	renameBoardBranch,
@@ -135,6 +136,7 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 				behindCount: 0,
 				autoSyncPaused: false,
 				lastError: null,
+				worktreePath: null,
 			};
 		}
 		const branch = await resolveBranch(repoPath);
@@ -170,6 +172,7 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 			behindCount: ab.behindCount,
 			autoSyncPaused,
 			lastError: last?.conflict ? (last.error ?? CONFLICT_MESSAGE) : (last?.error ?? null),
+			worktreePath: getBoardWorktreePath(repoPath),
 		};
 	};
 

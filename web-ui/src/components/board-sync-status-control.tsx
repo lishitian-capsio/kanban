@@ -1,4 +1,6 @@
 import { AlertTriangle, ArrowDown, ArrowUp, Check, GitBranch, Pause, Play } from "lucide-react";
+import { useEffect, useState } from "react";
+import { BoardConflictDialog } from "@/components/board-conflict-dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
@@ -58,6 +60,17 @@ export function BoardSyncStatusControl({
 }: BoardSyncStatusControlProps): React.ReactElement {
 	const appearance = describeState(status.state);
 	const branchLabel = status.branch ?? "kanban/board";
+	const needsAttention = status.state === "conflict" || status.state === "error";
+	const [detailOpen, setDetailOpen] = useState(false);
+
+	// Close the detail dialog once the sync recovers (a retry succeeded, or a remote
+	// fetch moved the state out of conflict/error), so it never lingers stale.
+	useEffect(() => {
+		if (!needsAttention && detailOpen) {
+			setDetailOpen(false);
+		}
+	}, [needsAttention, detailOpen]);
+
 	const tooltipLines = [`Board branch: ${branchLabel}`];
 	if (status.autoSyncPaused) {
 		tooltipLines.push("Auto-sync is paused.");
@@ -65,6 +78,15 @@ export function BoardSyncStatusControl({
 	if (status.lastError) {
 		tooltipLines.push(status.lastError);
 	}
+	if (needsAttention) {
+		tooltipLines.push("Click for details.");
+	}
+
+	const badgeClassName = cn(
+		"inline-flex items-center gap-1 rounded-md border border-border bg-surface-2 px-1.5 py-0.5 text-xs whitespace-nowrap",
+		appearance.toneClassName,
+		needsAttention && "cursor-pointer hover:bg-surface-3",
+	);
 
 	return (
 		<div className="flex items-center min-w-0 gap-1">
@@ -79,18 +101,36 @@ export function BoardSyncStatusControl({
 					</span>
 				}
 			>
-				<span
-					className={cn(
-						"inline-flex items-center gap-1 rounded-md border border-border bg-surface-2 px-1.5 py-0.5 text-xs whitespace-nowrap",
-						appearance.toneClassName,
-					)}
-					data-testid="board-sync-badge"
-					data-board-sync-state={status.state}
-				>
-					{appearance.icon}
-					<span>{appearance.label}</span>
-				</span>
+				{needsAttention ? (
+					<button
+						type="button"
+						className={badgeClassName}
+						data-testid="board-sync-badge"
+						data-board-sync-state={status.state}
+						onClick={() => setDetailOpen(true)}
+						aria-label={`${appearance.label} — show board sync details`}
+					>
+						{appearance.icon}
+						<span>{appearance.label}</span>
+					</button>
+				) : (
+					<span className={badgeClassName} data-testid="board-sync-badge" data-board-sync-state={status.state}>
+						{appearance.icon}
+						<span>{appearance.label}</span>
+					</span>
+				)}
 			</Tooltip>
+
+			{needsAttention ? (
+				<BoardConflictDialog
+					open={detailOpen}
+					onOpenChange={setDetailOpen}
+					status={status}
+					runningAction={runningAction}
+					onPush={onPush}
+					onPull={onPull}
+				/>
+			) : null}
 
 			{status.hasRemote ? (
 				<div className="flex gap-0">

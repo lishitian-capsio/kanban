@@ -146,6 +146,19 @@ describe.sequential("board-branch decoupling migration (P2)", () => {
 				expect(gitStatus(repoPath)).toBe("");
 				const reloaded = await loadWorkspaceState(repoPath);
 				expect(reloaded.board.columns.length).toBeGreaterThan(0);
+
+				// End-to-end (the 9d884 scenario): the runtime keeps writing board state,
+				// yet the *code* tree stays clean — so switching code branches is never
+				// blocked by "local changes would be overwritten", no pre-commit patch needed.
+				await saveWorkspaceState(repoPath, {
+					board: singleTaskBoard("tsk-after-decouple"),
+					sessions: {},
+					expectedRevision: reloaded.revision,
+				});
+				expect(gitStatus(repoPath)).toBe("");
+				git(repoPath, ["switch", "-q", "-c", "feature/probe"]);
+				expect(gitStatus(repoPath)).toBe("");
+				expect(git(repoPath, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("feature/probe");
 			});
 		} finally {
 			cleanup();

@@ -227,7 +227,13 @@ describe("createBoardSyncService status + controls", () => {
 			git(repoPath, ["commit", "-q", "--allow-empty", "-m", "init"]);
 			const service = createBoardSyncService({ broadcastWorkspaceState: vi.fn(), debounceMs: 10 });
 			const status = await service.getStatus(target(repoPath));
-			expect(status).toMatchObject({ state: "disabled", decoupled: false, branch: null, hasRemote: false });
+			expect(status).toMatchObject({
+				state: "disabled",
+				decoupled: false,
+				branch: null,
+				hasRemote: false,
+				worktreePath: null,
+			});
 			await service.dispose();
 		} finally {
 			cleanup();
@@ -244,6 +250,7 @@ describe("createBoardSyncService status + controls", () => {
 				decoupled: true,
 				branch: "kanban/board",
 				hasRemote: false,
+				worktreePath: getBoardWorktreePath(repoPath),
 			});
 			await service.dispose();
 		} finally {

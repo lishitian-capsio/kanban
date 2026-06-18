@@ -33,6 +33,7 @@ function makeStatus(overrides: Partial<RuntimeBoardSyncStatus> = {}): RuntimeBoa
 		behindCount: 0,
 		autoSyncPaused: false,
 		lastError: null,
+		worktreePath: "/repo/.kanban/worktrees/__board__/repo",
 		...overrides,
 	};
 }
@@ -98,6 +99,36 @@ describe("BoardSyncStatusControl", () => {
 		expect(resume).not.toBeNull();
 		act(() => (resume as HTMLButtonElement).click());
 		expect(onTogglePause).toHaveBeenCalledTimes(1);
+	});
+
+	it("opens a conflict detail dialog with the worktree path and a retry pull action", () => {
+		const onPull = vi.fn();
+		render({
+			status: makeStatus({
+				state: "conflict",
+				lastError: "diverged content conflict",
+				worktreePath: "/repo/.kanban/worktrees/__board__/repo",
+			}),
+			runningAction: null,
+			isTogglingPause: false,
+			onPush: vi.fn(),
+			onPull,
+			onTogglePause: vi.fn(),
+		});
+
+		const badge = container.querySelector("[data-testid='board-sync-badge']") as HTMLButtonElement | null;
+		expect(badge?.tagName).toBe("BUTTON");
+		act(() => badge?.click());
+
+		// The dialog renders through a Radix portal into document.body.
+		expect(document.body.textContent).toContain("Board sync conflict");
+		expect(document.body.textContent).toContain("/repo/.kanban/worktrees/__board__/repo");
+		const retryPull = [...document.body.querySelectorAll("button")].find((b) =>
+			b.textContent?.includes("Retry pull"),
+		);
+		expect(retryPull).toBeDefined();
+		act(() => (retryPull as HTMLButtonElement).click());
+		expect(onPull).toHaveBeenCalledTimes(1);
 	});
 
 	it("hides push/pull for a local-only (no remote) board", () => {

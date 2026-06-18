@@ -628,6 +628,12 @@ export const runtimeBoardSyncStatusSchema = z.object({
 	autoSyncPaused: z.boolean(),
 	/** A short message describing the last conflict/error, when relevant. */
 	lastError: z.string().nullable(),
+	/**
+	 * Absolute path to the board worktree on disk, or null when decoupling is inactive.
+	 * Surfaced so the conflict-resolution UI can point the user at where to resolve a
+	 * surfaced merge conflict manually (the worktree is runtime-exclusive).
+	 */
+	worktreePath: z.string().nullable(),
 });
 export type RuntimeBoardSyncStatus = z.infer<typeof runtimeBoardSyncStatusSchema>;
 
