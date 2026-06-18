@@ -41,6 +41,9 @@ export interface CreateRuntimeStateHubDependencies {
 	>;
 }
 
+/** Observer of every task session-summary update across both agent kinds. */
+export type TaskSessionSummaryObserver = (workspaceId: string, summary: RuntimeTaskSessionSummary) => void;
+
 export interface RuntimeStateHub {
 	trackTerminalManager: (workspaceId: string, manager: TerminalSessionManager) => void;
 	trackPiTaskSessionService: (workspaceId: string, workspacePath: string, service: PiTaskSessionService) => void;
@@ -61,6 +64,13 @@ export interface RuntimeStateHub {
 	bumpKanbanSessionContextVersion: () => void;
 	broadcastTaskReadyForReview: (workspaceId: string, taskId: string) => void;
 	broadcastBoardSyncStatusUpdated: (workspaceId: string, status: RuntimeBoardSyncStatus) => void;
+	/**
+	 * Register the in-process takeover observer. The hub is the single point both
+	 * managers' `onSummary` streams already flow through, so it forwards every task
+	 * session-summary update here. Set once by the runtime server after the takeover
+	 * coordinator (which needs the session managers) is built; unset → no takeover.
+	 */
+	registerTaskSessionSummaryObserver: (observer: TaskSessionSummaryObserver) => void;
 	close: () => Promise<void>;
 }
 
@@ -76,6 +86,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 	const runtimeStateClients = new Set<WebSocket>();
 	const runtimeStateWorkspaceIdByClient = new Map<WebSocket, string>();
 	let kanbanSessionContextVersion = 0;
+	let taskSessionSummaryObserver: TaskSessionSummaryObserver | null = null;
 	const runtimeStateWebSocketServer = new WebSocketServer({ noServer: true });
 	const workspaceMetadataMonitor = createWorkspaceMetadataMonitor({
 		onMetadataUpdated: (workspaceId, workspaceMetadata) => {
@@ -527,6 +538,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			}
 			const unsubscribe = manager.onSummary((summary) => {
 				queueTaskSessionSummaryBroadcast(workspaceId, summary);
+				taskSessionSummaryObserver?.(workspaceId, summary);
 			});
 			terminalSummaryUnsubscribeByWorkspaceId.set(workspaceId, unsubscribe);
 			// CLI/terminal agents expose the same agent-agnostic transcript as pi;
@@ -550,6 +562,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 				const previousSummary = previousSummariesByTaskId.get(summary.taskId);
 				previousSummariesByTaskId.set(summary.taskId, summary);
 				queueTaskSessionSummaryBroadcast(workspaceId, summary);
+				taskSessionSummaryObserver?.(workspaceId, summary);
 				const didCheckpointChange =
 					previousSummary?.latestTurnCheckpoint?.commit !== summary.latestTurnCheckpoint?.commit ||
 					previousSummary?.previousTurnCheckpoint?.commit !== summary.previousTurnCheckpoint?.commit;
@@ -587,6 +600,9 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 		broadcastBoardSyncStatusUpdated,
 		bumpKanbanSessionContextVersion,
 		broadcastTaskReadyForReview,
+		registerTaskSessionSummaryObserver: (observer: TaskSessionSummaryObserver) => {
+			taskSessionSummaryObserver = observer;
+		},
 		close: async () => {
 			for (const timer of taskSessionBroadcastTimersByWorkspaceId.values()) {
 				clearTimeout(timer);

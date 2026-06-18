@@ -4,10 +4,13 @@ import {
 	type RuntimeCommandRunRequest,
 	type RuntimeConfigSaveRequest,
 	type RuntimeDirectoryListRequest,
+	type RuntimeFetchRemoteModelsRequest,
+	type RuntimeFetchRemoteModelsResponse,
 	type RuntimeGitCheckoutRequest,
 	type RuntimeHomeChatThreadCloseRequest,
 	type RuntimeHomeChatThreadCreateRequest,
 	type RuntimeHomeChatThreadRenameRequest,
+	type RuntimeHomeChatThreadTakeoverUpdateRequest,
 	type RuntimeHookIngestRequest,
 	type RuntimeKanbanAccountSwitchRequest,
 	type RuntimeKanbanDeviceAuthCompleteRequest,
@@ -15,8 +18,6 @@ import {
 	type RuntimeKanbanMcpSettingsSaveRequest,
 	type RuntimeKanbanOauthLoginRequest,
 	type RuntimeKanbanProviderModelsRequest,
-	type RuntimeFetchRemoteModelsRequest,
-	type RuntimeFetchRemoteModelsResponse,
 	type RuntimeProjectAddRequest,
 	type RuntimeProjectRemoveRequest,
 	type RuntimeShellSessionStartRequest,
@@ -38,10 +39,12 @@ import {
 	runtimeCommandRunRequestSchema,
 	runtimeConfigSaveRequestSchema,
 	runtimeDirectoryListRequestSchema,
+	runtimeFetchRemoteModelsRequestSchema,
 	runtimeGitCheckoutRequestSchema,
 	runtimeHomeChatThreadCloseRequestSchema,
 	runtimeHomeChatThreadCreateRequestSchema,
 	runtimeHomeChatThreadRenameRequestSchema,
+	runtimeHomeChatThreadTakeoverUpdateRequestSchema,
 	runtimeHookIngestRequestSchema,
 	runtimeKanbanAccountSwitchRequestSchema,
 	runtimeKanbanDeviceAuthCompleteRequestSchema,
@@ -49,7 +52,6 @@ import {
 	runtimeKanbanMcpSettingsSaveRequestSchema,
 	runtimeKanbanOauthLoginRequestSchema,
 	runtimeKanbanProviderModelsRequestSchema,
-	runtimeFetchRemoteModelsRequestSchema,
 	runtimeProjectAddRequestSchema,
 	runtimeProjectRemoveRequestSchema,
 	runtimeShellSessionStartRequestSchema,
@@ -326,6 +328,19 @@ export function parseHomeChatThreadCloseRequest(value: unknown): RuntimeHomeChat
 	}
 	return {
 		id,
+	};
+}
+
+export function parseHomeChatThreadTakeoverUpdateRequest(value: unknown): RuntimeHomeChatThreadTakeoverUpdateRequest {
+	const parsed = parseWithSchema(runtimeHomeChatThreadTakeoverUpdateRequestSchema, value);
+	const id = parsed.id.trim();
+	if (!id) {
+		throw new Error("Home chat thread id cannot be empty.");
+	}
+	return {
+		id,
+		enabled: parsed.enabled,
+		...(parsed.extension === undefined ? {} : { extension: parsed.extension }),
 	};
 }
 

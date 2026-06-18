@@ -36,15 +36,23 @@ import {
 	validatePasscode,
 	validateSession,
 } from "../security/passcode-manager";
+import { deliverPromptToHomeSession } from "../session/home-session-delivery";
 import { createWorkspaceHomeThreadStore, type HomeThreadStore } from "../session/home-thread-store";
 import { FileSessionMessageJournal } from "../session/session-message-journal";
-import { getWorkspaceSessionMessagesDirPath, loadWorkspaceContextById } from "../state/workspace-state";
+import { SessionTakeoverCoordinator, type TakeoverTarget } from "../session/session-takeover";
+import {
+	getWorkspaceSessionMessagesDirPath,
+	loadWorkspaceBoardById,
+	loadWorkspaceContextById,
+	loadWorkspaceHomeThreads,
+	resolveRepoPathForWorkspaceId,
+} from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { createTerminalWebSocketBridge } from "../terminal/ws-server";
 import { type RuntimeTrpcContext, type RuntimeTrpcWorkspaceScope, runtimeAppRouter } from "../trpc/app-router";
 import { createHooksApi } from "../trpc/hooks-api";
 import { createProjectsApi } from "../trpc/projects-api";
-import { createRuntimeApi } from "../trpc/runtime-api";
+import { createRuntimeApi, launchHomeAgentSession } from "../trpc/runtime-api";
 import { type BoardSyncApi, createWorkspaceApi } from "../trpc/workspace-api";
 import { type BoardSyncService, createBoardSyncService } from "../workspace/board-sync";
 import { getWebUiDir, normalizeRequestPath, readAsset } from "./assets";
@@ -199,6 +207,71 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 	const disposeHomeThreadStore = (workspaceId: string): void => {
 		homeThreadStoreByWorkspaceId.delete(workspaceId);
 	};
+
+	// In-process takeover hook (decision 43f28): when a task created from a home
+	// thread transitions (plan-ready / review / failure), and that thread's takeover
+	// switch is on, render the event into a prompt and inject it back into the
+	// originating home session. No websocket — the runtime state hub forwards every
+	// session-summary update here. Targeting and delivery I/O are injected so the
+	// coordinator stays pure; failures are logged, never thrown.
+	const launchHomeSessionDeps = {
+		getScopedPiTaskSessionService,
+		getScopedTerminalManager,
+		loadScopedRuntimeConfig: deps.workspaceRegistry.loadScopedRuntimeConfig,
+	};
+	const sessionTakeoverCoordinator = new SessionTakeoverCoordinator({
+		resolveTarget: async (workspaceId, taskId): Promise<TakeoverTarget | null> => {
+			const board = await loadWorkspaceBoardById(workspaceId);
+			let originSessionId: string | undefined;
+			for (const column of board.columns) {
+				const card = column.cards.find((entry) => entry.id === taskId);
+				if (card) {
+					originSessionId = card.originHomeSessionId;
+					break;
+				}
+			}
+			if (!originSessionId) {
+				return null;
+			}
+			const parts = parseHomeAgentSessionId(originSessionId);
+			if (!parts) {
+				return null;
+			}
+			const { threads } = await loadWorkspaceHomeThreads(workspaceId);
+			// The default thread is synthetic (not a registry entry), so only explicitly
+			// created threads can carry a takeover switch — an unmatched id stays off.
+			const thread = threads.find((entry) => entry.id === parts.threadId);
+			if (!thread?.takeoverEnabled) {
+				return null;
+			}
+			return { sessionId: originSessionId, extension: thread.takeoverExtension ?? null };
+		},
+		deliver: async (sessionId, prompt) => {
+			const parts = parseHomeAgentSessionId(sessionId);
+			if (!parts) {
+				return;
+			}
+			const workspacePath = await resolveRepoPathForWorkspaceId(parts.workspaceId);
+			if (!workspacePath) {
+				return;
+			}
+			const scope: RuntimeTrpcWorkspaceScope = { workspaceId: parts.workspaceId, workspacePath };
+			const piService = await getScopedPiTaskSessionService(scope);
+			const terminalManager = await getScopedTerminalManager(scope);
+			await deliverPromptToHomeSession(
+				{
+					piService,
+					terminalManager,
+					launch: (sid, text) => launchHomeAgentSession(scope, sid, text, launchHomeSessionDeps),
+				},
+				sessionId,
+				prompt,
+			);
+		},
+	});
+	deps.runtimeStateHub.registerTaskSessionSummaryObserver((workspaceId, summary) => {
+		sessionTakeoverCoordinator.handleSummary(workspaceId, summary);
+	});
 
 	// Board-branch decoupling: after each committed-data change the board worktree is
 	// committed + (debounced) pushed; on boot it is fast-forwarded from the remote. A

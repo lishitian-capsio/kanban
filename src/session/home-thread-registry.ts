@@ -33,6 +33,7 @@ export function createHomeThread(
 		id: input.id,
 		agentId: input.agentId,
 		name: input.name,
+		takeoverEnabled: false,
 		createdAt: input.now,
 		updatedAt: input.now,
 	};
@@ -51,6 +52,42 @@ export function renameHomeThread(
 	}
 	return {
 		threads: data.threads.map((thread) => (thread.id === id ? { ...thread, name, updatedAt: now } : thread)),
+	};
+}
+
+export interface SetHomeThreadTakeoverInput {
+	enabled: boolean;
+	// undefined → keep the current extension; null → clear it; string → set it.
+	extension?: string | null;
+}
+
+/**
+ * Set a thread's agent-takeover switch (and optionally its extension reference),
+ * bumping updatedAt. Throws if the thread is missing. Pure — persistence lives in
+ * the surrounding store.
+ */
+export function setHomeThreadTakeover(
+	data: RuntimeHomeChatThreadsData,
+	id: string,
+	input: SetHomeThreadTakeoverInput,
+	now: number,
+): RuntimeHomeChatThreadsData {
+	if (!data.threads.some((thread) => thread.id === id)) {
+		throw new Error(`Home chat thread "${id}" not found.`);
+	}
+	return {
+		threads: data.threads.map((thread) => {
+			if (thread.id !== id) {
+				return thread;
+			}
+			const next: RuntimeHomeChatThread = { ...thread, takeoverEnabled: input.enabled, updatedAt: now };
+			if (input.extension === null) {
+				delete next.takeoverExtension;
+			} else if (input.extension !== undefined) {
+				next.takeoverExtension = input.extension;
+			}
+			return next;
+		}),
 	};
 }
 

@@ -44,6 +44,7 @@ import {
 	parseHomeChatThreadCloseRequest,
 	parseHomeChatThreadCreateRequest,
 	parseHomeChatThreadRenameRequest,
+	parseHomeChatThreadTakeoverUpdateRequest,
 	parseKanbanAccountSwitchRequest,
 	parseKanbanDeviceAuthCompleteRequest,
 	parseKanbanMcpOAuthRequest,
@@ -153,6 +154,81 @@ async function loadSelectedCommittedProvider(scope: RuntimeTrpcWorkspaceScope): 
 	} catch {
 		return null;
 	}
+}
+
+/** Dependencies needed to (re)launch a home agent session outside the per-request api. */
+export type LaunchHomeAgentSessionDeps = Pick<
+	CreateRuntimeApiDependencies,
+	"getScopedPiTaskSessionService" | "getScopedTerminalManager" | "loadScopedRuntimeConfig"
+>;
+
+/**
+ * (Re)launch a home (sidebar) agent session with `prompt` as its kickoff turn.
+ *
+ * The home-session slice of {@link startTaskSession} (cwd = repo root, agent resolved
+ * from the session id), extracted so the in-process takeover delivery seam can revive
+ * a session that is no longer live without standing up the full per-request api (which
+ * owns MCP/provider services). pi → lazy start with `resumeFromPersistence`; CLI →
+ * relaunch (the claude adapter resumes via the recorded `--session-id`/`--resume`).
+ * A no-op when the id is not a home session or no agent command is configured.
+ */
+export async function launchHomeAgentSession(
+	scope: RuntimeTrpcWorkspaceScope,
+	sessionId: string,
+	prompt: string,
+	deps: LaunchHomeAgentSessionDeps,
+): Promise<void> {
+	if (!isHomeAgentSessionId(sessionId)) {
+		return;
+	}
+	const scopedRuntimeConfig = await deps.loadScopedRuntimeConfig(scope);
+	const effectiveAgentId = resolveHomeAgentId(sessionId) ?? scopedRuntimeConfig.selectedAgentId;
+	const cwd = scope.workspacePath;
+	if (effectiveAgentId === "pi") {
+		const piLaunchConfig = resolvePiLaunchConfig({
+			committedProvider: await loadSelectedCommittedProvider(scope),
+		});
+		const systemPrompt = await resolvePiHomeAgentSystemPrompt(sessionId, cwd);
+		const piService = await deps.getScopedPiTaskSessionService(scope);
+		await piService.startTaskSession({
+			taskId: sessionId,
+			cwd,
+			prompt,
+			resumeFromPersistence: true,
+			providerId: piLaunchConfig.providerId,
+			modelId: piLaunchConfig.modelId,
+			apiKey: piLaunchConfig.apiKey,
+			baseUrl: piLaunchConfig.baseUrl,
+			reasoningEffort: piLaunchConfig.reasoningEffort,
+			systemPrompt,
+		});
+		return;
+	}
+	const resolvedConfig =
+		effectiveAgentId !== scopedRuntimeConfig.selectedAgentId
+			? { ...scopedRuntimeConfig, selectedAgentId: effectiveAgentId }
+			: scopedRuntimeConfig;
+	const resolved = resolveAgentCommand(resolvedConfig);
+	if (!resolved) {
+		return;
+	}
+	const terminalManager = await deps.getScopedTerminalManager(scope);
+	await terminalManager.startTaskSession({
+		taskId: sessionId,
+		agentId: resolved.agentId,
+		binary: resolved.binary,
+		args: resolved.args,
+		autonomousModeEnabled: scopedRuntimeConfig.agentAutonomousModeEnabled,
+		cwd,
+		prompt,
+		workspaceId: scope.workspaceId,
+		proxyEnabled: scopedRuntimeConfig.proxyEnabled,
+		proxyHost: scopedRuntimeConfig.proxyHost,
+		proxyPort: scopedRuntimeConfig.proxyPort,
+		proxyUsername: scopedRuntimeConfig.proxyUsername,
+		proxyPassword: scopedRuntimeConfig.proxyPassword,
+		noProxy: scopedRuntimeConfig.noProxy,
+	});
 }
 
 export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrpcContext["runtimeApi"] {
@@ -651,6 +727,19 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				const body = parseHomeChatThreadCloseRequest(input);
 				// close() stops and clears the derived session via the store's onCloseSession hook.
 				const thread = await deps.getScopedHomeThreadStore(workspaceScope).close(body.id);
+				return { ok: true, thread };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, thread: null, error: message };
+			}
+		},
+		updateHomeThreadTakeover: async (workspaceScope, input) => {
+			try {
+				const body = parseHomeChatThreadTakeoverUpdateRequest(input);
+				const thread = await deps.getScopedHomeThreadStore(workspaceScope).setTakeover(body.id, {
+					enabled: body.enabled,
+					...(body.extension === undefined ? {} : { extension: body.extension }),
+				});
 				return { ok: true, thread };
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);

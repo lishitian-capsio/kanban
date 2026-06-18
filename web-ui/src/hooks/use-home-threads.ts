@@ -49,6 +49,7 @@ export interface UseHomeThreadsResult {
 	createThread: (input: { name: string; agentId: RuntimeAgentId }) => Promise<void>;
 	renameThread: (threadId: string, name: string) => Promise<void>;
 	closeThread: (threadId: string) => Promise<void>;
+	setThreadTakeover: (threadId: string, enabled: boolean) => Promise<void>;
 	isLoading: boolean;
 }
 
@@ -57,6 +58,9 @@ function buildDefaultThread(agentId: RuntimeAgentId): HomeThread {
 		id: DEFAULT_HOME_THREAD_ID,
 		agentId,
 		name: DEFAULT_THREAD_NAME,
+		// The synthetic default thread is not a registry entry, so it cannot carry a
+		// persisted takeover switch — it is always off (takeover applies to created threads).
+		takeoverEnabled: false,
 		createdAt: 0,
 		updatedAt: 0,
 		isDefault: true,
@@ -253,6 +257,34 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		[currentProjectId],
 	);
 
+	const setThreadTakeover = useCallback(
+		async (threadId: string, enabled: boolean) => {
+			// The synthetic default thread has no registry entry to flip.
+			if (!currentProjectId || threadId === DEFAULT_HOME_THREAD_ID) {
+				return;
+			}
+			try {
+				const response = await getRuntimeTrpcClient(currentProjectId).runtime.updateHomeThreadTakeover.mutate({
+					id: threadId,
+					enabled,
+				});
+				if (!response.ok || !response.thread) {
+					throw new Error(response.error ?? "Could not update thread takeover.");
+				}
+				const updated = response.thread;
+				setRegistryThreadsByWorkspace((current) => ({
+					...current,
+					[currentProjectId]: (current[currentProjectId] ?? []).map((thread) =>
+						thread.id === updated.id ? updated : thread,
+					),
+				}));
+			} catch (error) {
+				notifyError(error instanceof Error ? error.message : String(error));
+			}
+		},
+		[currentProjectId],
+	);
+
 	return {
 		threads,
 		activeThread,
@@ -261,6 +293,7 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		createThread,
 		renameThread,
 		closeThread,
+		setThreadTakeover,
 		isLoading: loadingWorkspaceId !== null && loadingWorkspaceId === currentProjectId,
 	};
 }

@@ -58,6 +58,7 @@ import type {
 	RuntimeHomeChatThreadMutationResponse,
 	RuntimeHomeChatThreadRenameRequest,
 	RuntimeHomeChatThreadsListResponse,
+	RuntimeHomeChatThreadTakeoverUpdateRequest,
 	RuntimeHookIngestRequest,
 	RuntimeHookIngestResponse,
 	RuntimeKanbanAccountBalanceResponse,
@@ -201,6 +202,7 @@ import {
 	runtimeHomeChatThreadMutationResponseSchema,
 	runtimeHomeChatThreadRenameRequestSchema,
 	runtimeHomeChatThreadsListResponseSchema,
+	runtimeHomeChatThreadTakeoverUpdateRequestSchema,
 	runtimeHookIngestRequestSchema,
 	runtimeHookIngestResponseSchema,
 	runtimeKanbanAccountBalanceResponseSchema,
@@ -351,6 +353,10 @@ export interface RuntimeTrpcContext {
 		closeHomeThread: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatThreadCloseRequest,
+		) => Promise<RuntimeHomeChatThreadMutationResponse>;
+		updateHomeThreadTakeover: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeHomeChatThreadTakeoverUpdateRequest,
 		) => Promise<RuntimeHomeChatThreadMutationResponse>;
 		getKanbanProviderCatalog: (
 			scope: RuntimeTrpcWorkspaceScope | null,
@@ -717,6 +723,12 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeHomeChatThreadMutationResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.closeHomeThread(ctx.workspaceScope, input);
+			}),
+		updateHomeThreadTakeover: workspaceProcedure
+			.input(runtimeHomeChatThreadTakeoverUpdateRequestSchema)
+			.output(runtimeHomeChatThreadMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.updateHomeThreadTakeover(ctx.workspaceScope, input);
 			}),
 		getKanbanProviderCatalog: t.procedure
 			.output(runtimeKanbanProviderCatalogResponseSchema)

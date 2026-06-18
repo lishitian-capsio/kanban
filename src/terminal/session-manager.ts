@@ -391,6 +391,16 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 		return entry ? cloneSummary(entry.summary) : null;
 	}
 
+	/**
+	 * Whether a live PTY process currently backs this session. A summary may
+	 * linger (hydrated from `sessions.json` or after the process exits) without a
+	 * live process; the takeover delivery seam uses this to decide whether to
+	 * `writeInput` into the running session or relaunch (e.g. claude `--resume`).
+	 */
+	isSessionLive(taskId: string): boolean {
+		return this.entries.get(taskId)?.active != null;
+	}
+
 	listSummaries(): RuntimeTaskSessionSummary[] {
 		return Array.from(this.entries.values()).map((entry) => cloneSummary(entry.summary));
 	}

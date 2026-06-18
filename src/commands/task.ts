@@ -11,7 +11,7 @@ import type {
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
 import { runtimeAgentIdSchema, runtimeReasoningEffortSchema } from "../core/api-contract";
-import { resolveCreateTaskAgentId } from "../core/default-task-agent";
+import { resolveCreateTaskAgentId, resolveCreateTaskOriginSession } from "../core/default-task-agent";
 import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import {
 	addTaskDependency,
@@ -432,6 +432,7 @@ async function createTask(input: {
 	agentId?: RuntimeAgentId;
 	agentSettings?: RuntimeTaskAgentSettings;
 	owner?: RuntimeTaskOwner;
+	originHomeSessionId?: string;
 }): Promise<JsonRecord> {
 	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd);
 	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
@@ -458,6 +459,7 @@ async function createTask(input: {
 				agentId: input.agentId,
 				agentSettings: input.agentSettings,
 				owner: resolvedOwner,
+				originHomeSessionId: input.originHomeSessionId,
 				baseRef: resolvedBaseRef,
 			},
 			() => globalThis.crypto.randomUUID(),
@@ -1121,6 +1123,10 @@ export function registerTaskCommand(program: Command): void {
 					explicitAgentId: parseAgentId(options.agentId),
 					callerSessionId,
 				});
+				// Bind the originating home thread when an agent created this task from a home
+				// chat (same KANBAN_SESSION_TASK_ID source as the agent default above). Always
+				// recorded when present; the takeover switch only gates injection at the exit.
+				const originHomeSessionId = resolveCreateTaskOriginSession(callerSessionId);
 				await runTaskCommand(
 					async () =>
 						await createTask({
@@ -1133,6 +1139,7 @@ export function registerTaskCommand(program: Command): void {
 							autoReviewEnabled: parseOptionalBooleanOption(options.autoReviewEnabled, "--auto-review-enabled"),
 							autoReviewMode: options.autoReviewMode,
 							owner: parseOwner(options.owner) ?? undefined,
+							originHomeSessionId,
 							agentId: resolvedAgentId,
 							agentSettings: buildTaskAgentSettingsForCreate({
 								providerId: parseOptionalStringOrDefault(options.provider) ?? undefined,
