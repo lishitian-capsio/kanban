@@ -1,0 +1,20 @@
+{
+  "id": "90aad",
+  "title": "测试任务",
+  "prompt": "这是一个测试任务，用于验证 Kanban 任务创建流程是否正常工作。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originHomeSessionId": "__home_agent__:kanban:claude:72348aac-9729-4e5e-8873-220358cc04d9",
+  "baseRef": "main",
+  "createdAt": 1781776282267,
+  "updatedAt": 1781776282267,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
