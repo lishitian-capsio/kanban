@@ -23,7 +23,7 @@ import { createKanbanMcpSettingsService } from "../agent-sdk/kanban/mcp-settings
 import { type PiCommittedProvider, resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
 import { buildPiSystemPrompt } from "../agent-sdk/kanban/pi-system-prompt";
 import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
-import { isKanbanClearSlashCommand } from "../agent-sdk/shared/slash-commands";
+import { isKanbanClearSlashCommand, KANBAN_BUILTIN_SLASH_COMMANDS } from "../agent-sdk/shared/slash-commands";
 import { setRuntimeProxyStateFromConfig } from "../config/proxy-fetch";
 import type { RuntimeConfigState } from "../config/runtime-config";
 import { updateGlobalRuntimeConfig, updateRuntimeConfig } from "../config/runtime-config";
@@ -483,14 +483,29 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			}
 		},
 		getKanbanSlashCommands: async (workspaceScope) => {
+			// Builtin commands (e.g. `/clear`) are handled at the send layer
+			// (sendTaskChatMessage) rather than by an agent, so they are exposed for
+			// the autocomplete here as the single source. The chat composer that
+			// queries this is only ever rendered for the native agent (`pi`); terminal
+			// agents use the xterm panel instead, so these never surface where they
+			// would be ineffective.
+			const builtinCommands = KANBAN_BUILTIN_SLASH_COMMANDS.map((command) => ({
+				name: command.name,
+				description: command.description,
+				instructions: "",
+			}));
 			if (!workspaceScope) {
 				return {
-					commands: [],
+					commands: builtinCommands,
 				};
 			}
 			const piService = await deps.getScopedPiTaskSessionService(workspaceScope);
+			const builtinNames = new Set(builtinCommands.map((command) => command.name));
+			const agentCommands = (await piService.listSlashCommands(workspaceScope.workspacePath)).filter(
+				(command) => !builtinNames.has(command.name),
+			);
 			return {
-				commands: await piService.listSlashCommands(workspaceScope.workspacePath),
+				commands: [...builtinCommands, ...agentCommands],
 			};
 		},
 		reloadTaskChatSession: async (workspaceScope, input) => {

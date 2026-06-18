@@ -350,6 +350,7 @@ function createPiTaskSessionServiceMock() {
 		cancelTaskTurn: vi.fn<(...args: unknown[]) => Promise<RuntimeTaskSessionSummary | null>>(async () => null),
 		sendTaskSessionInput: vi.fn<(...args: unknown[]) => Promise<RuntimeTaskSessionSummary | null>>(async () => null),
 		clearTaskSession: vi.fn<(...args: unknown[]) => Promise<RuntimeTaskSessionSummary | null>>(async () => null),
+		listSlashCommands: vi.fn<(...args: unknown[]) => Promise<unknown[]>>(async () => []),
 		reloadTaskSession: vi.fn<(...args: unknown[]) => Promise<RuntimeTaskSessionSummary | null>>(async () => null),
 		rebindPersistedTaskSession: vi.fn<(...args: unknown[]) => Promise<RuntimeTaskSessionSummary | null>>(
 			async () => null,
@@ -1643,6 +1644,49 @@ describe("createRuntimeApi startTaskSession", () => {
 		expect(broadcastTaskChatCleared).toHaveBeenCalledWith("workspace-1", "__home_agent__:workspace-1");
 		expect(piTaskSessionService.sendTaskSessionInput).not.toHaveBeenCalled();
 		expect(piTaskSessionService.startTaskSession).not.toHaveBeenCalled();
+	});
+
+	it("includes the builtin clear command in the slash command list", async () => {
+		const piTaskSessionService = createPiTaskSessionServiceMock();
+		piTaskSessionService.listSlashCommands.mockResolvedValue([]);
+
+		const api = createTestRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => ({}) as never),
+			getScopedPiTaskSessionService: vi.fn(async () => piTaskSessionService as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+
+		const response = await api.getKanbanSlashCommands({ workspaceId: "workspace-1", workspacePath: "/tmp/repo" });
+
+		const clear = response.commands.find((command) => command.name === "clear");
+		expect(clear).toBeDefined();
+		expect(clear?.description?.length ?? 0).toBeGreaterThan(0);
+	});
+
+	it("does not duplicate the clear command when the pi service also reports it", async () => {
+		const piTaskSessionService = createPiTaskSessionServiceMock();
+		piTaskSessionService.listSlashCommands.mockResolvedValue([
+			{ name: "clear", instructions: "", description: "from pi" },
+		]);
+
+		const api = createTestRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => ({}) as never),
+			getScopedPiTaskSessionService: vi.fn(async () => piTaskSessionService as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+
+		const response = await api.getKanbanSlashCommands({ workspaceId: "workspace-1", workspacePath: "/tmp/repo" });
+
+		const clears = response.commands.filter((command) => command.name === "clear");
+		expect(clears).toHaveLength(1);
 	});
 
 	it("forwards chat images through the pi service send path", async () => {

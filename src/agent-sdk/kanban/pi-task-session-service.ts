@@ -3,6 +3,7 @@
 // and subscribe to summaries and chat events.
 import type {
 	RuntimeReasoningEffort,
+	RuntimeSlashCommand,
 	RuntimeTaskImage,
 	RuntimeTaskSessionMode,
 	RuntimeTaskSessionSummary,
@@ -72,7 +73,7 @@ export interface PiTaskSessionService extends SessionMessageSource {
 	rebindPersistedTaskSession(taskId: string): Promise<RuntimeTaskSessionSummary | null>;
 	getSummary(taskId: string): RuntimeTaskSessionSummary | null;
 	listSummaries(): RuntimeTaskSessionSummary[];
-	listSlashCommands(workspacePath: string): Promise<any[]>;
+	listSlashCommands(workspacePath: string): Promise<RuntimeSlashCommand[]>;
 	applyTurnCheckpoint(taskId: string, checkpoint: RuntimeTaskTurnCheckpoint): RuntimeTaskSessionSummary | null;
 	dispose(): Promise<void>;
 }
@@ -467,8 +468,9 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 		return this.messageStore.listMessages(taskId);
 	}
 
-	async listSlashCommands(_workspacePath: string): Promise<any[]> {
-		// Pi agent doesn't have slash commands yet - return empty
+	async listSlashCommands(_workspacePath: string): Promise<RuntimeSlashCommand[]> {
+		// Pi agent doesn't have its own slash commands yet. Builtin commands
+		// (e.g. `/clear`) are merged in by the runtime API, not here.
 		return [];
 	}
 
