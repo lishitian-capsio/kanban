@@ -1,0 +1,18 @@
+{
+  "id": "675d2",
+  "title": "task→requirement 协调能力(analyze→apply)",
+  "prompt": "新增'任务→需求协调'能力,类比已有的 Requirement Review(analyze→apply 两步),但审的轴是【任务↔需求】。agent 放开生成,人在产品侧确认。\n\n行为:\n1. analyze:扫描'还没归属任何需求(无 confirmed 关联)'的任务,对每个任务用语义判断匹配现有需求 → 命中则产出'建议关联到 reqX',没命中则产出'建议新建需求 Y(status=draft)'。输出一份结构化提议包(每条:任务、动作 link|create-draft、目标/新需求草稿、理由)。\n2. apply:把提议落库 —— link 写成 state='proposed' 的关联,create-draft 创建 draft 需求并挂 proposed 关联。【所有 AI 产出先落 proposed/draft 待确认态,不直接 confirmed】。\n3. 复用上游关联数据层的纯函数 + 需求版本历史(source=agent)。\n\n建议作为 requirement reconcile(或 requirement review 的 task 维度扩展)子命令。先读 src/core/requirement-review.ts(analyze/apply 模式)、src/commands/requirement.ts、上游关联数据层。遵循仓库 TS 规范,no any。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781057664290,
+  "updatedAt": 1781144383402,
+  "column": "trash",
+  "rank": "aLzG",
+  "dependsOn": []
+}

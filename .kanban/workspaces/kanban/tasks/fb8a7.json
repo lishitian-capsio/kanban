@@ -1,0 +1,18 @@
+{
+  "id": "fb8a7",
+  "title": "home 聊天线:会话模型 + 线程注册表/持久化",
+  "prompt": "实现方案 A 的基础层:把唯一的 home(侧边栏)聊天会话泛化为可管理的多条并行聊天线。\n\n现状(已确认):home 会话 id 形如 __home_agent__:<workspaceId>:<agentId>,每个工作区+agent 唯一一条(见 src/core/home-agent-session.ts)。服务层 TerminalSessionManager(src/terminal/session-manager.ts)与 PiTaskSessionService(src/agent-sdk/kanban/pi-task-session-service.ts)已按 taskId/合成 id 多路复用,可承载多条 home 会话。消息已通过 session journal 持久化(src/session/session-message-journal.ts)。\n\n本任务范围(仅基础层,不含 UI 与 tRPC 端点,那两块是后续任务):\n1) 扩展 home 会话 id 方案,增加线程维度:__home_agent__:<workspaceId>:<agentId>:<threadId>;保持向后兼容(无 threadId 视为默认线)。更新 home-agent-session.ts 的构造/解析逻辑及其单测。\n2) 新增 home 聊天线注册表模型:每条线包含 id、agentId、name、createdAt、updatedAt。设计为按工作区持久化(参考现有 ~/.kanban/workspaces/<id>/ 下的存储约定,与 sessions.json 同级),提供 list/create/rename/close 的纯逻辑层(不暴露网络端点)。\n3) 确认 TerminalSessionManager / PiTaskSessionService 能并行承载多条 home 线(合成 id 各自独立),补必要的生命周期处理(关闭线时清理会话)。\n\n要求:遵循 AGENTS.md(无 any、SDK 类型优先、小文件单一职责);为新模型与 id 解析写单测。先以 plan mode 产出实现方案再动手。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781164104020,
+  "updatedAt": 1781171115058,
+  "column": "trash",
+  "rank": "aLrV",
+  "dependsOn": []
+}

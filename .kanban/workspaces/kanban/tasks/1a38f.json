@@ -1,0 +1,19 @@
+{
+  "id": "1a38f",
+  "title": "在看板卡片上显示可见的短任务 ID(可点击复制)",
+  "prompt": "目标:在 Kanban 看板的任务卡片上显示该任务的短 ID(如 0a42e),方便在 UI、CLI、日志、对话中互相对应。现状:卡片只渲染标题/描述,card.id 仅用于内部(draggableId、data-task-id 属性、回调 key),从不作为可见文本显示。\n\n要做(前端,web-ui):\n1) 在 web-ui/src/components/board-card.tsx 的卡片上增加一个可见的短 ID 标识。位置建议放在卡片标题附近(如标题行的次要位置或卡片底部信息区),用低调的次要样式,不要抢标题:参考设计令牌 text-text-tertiary / text-text-secondary、surface-2/3 背景,圆角用 rounded-sm,字号小一号、等宽更佳(font-mono)。做成一个小 chip。\n2) 点击该 chip 复制完整 task id 到剪贴板,并给出反馈(用项目已有的 sonner toast:import { toast } from 'sonner' 或 showAppToast),复制成功提示如 '已复制任务 ID'。点击复制不要触发卡片的选中/打开详情(stopPropagation)。\n3) 兼容回收站(trash)卡片与各列状态,样式一致;窄卡片下不要把标题挤变形(必要时 chip 可截断或自适应)。\n4) 给 chip 加 title/aria-label 以便悬浮查看完整 id 和可访问性。\n\n约束:遵守仓库 AGENTS.md 与 web-ui 规范——Tailwind 工具类优先(不要写进 globals.css)、用 src/components/ui 下已有原语(如需 Tooltip 用 @/components/ui/tooltip)、图标用 lucide-react、无 any、无 inline import。剪贴板优先用 react-use 的 useCopyToClipboard(via @/kanban/utils/react-use)而不是自己写。给可纯函数化的部分(如 id 展示/截断)按需加测试,跑通 web:typecheck 与相关组件测试。不要顺手提交(NEVER commit unless asked)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781508231519,
+  "updatedAt": 1781511129115,
+  "column": "trash",
+  "rank": "aLTV",
+  "dependsOn": []
+}

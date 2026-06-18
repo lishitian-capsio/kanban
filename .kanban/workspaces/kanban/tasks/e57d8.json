@@ -1,0 +1,19 @@
+{
+  "id": "e57d8",
+  "title": "Vault 通用双向反链面板（任意字段/关系分组）",
+  "prompt": "把反链从『仅 customer』升级为任意 doc 的通用反链面板。依赖前置任务 B1（通用 wikilink 引擎/反链索引）。当前只有 customer-backlinks.tsx 服务 customer。\n\n范围：\n- 在 vault doc 详情页（web-ui/src/components/vault/detail/**）加 Backlinks 面板：列出所有链接到当前 doc 的其它 doc，按来源关系类型/字段分组（参照 tolaria BacklinksPanel + neighborhood 分组），每条可点击跳转。\n- 数据来自 B1 的反链查询接口；类型无关，对 requirement/customer/decision/note 一致工作。把现有 customer 反链收敛/复用到通用组件，避免重复实现。\n- 遵循 web-ui 设计系统与暗色主题，react-use hooks。补前端测试：反链分组渲染、空态、点击跳转。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781246346777,
+  "updatedAt": 1781251466493,
+  "column": "trash",
+  "rank": "aLc",
+  "dependsOn": []
+}

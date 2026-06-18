@@ -1,0 +1,19 @@
+{
+  "id": "98e4e",
+  "title": "任务增加「负责人」字段(绑定 git config)",
+  "prompt": "为 Kanban 任务增加「负责人 / owner」概念,并与 git config 绑定。\n\n需求:\n- 在任务的持久化规格(tasks/<taskId>.json)中新增 owner 字段,存储 git 身份(name + email)。同步扩展 wire 契约 runtimeBoardData 的 task schema。\n- 任务创建时,owner 默认取该 workspace 仓库的 git config user.name / user.email(从对应 repo 解析,而非全局)。\n- 允许通过 task update 覆盖/修改 owner。\n- 在看板卡片 UI 和任务详情中展示 owner;支持按 owner 过滤/分组。\n- CLI:task create / task update 支持 --owner 参数;task list 的 JSON 输出包含 owner。\n- 存储保持按任务分片(每任务一文件),不要引入新的 git 合并冲突面。\n\n参考已有约定:任务分片存储见 src/state/task-shard-store.ts;wire 契约在 src/core/api-contract.ts(runtimeBoardDataSchema);web-ui 通过 @runtime-contract 类型别名共享。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781677908646,
+  "updatedAt": 1781681529405,
+  "column": "trash",
+  "rank": "aLIV",
+  "dependsOn": []
+}

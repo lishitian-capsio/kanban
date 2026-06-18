@@ -1,0 +1,23 @@
+{
+  "id": "3f63c",
+  "title": "新建 home 线程：去掉 pi 选项 + 下拉框改为可点击标签芯片",
+  "prompt": "在 web-ui 的「新建 home 会话线程」流程中调整 agent 选择器。\n\n目标（用户原话）：因为 pi 是一直存在的 main agent、且不需要多个，所以新建线程时不再需要 pi 选项；同时把当前的下拉框换成可点击的标签/芯片(chip/tag)来选择 agent。\n\n具体改动文件：web-ui/src/components/home-agent/home-thread-create-dialog.tsx\n- 当前该对话框用 NativeSelect（web-ui/src/components/ui/native-select）渲染 agents.map(...) 的 <option>，其中包含 pi。\n- 改动 1（去掉 pi）：过滤掉 main agent。不要硬编码 agent.id === 'pi'，使用现有的 isMainRuntimeAgent / isMain 帮助函数（参考 agent-catalog / api-contract 里 isMain 标志，已在 settings dialog 中用过）来排除 main agent。\n- 改动 2（交互改芯片）：把 NativeSelect 下拉框替换为一排可点击的标签/芯片按钮，点击即选中该 agent，选中态用 cn() + 设计令牌做高亮（参考 AGENTS.md 的 surface/accent token 规范，dark theme）。复用 web-ui 现有 UI 原语和 lucide 图标，不要新造 CSS。\n- 改动 3（默认值）：组件接收的 defaultAgentId 现在可能是 pi。过滤掉 main agent 后，如果 defaultAgentId 落在被过滤的项上，需要回退到第一个可选(非 main) agent，避免出现没有选中项或选中了已隐藏项的情况。\n\n注意/边界：\n- 只改这个新建线程对话框的选择器；不要动新建任务(task create)或 home 输入框旁的 agent 切换控件（用户明确只要这一处）。\n- HomeThreadBar / ThreadAgentBadge 仍照常显示线程已选 agent 的徽章，不需要改。\n- 若过滤后没有任何可选 agent（理论上只剩 main），要优雅处理（例如禁用创建或给出提示），不要崩。\n- 遵循 AGENTS.md：Tailwind 工具类 + 设计令牌、Radix/UI 原语优先、无 any、组件保持小而单一职责。\n- 验收：web:typecheck 通过；biome 干净；新建线程对话框里看不到 pi，agent 用芯片点选，能正常创建线程。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "agentSettings": {
+    "providerId": "aliyun-token-plan",
+    "modelId": "ai21/jamba-large-1.7"
+  },
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781661333198,
+  "updatedAt": 1781681529405,
+  "column": "trash",
+  "rank": "aLR",
+  "dependsOn": []
+}

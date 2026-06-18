@@ -1,0 +1,11 @@
+{
+  "providerId": "aliyun-token-plan",
+  "agentId": "pi",
+  "scope": "workspace",
+  "modelId": "qwen3.7-max",
+  "baseUrl": null,
+  "reasoningEffort": null,
+  "region": null,
+  "gcpProjectId": null,
+  "gcpRegion": null
+}

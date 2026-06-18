@@ -1,0 +1,18 @@
+{
+  "id": "fc93c",
+  "title": "[Vault B2] 契约新增：vault document 类型 + 问题状态枚举",
+  "prompt": "实施 .plan/docs/files-as-knowledge-vault.md 的里程碑 B2（加法式契约，先不删旧）。在 src/core/api-contract.ts 新增 runtimeVaultDocument* 相关 schema/类型，以及需求的「问题状态」枚举（在提/已澄清/失效/搁置），与现有 RuntimeRequirement* 并存。要求纯加法，确保 web:typecheck 不被破坏（main 上已有的既存类型错不算本任务引入，但不得新增）。基于 main（需 B1 的 src/vault 已合入）。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781236481006,
+  "updatedAt": 1781244831024,
+  "column": "trash",
+  "rank": "aLl",
+  "dependsOn": []
+}

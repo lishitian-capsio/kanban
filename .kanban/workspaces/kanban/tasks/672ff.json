@@ -1,0 +1,18 @@
+{
+  "id": "672ff",
+  "title": "home 聊天线:侧边栏 UI(列表/新建/切换/重命名/关闭 + 每线选 agent)",
+  "prompt": "在 home 聊天线 API/contract 之上,实现侧边栏的多聊天线 UI。依赖前置任务'API/contract'。\n\n范围(web-ui):\n1) 在侧边栏 home agent 面板增加'聊天线'列表/标签:支持 新建、切换、重命名、关闭;多条聊天线可并行存在与运行。涉及 web-ui/src/hooks/use-home-agent-session.ts、use-home-sidebar-agent-panel.tsx 等。\n2) 每条聊天线可各自选择 agent(claude/pi/codex...);沿用现有 pi→原生聊天面板、其它→终端面板的渲染分流逻辑,但按'当前选中的聊天线'而非全局 selectedAgentId 来决定。\n3) 接入前一任务的 list/create/rename/close 端点;切换/重启后从注册表恢复聊天线列表(消息已由 journal 持久化,沿用既有 getTaskChatMessages 路径拉取)。\n4) 遵循 web-ui 既有设计系统:Tailwind v4 + 设计 token、Radix 原语、lucide 图标、sonner toast,组件拆小、复用 src/components/ui 原语。\n\n要求:遵循 AGENTS.md 与 web-ui 规范;保证 web:typecheck 通过。先 plan mode 出 UI 方案(含交互草图说明)再动手。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781164120677,
+  "updatedAt": 1781171115058,
+  "column": "trash",
+  "rank": "aLnV",
+  "dependsOn": []
+}

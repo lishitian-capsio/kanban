@@ -1,0 +1,18 @@
+{
+  "id": "bc91f",
+  "title": "确认面 UI(PR 式批量过提议 + 收件箱)",
+  "prompt": "为'任务→需求协调'产出的 proposed 关联 / draft 需求建一个产品侧确认面。【不改 Board UI 主流程,作为需求侧的 review 入口】。\n\n要求:\n1. PR 式批量审阅:把一轮协调产出的提议(建议关联 / 建议新建 draft 需求)集中列出,每条可 接受 / 驳回 / 改挂到别的需求。接受 → 关联转 confirmed / draft 需求转 active;驳回 → 删除该 proposed 关联或 draft 需求。\n2. 复用已有的需求版本历史 diff 展示与 draft 状态。零散/拿不准的提议落一个'待确认'收件箱兜底。\n3. 数据从现有 workspace 同步流(useWorkspaceSync)读,不另起通道。\n\n遵循 web-ui 规范:Tailwind v4 + Radix + Lucide + design tokens,always-dark,复用 src/components/ui 与 requirements/ 下既有组件。先读 web-ui/src/components/requirements/ 与上游协调能力。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781057665211,
+  "updatedAt": 1781144383402,
+  "column": "trash",
+  "rank": "aLzV",
+  "dependsOn": []
+}

@@ -1,0 +1,19 @@
+{
+  "id": "cc1c6",
+  "title": "改进:关闭 home 线程时保留/归档会话记录,而非硬删除 transcript",
+  "prompt": "改进点(非需求,改进项):\n\n当前行为:主动关闭一个 home 侧边栏线程是「硬关闭」—— closeTaskSession 会停掉进程、丢弃内存中的 session entry,并通过 journal.clear(taskId) 直接删除该线程的 transcript(~/.kanban/workspaces/<id>/sessions/<taskId>/messages.jsonl)。结果:会话开着时记录保留(重启也在),但一旦显式关闭线程,历史记录就被删掉了。\n\n期望改进:关闭已开启的 agent 线程时,保留(归档)其会话记录,而不是删除。已开启过的 agent 会话记录有保留价值。\n\n涉及代码(供参考,需自行核实):\n- src/session/session-message-journal.ts(FileSessionMessageJournal,clear() 删除 transcript)\n- src/session/home-thread-store.ts(close() → onCloseSession 回调路由到 closeTaskSession)\n- TerminalSessionManager.closeTaskSession / InMemoryPiTaskSessionService.closeTaskSession(硬关闭:停进程 + 丢内存 entry + journal.clear)\n- runtime-server.ts 里 getScopedHomeThreadStore 的 onCloseSession 接线\n\n设计上需要决定:归档语义(标记为 closed/archived 但保留 JSONL,还是移动到 archive 目录),以及关闭后这些归档记录在 UI 上如何回看/是否可恢复。请先确认方案再实现。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781257781519,
+  "updatedAt": 1781259561354,
+  "column": "trash",
+  "rank": "aLZ",
+  "dependsOn": []
+}

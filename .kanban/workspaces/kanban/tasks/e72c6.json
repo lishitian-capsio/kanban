@@ -1,0 +1,19 @@
+{
+  "id": "e72c6",
+  "title": "给 terminal agent 一个 git 契约（治本 auto-commit 接不住自开分支）",
+  "prompt": "治本设计修复。背景：terminal/CLI agent（claude 等）的任务在 auto-review=commit 下，会出现『agent 自己开分支、把活全提交到那条分支、worktree 切回 baseRef、停下等合并』，导致 Kanban 的 auto-commit 无事可做、任务无声卡在 review。根因是 Kanban 与 terminal agent 之间没有 git 契约：\n\n- 对 terminal agent，auto-commit 不自己跑 git，而是往 PTY 发一句 prompt 让 agent 自己提交（web-ui/src/git-actions/build-task-git-action-prompt.ts:40 『Handle this commit action using the provided git context.』），控制权在 agent。\n- 完成信号只看工作区未提交改动 changedFiles>0（web-ui/src/hooks/use-review-auto-actions.ts:217），没有『相对 baseRef 领先了几个 commit』的概念 → 已自行提交、工作区干净的 agent 被当成『没干活』。\n- 没有『任务分支』概念，只有 baseRef；不 pin 分支、不检测、不阻止 agent 自开分支或切回 main（src/workspace/task-worktree.ts、src/terminal/session-manager.ts）。\n- done 时不做任何合并，agent 的 commit 留在它那条分支等人工处理。\n\n目标：建立 Kanban 与 terminal agent 的 git 契约，让『agent 已经自己提交的工作』也能被 auto-commit/auto-review 正确接住。先在 plan mode 给出方案与权衡，至少覆盖：\n1. 任务分支模型：是否为每个任务 pin 一条确定的任务分支（而非仅 baseRef），并在 worktree 上检测/防止 agent 偏离（自开分支、切回 main）。\n2. system prompt 契约：通过 append-system-prompt 明确告知 terminal agent —『只在当前任务分支提交、不要自开新分支、不要停下等人工合并/PR』。参考 src/prompts/append-system-prompt.ts。\n3. auto-commit 识别『领先 baseRef 的 commit』：当工作区干净但分支已有任务 commit 时，视为已完成而非无事可做；据此推进 review→done。\n4. done 时的合并语义：明确 agent 的 commit 如何回到 baseRef（合并/快进），不要留在孤立分支上无人认领。\n\n边界：本任务是 Kanban 自身的运行时/契约修复，不要去碰 provider/profile 那一摊业务任务。pi（in-process）与 terminal agent 机制不同——契约只针对 terminal/CLI agent 这条路径，pi 的提交路径单独考量、勿强行统一。注意 src/prompts/append-system-prompt.ts 同时服务 home agent 与任务 agent，改 system prompt 时别破坏 home 路径。\n\n注：本任务有意不开 auto-review——因为它修的就是 auto-commit，需人工 review + 合并；实现者也应避免自开分支/停等合并（正是本任务要消除的反模式）。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781669395652,
+  "updatedAt": 1781681529405,
+  "column": "trash",
+  "rank": "aLM",
+  "dependsOn": []
+}

@@ -1,0 +1,19 @@
+{
+  "id": "16f33",
+  "title": "测试任务",
+  "prompt": "这是一个测试任务,用于验证看板任务流程(创建 / 启动 / commit)。在仓库根目录创建文件 TEST_TASK_SCRATCH.md,内容写一行:'kanban test task ok'。不要改动其它任何文件。完成即可。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1781492227293,
+  "updatedAt": 1781511129115,
+  "column": "trash",
+  "rank": "aLV",
+  "dependsOn": []
+}
