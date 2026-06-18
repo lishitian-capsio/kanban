@@ -483,6 +483,8 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			agentSessionId: recordedAgentSessionId,
 			env: request.env,
 			workspaceId: request.workspaceId,
+			providerId: request.providerId,
+			committedProvider: request.committedProvider,
 		});
 
 		// Build provider-specific env vars (custom baseUrl/apiKey for non-official providers).

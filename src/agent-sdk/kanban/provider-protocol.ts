@@ -59,12 +59,55 @@ export function agentSupportsOfficialLogin(agentId: string): boolean {
 export const AGENT_PROTOCOL_COMPATIBILITY: Record<string, ProviderProtocol[]> = {
 	claude: ["anthropic"],
 	codex: ["openai"],
-	droid: ["anthropic"],
+	// Droid speaks both via its native BYOK `customModels` form (anthropic →
+	// Messages API; openai → Responses / generic Chat Completions). See
+	// `droid-byok.ts` — droid does NOT use env-var injection.
+	droid: ["anthropic", "openai"],
 	pi: ["openai"],
 	gemini: [], // independent protocol
 	opencode: ["openai", "anthropic"],
 	kiro: ["anthropic"],
 };
+
+/**
+ * Agents that project provider config into their own native settings file
+ * (e.g. Factory Droid's `customModels` array) rather than through the generic
+ * `*_BASE_URL` / `*_API_KEY` environment variables. For these, the env-injector
+ * is a no-op and the agent's session adapter owns provider projection.
+ */
+export const NATIVE_PROVIDER_PROJECTION_AGENTS: ReadonlySet<string> = new Set(["droid"]);
+
+/** Whether an agent projects provider config natively (settings file) instead of via env vars. */
+export function agentUsesNativeProviderProjection(agentId: string): boolean {
+	return NATIVE_PROVIDER_PROJECTION_AGENTS.has(agentId.trim().toLowerCase());
+}
+
+/**
+ * Thrown when the resolved provider's wire protocol is one the agent cannot
+ * speak (e.g. a Codex session pointed at an Anthropic-only provider, or a
+ * provider configured with no protocols at all). Surfaced to the user instead of
+ * silently launching with no override, which would quietly use the agent's
+ * native login against the wrong intent.
+ *
+ * Lives here (the protocol-compatibility domain) rather than in the env-injector
+ * so both the env path (`env-injector.ts`) and native-projection adapters
+ * (`droid-byok.ts`) can throw it without a cross-layer import.
+ */
+export class IncompatibleAgentProviderError extends Error {
+	constructor(
+		readonly agentId: string,
+		readonly providerProtocols: ProviderProtocol[],
+		readonly agentProtocols: ProviderProtocol[],
+	) {
+		const provider = providerProtocols.join("/") || "(unknown)";
+		const agent = agentProtocols.join("/") || "(unrestricted)";
+		super(
+			`Provider speaks the "${provider}" protocol, which agent "${agentId}" cannot use (supports "${agent}"). ` +
+				`Pick a compatible provider or use official login.`,
+		);
+		this.name = "IncompatibleAgentProviderError";
+	}
+}
 
 // Protocol → env var names
 export const PROTOCOL_ENV_MAP: Record<ProviderProtocol, { baseUrl: string; apiKey: string }> = {

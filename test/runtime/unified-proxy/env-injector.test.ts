@@ -171,7 +171,10 @@ describe("env-injector: buildAgentProviderEnv", () => {
 		expect(result.env.OPENAI_API_KEY).toBe("sk-gpt-456");
 	});
 
-	it("injects ANTHROPIC env vars for droid with custom provider (auth_token default)", async () => {
+	it("injects no env for droid — it projects providers natively via BYOK customModels", async () => {
+		// Droid does NOT use generic env-var injection; its session adapter projects
+		// the provider into a `customModels` entry in settings.json. The env path is
+		// a deliberate no-op so the two mechanisms never both fire. See `droid-byok.ts`.
 		agentProviderMocks.getAgentProviderConfig.mockReturnValue({
 			agentId: "droid",
 			provider: "custom-droid",
@@ -181,10 +184,10 @@ describe("env-injector: buildAgentProviderEnv", () => {
 		});
 
 		const result = await buildAgentProviderEnv("droid");
-		expect(result.usesCustomProvider).toBe(true);
-		expect(result.env.ANTHROPIC_BASE_URL).toBe("https://droid.example.com");
-		expect(result.env.ANTHROPIC_AUTH_TOKEN).toBe("dk-789");
-		expect(result.env.ANTHROPIC_API_KEY).toBeUndefined();
+		expect(result.usesCustomProvider).toBe(false);
+		expect(result.env).toEqual({});
+		// The store is never even consulted for a native-projection agent.
+		expect(agentProviderMocks.getAgentProviderConfig).not.toHaveBeenCalled();
 	});
 
 	it("injects OPENAI env vars for gemini when provider supports openai protocol", async () => {

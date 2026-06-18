@@ -20,12 +20,18 @@ import type { AgentProviderConfig } from "../agent-sdk/kanban/agent-provider-con
 import { type CommittedProviderLayer, resolveAgentProvider } from "../agent-sdk/kanban/agent-provider-resolver";
 import {
 	AGENT_PROTOCOL_COMPATIBILITY,
+	agentUsesNativeProviderProjection,
 	getAgentProtocols,
+	IncompatibleAgentProviderError,
 	type ProtocolConfig,
 	type ProviderProtocol,
 	resolveAnthropicApiKeyEnvVar,
 	resolveProtocolEnvVars,
 } from "../agent-sdk/kanban/provider-protocol";
+
+// Re-exported for backward compatibility — the class now lives in the
+// protocol-compatibility domain so native-projection adapters can throw it too.
+export { IncompatibleAgentProviderError } from "../agent-sdk/kanban/provider-protocol";
 
 // ------------------------------------------------------------------ types
 
@@ -34,28 +40,6 @@ export interface AgentProviderEnv {
 	env: Record<string, string | undefined>;
 	/** Whether a non-official provider is active (for logging). */
 	usesCustomProvider: boolean;
-}
-
-/**
- * Thrown when the resolved provider's wire protocol is one the agent cannot
- * speak (e.g. a Codex session pointed at an Anthropic-only provider). Surfaced to
- * the user instead of silently launching with no override, which would quietly
- * use the agent's native login against the wrong intent.
- */
-export class IncompatibleAgentProviderError extends Error {
-	constructor(
-		readonly agentId: string,
-		readonly providerProtocols: ProviderProtocol[],
-		readonly agentProtocols: ProviderProtocol[],
-	) {
-		const provider = providerProtocols.join("/") || "(unknown)";
-		const agent = agentProtocols.join("/") || "(unrestricted)";
-		super(
-			`Provider speaks the "${provider}" protocol, which agent "${agentId}" cannot use (supports "${agent}"). ` +
-				`Pick a compatible provider or use official login.`,
-		);
-		this.name = "IncompatibleAgentProviderError";
-	}
 }
 
 // ------------------------------------------------------------------ public API
@@ -83,6 +67,13 @@ export async function buildAgentProviderEnv(
 	providerId?: string,
 	committedProvider?: CommittedProviderLayer | null,
 ): Promise<AgentProviderEnv> {
+	// Agents that project provider config into their own native settings file
+	// (e.g. Factory Droid's `customModels`) don't use env-var injection — their
+	// session adapter owns the projection, so this path is a deliberate no-op.
+	if (agentUsesNativeProviderProjection(agentId)) {
+		return { env: {}, usesCustomProvider: false };
+	}
+
 	const resolved = resolveAgentProvider(
 		{ agentId, providerIdOverride: providerId, committedProvider },
 		// CLI agents fall back to the agent's default provider when an explicit

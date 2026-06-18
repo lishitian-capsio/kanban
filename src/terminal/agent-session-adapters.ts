@@ -5,6 +5,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import type { CommittedProviderLayer } from "../agent-sdk/kanban/agent-provider-resolver";
+import { mergeDroidCustomModels, resolveDroidByokProjection } from "../agent-sdk/kanban/droid-byok";
 import type {
 	RuntimeAgentId,
 	RuntimeHookEvent,
@@ -14,6 +16,7 @@ import type {
 import { buildKanbanCommandParts } from "../core/kanban-command";
 import { quoteShellArg } from "../core/shell";
 import { lockedFileSystem } from "../fs/locked-file-system";
+import { createLogger } from "../logging";
 import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-prompt";
 import { getMachineKanbanHomePath } from "../state/workspace-state";
 import { configureCodexHooks, hasCodexConfigOverride } from "./codex-hook-config";
@@ -46,6 +49,15 @@ export interface AgentAdapterLaunchInput {
 	agentSessionId?: string | null;
 	env?: Record<string, string | undefined>;
 	workspaceId?: string;
+	/**
+	 * Provider selected for this session (provider name = providerId). Consumed by
+	 * adapters that project provider config natively into their settings file
+	 * (currently Droid's BYOK `customModels`); other agents inject provider env
+	 * separately via {@link buildAgentProviderEnv}.
+	 */
+	providerId?: string;
+	/** The workspace's selected committed provider for this agent (secret-free). */
+	committedProvider?: CommittedProviderLayer | null;
 }
 
 export type AgentOutputTransitionDetector = (
@@ -86,6 +98,8 @@ interface HookCommandMetadata {
 interface AgentSessionAdapter {
 	prepare(input: AgentAdapterLaunchInput): Promise<PreparedAgentLaunch>;
 }
+
+const log = createLogger("agent-session-adapters");
 
 function escapeForTemplateLiteral(value: string): string {
 	return value.replaceAll("\\", "\\\\").replaceAll("`", "\\`");
@@ -453,6 +467,21 @@ async function ensureTextFile(filePath: string, content: string, executable = fa
 	await lockedFileSystem.writeTextFileAtomic(filePath, content, {
 		executable,
 	});
+}
+
+/**
+ * Read the `customModels` array from an existing (Kanban-managed) Droid settings
+ * file so user-added entries survive a relaunch. Returns `[]` when the file is
+ * absent or unparseable — a torn/edited file must never block a launch.
+ */
+async function readDroidCustomModels(settingsPath: string): Promise<unknown[]> {
+	try {
+		const raw = await readFile(settingsPath, "utf8");
+		const parsed = JSON.parse(raw) as { customModels?: unknown };
+		return Array.isArray(parsed.customModels) ? parsed.customModels : [];
+	} catch {
+		return [];
+	}
 }
 
 function withPrompt(args: string[], prompt: string, mode: "append" | "flag", flag?: string): PreparedAgentLaunch {
@@ -1136,11 +1165,20 @@ const droidAdapter: AgentSessionAdapter = {
 			args.push("--resume");
 		}
 
+		// Native BYOK: Droid takes a custom provider via a `customModels` entry in
+		// its settings.json, not the generic ANTHROPIC_*/OPENAI_* env vars. Resolve
+		// the selected provider and project it; `null` means official/native login.
+		const byok = resolveDroidByokProjection({
+			providerIdOverride: input.providerId ?? null,
+			committedProvider: input.committedProvider ?? null,
+		});
+
 		const hooks = resolveHookContext(input);
-		const shouldWriteSettings = Boolean(hooks) || input.startInPlanMode || input.autonomousModeEnabled !== undefined;
+		const shouldWriteSettings =
+			Boolean(hooks) || input.startInPlanMode || input.autonomousModeEnabled !== undefined || Boolean(byok);
 		if (shouldWriteSettings) {
 			const settingsPath = join(getHookAgentDirectory("droid"), "settings.json");
-			const settings: Record<string, unknown> = {
+			let settings: Record<string, unknown> = {
 				autonomyMode: input.startInPlanMode ? "spec" : input.autonomousModeEnabled ? "auto-high" : "normal",
 			};
 
@@ -1181,6 +1219,24 @@ const droidAdapter: AgentSessionAdapter = {
 						workspaceId: hooks.workspaceId,
 					}),
 				);
+			}
+
+			if (byok) {
+				// Preserve any custom models the user added to the managed settings file
+				// (entries with a different model id are kept; ours replaces a stale one).
+				const existingCustomModels = await readDroidCustomModels(settingsPath);
+				settings = mergeDroidCustomModels({ ...settings, customModels: existingCustomModels }, [byok.customModel]);
+				Object.assign(env, byok.env);
+				// Select the projected model. Droid's interactive `-m/--model <id>` takes
+				// the model id; respect a user-provided selection if present.
+				if (!hasCliOption(args, "--model") && !hasCliOption(args, "-m")) {
+					args.push("--model", byok.model);
+				}
+				log.debug("projected Droid BYOK custom model", {
+					taskId: input.taskId,
+					provider: byok.customModel.provider,
+					model: byok.model,
+				});
 			}
 
 			await ensureTextFile(settingsPath, JSON.stringify(settings, null, 2));
