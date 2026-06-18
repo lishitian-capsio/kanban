@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -10,8 +10,10 @@ import {
 	commitBoardWorktree,
 	createOrphanBranchViaPlumbing,
 	ensureBoardWorktree,
+	fetchAndFastForwardBoardWorktree,
 	getBoardWorktreeDataHome,
 	getBoardWorktreePath,
+	pushBoardWorktree,
 	setupBoardWorktree,
 } from "../../../src/workspace/board-worktree";
 import { BOARD_WORKTREE_SENTINEL } from "../../../src/workspace/task-worktree-path";
@@ -36,6 +38,38 @@ function initRepo(prefix: string): { repoPath: string; cleanup: () => void } {
 function writeFileEnsuringDir(filePath: string, contents: string): void {
 	mkdirSync(dirname(filePath), { recursive: true });
 	writeFileSync(filePath, contents, "utf8");
+}
+
+/**
+ * Build a bare remote plus two clones (`a`, `b`) of it, each on `main` with an `origin`
+ * pointing at the bare remote — the two-machine setup the push/pull paths reconcile.
+ */
+function makeRemoteAndClones(prefix: string): {
+	cloneA: string;
+	cloneB: string;
+	cleanups: Array<() => void>;
+} {
+	const seed = initRepo(`${prefix}seed-`);
+	const bareParent = createTempDir(`${prefix}bare-`);
+	const remote = join(bareParent.path, "remote.git");
+	git(bareParent.path, ["clone", "--bare", "-q", seed.repoPath, remote]);
+
+	const cloneParentA = createTempDir(`${prefix}a-`);
+	const cloneParentB = createTempDir(`${prefix}b-`);
+	const cloneA = join(cloneParentA.path, "a");
+	const cloneB = join(cloneParentB.path, "b");
+	git(cloneParentA.path, ["clone", "-q", remote, cloneA]);
+	git(cloneParentB.path, ["clone", "-q", remote, cloneB]);
+
+	return {
+		cloneA,
+		cloneB,
+		cleanups: [cloneParentA.cleanup, cloneParentB.cleanup, bareParent.cleanup, seed.cleanup],
+	};
+}
+
+function dataFile(repoPath: string, name: string): string {
+	return join(getBoardWorktreeDataHome(repoPath), "files", name);
 }
 
 describe("board-worktree paths", () => {
@@ -186,6 +220,142 @@ describe("commitBoardWorktree / boardWorktreeHasCommittedData", () => {
 			writeFileEnsuringDir(join(getBoardWorktreeDataHome(repoPath), "files", "doc.md"), "hi");
 			expect(await commitBoardWorktree(repoPath, "board: seed")).toBe(true);
 			expect(await boardWorktreeHasCommittedData(repoPath)).toBe(true);
+		} finally {
+			cleanup();
+		}
+	});
+});
+
+describe("pushBoardWorktree", () => {
+	it("reports no-remote for a remote-less repo (data stays durable locally)", async () => {
+		const { repoPath, cleanup } = initRepo("kanban-board-push-");
+		try {
+			await setupBoardWorktree(repoPath, "kanban/board");
+			writeFileEnsuringDir(dataFile(repoPath, "a.txt"), "1");
+			await commitBoardWorktree(repoPath, "board: seed");
+			const result = await pushBoardWorktree(repoPath, "kanban/board");
+			expect(result.status).toBe("no-remote");
+			expect(result.pulledChanges).toBe(false);
+		} finally {
+			cleanup();
+		}
+	});
+
+	it("fast-forward pushes when local is ahead of the remote", async () => {
+		const { cloneA, cleanups } = makeRemoteAndClones("kanban-board-push-");
+		try {
+			await setupBoardWorktree(cloneA, "kanban/board");
+			writeFileEnsuringDir(dataFile(cloneA, "a.txt"), "1");
+			await commitBoardWorktree(cloneA, "board: seed");
+			const result = await pushBoardWorktree(cloneA, "kanban/board");
+			expect(result.status).toBe("pushed");
+			expect(result.pulledChanges).toBe(false);
+		} finally {
+			for (const cleanup of cleanups) {
+				cleanup();
+			}
+		}
+	});
+
+	it("integrates a non-conflicting remote (different files) then re-pushes", async () => {
+		const { cloneA, cloneB, cleanups } = makeRemoteAndClones("kanban-board-push-");
+		try {
+			// Both clones start from the same seeded board branch.
+			await setupBoardWorktree(cloneA, "kanban/board");
+			writeFileEnsuringDir(dataFile(cloneA, "a.txt"), "from-a");
+			await commitBoardWorktree(cloneA, "board: seed");
+			await pushBoardWorktree(cloneA, "kanban/board");
+			await setupBoardWorktree(cloneB, "kanban/board");
+
+			// B publishes a change to a different file, moving the remote ahead.
+			writeFileEnsuringDir(dataFile(cloneB, "b.txt"), "from-b");
+			await commitBoardWorktree(cloneB, "board: b change");
+			expect((await pushBoardWorktree(cloneB, "kanban/board")).status).toBe("pushed");
+
+			// A's push is rejected, so it merges B's commit in and re-pushes.
+			writeFileEnsuringDir(dataFile(cloneA, "a2.txt"), "from-a-again");
+			await commitBoardWorktree(cloneA, "board: a change");
+			const result = await pushBoardWorktree(cloneA, "kanban/board");
+			expect(result.status).toBe("integrated-and-pushed");
+			expect(result.pulledChanges).toBe(true);
+			// A now holds both sides of the merge.
+			expect(existsSync(dataFile(cloneA, "a2.txt"))).toBe(true);
+			expect(existsSync(dataFile(cloneA, "b.txt"))).toBe(true);
+		} finally {
+			for (const cleanup of cleanups) {
+				cleanup();
+			}
+		}
+	});
+
+	it("surfaces a conflict without destroying local data when the same file diverged", async () => {
+		const { cloneA, cloneB, cleanups } = makeRemoteAndClones("kanban-board-push-");
+		try {
+			await setupBoardWorktree(cloneA, "kanban/board");
+			writeFileEnsuringDir(dataFile(cloneA, "shared.txt"), "base\n");
+			await commitBoardWorktree(cloneA, "board: seed");
+			await pushBoardWorktree(cloneA, "kanban/board");
+			await setupBoardWorktree(cloneB, "kanban/board");
+
+			// B edits the shared file and pushes.
+			writeFileEnsuringDir(dataFile(cloneB, "shared.txt"), "from-b\n");
+			await commitBoardWorktree(cloneB, "board: b edit");
+			await pushBoardWorktree(cloneB, "kanban/board");
+
+			// A edits the same file differently; the merge conflicts.
+			writeFileEnsuringDir(dataFile(cloneA, "shared.txt"), "from-a\n");
+			await commitBoardWorktree(cloneA, "board: a edit");
+			const headBefore = git(getBoardWorktreePath(cloneA), ["rev-parse", "HEAD"]);
+			const result = await pushBoardWorktree(cloneA, "kanban/board");
+
+			expect(result.status).toBe("conflict");
+			expect(result.pulledChanges).toBe(false);
+			// The merge was aborted: A's local data is intact, no conflict markers, HEAD unmoved.
+			expect(readFileSync(dataFile(cloneA, "shared.txt"), "utf8")).toBe("from-a\n");
+			expect(git(getBoardWorktreePath(cloneA), ["rev-parse", "HEAD"])).toBe(headBefore);
+			expect(git(getBoardWorktreePath(cloneA), ["status", "--porcelain"])).toBe("");
+		} finally {
+			for (const cleanup of cleanups) {
+				cleanup();
+			}
+		}
+	});
+});
+
+describe("fetchAndFastForwardBoardWorktree", () => {
+	it("fast-forwards a behind worktree to the remote tip and reports the change", async () => {
+		const { cloneA, cloneB, cleanups } = makeRemoteAndClones("kanban-board-ff-");
+		try {
+			// A seeds + publishes; B tracks it at that point.
+			await setupBoardWorktree(cloneA, "kanban/board");
+			writeFileEnsuringDir(dataFile(cloneA, "a.txt"), "1");
+			await commitBoardWorktree(cloneA, "board: seed");
+			await pushBoardWorktree(cloneA, "kanban/board");
+			await setupBoardWorktree(cloneB, "kanban/board");
+
+			// A publishes a newer commit; B is now strictly behind.
+			writeFileEnsuringDir(dataFile(cloneA, "a2.txt"), "2");
+			await commitBoardWorktree(cloneA, "board: more");
+			await pushBoardWorktree(cloneA, "kanban/board");
+
+			const result = await fetchAndFastForwardBoardWorktree(cloneB, "kanban/board");
+			expect(result.changed).toBe(true);
+			expect(existsSync(dataFile(cloneB, "a2.txt"))).toBe(true);
+
+			// A second reconcile with nothing new is a no-op.
+			expect((await fetchAndFastForwardBoardWorktree(cloneB, "kanban/board")).changed).toBe(false);
+		} finally {
+			for (const cleanup of cleanups) {
+				cleanup();
+			}
+		}
+	});
+
+	it("is a no-op for a remote-less repo", async () => {
+		const { repoPath, cleanup } = initRepo("kanban-board-ff-");
+		try {
+			await setupBoardWorktree(repoPath, "kanban/board");
+			expect((await fetchAndFastForwardBoardWorktree(repoPath, "kanban/board")).changed).toBe(false);
 		} finally {
 			cleanup();
 		}

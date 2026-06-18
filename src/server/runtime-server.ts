@@ -46,6 +46,7 @@ import { createHooksApi } from "../trpc/hooks-api";
 import { createProjectsApi } from "../trpc/projects-api";
 import { createRuntimeApi } from "../trpc/runtime-api";
 import { createWorkspaceApi } from "../trpc/workspace-api";
+import { type BoardSyncService, createBoardSyncService } from "../workspace/board-sync";
 import { getWebUiDir, normalizeRequestPath, readAsset } from "./assets";
 import { handleHttpRequest, handleSocketUpgrade } from "./middleware";
 import type { RuntimeStateHub } from "./runtime-state-hub";
@@ -199,6 +200,22 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		homeThreadStoreByWorkspaceId.delete(workspaceId);
 	};
 
+	// Board-branch decoupling: after each committed-data change the board worktree is
+	// committed + (debounced) pushed; on boot it is fast-forwarded from the remote. A
+	// no-op for repos that have not activated decoupling (no `.kanban/board-ref`).
+	const boardSyncService: BoardSyncService = createBoardSyncService({
+		broadcastWorkspaceState: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
+	});
+	// Wrap the state broadcast so every committed-data mutation (board, vault, files,
+	// providers, threads — server-side writes and the CLI's notifyStateUpdated alike)
+	// also schedules a board sync. The schedule fires regardless of connected clients,
+	// unlike the broadcast itself. `workspacePath` is the repo root.
+	const broadcastWorkspaceStateAndSyncBoard = (workspaceId: string, workspacePath: string): Promise<void> | void => {
+		const result = deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated(workspaceId, workspacePath);
+		boardSyncService.scheduleSync({ repoPath: workspacePath, workspaceId, workspacePath });
+		return result;
+	};
+
 	const prepareForStateReset = async (): Promise<void> => {
 		const workspaceIds = new Set<string>();
 		for (const { workspaceId } of deps.workspaceRegistry.listManagedWorkspaces()) {
@@ -247,7 +264,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 			workspaceApi: createWorkspaceApi({
 				ensureTerminalManagerForWorkspace: deps.ensureTerminalManagerForWorkspace,
 				getScopedPiTaskSessionService,
-				broadcastRuntimeWorkspaceStateUpdated: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
+				broadcastRuntimeWorkspaceStateUpdated: broadcastWorkspaceStateAndSyncBoard,
 				broadcastRuntimeProjectsUpdated: deps.runtimeStateHub.broadcastRuntimeProjectsUpdated,
 				buildWorkspaceStateSnapshot: deps.workspaceRegistry.buildWorkspaceStateSnapshot,
 			}),
@@ -278,7 +295,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 			hooksApi: createHooksApi({
 				getWorkspacePathById: deps.workspaceRegistry.getWorkspacePathById,
 				ensureTerminalManagerForWorkspace: deps.ensureTerminalManagerForWorkspace,
-				broadcastRuntimeWorkspaceStateUpdated: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
+				broadcastRuntimeWorkspaceStateUpdated: broadcastWorkspaceStateAndSyncBoard,
 				broadcastTaskReadyForReview: deps.runtimeStateHub.broadcastTaskReadyForReview,
 			}),
 		};
@@ -524,13 +541,28 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		throw new Error("Failed to start local server.");
 	}
 	const activeWorkspaceId = deps.workspaceRegistry.getActiveWorkspaceId();
+	const activeWorkspacePath = deps.workspaceRegistry.getActiveWorkspacePath();
 	const url = activeWorkspaceId
 		? buildKanbanRuntimeUrl(`/${encodeURIComponent(activeWorkspaceId)}`)
 		: getKanbanRuntimeOrigin();
 
+	// Reconcile the active workspace's board branch against its remote at boot so it
+	// reflects edits another machine pushed while this one was offline. Fire-and-forget
+	// so a slow fetch never delays server start; it rebroadcasts if it pulls anything.
+	if (activeWorkspaceId && activeWorkspacePath) {
+		void boardSyncService.syncOnStartup({
+			repoPath: activeWorkspacePath,
+			workspaceId: activeWorkspaceId,
+			workspacePath: activeWorkspacePath,
+		});
+	}
+
 	return {
 		url,
 		close: async () => {
+			// Flush a final board commit + push (covers the shutdown coordinator's last
+			// interrupted-session save) before tearing down the broadcast channel.
+			await boardSyncService.dispose();
 			await Promise.all(
 				Array.from(piTaskSessionServiceByWorkspaceId.values()).map(async (service) => {
 					await service.dispose();

@@ -120,6 +120,153 @@ async function remoteBranchExists(repoPath: string, remote: string, branch: stri
 }
 
 /**
+ * Fetch `<remote>/<branch>` into the local remote-tracking ref using an explicit
+ * refspec, so `refs/remotes/<remote>/<branch>` is always updated regardless of how
+ * the remote's default fetch refspec is configured (a manually-added remote may have
+ * none). Returns false when the fetch failed (e.g. offline / branch absent on remote).
+ */
+async function fetchBoardBranchIntoTrackingRef(worktreePath: string, remote: string, branch: string): Promise<boolean> {
+	const refspec = `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`;
+	const result = await runGit(worktreePath, ["fetch", remote, refspec], { env: buildBoardCommitEnv() });
+	return result.ok;
+}
+
+/** Is `HEAD` strictly behind `<remote>/<branch>` (i.e. a clean fast-forward is possible)? */
+async function isHeadBehindRemote(worktreePath: string, remote: string, branch: string): Promise<boolean> {
+	const remoteRef = `refs/remotes/${remote}/${branch}`;
+	// HEAD must be a strict ancestor of the remote ref to fast-forward...
+	const isAncestor = await runGit(worktreePath, ["merge-base", "--is-ancestor", "HEAD", remoteRef]);
+	if (!isAncestor.ok) {
+		return false;
+	}
+	// ...and they must not already be equal (nothing to do).
+	const head = await runGit(worktreePath, ["rev-parse", "HEAD"]);
+	const remoteHead = await runGit(worktreePath, ["rev-parse", remoteRef]);
+	return head.ok && remoteHead.ok && head.stdout !== remoteHead.stdout;
+}
+
+function isNonFastForwardRejection(pushOutput: string): boolean {
+	const lowered = pushOutput.toLowerCase();
+	return (
+		lowered.includes("non-fast-forward") ||
+		lowered.includes("fetch first") ||
+		lowered.includes("updates were rejected") ||
+		lowered.includes("[rejected]")
+	);
+}
+
+/** Outcome of a board worktree push attempt. */
+export type BoardPushStatus =
+	/** Pushed cleanly (local was ahead, remote fast-forwarded). */
+	| "pushed"
+	/** Remote had moved; its commits were merged in locally, then pushed. */
+	| "integrated-and-pushed"
+	/** Nothing to push (no local commits ahead of the remote). */
+	| "up-to-date"
+	/** No remote is configured; the board branch is local-only (still durable in .git). */
+	| "no-remote"
+	/** Remote and local diverged with a content conflict; surfaced, NOT auto-resolved. */
+	| "conflict"
+	/** Push or fetch failed for another reason (e.g. offline); retried on the next sync. */
+	| "error";
+
+export interface BoardPushResult {
+	status: BoardPushStatus;
+	/** True when integrating the remote changed the local working tree (callers reload + rebroadcast). */
+	pulledChanges: boolean;
+	error?: string;
+}
+
+/**
+ * Push the board branch to its remote, reconciling a remote that has moved on.
+ *
+ * The happy path is a plain fast-forward push. When the remote rejects it as
+ * non-fast-forward (another machine pushed first), we fetch and `merge` the remote
+ * into the local board branch: sharding makes most concurrent edits (different task
+ * files, layout-only `board.json`) merge cleanly, after which we re-push. A genuine
+ * content conflict (same task / same layout edited on both sides) is **surfaced, not
+ * auto-resolved** — we `merge --abort` to leave the runtime-exclusive worktree clean
+ * (conflict markers would corrupt the next shard read) and report `"conflict"`; the
+ * local commits stay intact and durable, and the next sync retries. See
+ * `.plan/docs/board-branch-decoupling.md` §3.7 / §4(5).
+ */
+export async function pushBoardWorktree(repoPath: string, branch: string): Promise<BoardPushResult> {
+	const worktreePath = getBoardWorktreePath(repoPath);
+	const remote = await getDefaultRemote(repoPath);
+	if (!remote) {
+		return { status: "no-remote", pulledChanges: false };
+	}
+
+	const push = await runGit(worktreePath, ["push", remote, `${branch}:${branch}`], { env: buildBoardCommitEnv() });
+	if (push.ok) {
+		// `Everything up-to-date` means there was nothing ahead to publish.
+		const status: BoardPushStatus = push.output.toLowerCase().includes("up-to-date") ? "up-to-date" : "pushed";
+		return { status, pulledChanges: false };
+	}
+	if (!isNonFastForwardRejection(push.output)) {
+		log.warn("board push failed", { repoPath, branch, remote, output: push.output });
+		return { status: "error", pulledChanges: false, error: push.error ?? push.output };
+	}
+
+	// Remote moved ahead — bring it in, then re-push.
+	if (!(await fetchBoardBranchIntoTrackingRef(worktreePath, remote, branch))) {
+		return {
+			status: "error",
+			pulledChanges: false,
+			error: "Could not fetch the board branch to reconcile a rejected push.",
+		};
+	}
+	const merge = await runGit(worktreePath, ["merge", "--no-edit", `refs/remotes/${remote}/${branch}`], {
+		env: buildBoardCommitEnv(),
+	});
+	if (!merge.ok) {
+		// Surface the conflict without destroying data: abort restores the pre-merge
+		// state (local commits intact); resolution is left to the user (UI lands in P4).
+		await runGit(worktreePath, ["merge", "--abort"], { env: buildBoardCommitEnv() });
+		log.warn("board push hit a merge conflict; left local data intact and surfaced the conflict", {
+			repoPath,
+			branch,
+			remote,
+		});
+		return { status: "conflict", pulledChanges: false, error: merge.output };
+	}
+
+	const rePush = await runGit(worktreePath, ["push", remote, `${branch}:${branch}`], { env: buildBoardCommitEnv() });
+	if (!rePush.ok) {
+		return { status: "error", pulledChanges: true, error: rePush.error ?? rePush.output };
+	}
+	return { status: "integrated-and-pushed", pulledChanges: true };
+}
+
+/**
+ * Startup reconcile: fetch the board branch and fast-forward the worktree to the
+ * remote tip when the worktree is strictly behind (another machine pushed while this
+ * one was offline). Never merges or rewrites — a divergence is left for the push path
+ * to reconcile. Returns `{ changed: true }` only when the fast-forward moved HEAD, so
+ * the caller knows to reload + rebroadcast the board. See §3.6 step 4.
+ */
+export async function fetchAndFastForwardBoardWorktree(
+	repoPath: string,
+	branch: string,
+): Promise<{ changed: boolean }> {
+	const worktreePath = getBoardWorktreePath(repoPath);
+	const remote = await getDefaultRemote(repoPath);
+	if (!remote) {
+		return { changed: false };
+	}
+	if (!(await fetchBoardBranchIntoTrackingRef(worktreePath, remote, branch))) {
+		return { changed: false };
+	}
+	if (!(await isHeadBehindRemote(worktreePath, remote, branch))) {
+		return { changed: false };
+	}
+	const ff = await runGit(worktreePath, ["merge", "--ff-only", `refs/remotes/${remote}/${branch}`], {
+		env: buildBoardCommitEnv(),
+	});
+	return { changed: ff.ok };
+}
+
+/**
  * Create an orphan board branch without a worktree, using plumbing only so it
  * works on any git version (the porcelain `git worktree add --orphan` needs git
  * ≥ 2.42 and its flag spelling has drifted across releases — see §6). The branch
