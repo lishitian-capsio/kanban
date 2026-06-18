@@ -1,0 +1,20 @@
+{
+  "id": "2bacc",
+  "title": "修复：运行时启动 listen 失败时报错不可读、不可恢复（host 不可用吞成空 Error）",
+  "prompt": "Bug：Kanban 运行时启动时若 server.listen 失败（非端口占用类错误，如 host 绑定不可用），日志只打印 error=Error、message 为空，且直接崩溃退出，用户完全看不出原因。\n\n复现/现场日志：\n- proxy-fetch 安装、network-bridge 在 127.0.0.1:55602 正常起来后，主服务 listen 抛错。\n- 栈：createRuntimeServer → startServer → startServerWithAutoPortRetry → runMainCommand，日志 'Failed to start Kanban error=Error'（无 message）。\n\n根因（已定位代码）：\n- src/server/runtime-server.ts:638-644：await new Promise((resolve,reject)=>{ server.once('error', rejectListen); server.listen(getKanbanRuntimePort(), getKanbanRuntimeHost(), …) })。listen 失败时把原始 error 事件对象 reject 出去。\n- src/cli.ts:553 startServerWithAutoPortRetry：只对 isAddressInUseError（code==='EADDRINUSE'，cli.ts:255）做端口自增重试；其它任何 listen 错误（如 EADDRNOTAVAIL host 不可用、EACCES 权限/特权端口）一律 throw error 原样抛出，最终在 runMainCommand 的 catch 里只 cliLog 出一个无 message 的 Error。\n- 最可能触发场景：用户用 --host 绑定了一个 LAN IP（远程/隧道用法），换网络后该 IP 不在本机网卡上 → listen 抛 EADDRNOTAVAIL。\n\n期望修复：\n1. listen 失败时产出可操作的清晰错误信息，至少包含 error.code、尝试绑定的 host:port，并针对常见码给人话提示：\n   - EADDRNOTAVAIL：'无法绑定到 host <host>：该地址在本机不可用，你的机器 IP 可能已变化。可不带 --host 启动（绑 loopback）或改用 --host 0.0.0.0。'\n   - EACCES：'无权绑定端口 <port>（可能是特权端口 <1024）。换一个端口或调整权限。'\n   - EADDRINUSE 维持现有自动重试行为不变。\n2. 评估对 EADDRNOTAVAIL 的优雅兜底：是否在指定 host 不可用时给出明确退出 + 提示，而不是堆栈崩溃（不要静默回退到 loopback 改变用户期望的绑定语义——以清晰报错+建议为主；若要做回退需是显式可选行为）。\n3. 保留 startServerWithAutoPortRetry 对 EADDRINUSE 的重试语义不变。\n\n参考记忆：--host + 代理相关历史（runtime-endpoint 把绑定 host 并入 NO_PROXY 的逻辑）注意别破坏。配回归测试（构造 listen reject EADDRNOTAVAIL/EACCES → 断言错误信息含 code+host+人话提示；EADDRINUSE 仍走重试）。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originHomeSessionId": "__home_agent__:kanban:claude:23c9c1ee-e8b3-4c3c-92c3-6d0ac0da6803",
+  "baseRef": "main",
+  "createdAt": 1781778538431,
+  "updatedAt": 1781778538431,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
