@@ -157,7 +157,7 @@ describe("TopBar script shortcut onboarding", () => {
 		});
 
 		const ownerBadge = Array.from(container.querySelectorAll("span")).find(
-			(span) => span.getAttribute("title") === "Created by Ada Lovelace",
+			(span) => span.getAttribute("title") === "Created by Ada Lovelace <ada@example.com>",
 		);
 		expect(ownerBadge).toBeDefined();
 		expect(ownerBadge?.textContent).toContain("Ada Lovelace");

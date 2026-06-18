@@ -34,7 +34,7 @@ import { getTaskAutoReviewCancelButtonLabel } from "@/types";
 import { formatPathForDisplay } from "@/utils/path-display";
 import { useCopyToClipboard, useMeasure } from "@/utils/react-use";
 import { formatTaskIdChipLabel } from "@/utils/task-id";
-import { getTaskOwnerLabel } from "@/utils/task-owner";
+import { getTaskOwnerLabel, getTaskOwnerTooltip } from "@/utils/task-owner";
 import {
 	clampTextWithInlineSuffix,
 	getTaskPromptDescription,
@@ -463,6 +463,7 @@ export function BoardCard({
 		[card.agentId],
 	);
 	const ownerLabel = useMemo(() => getTaskOwnerLabel(card.owner), [card.owner]);
+	const ownerTooltip = useMemo(() => getTaskOwnerTooltip(card.owner), [card.owner]);
 	const modelOverrideLabel = useMemo(() => {
 		if (card.agentSettings === undefined) {
 			return null;
@@ -776,7 +777,7 @@ export function BoardCard({
 									) : null}
 									{ownerLabel ? (
 										<span
-											title={`Owner: ${ownerLabel}`}
+											title={`Owner: ${ownerTooltip}`}
 											className={cn(
 												"inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs",
 												isTrashCard

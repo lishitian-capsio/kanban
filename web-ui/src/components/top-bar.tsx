@@ -41,7 +41,7 @@ import type { TaskOwner } from "@/types";
 import type { OpenTargetId, OpenTargetOption } from "@/utils/open-targets";
 import { formatPathForDisplay } from "@/utils/path-display";
 import { isMacPlatform } from "@/utils/platform";
-import { getTaskOwnerLabel } from "@/utils/task-owner";
+import { getTaskOwnerLabel, getTaskOwnerTooltip } from "@/utils/task-owner";
 
 type SettingsSection = "shortcuts";
 type CreateShortcutResult = { ok: boolean; message?: string };
@@ -265,6 +265,7 @@ function TopBarGitStatusSection({
 
 	if (selectedTaskId && (taskWorkspaceInfo || taskWorkspaceSnapshot)) {
 		const ownerLabel = getTaskOwnerLabel(selectedTaskOwner ?? undefined);
+		const ownerTooltip = getTaskOwnerTooltip(selectedTaskOwner ?? undefined);
 		return (
 			<>
 				<div className="w-px h-5 bg-border mx-1" />
@@ -280,7 +281,7 @@ function TopBarGitStatusSection({
 				/>
 				{ownerLabel ? (
 					<span
-						title={`Created by ${ownerLabel}`}
+						title={`Created by ${ownerTooltip}`}
 						className="inline-flex max-w-[160px] items-center gap-1 rounded-md border border-border-bright bg-surface-1 px-1.5 py-0.5 text-xs text-text-secondary"
 					>
 						<User size={12} className="shrink-0" />
