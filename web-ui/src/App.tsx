@@ -12,6 +12,7 @@ import { ClearTrashDialog } from "@/components/clear-trash-dialog";
 import { DebugDialog } from "@/components/debug-dialog";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
 import { GitHistoryView } from "@/components/git-history-view";
+import { DockableChatPanel } from "@/components/home-agent/dockable-chat-panel";
 import { KanbanBoard } from "@/components/kanban-board";
 import { ProjectNavigationPanel } from "@/components/project-navigation-panel";
 import { RuntimeSettingsDialog, type RuntimeSettingsSection } from "@/components/runtime-settings-dialog";
@@ -37,6 +38,7 @@ import { KanbanAccessBlockedFallback } from "@/hooks/kanban-access-blocked-fallb
 import { RuntimeDisconnectedFallback } from "@/hooks/runtime-disconnected-fallback";
 import { useAppHotkeys } from "@/hooks/use-app-hotkeys";
 import { useBoardInteractions } from "@/hooks/use-board-interactions";
+import { useChatDock } from "@/hooks/use-chat-dock";
 import { useDebugTools } from "@/hooks/use-debug-tools";
 import { useDetailTaskNavigation } from "@/hooks/use-detail-task-navigation";
 import { useDocumentVisibility } from "@/hooks/use-document-visibility";
@@ -88,7 +90,7 @@ export default function App(): ReactElement {
 	const [canPersistWorkspaceState, setCanPersistWorkspaceState] = useState(false);
 	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 	const [settingsInitialSection, setSettingsInitialSection] = useState<RuntimeSettingsSection | null>(null);
-	const [homeSidebarSection, setHomeSidebarSection] = useState<"projects" | "agent">("projects");
+	const chatDock = useChatDock();
 	const [isClearTrashDialogOpen, setIsClearTrashDialogOpen] = useState(false);
 	const [isGitHistoryOpen, setIsGitHistoryOpen] = useState(false);
 	const [isVaultOpen, setIsVaultOpen] = useState(false);
@@ -832,13 +834,6 @@ export default function App(): ReactElement {
 						isLoadingProjects={isProjectListLoading}
 						currentProjectId={navigationCurrentProjectId}
 						removingProjectId={removingProjectId}
-						activeSection={homeSidebarSection}
-						onActiveSectionChange={setHomeSidebarSection}
-						canShowAgentSection={!hasNoProjects && Boolean(currentProjectId)}
-						agentSectionContent={homeSidebarAgentPanel}
-						selectedAgentId={
-							homeThreads.activeThread?.agentId ?? settingsRuntimeProjectConfig?.selectedAgentId ?? null
-						}
 						onSelectProject={(projectId) => {
 							void handleSelectProject(projectId);
 						}}
@@ -852,7 +847,10 @@ export default function App(): ReactElement {
 						setSidebarCollapsed={sidebarLayout.setSidebarCollapsed}
 					/>
 				) : null}
-				<div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+				{!selectedCard && homeSidebarAgentPanel ? (
+					<DockableChatPanel dock={chatDock}>{homeSidebarAgentPanel}</DockableChatPanel>
+				) : null}
+				<div className="order-2 flex flex-col flex-1 min-w-0 overflow-hidden">
 					<TopBar
 						onToggleSidebar={!selectedCard ? handleToggleSidebar : undefined}
 						onBack={selectedCard ? handleBack : undefined}

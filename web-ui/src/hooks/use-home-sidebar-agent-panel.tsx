@@ -11,6 +11,7 @@ import { SessionProviderControl } from "@/components/agent-providers/session-pro
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
 import { KanbanAgentChatPanel } from "@/components/detail-panels/kanban-agent-chat-panel";
 import { HomeThreadBar } from "@/components/home-agent/home-thread-bar";
+import { TerminalAgentHints } from "@/components/home-agent/terminal-agent-hints";
 import { resolveAgentLabel } from "@/components/home-agent/thread-agent-badge";
 import { Spinner } from "@/components/ui/spinner";
 import { createIdleTaskSession } from "@/hooks/app-utils";
@@ -211,6 +212,7 @@ export function useHomeSidebarAgentPanel({
 
 	return (
 		<div className="flex h-full w-full min-h-0 flex-col gap-2">
+			{activeAgentId && activeAgentId !== "pi" ? <TerminalAgentHints /> : null}
 			<div className="flex items-stretch gap-1">
 				<div className="min-w-0 flex-1">
 					<HomeThreadBar

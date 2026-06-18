@@ -1,0 +1,94 @@
+// Dock controls shown at the top of the home chat panel.
+//
+// Three independent target-state buttons (no cycle): dock-left, dock-right,
+// float. The button matching the current dock position is highlighted. In the
+// floating state an extra close button returns the panel to its last docked
+// side, and the title region carries the drag-handle class so react-rnd can use
+// it (the buttons sit outside that region and never start a drag).
+import { GripVertical, PanelLeft, PanelRight, PictureInPicture2, X } from "lucide-react";
+import type { ReactNode } from "react";
+
+import { cn } from "@/components/ui/cn";
+import { Tooltip } from "@/components/ui/tooltip";
+
+import type { ChatDockPosition } from "./chat-dock-state";
+
+export const CHAT_DOCK_DRAG_HANDLE_CLASS = "kb-chat-dock-drag-handle";
+
+interface ChatDockHeaderProps {
+	position: ChatDockPosition;
+	onDockLeft: () => void;
+	onDockRight: () => void;
+	onFloat: () => void;
+	onClose?: () => void;
+}
+
+function DockButton({
+	active,
+	label,
+	onClick,
+	children,
+}: {
+	active: boolean;
+	label: string;
+	onClick: () => void;
+	children: ReactNode;
+}): React.ReactElement {
+	return (
+		<Tooltip content={label}>
+			<button
+				type="button"
+				aria-label={label}
+				aria-pressed={active}
+				onClick={onClick}
+				className={cn(
+					"flex cursor-pointer items-center rounded-sm p-1.5 transition-colors",
+					active
+						? "bg-surface-4 text-text-primary"
+						: "text-text-secondary hover:bg-surface-3 hover:text-text-primary",
+				)}
+			>
+				{children}
+			</button>
+		</Tooltip>
+	);
+}
+
+export function ChatDockHeader({
+	position,
+	onDockLeft,
+	onDockRight,
+	onFloat,
+	onClose,
+}: ChatDockHeaderProps): React.ReactElement {
+	const floating = position === "float";
+	return (
+		<div className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-surface-2 p-1">
+			<div
+				className={cn(
+					"flex min-w-0 flex-1 items-center gap-1.5 px-1 text-text-secondary",
+					floating ? `${CHAT_DOCK_DRAG_HANDLE_CLASS} cursor-move` : null,
+				)}
+			>
+				{floating ? <GripVertical size={14} className="shrink-0" /> : null}
+				<span className="truncate text-xs font-medium">Kanban Agent</span>
+			</div>
+			<div className="flex shrink-0 items-center gap-0.5">
+				<DockButton active={position === "left"} label="Dock to left" onClick={onDockLeft}>
+					<PanelLeft size={14} />
+				</DockButton>
+				<DockButton active={position === "right"} label="Dock to right" onClick={onDockRight}>
+					<PanelRight size={14} />
+				</DockButton>
+				<DockButton active={floating} label="Detach as floating window" onClick={onFloat}>
+					<PictureInPicture2 size={14} />
+				</DockButton>
+				{floating && onClose ? (
+					<DockButton active={false} label="Close floating window" onClick={onClose}>
+						<X size={14} />
+					</DockButton>
+				) : null}
+			</div>
+		</div>
+	);
+}

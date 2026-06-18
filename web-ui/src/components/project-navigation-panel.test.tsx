@@ -56,14 +56,6 @@ function getResizeHandle(container: HTMLElement): HTMLElement {
 	return handle as HTMLElement;
 }
 
-function getButtonByText(container: HTMLElement, text: string): HTMLButtonElement {
-	const button = Array.from(container.querySelectorAll("button")).find((candidate) => candidate.textContent === text);
-	if (!(button instanceof HTMLButtonElement)) {
-		throw new Error(`Button with text "${text}" was not rendered`);
-	}
-	return button;
-}
-
 describe("ProjectNavigationPanel width persistence", () => {
 	let container: HTMLDivElement;
 	let root: Root;
@@ -120,10 +112,6 @@ describe("ProjectNavigationPanel width persistence", () => {
 					projects={PROJECTS}
 					currentProjectId="project-1"
 					removingProjectId={null}
-					activeSection="projects"
-					onActiveSectionChange={() => {}}
-					canShowAgentSection
-					selectedAgentId={null}
 					onSelectProject={() => {}}
 					onRemoveProject={async () => true}
 					onAddProject={() => {}}
@@ -173,30 +161,5 @@ describe("ProjectNavigationPanel width persistence", () => {
 		renderPanel();
 		const sidebar = getSidebar(container);
 		expect(sidebar.style.width).toBe(`${expectedResizedWidth}px`);
-	});
-
-	it("persists terminal tips dismissal", () => {
-		renderPanel({
-			activeSection: "agent",
-			selectedAgentId: "droid",
-		});
-		expect(container.textContent).toContain("Tips");
-		expect(localStorage.getItem(LocalStorageKey.AgentTipsDismissed)).toBeNull();
-
-		const hideButton = container.querySelector('[aria-label="Dismiss tips"]') as HTMLButtonElement;
-		act(() => {
-			hideButton.click();
-		});
-
-		expect(container.textContent).toContain("Show tips");
-		expect(localStorage.getItem(LocalStorageKey.AgentTipsDismissed)).toBe("true");
-
-		const showTipsButton = getButtonByText(container, "Show tips");
-		act(() => {
-			showTipsButton.click();
-		});
-
-		expect(container.textContent).toContain("Tips");
-		expect(localStorage.getItem(LocalStorageKey.AgentTipsDismissed)).toBeNull();
 	});
 });
