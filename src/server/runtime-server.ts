@@ -4,6 +4,7 @@ import { createServer as createHttpsServer } from "node:https";
 import { join } from "node:path";
 
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
+import { EventLoopKeepalive } from "../agent-sdk/utils/yield";
 import { handleMcpOauthCallback } from "../agent-sdk/kanban/mcp-runtime-service";
 import {
 	createInMemoryPiTaskSessionService,
@@ -112,6 +113,15 @@ function readWorkspaceIdFromRequest(request: IncomingMessage, requestUrl: URL): 
 }
 
 export async function createRuntimeServer(deps: CreateRuntimeServerDependencies): Promise<RuntimeServer> {
+	// Bun 1.3.x (JavaScriptCore) busy-waits the event loop when the only
+	// pending work is an unresolved Promise — even with active I/O watchers.
+	// The agent loop installs its own keepalive while running, but between
+	// turns and during board-sync / metadata-monitor / state-broadcast gaps
+	// the event loop can spin at 100% CPU. A single process-lifetime timer
+	// keeps epoll_wait engaged without affecting shutdown (unref + manual
+	// clear in close()).
+	const eventLoopKeepalive = new EventLoopKeepalive();
+
 	const webUiDir = getWebUiDir();
 
 	try {
@@ -667,6 +677,8 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 	return {
 		url,
 		close: async () => {
+			// Release the event-loop keepalive so the process can exit cleanly.
+			eventLoopKeepalive[Symbol.dispose]();
 			// Flush a final board commit + push (covers the shutdown coordinator's last
 			// interrupted-session save) before tearing down the broadcast channel.
 			await boardSyncService.dispose();
