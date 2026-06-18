@@ -38,6 +38,7 @@ import { KanbanAccessBlockedFallback } from "@/hooks/kanban-access-blocked-fallb
 import { RuntimeDisconnectedFallback } from "@/hooks/runtime-disconnected-fallback";
 import { useAppHotkeys } from "@/hooks/use-app-hotkeys";
 import { useBoardInteractions } from "@/hooks/use-board-interactions";
+import { useBoardSync } from "@/hooks/use-board-sync";
 import { useChatDock } from "@/hooks/use-chat-dock";
 import { useDebugTools } from "@/hooks/use-debug-tools";
 import { useDetailTaskNavigation } from "@/hooks/use-detail-task-navigation";
@@ -113,6 +114,7 @@ export default function App(): ReactElement {
 		taskChatMessagesByTaskId,
 		latestTaskReadyForReview,
 		kanbanSessionContextVersion,
+		boardSyncStatus,
 		streamError,
 		isRuntimeDisconnected,
 		hasReceivedSnapshot,
@@ -294,6 +296,7 @@ export default function App(): ReactElement {
 		setPendingTaskStartAfterEditId(taskId);
 	}, []);
 	const { identity: gitUserIdentity } = useGitUserIdentity(currentProjectId);
+	const boardSync = useBoardSync(currentProjectId, boardSyncStatus);
 
 	const {
 		isInlineTaskCreateOpen,
@@ -882,6 +885,24 @@ export default function App(): ReactElement {
 								? undefined
 								: () => {
 										void runGitAction("push");
+									}
+						}
+						boardSync={
+							selectedCard
+								? null
+								: {
+										status: boardSync.status,
+										runningAction: boardSync.runningAction,
+										isTogglingPause: boardSync.isTogglingPause,
+										onPush: () => {
+											void boardSync.push();
+										},
+										onPull: () => {
+											void boardSync.pull();
+										},
+										onTogglePause: () => {
+											void boardSync.setPaused(!(boardSync.status?.autoSyncPaused ?? false));
+										},
 									}
 						}
 						onToggleTerminal={

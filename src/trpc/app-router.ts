@@ -11,6 +11,13 @@ import type {
 	RuntimeAgentProviderMutationRequest,
 	RuntimeAgentProviderMutationResponse,
 	RuntimeAgentProviderSetListResponse,
+	RuntimeBoardAutoSyncRequest,
+	RuntimeBoardAutoSyncResponse,
+	RuntimeBoardBranchUpdateRequest,
+	RuntimeBoardBranchUpdateResponse,
+	RuntimeBoardSyncActionRequest,
+	RuntimeBoardSyncActionResponse,
+	RuntimeBoardSyncStatusResponse,
 	RuntimeCommandRunRequest,
 	RuntimeCommandRunResponse,
 	RuntimeConfigResponse,
@@ -147,6 +154,13 @@ import {
 	runtimeAgentProviderMutationRequestSchema,
 	runtimeAgentProviderMutationResponseSchema,
 	runtimeAgentProviderSetListResponseSchema,
+	runtimeBoardAutoSyncRequestSchema,
+	runtimeBoardAutoSyncResponseSchema,
+	runtimeBoardBranchUpdateRequestSchema,
+	runtimeBoardBranchUpdateResponseSchema,
+	runtimeBoardSyncActionRequestSchema,
+	runtimeBoardSyncActionResponseSchema,
+	runtimeBoardSyncStatusResponseSchema,
 	runtimeCommandRunRequestSchema,
 	runtimeCommandRunResponseSchema,
 	runtimeConfigResponseSchema,
@@ -517,6 +531,19 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeVaultSettingsUpdateRequest,
 		) => Promise<RuntimeVaultSettingsUpdateResponse>;
+		getBoardSyncStatus: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeBoardSyncStatusResponse>;
+		runBoardSyncAction: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeBoardSyncActionRequest,
+		) => Promise<RuntimeBoardSyncActionResponse>;
+		setBoardAutoSync: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeBoardAutoSyncRequest,
+		) => Promise<RuntimeBoardAutoSyncResponse>;
+		updateBoardBranch: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeBoardBranchUpdateRequest,
+		) => Promise<RuntimeBoardBranchUpdateResponse>;
 		notifyStateUpdated: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeWorkspaceStateNotifyResponse>;
 		saveState: (
 			scope: RuntimeTrpcWorkspaceScope,
@@ -1000,6 +1027,27 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeVaultSettingsUpdateResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.updateVaultSettings(ctx.workspaceScope, input);
+			}),
+		getBoardSyncStatus: workspaceProcedure.output(runtimeBoardSyncStatusResponseSchema).query(async ({ ctx }) => {
+			return await ctx.workspaceApi.getBoardSyncStatus(ctx.workspaceScope);
+		}),
+		runBoardSyncAction: workspaceProcedure
+			.input(runtimeBoardSyncActionRequestSchema)
+			.output(runtimeBoardSyncActionResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.runBoardSyncAction(ctx.workspaceScope, input);
+			}),
+		setBoardAutoSync: workspaceProcedure
+			.input(runtimeBoardAutoSyncRequestSchema)
+			.output(runtimeBoardAutoSyncResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.setBoardAutoSync(ctx.workspaceScope, input);
+			}),
+		updateBoardBranch: workspaceProcedure
+			.input(runtimeBoardBranchUpdateRequestSchema)
+			.output(runtimeBoardBranchUpdateResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.updateBoardBranch(ctx.workspaceScope, input);
 			}),
 		notifyStateUpdated: workspaceProcedure
 			.output(runtimeWorkspaceStateNotifyResponseSchema)

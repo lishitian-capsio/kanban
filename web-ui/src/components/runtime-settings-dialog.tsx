@@ -32,6 +32,7 @@ import {
 	X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BoardBranchSetting } from "@/components/board-branch-setting";
 import { AccountOrganizationSection } from "@/components/shared/account-organization-section";
 import {
 	KanbanAddProviderDialog,
@@ -1443,6 +1444,7 @@ export function RuntimeSettingsDialog({
 							: "<project>/.kanban/kanban/config.json"}
 						{config?.projectConfigPath ? <ExternalLink size={12} className="inline ml-1.5 align-middle" /> : null}
 					</p>
+					<BoardBranchSetting workspaceId={workspaceId} />
 					<div className="rounded-lg border border-border bg-surface-0 px-4 py-3 mb-4">
 						<div className="flex items-center justify-between mb-2">
 							<h6

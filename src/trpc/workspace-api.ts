@@ -1,6 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
 import type {
+	RuntimeBoardBranchUpdateResponse,
+	RuntimeBoardSyncAction,
+	RuntimeBoardSyncActionResponse,
+	RuntimeBoardSyncStatus,
 	RuntimeGitCheckoutResponse,
 	RuntimeGitDiscardResponse,
 	RuntimeGitSummaryResponse,
@@ -51,6 +55,21 @@ export interface CreateWorkspaceApiDependencies {
 	broadcastRuntimeWorkspaceStateUpdated: (workspaceId: string, workspacePath: string) => Promise<void> | void;
 	broadcastRuntimeProjectsUpdated: (preferredCurrentProjectId: string | null) => Promise<void> | void;
 	buildWorkspaceStateSnapshot: (workspaceId: string, workspacePath: string) => Promise<RuntimeWorkspaceStateResponse>;
+	/** Board-branch sync operations, backed by the process-wide board sync service. */
+	boardSync: BoardSyncApi;
+}
+
+/** A workspace scope reduced to what the board sync service needs to build its target. */
+export interface BoardSyncApiScope {
+	workspaceId: string;
+	workspacePath: string;
+}
+
+export interface BoardSyncApi {
+	getStatus: (scope: BoardSyncApiScope) => Promise<RuntimeBoardSyncStatus>;
+	runAction: (scope: BoardSyncApiScope, action: RuntimeBoardSyncAction) => Promise<RuntimeBoardSyncActionResponse>;
+	setAutoSyncPaused: (scope: BoardSyncApiScope, paused: boolean) => Promise<RuntimeBoardSyncStatus>;
+	renameBranch: (scope: BoardSyncApiScope, branch: string) => Promise<RuntimeBoardBranchUpdateResponse>;
 }
 
 function normalizeOptionalTaskWorkspaceScopeInput(
@@ -492,6 +511,20 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 			const settings = await new VaultSettingsStore(workspaceScope.workspacePath).set({ managed: input.managed });
 			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
 			return { settings };
+		},
+		getBoardSyncStatus: async (workspaceScope) => {
+			const status = await deps.boardSync.getStatus(workspaceScope);
+			return { status };
+		},
+		runBoardSyncAction: async (workspaceScope, input) => {
+			return await deps.boardSync.runAction(workspaceScope, input.action);
+		},
+		setBoardAutoSync: async (workspaceScope, input) => {
+			const status = await deps.boardSync.setAutoSyncPaused(workspaceScope, input.paused);
+			return { status };
+		},
+		updateBoardBranch: async (workspaceScope, input) => {
+			return await deps.boardSync.renameBranch(workspaceScope, input.branch);
 		},
 		saveState: async (workspaceScope, input) => {
 			try {

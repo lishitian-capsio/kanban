@@ -552,6 +552,102 @@ export const runtimeVaultSettingsUpdateResponseSchema = z.object({
 export type RuntimeVaultSettingsUpdateResponse = z.infer<typeof runtimeVaultSettingsUpdateResponseSchema>;
 
 // ---------------------------------------------------------------------------
+// Board-branch sync status & settings
+//
+// The board's committed data lives on a dedicated, never-merged git branch
+// (default `kanban/board`) read/written in a private worktree — see
+// `.plan/docs/board-branch-decoupling.md`. This block is the wire surface for
+// P4: the top-bar sync badge reads `RuntimeBoardSyncStatus`; manual push/pull,
+// the pause-auto-sync toggle, and the (rename-migrating) branch setting are the
+// mutations. `branch` is sourced from the authoritative `.kanban/board-ref`.
+// ---------------------------------------------------------------------------
+
+export const runtimeBoardSyncStateSchema = z.enum([
+	// Board-branch decoupling is not active for this repo (no `board-ref`).
+	"disabled",
+	// Decoupled but no git remote is configured; the branch is local-only (still durable in .git).
+	"local-only",
+	// Worktree HEAD matches the remote tip — nothing to push or pull.
+	"synced",
+	// Local commits are ahead of the remote, waiting on the next (debounced) push.
+	"ahead",
+	// The remote moved ahead; a pull / fast-forward is pending.
+	"behind",
+	// Both sides advanced — a pull + merge is needed to reconcile.
+	"diverged",
+	// A sync (commit/push/pull) is currently running.
+	"syncing",
+	// A push hit a content conflict; local data is intact, awaiting manual resolution.
+	"conflict",
+	// The last sync failed for another reason (e.g. offline); it retries on the next sync.
+	"error",
+]);
+export type RuntimeBoardSyncState = z.infer<typeof runtimeBoardSyncStateSchema>;
+
+export const runtimeBoardSyncStatusSchema = z.object({
+	state: runtimeBoardSyncStateSchema,
+	/** Whether board-branch decoupling is active for this workspace. */
+	decoupled: z.boolean(),
+	/** The board branch holding the committed data, or null when decoupling is inactive. */
+	branch: z.string().nullable(),
+	/** Whether a git remote is configured (board data is publishable). */
+	hasRemote: z.boolean(),
+	/** Local commits ahead of the last-known remote tip. */
+	aheadCount: z.number().int().nonnegative(),
+	/** Remote commits the local worktree is behind by (since the last fetch). */
+	behindCount: z.number().int().nonnegative(),
+	/** Whether the debounced auto-sync is paused for this session. */
+	autoSyncPaused: z.boolean(),
+	/** A short message describing the last conflict/error, when relevant. */
+	lastError: z.string().nullable(),
+});
+export type RuntimeBoardSyncStatus = z.infer<typeof runtimeBoardSyncStatusSchema>;
+
+export const runtimeBoardSyncStatusResponseSchema = z.object({
+	status: runtimeBoardSyncStatusSchema,
+});
+export type RuntimeBoardSyncStatusResponse = z.infer<typeof runtimeBoardSyncStatusResponseSchema>;
+
+export const runtimeBoardSyncActionSchema = z.enum(["push", "pull"]);
+export type RuntimeBoardSyncAction = z.infer<typeof runtimeBoardSyncActionSchema>;
+
+export const runtimeBoardSyncActionRequestSchema = z.object({
+	action: runtimeBoardSyncActionSchema,
+});
+export type RuntimeBoardSyncActionRequest = z.infer<typeof runtimeBoardSyncActionRequestSchema>;
+
+export const runtimeBoardSyncActionResponseSchema = z.object({
+	ok: z.boolean(),
+	status: runtimeBoardSyncStatusSchema,
+	error: z.string().optional(),
+});
+export type RuntimeBoardSyncActionResponse = z.infer<typeof runtimeBoardSyncActionResponseSchema>;
+
+export const runtimeBoardAutoSyncRequestSchema = z.object({
+	paused: z.boolean(),
+});
+export type RuntimeBoardAutoSyncRequest = z.infer<typeof runtimeBoardAutoSyncRequestSchema>;
+
+export const runtimeBoardAutoSyncResponseSchema = z.object({
+	status: runtimeBoardSyncStatusSchema,
+});
+export type RuntimeBoardAutoSyncResponse = z.infer<typeof runtimeBoardAutoSyncResponseSchema>;
+
+export const runtimeBoardBranchUpdateRequestSchema = z.object({
+	branch: z.string().min(1),
+});
+export type RuntimeBoardBranchUpdateRequest = z.infer<typeof runtimeBoardBranchUpdateRequestSchema>;
+
+export const runtimeBoardBranchUpdateResponseSchema = z.object({
+	ok: z.boolean(),
+	status: runtimeBoardSyncStatusSchema,
+	/** The archive tag left as a rollback anchor for the old branch, when one was created. */
+	archivedTag: z.string().nullable(),
+	error: z.string().optional(),
+});
+export type RuntimeBoardBranchUpdateResponse = z.infer<typeof runtimeBoardBranchUpdateResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // Vault saved views & filter expressions
 //
 // A *view* is a saved way of looking at one document type: an optional filter
@@ -956,6 +1052,13 @@ export type RuntimeStateStreamKanbanSessionContextUpdatedMessage = z.infer<
 	typeof runtimeStateStreamKanbanSessionContextUpdatedMessageSchema
 >;
 
+export const runtimeStateStreamBoardSyncStatusMessageSchema = z.object({
+	type: z.literal("board_sync_status_updated"),
+	workspaceId: z.string(),
+	status: runtimeBoardSyncStatusSchema,
+});
+export type RuntimeStateStreamBoardSyncStatusMessage = z.infer<typeof runtimeStateStreamBoardSyncStatusMessageSchema>;
+
 export const runtimeStateStreamErrorMessageSchema = z.object({
 	type: z.literal("error"),
 	message: z.string(),
@@ -973,6 +1076,7 @@ export const runtimeStateStreamMessageSchema = z.discriminatedUnion("type", [
 	runtimeStateStreamTaskChatClearedMessageSchema,
 	runtimeStateStreamMcpAuthUpdatedMessageSchema,
 	runtimeStateStreamKanbanSessionContextUpdatedMessageSchema,
+	runtimeStateStreamBoardSyncStatusMessageSchema,
 	runtimeStateStreamErrorMessageSchema,
 ]);
 export type RuntimeStateStreamMessage = z.infer<typeof runtimeStateStreamMessageSchema>;

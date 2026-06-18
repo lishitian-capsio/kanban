@@ -33,6 +33,8 @@ const BOARD_REF_REPO_RELATIVE_PATH = `${KANBAN_RUNTIME_HOME_DIR_NAME}/${BOARD_RE
 
 const DECOUPLE_COMMIT_MESSAGE = "chore(kanban): decouple board data to its own branch";
 
+const BOARD_REF_UPDATE_COMMIT_MESSAGE = "chore(kanban): point board-ref at the renamed board branch";
+
 export interface EnsureBoardWorktreeResult {
 	ok: boolean;
 	/** Absolute worktree path, or `null` when decoupling is inactive / setup failed. */
@@ -266,6 +268,217 @@ export async function fetchAndFastForwardBoardWorktree(
 	return { changed: ff.ok };
 }
 
+/** Tag prefix anchoring the pre-rename tip of an old board branch, for rollback. */
+const BOARD_ARCHIVE_TAG_PREFIX = "kanban/board-archive";
+
+export interface BoardAheadBehind {
+	/** Whether the board worktree itself exists on disk. */
+	exists: boolean;
+	/** Whether a git remote is configured. */
+	hasRemote: boolean;
+	/** Whether the remote-tracking ref for the board branch is present (post-fetch). */
+	hasRemoteRef: boolean;
+	aheadCount: number;
+	behindCount: number;
+}
+
+/**
+ * Compute how far the board worktree is ahead of / behind its remote, using the
+ * **last-known** remote-tracking ref — this is a cheap, fetch-free read for the
+ * status badge. A fetch (and thus a refreshed `behindCount`) happens on the
+ * startup reconcile, a push reconcile, or an explicit pull. Never throws: any git
+ * failure degrades to zero counts.
+ */
+export async function getBoardWorktreeAheadBehind(repoPath: string, branch: string): Promise<BoardAheadBehind> {
+	const worktreePath = getBoardWorktreePath(repoPath);
+	if (!(await isGitWorktree(worktreePath))) {
+		return { exists: false, hasRemote: false, hasRemoteRef: false, aheadCount: 0, behindCount: 0 };
+	}
+	const remote = await getDefaultRemote(repoPath);
+	if (!remote) {
+		return { exists: true, hasRemote: false, hasRemoteRef: false, aheadCount: 0, behindCount: 0 };
+	}
+	const remoteRef = `refs/remotes/${remote}/${branch}`;
+	if (!(await remoteBranchExists(repoPath, remote, branch))) {
+		return { exists: true, hasRemote: true, hasRemoteRef: false, aheadCount: 0, behindCount: 0 };
+	}
+	const counts = await runGit(worktreePath, ["rev-list", "--left-right", "--count", `HEAD...${remoteRef}`]);
+	if (!counts.ok) {
+		return { exists: true, hasRemote: true, hasRemoteRef: true, aheadCount: 0, behindCount: 0 };
+	}
+	const [aheadRaw, behindRaw] = counts.stdout.trim().split(/\s+/, 2);
+	const aheadCount = Number.parseInt(aheadRaw ?? "0", 10);
+	const behindCount = Number.parseInt(behindRaw ?? "0", 10);
+	return {
+		exists: true,
+		hasRemote: true,
+		hasRemoteRef: true,
+		aheadCount: Number.isFinite(aheadCount) ? aheadCount : 0,
+		behindCount: Number.isFinite(behindCount) ? behindCount : 0,
+	};
+}
+
+export interface BoardPullResult {
+	status: "pulled" | "up-to-date" | "no-remote" | "conflict" | "error";
+	/** True when the pull moved local HEAD (callers reload + rebroadcast). */
+	pulledChanges: boolean;
+	error?: string;
+}
+
+/**
+ * Explicit pull: fetch the board branch and merge the remote into the local
+ * worktree. Fast-forwards when only behind; creates a merge commit when diverged
+ * (sharding keeps most concurrent edits conflict-free). A genuine content conflict
+ * is **surfaced, not auto-resolved** — the merge is aborted to keep the worktree
+ * clean (conflict markers would corrupt the next shard read) and `"conflict"` is
+ * returned with local data intact. The manual counterpart to the push path's
+ * remote reconciliation; see §4(5).
+ */
+export async function pullBoardWorktree(repoPath: string, branch: string): Promise<BoardPullResult> {
+	const worktreePath = getBoardWorktreePath(repoPath);
+	const remote = await getDefaultRemote(repoPath);
+	if (!remote) {
+		return { status: "no-remote", pulledChanges: false };
+	}
+	if (!(await fetchBoardBranchIntoTrackingRef(worktreePath, remote, branch))) {
+		return { status: "error", pulledChanges: false, error: "Could not fetch the board branch." };
+	}
+	if (!(await remoteBranchExists(repoPath, remote, branch))) {
+		// Remote has no such branch yet (we are the first to publish it) — nothing to pull.
+		return { status: "up-to-date", pulledChanges: false };
+	}
+	const remoteRef = `refs/remotes/${remote}/${branch}`;
+	const head = await runGit(worktreePath, ["rev-parse", "HEAD"]);
+	const remoteHead = await runGit(worktreePath, ["rev-parse", remoteRef]);
+	if (head.ok && remoteHead.ok && head.stdout === remoteHead.stdout) {
+		return { status: "up-to-date", pulledChanges: false };
+	}
+	const merge = await runGit(worktreePath, ["merge", "--no-edit", remoteRef], { env: buildBoardCommitEnv() });
+	if (!merge.ok) {
+		await runGit(worktreePath, ["merge", "--abort"], { env: buildBoardCommitEnv() });
+		log.warn("board pull hit a merge conflict; left local data intact and surfaced the conflict", {
+			repoPath,
+			branch,
+			remote,
+		});
+		return { status: "conflict", pulledChanges: false, error: merge.output };
+	}
+	return { status: "pulled", pulledChanges: true };
+}
+
+export interface RenameBoardBranchResult {
+	ok: boolean;
+	/** Archive tag left as a rollback anchor for the old branch, when created. */
+	archivedTag: string | null;
+	error?: string;
+}
+
+async function rollbackBoardBranchRename(
+	repoPath: string,
+	worktreePath: string,
+	oldBranch: string,
+	newBranch: string,
+	archiveTag: string,
+	env: NodeJS.ProcessEnv,
+): Promise<void> {
+	// Return to the old branch and undo the half-applied local rename so the next
+	// attempt (and the still-authoritative board-ref) finds a clean old branch.
+	await runGit(worktreePath, ["switch", oldBranch], { env });
+	await runGit(repoPath, ["branch", "-D", newBranch], { env });
+	await runGit(repoPath, ["tag", "-d", archiveTag], { env });
+}
+
+/**
+ * Rename the board branch **without ever abandoning data** (§4(4)). The new branch
+ * is created from the old branch's tip (history + data carried over), the board
+ * worktree is switched onto it, an archive tag is left on the old tip as a rollback
+ * anchor, then — when a remote exists — the new branch is pushed and the old one
+ * deleted on the remote. Any failure rolls back to the old branch and leaves the
+ * authoritative `.kanban/board-ref` untouched (the orchestrator only rewrites the
+ * pointer after this returns ok), so the board never goes empty. A no-op (ok) when
+ * the names already match.
+ */
+export async function renameBoardBranch(
+	repoPath: string,
+	oldBranch: string,
+	newBranch: string,
+): Promise<RenameBoardBranchResult> {
+	const trimmedNew = newBranch.trim();
+	if (!trimmedNew) {
+		return { ok: false, archivedTag: null, error: "Branch name cannot be empty." };
+	}
+	if (trimmedNew === oldBranch) {
+		return { ok: true, archivedTag: null };
+	}
+	const validFormat = await runGit(repoPath, ["check-ref-format", `refs/heads/${trimmedNew}`]);
+	if (!validFormat.ok) {
+		return { ok: false, archivedTag: null, error: `Invalid branch name: ${trimmedNew}` };
+	}
+
+	const worktreePath = getBoardWorktreePath(repoPath);
+	if (!(await isGitWorktree(worktreePath))) {
+		return { ok: false, archivedTag: null, error: "The board worktree is not set up." };
+	}
+	const current = await runGit(worktreePath, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+	const currentBranch = current.ok ? current.stdout : null;
+	if (currentBranch !== oldBranch) {
+		return {
+			ok: false,
+			archivedTag: null,
+			error: `The board worktree is on '${currentBranch ?? "detached HEAD"}', not the expected '${oldBranch}'.`,
+		};
+	}
+	if (await branchExists(repoPath, trimmedNew)) {
+		return { ok: false, archivedTag: null, error: `A branch named '${trimmedNew}' already exists.` };
+	}
+
+	const env = buildBoardCommitEnv();
+
+	// ① New branch at the old tip — data and history come along.
+	const created = await runGit(repoPath, ["branch", trimmedNew, oldBranch], { env });
+	if (!created.ok) {
+		return { ok: false, archivedTag: null, error: created.error ?? created.output };
+	}
+
+	// ② Move the worktree onto the new branch.
+	const switched = await runGit(worktreePath, ["switch", trimmedNew], { env });
+	if (!switched.ok) {
+		await runGit(repoPath, ["branch", "-D", trimmedNew], { env });
+		return { ok: false, archivedTag: null, error: switched.error ?? switched.output };
+	}
+
+	// ③ Archive the old tip so the rename is reversible even after the old branch is gone.
+	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+	const archiveTag = `${BOARD_ARCHIVE_TAG_PREFIX}/${stamp}`;
+	await runGit(repoPath, ["tag", archiveTag, oldBranch], { env });
+
+	// ④ Publish the new branch, then retire the old one on the remote.
+	const remote = await getDefaultRemote(repoPath);
+	if (remote) {
+		const pushNew = await runGit(worktreePath, ["push", remote, `${trimmedNew}:${trimmedNew}`], { env });
+		if (!pushNew.ok) {
+			await rollbackBoardBranchRename(repoPath, worktreePath, oldBranch, trimmedNew, archiveTag, env);
+			return { ok: false, archivedTag: null, error: pushNew.error ?? pushNew.output };
+		}
+		// Best-effort: the archive tag and old-branch deletion are cleanup, not gates —
+		// the rename is already live once the new branch is pushed.
+		await runGit(worktreePath, ["push", remote, `refs/tags/${archiveTag}`], { env });
+		const deleteOld = await runGit(worktreePath, ["push", remote, `:${oldBranch}`], { env });
+		if (!deleteOld.ok) {
+			log.warn("renamed the board branch but could not delete the old branch on the remote", {
+				repoPath,
+				oldBranch,
+				newBranch: trimmedNew,
+				remote,
+			});
+		}
+	}
+
+	// The archive tag preserves the tip, so the local old branch can be retired too.
+	await runGit(repoPath, ["branch", "-D", oldBranch], { env });
+	return { ok: true, archivedTag: archiveTag };
+}
+
 /**
  * Create an orphan board branch without a worktree, using plumbing only so it
  * works on any git version (the porcelain `git worktree add --orphan` needs git
@@ -492,6 +705,44 @@ async function stageDecoupleIndexChanges(repoPath: string, env: NodeJS.ProcessEn
 		env,
 	});
 	await runGit(repoPath, ["add", "--", ROOT_GITIGNORE_FILENAME, BOARD_REF_REPO_RELATIVE_PATH], { env });
+}
+
+/**
+ * Commit a changed `.kanban/board-ref` onto the code branch so the (renamed) board
+ * branch name travels with a clone. Like {@link commitCodeBranchDecoupling} the commit
+ * is built in a throwaway index off HEAD so unrelated user-staged changes are never
+ * swept in, then the real index is synced for the pointer. A no-op (returns false)
+ * when the pointer is not yet tracked (decoupling not committed) or already current.
+ */
+export async function commitBoardRefUpdate(repoPath: string): Promise<boolean> {
+	if (!(await isBoardRefTrackedOnCodeBranch(repoPath))) {
+		return false;
+	}
+	const env = buildBoardCommitEnv();
+	const symRef = await runGit(repoPath, ["symbolic-ref", "--quiet", "HEAD"]);
+	const targetRef = symRef.ok && symRef.stdout ? symRef.stdout : "HEAD";
+
+	const tempDir = await mkdtemp(join(tmpdir(), "kanban-board-ref-"));
+	try {
+		const tempEnv: NodeJS.ProcessEnv = { ...env, GIT_INDEX_FILE: join(tempDir, "index") };
+		await getGitStdout(["read-tree", "HEAD"], repoPath, { env: tempEnv });
+		await runGit(repoPath, ["add", "--", BOARD_REF_REPO_RELATIVE_PATH], { env: tempEnv });
+		const tree = await getGitStdout(["write-tree"], repoPath, { env: tempEnv });
+		const headTree = await getGitStdout(["rev-parse", "HEAD^{tree}"], repoPath, { env: tempEnv });
+		if (tree === headTree) {
+			return false;
+		}
+		const commit = await getGitStdout(
+			["commit-tree", tree, "-p", "HEAD", "-m", BOARD_REF_UPDATE_COMMIT_MESSAGE],
+			repoPath,
+			{ env: tempEnv },
+		);
+		await getGitStdout(["update-ref", targetRef, commit], repoPath, { env });
+	} finally {
+		await rm(tempDir, { recursive: true, force: true });
+	}
+	await runGit(repoPath, ["add", "--", BOARD_REF_REPO_RELATIVE_PATH], { env });
+	return true;
 }
 
 export interface BoardWorktreeProbe {

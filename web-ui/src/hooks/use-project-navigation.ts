@@ -54,6 +54,7 @@ export interface UseProjectNavigationResult {
 	latestTaskReadyForReview: ReturnType<typeof useRuntimeStateStream>["latestTaskReadyForReview"];
 	latestMcpAuthStatuses: ReturnType<typeof useRuntimeStateStream>["latestMcpAuthStatuses"];
 	kanbanSessionContextVersion: ReturnType<typeof useRuntimeStateStream>["kanbanSessionContextVersion"];
+	boardSyncStatus: ReturnType<typeof useRuntimeStateStream>["boardSyncStatus"];
 	streamError: string | null;
 	isRuntimeDisconnected: boolean;
 	hasReceivedSnapshot: boolean;
@@ -88,6 +89,7 @@ export function useProjectNavigation({ onProjectSwitchStart }: UseProjectNavigat
 		latestTaskReadyForReview,
 		latestMcpAuthStatuses,
 		kanbanSessionContextVersion,
+		boardSyncStatus,
 		streamError,
 		isRuntimeDisconnected,
 		hasReceivedSnapshot,
@@ -277,6 +279,7 @@ export function useProjectNavigation({ onProjectSwitchStart }: UseProjectNavigat
 		latestTaskReadyForReview,
 		latestMcpAuthStatuses,
 		kanbanSessionContextVersion,
+		boardSyncStatus,
 		streamError,
 		isRuntimeDisconnected,
 		hasReceivedSnapshot,

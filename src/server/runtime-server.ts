@@ -45,7 +45,7 @@ import { type RuntimeTrpcContext, type RuntimeTrpcWorkspaceScope, runtimeAppRout
 import { createHooksApi } from "../trpc/hooks-api";
 import { createProjectsApi } from "../trpc/projects-api";
 import { createRuntimeApi } from "../trpc/runtime-api";
-import { createWorkspaceApi } from "../trpc/workspace-api";
+import { type BoardSyncApi, createWorkspaceApi } from "../trpc/workspace-api";
 import { type BoardSyncService, createBoardSyncService } from "../workspace/board-sync";
 import { getWebUiDir, normalizeRequestPath, readAsset } from "./assets";
 import { handleHttpRequest, handleSocketUpgrade } from "./middleware";
@@ -205,7 +205,40 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 	// no-op for repos that have not activated decoupling (no `.kanban/board-ref`).
 	const boardSyncService: BoardSyncService = createBoardSyncService({
 		broadcastWorkspaceState: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
+		// Push the recomputed status to the workspace's clients (the top-bar badge) on every
+		// transition, so the UI stays live without polling.
+		onStatusChanged: (target, status) => {
+			deps.runtimeStateHub.broadcastBoardSyncStatusUpdated(target.workspaceId, status);
+		},
 	});
+	// Board sync operations exposed to the tRPC workspace API. `workspacePath` is the repo
+	// root, which is also the board sync target's `repoPath`.
+	const boardSyncApi: BoardSyncApi = {
+		getStatus: (scope) =>
+			boardSyncService.getStatus({
+				repoPath: scope.workspacePath,
+				workspaceId: scope.workspaceId,
+				workspacePath: scope.workspacePath,
+			}),
+		runAction: (scope, action) => {
+			const target = {
+				repoPath: scope.workspacePath,
+				workspaceId: scope.workspaceId,
+				workspacePath: scope.workspacePath,
+			};
+			return action === "push" ? boardSyncService.pushNow(target) : boardSyncService.pullNow(target);
+		},
+		setAutoSyncPaused: (scope, paused) =>
+			boardSyncService.setAutoSyncPaused(
+				{ repoPath: scope.workspacePath, workspaceId: scope.workspaceId, workspacePath: scope.workspacePath },
+				paused,
+			),
+		renameBranch: (scope, branch) =>
+			boardSyncService.renameBranch(
+				{ repoPath: scope.workspacePath, workspaceId: scope.workspaceId, workspacePath: scope.workspacePath },
+				branch,
+			),
+	};
 	// Wrap the state broadcast so every committed-data mutation (board, vault, files,
 	// providers, threads — server-side writes and the CLI's notifyStateUpdated alike)
 	// also schedules a board sync. The schedule fires regardless of connected clients,
@@ -267,6 +300,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				broadcastRuntimeWorkspaceStateUpdated: broadcastWorkspaceStateAndSyncBoard,
 				broadcastRuntimeProjectsUpdated: deps.runtimeStateHub.broadcastRuntimeProjectsUpdated,
 				buildWorkspaceStateSnapshot: deps.workspaceRegistry.buildWorkspaceStateSnapshot,
+				boardSync: boardSyncApi,
 			}),
 			projectsApi: createProjectsApi({
 				getActiveWorkspacePath: deps.workspaceRegistry.getActiveWorkspacePath,

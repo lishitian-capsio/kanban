@@ -103,6 +103,12 @@ describe("createWorkspaceApi loadChanges", () => {
 			broadcastRuntimeWorkspaceStateUpdated: vi.fn(),
 			broadcastRuntimeProjectsUpdated: vi.fn(),
 			buildWorkspaceStateSnapshot: vi.fn(),
+			boardSync: {
+				getStatus: vi.fn(),
+				runAction: vi.fn(),
+				setAutoSyncPaused: vi.fn(),
+				renameBranch: vi.fn(),
+			},
 		});
 
 		await api.loadChanges(
@@ -152,6 +158,12 @@ describe("createWorkspaceApi loadChanges", () => {
 			broadcastRuntimeWorkspaceStateUpdated: vi.fn(),
 			broadcastRuntimeProjectsUpdated: vi.fn(),
 			buildWorkspaceStateSnapshot: vi.fn(),
+			boardSync: {
+				getStatus: vi.fn(),
+				runAction: vi.fn(),
+				setAutoSyncPaused: vi.fn(),
+				renameBranch: vi.fn(),
+			},
 		});
 
 		await api.loadChanges(
@@ -203,6 +215,12 @@ describe("createWorkspaceApi loadChanges", () => {
 			broadcastRuntimeWorkspaceStateUpdated: vi.fn(),
 			broadcastRuntimeProjectsUpdated: vi.fn(),
 			buildWorkspaceStateSnapshot: vi.fn(),
+			boardSync: {
+				getStatus: vi.fn(),
+				runAction: vi.fn(),
+				setAutoSyncPaused: vi.fn(),
+				renameBranch: vi.fn(),
+			},
 		});
 
 		await api.loadChanges(
@@ -275,6 +293,12 @@ describe("createWorkspaceApi loadChanges", () => {
 			broadcastRuntimeWorkspaceStateUpdated: vi.fn(),
 			broadcastRuntimeProjectsUpdated: vi.fn(),
 			buildWorkspaceStateSnapshot: vi.fn(),
+			boardSync: {
+				getStatus: vi.fn(),
+				runAction: vi.fn(),
+				setAutoSyncPaused: vi.fn(),
+				renameBranch: vi.fn(),
+			},
 		});
 
 		await api.loadChanges(
@@ -310,6 +334,12 @@ describe("createWorkspaceApi loadChanges", () => {
 			broadcastRuntimeWorkspaceStateUpdated: vi.fn(),
 			broadcastRuntimeProjectsUpdated: vi.fn(),
 			buildWorkspaceStateSnapshot: vi.fn(),
+			boardSync: {
+				getStatus: vi.fn(),
+				runAction: vi.fn(),
+				setAutoSyncPaused: vi.fn(),
+				renameBranch: vi.fn(),
+			},
 		});
 
 		const response = await api.loadChanges(
@@ -342,6 +372,12 @@ describe("createWorkspaceApi file library", () => {
 			broadcastRuntimeWorkspaceStateUpdated,
 			broadcastRuntimeProjectsUpdated: vi.fn(),
 			buildWorkspaceStateSnapshot: vi.fn(),
+			boardSync: {
+				getStatus: vi.fn(),
+				runAction: vi.fn(),
+				setAutoSyncPaused: vi.fn(),
+				renameBranch: vi.fn(),
+			},
 		});
 	}
 
@@ -420,6 +456,12 @@ describe("createWorkspaceApi vault documents", () => {
 			broadcastRuntimeWorkspaceStateUpdated: broadcastRuntimeWorkspaceStateUpdated as never,
 			broadcastRuntimeProjectsUpdated: vi.fn(),
 			buildWorkspaceStateSnapshot: vi.fn(),
+			boardSync: {
+				getStatus: vi.fn(),
+				runAction: vi.fn(),
+				setAutoSyncPaused: vi.fn(),
+				renameBranch: vi.fn(),
+			},
 		});
 	}
 
@@ -504,6 +546,12 @@ describe("createWorkspaceApi vault settings", () => {
 			broadcastRuntimeWorkspaceStateUpdated: broadcastRuntimeWorkspaceStateUpdated as never,
 			broadcastRuntimeProjectsUpdated: vi.fn(),
 			buildWorkspaceStateSnapshot: vi.fn(),
+			boardSync: {
+				getStatus: vi.fn(),
+				runAction: vi.fn(),
+				setAutoSyncPaused: vi.fn(),
+				renameBranch: vi.fn(),
+			},
 		});
 	}
 

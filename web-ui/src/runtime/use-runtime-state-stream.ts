@@ -1,8 +1,10 @@
 import { useEffect, useReducer } from "react";
 
 import type {
+	RuntimeBoardSyncStatus,
 	RuntimeKanbanMcpServerAuthStatus,
 	RuntimeProjectSummary,
+	RuntimeStateStreamBoardSyncStatusMessage,
 	RuntimeStateStreamKanbanSessionContextUpdatedMessage,
 	RuntimeStateStreamMcpAuthUpdatedMessage,
 	RuntimeStateStreamMessage,
@@ -56,6 +58,7 @@ export interface UseRuntimeStateStreamResult {
 	latestTaskReadyForReview: RuntimeStateStreamTaskReadyForReviewMessage | null;
 	latestMcpAuthStatuses: RuntimeKanbanMcpServerAuthStatus[] | null;
 	kanbanSessionContextVersion: number;
+	boardSyncStatus: RuntimeBoardSyncStatus | null;
 	streamError: string | null;
 	isRuntimeDisconnected: boolean;
 	hasReceivedSnapshot: boolean;
@@ -71,6 +74,7 @@ interface RuntimeStateStreamStore {
 	latestTaskReadyForReview: RuntimeStateStreamTaskReadyForReviewMessage | null;
 	latestMcpAuthStatuses: RuntimeKanbanMcpServerAuthStatus[] | null;
 	kanbanSessionContextVersion: number;
+	boardSyncStatus: RuntimeBoardSyncStatus | null;
 	streamError: string | null;
 	isRuntimeDisconnected: boolean;
 	hasReceivedSnapshot: boolean;
@@ -91,6 +95,7 @@ type RuntimeStateStreamAction =
 	| { type: "task_ready_for_review"; payload: RuntimeStateStreamTaskReadyForReviewMessage }
 	| { type: "mcp_auth_updated"; payload: RuntimeStateStreamMcpAuthUpdatedMessage }
 	| { type: "kanban_session_context_updated"; payload: RuntimeStateStreamKanbanSessionContextUpdatedMessage }
+	| { type: "board_sync_status_updated"; payload: RuntimeStateStreamBoardSyncStatusMessage }
 	| { type: "workspace_state_updated"; workspaceState: RuntimeWorkspaceStateResponse }
 	| { type: "task_sessions_updated"; summaries: RuntimeTaskSessionSummary[] }
 	| { type: "stream_error"; message: string }
@@ -107,6 +112,7 @@ function createInitialRuntimeStateStreamStore(requestedWorkspaceId: string | nul
 		latestTaskReadyForReview: null,
 		latestMcpAuthStatuses: null,
 		kanbanSessionContextVersion: 0,
+		boardSyncStatus: null,
 		streamError: null,
 		isRuntimeDisconnected: false,
 		hasReceivedSnapshot: false,
@@ -162,6 +168,7 @@ function runtimeStateStreamReducer(
 			hasReceivedSnapshot: false,
 			latestMcpAuthStatuses: state.latestMcpAuthStatuses,
 			kanbanSessionContextVersion: state.kanbanSessionContextVersion,
+			boardSyncStatus: null,
 		};
 	}
 	if (action.type === "stream_connected") {
@@ -191,6 +198,7 @@ function runtimeStateStreamReducer(
 			latestTaskReadyForReview: state.latestTaskReadyForReview,
 			latestMcpAuthStatuses: state.latestMcpAuthStatuses,
 			kanbanSessionContextVersion: action.payload.kanbanSessionContextVersion,
+			boardSyncStatus: null,
 			streamError: null,
 			isRuntimeDisconnected: false,
 			hasReceivedSnapshot: true,
@@ -207,6 +215,7 @@ function runtimeStateStreamReducer(
 			latestTaskChatMessage: didProjectChange ? null : state.latestTaskChatMessage,
 			taskChatMessagesByTaskId: didProjectChange ? {} : state.taskChatMessagesByTaskId,
 			latestTaskReadyForReview: didProjectChange ? null : state.latestTaskReadyForReview,
+			boardSyncStatus: didProjectChange ? null : state.boardSyncStatus,
 			hasReceivedSnapshot: true,
 		};
 	}
@@ -253,6 +262,12 @@ function runtimeStateStreamReducer(
 		return {
 			...state,
 			kanbanSessionContextVersion: action.payload.version,
+		};
+	}
+	if (action.type === "board_sync_status_updated") {
+		return {
+			...state,
+			boardSyncStatus: action.payload.status,
 		};
 	}
 	if (action.type === "workspace_state_updated") {
@@ -452,6 +467,16 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 						});
 						return;
 					}
+					if (payload.type === "board_sync_status_updated") {
+						if (payload.workspaceId !== activeWorkspaceId) {
+							return;
+						}
+						dispatch({
+							type: "board_sync_status_updated",
+							payload,
+						});
+						return;
+					}
 					if (payload.type === "kanban_session_context_updated") {
 						dispatch({
 							type: "kanban_session_context_updated",
@@ -511,6 +536,7 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 		latestTaskReadyForReview: state.latestTaskReadyForReview,
 		latestMcpAuthStatuses: state.latestMcpAuthStatuses,
 		kanbanSessionContextVersion: state.kanbanSessionContextVersion,
+		boardSyncStatus: state.boardSyncStatus,
 		streamError: state.streamError,
 		isRuntimeDisconnected: state.isRuntimeDisconnected,
 		hasReceivedSnapshot: state.hasReceivedSnapshot,

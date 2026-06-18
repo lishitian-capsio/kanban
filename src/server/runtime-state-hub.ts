@@ -5,7 +5,9 @@ import type { IncomingMessage } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
 import type {
+	RuntimeBoardSyncStatus,
 	RuntimeKanbanMcpServerAuthStatus,
+	RuntimeStateStreamBoardSyncStatusMessage,
 	RuntimeStateStreamErrorMessage,
 	RuntimeStateStreamKanbanSessionContextUpdatedMessage,
 	RuntimeStateStreamMcpAuthUpdatedMessage,
@@ -58,6 +60,7 @@ export interface RuntimeStateHub {
 	broadcastKanbanMcpAuthStatusesUpdated: (statuses: RuntimeKanbanMcpServerAuthStatus[]) => void;
 	bumpKanbanSessionContextVersion: () => void;
 	broadcastTaskReadyForReview: (workspaceId: string, taskId: string) => void;
+	broadcastBoardSyncStatusUpdated: (workspaceId: string, status: RuntimeBoardSyncStatus) => void;
 	close: () => Promise<void>;
 }
 
@@ -194,6 +197,21 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			workspaceId,
 			taskId,
 			message,
+		};
+		for (const client of runtimeClients) {
+			sendRuntimeStateMessage(client, payload);
+		}
+	};
+
+	const broadcastBoardSyncStatusUpdated = (workspaceId: string, status: RuntimeBoardSyncStatus) => {
+		const runtimeClients = runtimeStateClientsByWorkspaceId.get(workspaceId);
+		if (!runtimeClients || runtimeClients.size === 0) {
+			return;
+		}
+		const payload: RuntimeStateStreamBoardSyncStatusMessage = {
+			type: "board_sync_status_updated",
+			workspaceId,
+			status,
 		};
 		for (const client of runtimeClients) {
 			sendRuntimeStateMessage(client, payload);
@@ -566,6 +584,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 		broadcastRuntimeWorkspaceStateUpdated,
 		broadcastRuntimeProjectsUpdated,
 		broadcastKanbanMcpAuthStatusesUpdated,
+		broadcastBoardSyncStatusUpdated,
 		bumpKanbanSessionContextVersion,
 		broadcastTaskReadyForReview,
 		close: async () => {

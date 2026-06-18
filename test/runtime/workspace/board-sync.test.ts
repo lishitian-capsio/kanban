@@ -3,9 +3,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
-
-import { writeBoardRef } from "../../../src/state/board-ref";
-import { createBoardSyncService } from "../../../src/workspace/board-sync";
+import type { RuntimeBoardSyncStatus } from "../../../src/core/api-contract";
+import { readBoardRef, writeBoardRef } from "../../../src/state/board-ref";
+import { type BoardSyncTarget, createBoardSyncService } from "../../../src/workspace/board-sync";
 import {
 	commitBoardWorktree,
 	getBoardWorktreeDataHome,
@@ -215,6 +215,121 @@ describe("createBoardSyncService", () => {
 			for (const cleanup of cleanups) {
 				cleanup();
 			}
+		}
+	});
+});
+
+describe("createBoardSyncService status + controls", () => {
+	it("reports a disabled status when decoupling is not active", async () => {
+		const { path: repoPath, cleanup } = createTempDir("kanban-board-status-");
+		try {
+			git(repoPath, ["init", "-q", "-b", "main", "."]);
+			git(repoPath, ["commit", "-q", "--allow-empty", "-m", "init"]);
+			const service = createBoardSyncService({ broadcastWorkspaceState: vi.fn(), debounceMs: 10 });
+			const status = await service.getStatus(target(repoPath));
+			expect(status).toMatchObject({ state: "disabled", decoupled: false, branch: null, hasRemote: false });
+			await service.dispose();
+		} finally {
+			cleanup();
+		}
+	});
+
+	it("reports local-only for a decoupled remote-less repo", async () => {
+		const { repoPath, cleanup } = await makeDecoupledRepo("kanban-board-status-");
+		try {
+			const service = createBoardSyncService({ broadcastWorkspaceState: vi.fn(), debounceMs: 10 });
+			const status = await service.getStatus(target(repoPath));
+			expect(status).toMatchObject({
+				state: "local-only",
+				decoupled: true,
+				branch: "kanban/board",
+				hasRemote: false,
+			});
+			await service.dispose();
+		} finally {
+			cleanup();
+		}
+	});
+
+	it("reports ahead when there is an unpushed local commit, then synced after pushNow", async () => {
+		const { cloneA, cleanups } = makeRemoteDecoupledClones("kanban-board-status-");
+		try {
+			await writeBoardRef(cloneA, { version: 1, branch: "kanban/board" });
+			await setupBoardWorktree(cloneA, "kanban/board");
+			writeData(cloneA, "a.txt", "1");
+			await commitBoardWorktree(cloneA, "board: seed");
+			await pushBoardWorktree(cloneA, "kanban/board");
+
+			// A local commit that has not been published shows as ahead.
+			writeData(cloneA, "a2.txt", "2");
+			await commitBoardWorktree(cloneA, "board: more");
+
+			const statuses: RuntimeBoardSyncStatus[] = [];
+			const service = createBoardSyncService({
+				broadcastWorkspaceState: vi.fn(),
+				onStatusChanged: (_target: BoardSyncTarget, status) => {
+					statuses.push(status);
+				},
+				debounceMs: 10,
+			});
+			expect(await service.getStatus(target(cloneA))).toMatchObject({ state: "ahead", aheadCount: 1 });
+
+			const result = await service.pushNow(target(cloneA));
+			expect(result.ok).toBe(true);
+			expect(result.status).toMatchObject({ state: "synced", aheadCount: 0 });
+			// The push emitted at least one status broadcast (syncing → synced).
+			expect(statuses.some((status) => status.state === "synced")).toBe(true);
+			await service.dispose();
+		} finally {
+			for (const cleanup of cleanups) {
+				cleanup();
+			}
+		}
+	});
+
+	it("pausing auto-sync suppresses the debounced commit; resuming flushes it", async () => {
+		const { repoPath, cleanup } = await makeDecoupledRepo("kanban-board-pause-");
+		try {
+			const service = createBoardSyncService({ broadcastWorkspaceState: vi.fn(), debounceMs: 20 });
+			const before = boardCommitCount(repoPath);
+
+			const paused = await service.setAutoSyncPaused(target(repoPath), true);
+			expect(paused.autoSyncPaused).toBe(true);
+
+			writeData(repoPath, "a.txt", "1");
+			service.scheduleSync(target(repoPath));
+			// Wait past the debounce window: paused → no commit.
+			await new Promise((resolve) => setTimeout(resolve, 80));
+			expect(boardCommitCount(repoPath)).toBe(before);
+
+			// Resuming flushes the accumulated write.
+			const resumed = await service.setAutoSyncPaused(target(repoPath), false);
+			expect(resumed.autoSyncPaused).toBe(false);
+			await waitFor(() => boardCommitCount(repoPath) === before + 1);
+			await service.dispose();
+		} finally {
+			cleanup();
+		}
+	});
+
+	it("renameBranch migrates the board branch and repoints board-ref", async () => {
+		const { repoPath, cleanup } = await makeDecoupledRepo("kanban-board-rename-svc-");
+		try {
+			writeData(repoPath, "doc.md", "hi");
+			await commitBoardWorktree(repoPath, "board: seed");
+
+			const service = createBoardSyncService({ broadcastWorkspaceState: vi.fn(), debounceMs: 10 });
+			const result = await service.renameBranch(target(repoPath), "kanban/custom");
+			expect(result.ok).toBe(true);
+			expect(result.status).toMatchObject({ branch: "kanban/custom" });
+
+			// The authoritative pointer was repointed and the worktree carries the data.
+			expect((await readBoardRef(repoPath))?.branch).toBe("kanban/custom");
+			expect(git(getBoardWorktreePath(repoPath), ["symbolic-ref", "--short", "HEAD"])).toBe("kanban/custom");
+			expect(existsSync(join(getBoardWorktreeDataHome(repoPath), "files", "doc.md"))).toBe(true);
+			await service.dispose();
+		} finally {
+			cleanup();
 		}
 	});
 });
