@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { CommittedProviderLayer } from "../agent-sdk/kanban/agent-provider-resolver";
+import { type CommittedProviderLayer, resolveAgentProvider } from "../agent-sdk/kanban/agent-provider-resolver";
 import { mergeDroidCustomModels, resolveDroidByokProjection } from "../agent-sdk/kanban/droid-byok";
 import type {
 	RuntimeAgentId,
@@ -26,6 +26,11 @@ import {
 	getOpenCodeConfigPathCandidates,
 	getOpenCodeModelStatePathCandidates,
 } from "./opencode-paths";
+import {
+	buildOpenCodeProviderProjection,
+	mergeOpenCodeConfig,
+	type OpenCodeConfig,
+} from "./opencode-provider-projection";
 import { stripAnsi } from "./output-utils";
 import type { SessionTransitionEvent } from "./session-state-machine";
 import { prepareTaskPromptWithImages } from "./task-image-prompt";
@@ -51,9 +56,10 @@ export interface AgentAdapterLaunchInput {
 	workspaceId?: string;
 	/**
 	 * Provider selected for this session (provider name = providerId). Consumed by
-	 * adapters that project provider config natively into their settings file
-	 * (currently Droid's BYOK `customModels`); other agents inject provider env
-	 * separately via {@link buildAgentProviderEnv}.
+	 * adapters that project provider config natively into their settings/config file
+	 * (Droid's BYOK `customModels`, OpenCode's `OPENCODE_CONFIG`), resolved together
+	 * with {@link committedProvider} via the shared resolver. Other agents inject
+	 * provider env separately via {@link buildAgentProviderEnv}.
 	 */
 	providerId?: string;
 	/** The workspace's selected committed provider for this agent (secret-free). */
@@ -1006,6 +1012,33 @@ function tryExtractOpenCodeModelFromConfig(rawConfig: string): string | null {
 	return null;
 }
 
+/**
+ * Parse the user's existing OpenCode config (JSON or JSONC) into an object so it
+ * can be merged forward. OpenCode treats `OPENCODE_CONFIG` as the global config
+ * file, so carrying the user's base config into our generated temp file is what
+ * keeps us from silently dropping their settings. Returns `{}` on any error.
+ */
+async function readOpenCodeBaseConfig(configPath: string | null): Promise<OpenCodeConfig> {
+	if (!configPath) {
+		return {};
+	}
+	try {
+		const raw = await readFile(configPath, "utf8");
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(raw);
+		} catch {
+			parsed = JSON.parse(stripJsonComments(raw));
+		}
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+			return parsed as OpenCodeConfig;
+		}
+	} catch {
+		// Missing/unreadable/invalid base config → start from an empty document.
+	}
+	return {};
+}
+
 async function resolveOpenCodePreferredModelArg(configPath: string | null): Promise<string | null> {
 	if (configPath) {
 		try {
@@ -1105,22 +1138,28 @@ const opencodeAdapter: AgentSessionAdapter = {
 			}
 		}
 
+		// Project the selected Kanban provider into OpenCode's *native* config shape
+		// (provider/model/small_model + provider.<id> npm/options/models) rather than
+		// generic OPENAI_*/ANTHROPIC_* env. Returns null for official login or an
+		// unconfigured provider, so neither produces a config override.
+		const resolvedProvider = resolveAgentProvider(
+			{ agentId: input.agentId, providerIdOverride: input.providerId, committedProvider: input.committedProvider },
+			{ defaultProviderFallback: true },
+		);
+		const providerProjection = buildOpenCodeProviderProjection(input.agentId, resolvedProvider);
+
+		// Build the hooks plugin fragment (and its runtime env) when hooks are active.
+		let pluginFragment: OpenCodeConfig | null = null;
 		const hooks = resolveHookContext(input);
 		if (hooks) {
 			const pluginPath = join(getHookAgentDirectory("opencode"), "kanban.js");
-			const configPath = join(getHookAgentDirectory("opencode"), "opencode.json");
-
 			const pluginContent = buildOpenCodePluginContent(
 				buildHookCommand("to_review", { source: "opencode" }),
 				buildHookCommand("to_in_progress", { source: "opencode" }),
 				buildHookCommand("activity", { source: "opencode" }),
 			);
 			await ensureTextFile(pluginPath, pluginContent);
-			const pluginFileUrl = pathToFileURL(pluginPath).href;
-			const config = {
-				plugin: [pluginFileUrl],
-			};
-			await ensureTextFile(configPath, JSON.stringify(config));
+			pluginFragment = { plugin: [pathToFileURL(pluginPath).href] };
 			Object.assign(
 				env,
 				createHookRuntimeEnv({
@@ -1128,13 +1167,28 @@ const opencodeAdapter: AgentSessionAdapter = {
 					workspaceId: hooks.workspaceId,
 				}),
 			);
+		}
+
+		// Compose the user's base config with our hooks + provider fragments and point
+		// OPENCODE_CONFIG at the merged temp file. We only write (and override) when we
+		// actually contribute something, so a bare official-login session keeps using
+		// OpenCode's own config untouched. The API key only ever lands in this
+		// session-scoped machine-home file — never in committed repo state.
+		if (pluginFragment || providerProjection) {
+			const configPath = join(getHookAgentDirectory("opencode"), "opencode.json");
+			// Never fold our own previously-generated config back in (it would re-merge a
+			// stale session API key); only the user's real base config is composed.
+			const baseConfig = baseConfigPath === configPath ? {} : await readOpenCodeBaseConfig(baseConfigPath);
+			const merged = mergeOpenCodeConfig(baseConfig, pluginFragment, providerProjection);
+			await ensureTextFile(configPath, JSON.stringify(merged, null, 2));
 			env.OPENCODE_CONFIG = configPath;
 		}
 
 		// Workaround: with --prompt, OpenCode can pick an unexpected provider/model.
-		// Explicitly pass the user's preferred model so prompt runs stay on their usual provider.
+		// Pass an explicit model so prompt runs stay on the intended provider — the
+		// projected model wins, falling back to the user's base config / recent state.
 		if (!hasOpenCodeModelArg(args)) {
-			const preferredModel = await resolveOpenCodePreferredModelArg(baseConfigPath);
+			const preferredModel = providerProjection?.model ?? (await resolveOpenCodePreferredModelArg(baseConfigPath));
 			if (preferredModel) {
 				args.push("--model", preferredModel);
 			}

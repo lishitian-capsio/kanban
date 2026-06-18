@@ -489,11 +489,16 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 
 		// Build provider-specific env vars (custom baseUrl/apiKey for non-official providers).
 		// The session's selected providerId picks which registered provider to inject.
-		const agentProviderEnv = await buildAgentProviderEnv(
-			request.agentId,
-			request.providerId,
-			request.committedProvider,
-		);
+		//
+		// OpenCode is the exception: it consumes its provider through a native
+		// OPENCODE_CONFIG projection in the adapter (provider/model/small_model +
+		// provider.<id>), not generic OPENAI_*/ANTHROPIC_* env. Injecting those shared
+		// env keys would also clobber the user's *other* OpenCode providers, so we skip
+		// the env path for it entirely.
+		const agentProviderEnv =
+			request.agentId === "opencode"
+				? { env: {}, usesCustomProvider: false }
+				: await buildAgentProviderEnv(request.agentId, request.providerId, request.committedProvider);
 
 		const env = buildTerminalEnvironment(request.env, launch.env, agentProviderEnv.env, buildBridgeProxyEnvVars());
 

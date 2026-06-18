@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { resetAgentProviderConfigCache } from "../../../src/agent-sdk/kanban/agent-provider-config";
 import { prepareAgentLaunch } from "../../../src/terminal/agent-session-adapters";
 
 const originalHome = process.env.HOME;
@@ -733,5 +734,98 @@ describe("prepareAgentLaunch hook strategies", () => {
 			prompt: "",
 		});
 		expect(kiroLaunch.args).toContain("--trust-all-tools");
+	});
+});
+
+describe("prepareAgentLaunch OpenCode native provider projection", () => {
+	const originalProvidersPath = process.env.KANBAN_AGENT_PROVIDERS_PATH;
+
+	afterEach(() => {
+		if (originalProvidersPath === undefined) {
+			delete process.env.KANBAN_AGENT_PROVIDERS_PATH;
+		} else {
+			process.env.KANBAN_AGENT_PROVIDERS_PATH = originalProvidersPath;
+		}
+		resetAgentProviderConfigCache();
+	});
+
+	function writeOpenCodeProvider(home: string): void {
+		const providersPath = join(home, "agent_providers.json");
+		writeFileSync(
+			providersPath,
+			JSON.stringify({
+				agents: {
+					opencode: {
+						agentId: "opencode",
+						defaultProviderId: "my-relay",
+						providers: [
+							{
+								provider: "my-relay",
+								model: "gpt-4o",
+								models: ["gpt-4o"],
+								apiKey: "sk-relay-xyz",
+								protocols: [{ protocol: "openai", baseUrl: "https://relay.example.com/v1" }],
+							},
+						],
+					},
+				},
+			}),
+			"utf8",
+		);
+		process.env.KANBAN_AGENT_PROVIDERS_PATH = providersPath;
+		resetAgentProviderConfigCache();
+	}
+
+	it("writes a native OPENCODE_CONFIG merging the provider projection with the hooks plugin", async () => {
+		const home = setupTempHome();
+		writeOpenCodeProvider(home);
+
+		const launch = await prepareAgentLaunch({
+			taskId: "task-opencode-provider",
+			agentId: "opencode",
+			binary: "opencode",
+			args: [],
+			cwd: "/tmp",
+			prompt: "",
+			workspaceId: "workspace-1",
+			providerId: "my-relay",
+		});
+
+		const configPath = launch.env.OPENCODE_CONFIG;
+		expect(typeof configPath).toBe("string");
+		const config = JSON.parse(readFileSync(configPath as string, "utf8"));
+
+		// Hooks plugin is preserved alongside the native provider projection.
+		expect(Array.isArray(config.plugin)).toBe(true);
+		expect(config.plugin.length).toBeGreaterThan(0);
+
+		expect(config.provider["my-relay"].npm).toBe("@ai-sdk/openai-compatible");
+		expect(config.provider["my-relay"].options).toEqual({
+			baseURL: "https://relay.example.com/v1",
+			apiKey: "sk-relay-xyz",
+		});
+		expect(config.model).toBe("my-relay/gpt-4o");
+		expect(config.small_model).toBe("my-relay/gpt-4o");
+
+		// The projected model wins over state/base-config inference.
+		const modelIndex = launch.args.indexOf("--model");
+		expect(modelIndex).toBeGreaterThan(-1);
+		expect(launch.args[modelIndex + 1]).toBe("my-relay/gpt-4o");
+	});
+
+	it("does not write a provider OPENCODE_CONFIG when no provider is configured", async () => {
+		setupTempHome();
+		// No provider store written; resolver yields official login / no config.
+		const launch = await prepareAgentLaunch({
+			taskId: "task-opencode-official",
+			agentId: "opencode",
+			binary: "opencode",
+			args: [],
+			cwd: "/tmp",
+			prompt: "",
+		});
+
+		// No hooks (no workspaceId) and no provider → no OPENCODE_CONFIG override.
+		expect(launch.env.OPENCODE_CONFIG).toBeUndefined();
 	});
 });
