@@ -205,6 +205,8 @@ export interface RuntimeWorkspaceContext {
 	workspaceId: string;
 	statePath: string;
 	git: RuntimeGitRepositoryInfo;
+	/** Resolved runtime vs committed `.kanban` roots for this workspace (see {@link resolveBoardDataLocation}). */
+	boardData: BoardDataLocation;
 }
 
 export interface LoadWorkspaceContextOptions {
@@ -238,12 +240,52 @@ export function getRuntimeHomePath(repoPath: string): string {
 	return join(repoPath, RUNTIME_HOME_DIR);
 }
 
+/**
+ * The two `.kanban` roots a workspace's data is split across.
+ *
+ * - `runtimeHome` — machine-local runtime state that must stay in the main
+ *   checkout: task worktrees, trashed patches, sessions, meta, locks.
+ * - `boardDataHome` — committed board data that travels with the repository:
+ *   `board.json`/`tasks`, the vault (`files/docs`), the file library (`files/`),
+ *   home-chat threads, and committed providers.
+ *
+ * Today both point at `<repo>/.kanban`, so the on-disk layout is byte-for-byte the
+ * single-root layout and behavior is unchanged. The board-branch decoupling work
+ * (`.plan/docs/board-branch-decoupling.md`) repoints `boardDataHome` to a dedicated
+ * board worktree's `.kanban` while `runtimeHome` stays in the main checkout.
+ */
+export interface BoardDataLocation {
+	runtimeHome: string;
+	boardDataHome: string;
+}
+
+/**
+ * Resolve a repo's runtime vs committed `.kanban` roots — the single seam through
+ * which {@link BoardDataLocation} is produced. P0 returns both equal to
+ * `<repo>/.kanban`; a later phase repoints `boardDataHome` here without touching
+ * any call site.
+ */
+export function resolveBoardDataLocation(repoPath: string): BoardDataLocation {
+	const home = getRuntimeHomePath(repoPath);
+	return { runtimeHome: home, boardDataHome: home };
+}
+
+/** Derive the `workspaces/` root inside a given `.kanban` home (runtime or board-data). */
+function getWorkspacesRoot(kanbanHome: string): string {
+	return join(kanbanHome, WORKSPACES_DIR);
+}
+
+/** Derive a `workspaces/<id>/` directory inside a given `.kanban` home. */
+function getWorkspaceDirectory(kanbanHome: string, workspaceId: string): string {
+	return join(getWorkspacesRoot(kanbanHome), workspaceId);
+}
+
 export function getTaskWorktreesHomePath(repoPath: string): string {
 	return join(getRuntimeHomePath(repoPath), RUNTIME_WORKTREES_DIR);
 }
 
 export function getWorkspacesRootPath(repoPath: string): string {
-	return join(getRuntimeHomePath(repoPath), WORKSPACES_DIR);
+	return getWorkspacesRoot(getRuntimeHomePath(repoPath));
 }
 
 /** The workspace index is the cross-repo registry, so it stays machine-rooted. */
@@ -251,8 +293,24 @@ function getWorkspaceIndexPath(): string {
 	return join(getMachineKanbanHomePath(), WORKSPACES_DIR, INDEX_FILENAME);
 }
 
+/**
+ * The runtime (machine-local) `workspaces/<id>/` directory: sessions, meta, and
+ * the workspace lock. This is the lock anchor (see §3.4 of the board-branch
+ * decoupling design), so it always lives in the main checkout's `.kanban`.
+ */
 export function getWorkspaceDirectoryPath(repoPath: string, workspaceId: string): string {
-	return join(getWorkspacesRootPath(repoPath), workspaceId);
+	return getWorkspaceDirectory(getRuntimeHomePath(repoPath), workspaceId);
+}
+
+/**
+ * The committed (board-data) `workspaces/<id>/` directory: `board.json`/`tasks`,
+ * home-chat threads, committed providers, and the migration-only requirement
+ * shards. A distinct seam from {@link getWorkspaceDirectoryPath} (runtime) so the
+ * board worktree work can relocate committed data without moving sessions, meta,
+ * or locks. Resolves to the same path as the runtime dir while both roots coincide.
+ */
+function getBoardDataWorkspaceDirectoryPath(repoPath: string, workspaceId: string): string {
+	return getWorkspaceDirectory(resolveBoardDataLocation(repoPath).boardDataHome, workspaceId);
 }
 
 /**
@@ -278,52 +336,52 @@ export function getWorkspaceSessionMessagesDirPath(repoPath: string, workspaceId
 }
 
 function getWorkspaceRequirementsPath(repoPath: string, workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENTS_FILENAME);
+	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENTS_FILENAME);
 }
 
 function getWorkspaceRequirementVersionsPath(repoPath: string, workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_VERSIONS_FILENAME);
+	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_VERSIONS_FILENAME);
 }
 
 function getWorkspaceRequirementTaskLinksPath(repoPath: string, workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_TASK_LINKS_FILENAME);
+	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_TASK_LINKS_FILENAME);
 }
 
 function getWorkspaceRequirementsShardDir(repoPath: string, workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENTS_SHARD_DIRNAME);
+	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENTS_SHARD_DIRNAME);
 }
 
 function getWorkspaceRequirementVersionsShardDir(repoPath: string, workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_VERSIONS_SHARD_DIRNAME);
+	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_VERSIONS_SHARD_DIRNAME);
 }
 
 function getWorkspaceRequirementTaskLinksShardDir(repoPath: string, workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_TASK_LINKS_SHARD_DIRNAME);
+	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_TASK_LINKS_SHARD_DIRNAME);
 }
 
 /** Repo-scoped vault directory holding migrated requirement documents (`.md`). */
 function getRequirementDocsDir(repoPath: string): string {
-	return join(getRuntimeHomePath(repoPath), FILES_DIRNAME, DOCS_DIRNAME, REQUIREMENT_DOC_TYPE);
+	return join(resolveBoardDataLocation(repoPath).boardDataHome, FILES_DIRNAME, DOCS_DIRNAME, REQUIREMENT_DOC_TYPE);
 }
 
 function getWorkspaceHomeThreadsPath(repoPath: string, workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), HOME_THREADS_FILENAME);
+	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), HOME_THREADS_FILENAME);
 }
 
 function getWorkspaceCommittedProvidersShardDir(repoPath: string, workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), COMMITTED_PROVIDERS_SHARD_DIRNAME);
+	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), COMMITTED_PROVIDERS_SHARD_DIRNAME);
 }
 
 function getWorkspaceCommittedProviderSelectionPath(repoPath: string, workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), COMMITTED_PROVIDER_SELECTION_FILENAME);
+	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), COMMITTED_PROVIDER_SELECTION_FILENAME);
 }
 
 function getLegacyWorkspaceAgentProfilesShardDir(repoPath: string, workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), LEGACY_AGENT_PROFILES_SHARD_DIRNAME);
+	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), LEGACY_AGENT_PROFILES_SHARD_DIRNAME);
 }
 
 function getLegacyWorkspaceAgentProfileSelectionPath(repoPath: string, workspaceId: string): string {
-	return join(getWorkspaceDirectoryPath(repoPath, workspaceId), LEGACY_AGENT_PROFILE_SELECTION_FILENAME);
+	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), LEGACY_AGENT_PROFILE_SELECTION_FILENAME);
 }
 
 function getWorkspaceMetaPath(repoPath: string, workspaceId: string): string {
@@ -467,7 +525,7 @@ async function readWorkspaceBoard(repoPath: string, workspaceId: string): Promis
 	// `board.json`); loadShardedBoard assembles the wire-shaped board, staying
 	// back-compatible with a legacy single-file board and the machine-rooted fallback.
 	const board = await loadShardedBoard(
-		getWorkspaceDirectoryPath(repoPath, workspaceId),
+		getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId),
 		getLegacyWorkspaceDirectoryPath(workspaceId),
 	);
 	return updateTaskDependencies(board);
@@ -1018,6 +1076,7 @@ export async function loadWorkspaceContext(
 			workspaceId: existingEntry.workspaceId,
 			statePath: getWorkspaceDirectoryPath(repoPath, existingEntry.workspaceId),
 			git: detectGitRepositoryInfo(repoPath),
+			boardData: resolveBoardDataLocation(repoPath),
 		};
 	}
 
@@ -1038,6 +1097,7 @@ export async function loadWorkspaceContext(
 			workspaceId: ensured.entry.workspaceId,
 			statePath: getWorkspaceDirectoryPath(repoPath, ensured.entry.workspaceId),
 			git: detectGitRepositoryInfo(repoPath),
+			boardData: resolveBoardDataLocation(repoPath),
 		};
 	});
 }
@@ -1203,7 +1263,7 @@ async function readLegacyAgentProfilesAsCommittedProviders(
  * race. Runs after the legacy-home copy so machine-rooted boards are sharded too.
  */
 async function migrateWorkspaceBoardToShards(repoPath: string, workspaceId: string): Promise<void> {
-	const boardDir = getWorkspaceDirectoryPath(repoPath, workspaceId);
+	const boardDir = getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId);
 	const legacyBoardDir = getLegacyWorkspaceDirectoryPath(workspaceId);
 	if (!(await boardNeedsSharding(boardDir, legacyBoardDir))) {
 		return;
@@ -1297,7 +1357,7 @@ export async function saveWorkspaceState(
 			updatedAt: Date.now(),
 		};
 
-		await saveShardedBoard(getWorkspaceDirectoryPath(repoPath, workspaceId), board);
+		await saveShardedBoard(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), board);
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceSessionsPath(repoPath, workspaceId), sessions, {
 			lock: null,
 		});
@@ -1351,7 +1411,7 @@ export async function mutateWorkspaceState<T>(
 			updatedAt: Date.now(),
 		};
 
-		await saveShardedBoard(getWorkspaceDirectoryPath(repoPath, workspaceId), nextBoard);
+		await saveShardedBoard(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), nextBoard);
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceSessionsPath(repoPath, workspaceId), nextSessions, {
 			lock: null,
 		});

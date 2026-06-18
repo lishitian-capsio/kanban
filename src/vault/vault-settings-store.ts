@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { RuntimeVaultSettings } from "../core/api-contract";
 import { runtimeVaultSettingsSchema } from "../core/api-contract";
 import { lockedFileSystem } from "../fs/locked-file-system";
-import { getRuntimeHomePath } from "../state/workspace-state";
+import { resolveBoardDataLocation } from "../state/workspace-state";
 
 function isNodeErrorWithCode(error: unknown, code: string): boolean {
 	return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code;
@@ -29,7 +29,7 @@ export class VaultSettingsStore {
 	private readonly settingsPath: string;
 
 	constructor(repoPath: string) {
-		this.filesDir = join(getRuntimeHomePath(repoPath), FILES_DIR);
+		this.filesDir = join(resolveBoardDataLocation(repoPath).boardDataHome, FILES_DIR);
 		this.settingsPath = join(this.filesDir, SETTINGS_FILENAME);
 	}
 

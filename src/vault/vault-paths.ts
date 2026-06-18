@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { getRuntimeHomePath } from "../state/workspace-state";
+import { resolveBoardDataLocation } from "../state/workspace-state";
 
 const FILES_DIR = "files";
 const DOCS_DIR = "docs";
@@ -12,9 +12,14 @@ const DOCS_DIR = "docs";
  */
 const TYPES_DIR = "_types";
 
-/** `<repo>/.kanban/files` — the vault root, shared by the doc and blob channels. */
+/**
+ * `<boardDataHome>/files` — the vault root, shared by the doc and blob channels.
+ * The vault is committed board data, so it is rooted at the board-data home
+ * (`<repo>/.kanban` today; a board worktree's `.kanban` after the board-branch
+ * decoupling work — see {@link resolveBoardDataLocation}).
+ */
 export function getVaultFilesDir(repoPath: string): string {
-	return join(getRuntimeHomePath(repoPath), FILES_DIR);
+	return join(resolveBoardDataLocation(repoPath).boardDataHome, FILES_DIR);
 }
 
 /** `<repo>/.kanban/files/docs` — the markdown document tree (one subdir per type). */

@@ -12,7 +12,7 @@ import { runtimeVaultViewSchema } from "../core/api-contract";
 import { createUniqueTaskId } from "../core/task-id";
 import { lockedFileSystem } from "../fs/locked-file-system";
 import { readShardDir } from "../state/sharded-json-store";
-import { getRuntimeHomePath } from "../state/workspace-state";
+import { resolveBoardDataLocation } from "../state/workspace-state";
 
 const FILES_DIR = "files";
 const VIEWS_DIR = "views";
@@ -37,7 +37,7 @@ export class SavedViewStore {
 	private readonly randomUuid: () => string;
 
 	constructor(repoPath: string, options: { now?: () => number; randomUuid?: () => string } = {}) {
-		this.filesDir = join(getRuntimeHomePath(repoPath), FILES_DIR);
+		this.filesDir = join(resolveBoardDataLocation(repoPath).boardDataHome, FILES_DIR);
 		this.viewsDir = join(this.filesDir, VIEWS_DIR);
 		this.now = options.now ?? Date.now;
 		this.randomUuid = options.randomUuid ?? randomUUID;

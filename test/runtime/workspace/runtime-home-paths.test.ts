@@ -9,6 +9,7 @@ import {
 	getWorkspaceDirectoryPath,
 	getWorkspaceSessionMessagesDirPath,
 	getWorkspacesRootPath,
+	resolveBoardDataLocation,
 } from "../../../src/state/workspace-state";
 
 describe("runtime home paths", () => {
@@ -26,5 +27,11 @@ describe("runtime home paths", () => {
 
 	it("does not root per-workspace data under the home directory", () => {
 		expect(getRuntimeHomePath(repo).startsWith(homedir())).toBe(false);
+	});
+
+	it("resolves the runtime and board-data roots to the same <repoPath>/.kanban (P0)", () => {
+		const location = resolveBoardDataLocation(repo);
+		expect(location.runtimeHome).toBe(join(repo, ".kanban"));
+		expect(location.boardDataHome).toBe(join(repo, ".kanban"));
 	});
 });

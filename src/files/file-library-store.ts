@@ -5,7 +5,7 @@ import { basename, join, relative } from "node:path";
 import { type RuntimeFileItem, runtimeFilesDataSchema } from "../core/api-contract";
 import { createUniqueTaskId } from "../core/task-id";
 import { lockedFileSystem } from "../fs/locked-file-system";
-import { getRuntimeHomePath } from "../state/workspace-state";
+import { resolveBoardDataLocation } from "../state/workspace-state";
 import { classifyFileCategory, detectMimeType } from "./file-mime";
 
 const FILES_DIR = "files";
@@ -67,7 +67,7 @@ export class FileLibraryStore {
 		private readonly repoPath: string,
 		options: { now?: () => number; randomUuid?: () => string } = {},
 	) {
-		this.filesDir = join(getRuntimeHomePath(repoPath), FILES_DIR);
+		this.filesDir = join(resolveBoardDataLocation(repoPath).boardDataHome, FILES_DIR);
 		this.manifestPath = join(this.filesDir, MANIFEST_FILENAME);
 		this.blobsDir = join(this.filesDir, BLOBS_DIR);
 		this.gitattributesPath = join(this.filesDir, GITATTRIBUTES_FILENAME);
