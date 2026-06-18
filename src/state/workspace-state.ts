@@ -25,6 +25,8 @@ import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
 import { VaultDocumentStore } from "../vault/vault-document-store";
 import { getVaultTypesDir } from "../vault/vault-paths";
 import { seedVaultTypeDefinitions } from "../vault/vault-type-registry";
+import { ensureBoardWorktree, getBoardWorktreeDataHome } from "../workspace/board-worktree";
+import { isBoardDecouplingActive } from "./board-ref";
 import {
 	buildCommittedProviderFromProviderSettings,
 	type CommittedProviderRecord,
@@ -261,13 +263,18 @@ export interface BoardDataLocation {
 
 /**
  * Resolve a repo's runtime vs committed `.kanban` roots — the single seam through
- * which {@link BoardDataLocation} is produced. P0 returns both equal to
- * `<repo>/.kanban`; a later phase repoints `boardDataHome` here without touching
- * any call site.
+ * which {@link BoardDataLocation} is produced. When board-branch decoupling is
+ * active (the `.kanban/board-ref` pointer exists), committed board data lives in
+ * the board worktree, so `boardDataHome` points at `<boardWorktree>/.kanban` while
+ * `runtimeHome` stays in the main checkout. Otherwise both equal `<repo>/.kanban`
+ * (the single-root layout), so behavior is unchanged until a repo opts in.
  */
 export function resolveBoardDataLocation(repoPath: string): BoardDataLocation {
-	const home = getRuntimeHomePath(repoPath);
-	return { runtimeHome: home, boardDataHome: home };
+	const runtimeHome = getRuntimeHomePath(repoPath);
+	if (isBoardDecouplingActive(repoPath)) {
+		return { runtimeHome, boardDataHome: getBoardWorktreeDataHome(repoPath) };
+	}
+	return { runtimeHome, boardDataHome: runtimeHome };
 }
 
 /** Derive the `workspaces/` root inside a given `.kanban` home (runtime or board-data). */
@@ -1108,6 +1115,10 @@ export async function loadWorkspaceContext(
  * non-destructive (never touches `~/.kanban`).
  */
 async function prepareRepoRuntimeHome(repoPath: string, workspaceId: string): Promise<void> {
+	// Reconcile the board worktree first so every downstream committed-data path
+	// resolution sees a ready worktree. A no-op until board-branch decoupling is
+	// activated (the `.kanban/board-ref` pointer is written by the P2 migration).
+	await ensureBoardWorktree(repoPath);
 	await migrateWorkspaceDataFromLegacyHome(repoPath, workspaceId);
 	await ensureRuntimeHomeGitignore(repoPath);
 	await migrateSeedVaultTypes(repoPath, workspaceId);
