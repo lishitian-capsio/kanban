@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { cp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { z } from "zod";
@@ -22,11 +22,27 @@ import {
 import { createGitProcessEnv } from "../core/git-process-env";
 import { updateTaskDependencies } from "../core/task-board-mutations";
 import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
+import { createLogger } from "../logging";
 import { VaultDocumentStore } from "../vault/vault-document-store";
 import { getVaultTypesDir } from "../vault/vault-paths";
 import { seedVaultTypeDefinitions } from "../vault/vault-type-registry";
-import { ensureBoardWorktree, getBoardWorktreeDataHome } from "../workspace/board-worktree";
-import { isBoardDecouplingActive } from "./board-ref";
+import {
+	boardWorktreeHasCommittedData,
+	codeBranchHasCommit,
+	commitBoardWorktree,
+	commitCodeBranchDecoupling,
+	ensureBoardWorktree,
+	getBoardWorktreeDataHome,
+	isBoardRefTrackedOnCodeBranch,
+	setupBoardWorktree,
+} from "../workspace/board-worktree";
+import {
+	BOARD_REF_FILENAME,
+	BOARD_REF_VERSION,
+	DEFAULT_BOARD_BRANCH,
+	isBoardDecouplingActive,
+	writeBoardRef,
+} from "./board-ref";
 import {
 	buildCommittedProviderFromProviderSettings,
 	type CommittedProviderRecord,
@@ -49,8 +65,11 @@ import {
 import { readShardDir } from "./sharded-json-store";
 import { boardNeedsSharding, convertBoardToShards, loadShardedBoard, saveShardedBoard } from "./task-shard-store";
 
+const log = createLogger("workspace-state");
+
 const RUNTIME_HOME_DIR = ".kanban";
 const RUNTIME_WORKTREES_DIR = "worktrees";
+const RUNTIME_TRASHED_PATCHES_DIR = "trashed-task-patches";
 const WORKSPACES_DIR = "workspaces";
 const INDEX_FILENAME = "index.json";
 const SESSIONS_FILENAME = "sessions.json";
@@ -109,6 +128,20 @@ config.json
 **/provider_settings.json
 **/*_oauth_settings.json
 `;
+// Code-branch (repo root) `.gitignore` flip applied by the board-branch decouple
+// migration: ignore the *contents* of `.kanban/` (so the board worktree's data, the
+// task worktrees, sessions, etc. never dirty the code tree) while re-including the
+// single `board-ref` pointer that tells a clone which branch holds the board data.
+// `/.kanban/*` (not `/.kanban/`) is deliberate: ignoring contents rather than the
+// directory itself is what lets the `!` negation re-include a child file.
+const ROOT_GITIGNORE_FILENAME = ".gitignore";
+const ROOT_GITIGNORE_KANBAN_MARKER = "/.kanban/*";
+const ROOT_GITIGNORE_KANBAN_BLOCK = `# Kanban board data lives on its own branch; only the pointer travels with the code.
+# See .plan/docs/board-branch-decoupling.md and .kanban/board-ref.
+/.kanban/*
+!/.kanban/board-ref
+`;
+const BOARD_IMPORT_COMMIT_MESSAGE = "board: import existing kanban data";
 const INDEX_VERSION = 1;
 const WORKSPACE_ID_COLLISION_SUFFIX_LENGTH = 4;
 
@@ -1126,6 +1159,128 @@ async function prepareRepoRuntimeHome(repoPath: string, workspaceId: string): Pr
 	await dropRetiredRequirementData(repoPath, workspaceId);
 	await migrateWorkspaceBoardToShards(repoPath, workspaceId);
 	await migrateToCommittedProviders(repoPath, workspaceId);
+	// Runs last so it seeds the board branch from the *final* committed state every
+	// earlier migration produced in `<repo>/.kanban`.
+	await migrateDecoupleBoardToBranch(repoPath, workspaceId);
+}
+
+/**
+ * One-time, idempotent migration that moves a repo's committed board data onto a
+ * dedicated `kanban/board` branch (method C — see `.plan/docs/board-branch-decoupling.md`).
+ * After it runs, the code branch no longer tracks `.kanban` data (only the
+ * `board-ref` pointer), so switching code branches no longer fights the runtime's
+ * constant `tasks/*.json` rewrites.
+ *
+ * Covers the three repo states uniformly:
+ *  - **Existing / brand-new (no `board-ref` yet):** seed the orphan board branch from
+ *    whatever committed data exists in `<repo>/.kanban` (a full board for an existing
+ *    repo, just the vault-type seeds for a fresh one), write the pointer, then flip
+ *    the code branch's `.gitignore` and untrack `.kanban` (keeping `board-ref`).
+ *  - **Clone (`board-ref` arrives tracked):** the cheap gate skips this entirely;
+ *    {@link ensureBoardWorktree} (run first in the chain) fetches + tracks the remote
+ *    board branch, or initializes an empty one when the remote lacks it.
+ *
+ * The completion gate is `board-ref` being *tracked* on the code branch — the single
+ * artifact written by the final decoupling commit — so a crash anywhere mid-flip is
+ * retried (not skipped), and every step is individually idempotent: the worktree
+ * setup, the seed (guarded by {@link boardWorktreeHasCommittedData} so a retry never
+ * clobbers data written after a partial run), the `.gitignore` append, and the
+ * `rm --cached` + commit. Rollback: revert the decouple commit to restore tracking,
+ * or delete `board-ref` + the board branch to return to the pre-migration state.
+ */
+async function migrateDecoupleBoardToBranch(repoPath: string, workspaceId: string): Promise<void> {
+	if (await isBoardRefTrackedOnCodeBranch(repoPath)) {
+		return;
+	}
+	// The pointer can only be tracked on top of a commit, so an unborn repo cannot be
+	// decoupled yet — leave its data in the main checkout until it has a first commit.
+	if (!(await codeBranchHasCommit(repoPath))) {
+		return;
+	}
+	await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
+		if (await isBoardRefTrackedOnCodeBranch(repoPath)) {
+			return;
+		}
+		const branch = DEFAULT_BOARD_BRANCH;
+		try {
+			const setup = await setupBoardWorktree(repoPath, branch);
+			if (!setup.ok || !setup.path) {
+				log.error("board decoupling: could not set up the board worktree; leaving data on the code branch", {
+					repoPath,
+					branch,
+					error: setup.error,
+				});
+				return;
+			}
+
+			// Seed the board branch only while it is still empty, so a retry after a
+			// crash (which may have already taken live writes) never overwrites newer data.
+			if (!(await boardWorktreeHasCommittedData(repoPath))) {
+				await copyCommittedDataIntoBoardWorktree(repoPath);
+				await commitBoardWorktree(repoPath, BOARD_IMPORT_COMMIT_MESSAGE);
+			}
+
+			// Activate decoupling, then untrack `.kanban` on the code branch. board-ref is
+			// written before the code-branch commit so the commit can track it; the gate
+			// keys off board-ref being *tracked*, so a crash between these steps retries.
+			await writeBoardRef(repoPath, { version: BOARD_REF_VERSION, branch });
+			await ensureCodeBranchKanbanIgnored(repoPath);
+			await commitCodeBranchDecoupling(repoPath);
+		} catch (error) {
+			// Never let a decouple failure brick a workspace load: degrade to the
+			// undecoupled (or half-decoupled but worktree-seeded) state and retry next
+			// load. The gate keys off board-ref being tracked, so this stays idempotent.
+			log.error("board decoupling failed; leaving the workspace on the code branch for now", {
+				repoPath,
+				branch,
+				error,
+			});
+		}
+	});
+}
+
+/**
+ * Copy a repo's committed `.kanban` data into the board worktree's `.kanban`, mirroring
+ * the layout so every committed-data path derivation works once `boardDataHome` repoints
+ * there. Excludes `worktrees/` (the board worktree lives there — copying it would recurse)
+ * and `trashed-task-patches/`; the board branch's own `.kanban/.gitignore` denylist (copied
+ * along) keeps sessions/meta/locks out of the commit. `board-ref` is excluded — the pointer
+ * never lives on the board branch itself (it would be a chicken-and-egg discovery loop).
+ */
+async function copyCommittedDataIntoBoardWorktree(repoPath: string): Promise<void> {
+	const source = getRuntimeHomePath(repoPath);
+	const dest = getBoardWorktreeDataHome(repoPath);
+	await mkdir(dest, { recursive: true });
+	const excluded = new Set([RUNTIME_WORKTREES_DIR, RUNTIME_TRASHED_PATCHES_DIR, BOARD_REF_FILENAME]);
+	const entries = await readdir(source, { withFileTypes: true });
+	for (const entry of entries) {
+		if (excluded.has(entry.name)) {
+			continue;
+		}
+		await cp(join(source, entry.name), join(dest, entry.name), { recursive: true, force: true });
+	}
+}
+
+/**
+ * Append the `/.kanban/*` + `!/.kanban/board-ref` rule to the repo's root `.gitignore`
+ * (creating it if absent), idempotently — a second run is a no-op once the marker is
+ * present. Never rewrites unrelated content.
+ */
+async function ensureCodeBranchKanbanIgnored(repoPath: string): Promise<void> {
+	const gitignorePath = join(repoPath, ROOT_GITIGNORE_FILENAME);
+	let existing = "";
+	try {
+		existing = await readFile(gitignorePath, "utf8");
+	} catch (error) {
+		if (!isNodeErrorWithCode(error, "ENOENT")) {
+			throw error;
+		}
+	}
+	if (existing.split(/\r?\n/).some((line) => line.trim() === ROOT_GITIGNORE_KANBAN_MARKER)) {
+		return;
+	}
+	const separator = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
+	await writeFile(gitignorePath, `${existing}${separator}${ROOT_GITIGNORE_KANBAN_BLOCK}`, "utf8");
 }
 
 /**

@@ -1,15 +1,18 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { writeBoardRef } from "../../../src/state/board-ref";
 import {
+	boardWorktreeHasCommittedData,
+	commitBoardWorktree,
 	createOrphanBranchViaPlumbing,
 	ensureBoardWorktree,
 	getBoardWorktreeDataHome,
 	getBoardWorktreePath,
+	setupBoardWorktree,
 } from "../../../src/workspace/board-worktree";
 import { BOARD_WORKTREE_SENTINEL } from "../../../src/workspace/task-worktree-path";
 import { createGitTestEnv } from "../../utilities/git-env";
@@ -28,6 +31,11 @@ function initRepo(prefix: string): { repoPath: string; cleanup: () => void } {
 	git(repoPath, ["init", "-q", "-b", "main", "."]);
 	git(repoPath, ["commit", "-q", "--allow-empty", "-m", "init"]);
 	return { repoPath, cleanup };
+}
+
+function writeFileEnsuringDir(filePath: string, contents: string): void {
+	mkdirSync(dirname(filePath), { recursive: true });
+	writeFileSync(filePath, contents, "utf8");
 }
 
 describe("board-worktree paths", () => {
@@ -116,6 +124,68 @@ describe("ensureBoardWorktree", () => {
 			expect(result.ok).toBe(true);
 			expect(result.branch).toBe("kanban/data");
 			expect(git(getBoardWorktreePath(repoPath), ["symbolic-ref", "--short", "HEAD"])).toBe("kanban/data");
+		} finally {
+			cleanup();
+		}
+	});
+});
+
+describe("setupBoardWorktree clone bootstrap", () => {
+	it("fetches and tracks an existing remote board branch instead of orphaning a new one", async () => {
+		// Build an "origin" repo that already carries a board branch with data, then a
+		// clone of it that only has the code branch — the clone case (state ③).
+		const { repoPath: origin, cleanup: cleanupOrigin } = initRepo("kanban-board-origin-");
+		const { path: cloneParent, cleanup: cleanupClone } = createTempDir("kanban-board-clone-");
+		try {
+			await setupBoardWorktree(origin, "kanban/board");
+			writeFileEnsuringDir(join(getBoardWorktreeDataHome(origin), "files", "marker.txt"), "from-origin");
+			await commitBoardWorktree(origin, "board: seed");
+
+			const clonePath = join(cloneParent, "clone");
+			git(cloneParent, ["clone", "-q", origin, clonePath]);
+			// The clone has no local board branch...
+			expect(
+				spawnSync("git", ["-C", clonePath, "rev-parse", "--verify", "refs/heads/kanban/board"]).status,
+			).not.toBe(0);
+			// ...but origin/kanban/board is present, so setup tracks it rather than orphaning.
+			const result = await setupBoardWorktree(clonePath, "kanban/board");
+			expect(result.ok).toBe(true);
+			expect(result.created).toBe(true);
+			expect(git(getBoardWorktreePath(clonePath), ["symbolic-ref", "--short", "HEAD"])).toBe("kanban/board");
+			expect(existsSync(join(getBoardWorktreeDataHome(clonePath), "files", "marker.txt"))).toBe(true);
+			// The tracking branch is wired to the remote.
+			expect(git(clonePath, ["config", "branch.kanban/board.remote"])).toBe("origin");
+		} finally {
+			cleanupClone();
+			cleanupOrigin();
+		}
+	});
+
+	it("orphans a fresh empty branch when no remote carries the board branch", async () => {
+		const { repoPath, cleanup } = initRepo("kanban-board-wt-");
+		try {
+			const result = await setupBoardWorktree(repoPath, "kanban/board");
+			expect(result.ok).toBe(true);
+			expect(result.created).toBe(true);
+			expect(await boardWorktreeHasCommittedData(repoPath)).toBe(false);
+		} finally {
+			cleanup();
+		}
+	});
+});
+
+describe("commitBoardWorktree / boardWorktreeHasCommittedData", () => {
+	it("reports no data on a fresh orphan branch and data after a seed commit", async () => {
+		const { repoPath, cleanup } = initRepo("kanban-board-wt-");
+		try {
+			await setupBoardWorktree(repoPath, "kanban/board");
+			expect(await boardWorktreeHasCommittedData(repoPath)).toBe(false);
+			// An empty commit attempt is a no-op.
+			expect(await commitBoardWorktree(repoPath, "board: noop")).toBe(false);
+
+			writeFileEnsuringDir(join(getBoardWorktreeDataHome(repoPath), "files", "doc.md"), "hi");
+			expect(await commitBoardWorktree(repoPath, "board: seed")).toBe(true);
+			expect(await boardWorktreeHasCommittedData(repoPath)).toBe(true);
 		} finally {
 			cleanup();
 		}

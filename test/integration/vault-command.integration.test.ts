@@ -1,8 +1,9 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { getBoardWorktreePath } from "../../src/workspace/board-worktree";
 import { commitAll, initGitRepository, runCliCommandAndCollectOutput, runGit } from "../utilities/cli-runtime";
 import { createGitTestEnv } from "../utilities/git-env";
 import { createTempDir } from "../utilities/temp-dir";
@@ -83,13 +84,20 @@ describe("vault doc commands", () => {
 				expect(onDisk).toContain("priority: high");
 				expect(onDisk).toContain("Logins must be throttled per account.");
 
-				// git sees a meaningful untracked addition of the doc file.
-				const statusAfterCreate = runGit(projectPath, ["status", "--porcelain", "--", doc.relativePath]);
+				// Vault docs are committed board data, which lives on the board branch
+				// (board-branch decoupling): the first CLI invocation decoupled this repo,
+				// so the doc is gitignored on the code tree and instead git-visible inside
+				// the board worktree. Assert against the board worktree, where it belongs.
+				const boardWorktree = getBoardWorktreePath(projectPath);
+				const docInBoardWorktree = relative(boardWorktree, join(projectPath, doc.relativePath));
+				const statusAfterCreate = runGit(boardWorktree, ["status", "--porcelain", "--", docInBoardWorktree]);
 				expect(statusAfterCreate).toContain("?? ");
 				expect(statusAfterCreate).toContain("docs/requirement/");
+				// The code tree, by contrast, stays clean — the whole point of decoupling.
+				expect(runGit(projectPath, ["status", "--porcelain", "--", ".kanban"])).toBe("");
 
-				// Commit it so a later edit produces a content diff (not an add).
-				commitAll(projectPath, "add requirement doc");
+				// Commit it on the board branch so a later edit produces a content diff.
+				commitAll(boardWorktree, "add requirement doc");
 
 				// list — finds it, filtered by type.
 				const listed = parseJson<{ ok: boolean; documents: VaultDocumentRecord[]; count: number }>(
@@ -128,8 +136,8 @@ describe("vault doc commands", () => {
 				expect(updated.document.frontmatter.status).toBe("clarified");
 				expect(updated.document.relativePath).toBe(doc.relativePath);
 
-				// git diff shows a meaningful content change to the committed doc file.
-				const diff = runGit(projectPath, ["diff", "--", doc.relativePath]);
+				// git diff (on the board branch) shows a meaningful content change.
+				const diff = runGit(boardWorktree, ["diff", "--", docInBoardWorktree]);
 				expect(diff).toContain("-status: proposed");
 				expect(diff).toContain("+status: clarified");
 				expect(diff).toContain("+Logins must be throttled per account and IP.");
