@@ -246,7 +246,6 @@ export function BoardCard({
 	isDependencySource = false,
 	isDependencyTarget = false,
 	isDependencyLinking = false,
-	isReorderDisabled = false,
 	workspacePath,
 	defaultKanbanModelId = null,
 }: {
@@ -271,7 +270,6 @@ export function BoardCard({
 	isDependencySource?: boolean;
 	isDependencyTarget?: boolean;
 	isDependencyLinking?: boolean;
-	isReorderDisabled?: boolean;
 	workspacePath?: string | null;
 	defaultKanbanModelId?: string | null;
 }): React.ReactElement {
@@ -500,7 +498,7 @@ export function BoardCard({
 	const activeDescriptionDisplay = isDescriptionExpanded ? descriptionDisplay.expanded : descriptionDisplay.collapsed;
 
 	return (
-		<Draggable draggableId={card.id} index={index} isDragDisabled={isReorderDisabled}>
+		<Draggable draggableId={card.id} index={index}>
 			{(provided, snapshot) => {
 				const isDragging = snapshot.isDragging;
 				const draggableContent = (

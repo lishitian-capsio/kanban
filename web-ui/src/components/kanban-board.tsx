@@ -8,19 +8,16 @@ import {
 	type SensorAPI,
 	type SnapDragActions,
 } from "@hello-pangea/dnd";
-import { User } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BoardColumn } from "@/components/board-column";
 import { DependencyOverlay } from "@/components/dependencies/dependency-overlay";
 import { useDependencyLinking } from "@/components/dependencies/use-dependency-linking";
-import { NativeSelect } from "@/components/ui/native-select";
 import type { RuntimeTaskSessionSummary } from "@/runtime/types";
 import { canCreateTaskDependency } from "@/state/board-state";
 import { findCardColumnId, type ProgrammaticCardMoveInFlight } from "@/state/drag-rules";
 import type { BoardCard, BoardColumnId, BoardData, BoardDependency } from "@/types";
-import { collectBoardOwnerOptions, filterBoardByOwner } from "@/utils/task-owner";
 
 const BOARD_COLUMN_ORDER: BoardColumnId[] = ["backlog", "in_progress", "review", "trash"];
 
@@ -95,17 +92,7 @@ export function KanbanBoard({
 	const [activeDragSourceColumnId, setActiveDragSourceColumnId] = useState<BoardColumnId | null>(null);
 	const [programmaticCardMoveInFlight, setProgrammaticCardMoveInFlight] =
 		useState<ProgrammaticCardMoveInFlight | null>(null);
-	const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
 
-	const ownerOptions = useMemo(() => collectBoardOwnerOptions(data), [data]);
-	// Drop a stale selection if its owner no longer has any tasks on the board.
-	useEffect(() => {
-		if (ownerFilter !== null && !ownerOptions.some((option) => option.key === ownerFilter)) {
-			setOwnerFilter(null);
-		}
-	}, [ownerFilter, ownerOptions]);
-	const isOwnerFilterActive = ownerFilter !== null;
-	const visibleData = useMemo(() => filterBoardByOwner(data, ownerFilter), [data, ownerFilter]);
 	const dependencyLinking = useDependencyLinking({
 		canLinkTasks: (fromTaskId, toTaskId) => canCreateTaskDependency(data, fromTaskId, toTaskId),
 		onCreateDependency,
@@ -384,31 +371,6 @@ export function KanbanBoard({
 
 	return (
 		<div className="flex min-h-0 min-w-0 flex-1 flex-col">
-			{ownerOptions.length > 0 ? (
-				<div className="flex shrink-0 items-center gap-2 px-3 py-2">
-					<User size={14} className="text-text-secondary" aria-hidden />
-					<label htmlFor="kb-owner-filter" className="text-xs text-text-secondary">
-						Owner
-					</label>
-					<NativeSelect
-						id="kb-owner-filter"
-						size="sm"
-						aria-label="Filter tasks by owner"
-						value={ownerFilter ?? ""}
-						onChange={(event) => setOwnerFilter(event.target.value === "" ? null : event.target.value)}
-					>
-						<option value="">All owners</option>
-						{ownerOptions.map((option) => (
-							<option key={option.key} value={option.key}>
-								{option.label}
-							</option>
-						))}
-					</NativeSelect>
-					{isOwnerFilterActive ? (
-						<span className="text-xs text-text-tertiary">Reordering is disabled while filtering</span>
-					) : null}
-				</div>
-			) : null}
 			<DragDropContext
 				onBeforeCapture={handleBeforeCapture}
 				onDragStart={handleDragStart}
@@ -420,11 +382,10 @@ export function KanbanBoard({
 					className="kb-board kb-dependency-surface"
 					data-programmatic-card-move={programmaticCardMoveInFlight ? "true" : undefined}
 				>
-					{visibleData.columns.map((column) => (
+					{data.columns.map((column) => (
 						<BoardColumn
 							key={column.id}
 							column={column}
-							isReorderDisabled={isOwnerFilterActive}
 							taskSessions={taskSessions}
 							onCreateTask={column.id === "backlog" ? onCreateTask : undefined}
 							onStartTask={column.id === "backlog" ? onStartTask : undefined}

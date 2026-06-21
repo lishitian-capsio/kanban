@@ -37,7 +37,6 @@ export function BoardColumn({
 	dependencySourceTaskId,
 	dependencyTargetTaskId,
 	isDependencyLinking,
-	isReorderDisabled = false,
 	workspacePath,
 	defaultKanbanModelId,
 }: {
@@ -68,7 +67,6 @@ export function BoardColumn({
 	dependencySourceTaskId?: string | null;
 	dependencyTargetTaskId?: string | null;
 	isDependencyLinking?: boolean;
-	isReorderDisabled?: boolean;
 	workspacePath?: string | null;
 	defaultKanbanModelId?: string | null;
 }): React.ReactElement {
@@ -188,7 +186,6 @@ export function BoardColumn({
 											isDependencySource={dependencySourceTaskId === card.id}
 											isDependencyTarget={dependencyTargetTaskId === card.id}
 											isDependencyLinking={isDependencyLinking}
-											isReorderDisabled={isReorderDisabled}
 											workspacePath={workspacePath}
 											defaultKanbanModelId={defaultKanbanModelId}
 											onSaveTitle={onSaveTitle}
