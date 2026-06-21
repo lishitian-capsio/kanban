@@ -605,8 +605,13 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 						}
 					}
 
-					for (const taskListener of entry.listeners.values()) {
-						taskListener.onOutput?.(filteredChunk);
+					// Skip the fanout entirely when no viewer is attached (the common
+					// background-session case): the live stream has no subscribers, so
+					// iterating is pure overhead per chunk.
+					if (entry.listeners.size > 0) {
+						for (const taskListener of entry.listeners.values()) {
+							taskListener.onOutput?.(filteredChunk);
+						}
 					}
 				},
 				onExit: (event) => {
@@ -797,8 +802,10 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 					}
 					updateSummary(entry, { lastOutputAt: now() });
 
-					for (const taskListener of entry.listeners.values()) {
-						taskListener.onOutput?.(filteredChunk);
+					if (entry.listeners.size > 0) {
+						for (const taskListener of entry.listeners.values()) {
+							taskListener.onOutput?.(filteredChunk);
+						}
 					}
 				},
 				onExit: (event) => {

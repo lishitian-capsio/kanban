@@ -4,7 +4,22 @@ import headlessTerminalModule from "@xterm/headless";
 const { SerializeAddon } = serializeAddonModule as typeof import("@xterm/addon-serialize");
 const { Terminal } = headlessTerminalModule as typeof import("@xterm/headless");
 
-const TERMINAL_SCROLLBACK = 10_000;
+// Scrollback retained by the headless mirror. The transcript folds committed
+// (scrolled-off) lines into an assistant message at every turn boundary, so the
+// mirror only needs to hold a single turn's worth of scrollback between reads;
+// 5k lines is comfortably more than any realistic turn while roughly halving the
+// per-scroll clone/trim cost and memory versus the previous 10k.
+const TERMINAL_SCROLLBACK = 5_000;
+
+// Micro-batching: PTY output arrives as a flood of tiny chunks (one escape
+// sequence / line each). Feeding every chunk to @xterm/headless individually
+// allocates a Uint8Array + a Promise and walks the serial queue per chunk, which
+// dominated idle CPU (GC churn) far more than the actual terminal parsing. We
+// instead accumulate raw chunks and write them to xterm in a single batched call
+// on a short timer or once a byte threshold is crossed. Reads (snapshot / committed
+// lines) and resizes force a flush first so observable state is never stale.
+const FLUSH_INTERVAL_MS = 16;
+const FLUSH_BYTE_THRESHOLD = 64 * 1024;
 
 export interface TerminalRestoreSnapshot {
 	snapshot: string;
@@ -26,6 +41,11 @@ export class TerminalStateMirror {
 	// the lazy `Terminal.buffer` getter would register on an already-disposed
 	// DisposableStore and log "Trying to add a disposable ... already been disposed of".
 	private disposed = false;
+	// Raw output chunks awaiting a single batched xterm write. Copied on entry
+	// because the protocol filter can hand back a view onto the reused PTY buffer.
+	private pendingChunks: Buffer[] = [];
+	private pendingBytes = 0;
+	private flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(cols: number, rows: number, options: TerminalStateMirrorOptions = {}) {
 		this.terminal = new Terminal({
@@ -44,15 +64,15 @@ export class TerminalStateMirror {
 		if (this.disposed) {
 			return;
 		}
-		const chunkCopy = new Uint8Array(chunk);
-		this.enqueueOperation(
-			() =>
-				new Promise<void>((resolve) => {
-					this.terminal.write(chunkCopy, () => {
-						resolve();
-					});
-				}),
-		);
+		// Copy: the filtered chunk may be a subarray view onto the PTY read buffer,
+		// which can be reused before the deferred flush runs.
+		this.pendingChunks.push(Buffer.from(chunk));
+		this.pendingBytes += chunk.byteLength;
+		if (this.pendingBytes >= FLUSH_BYTE_THRESHOLD) {
+			this.flushPendingOutput();
+			return;
+		}
+		this.scheduleFlush();
 	}
 
 	resize(cols: number, rows: number): void {
@@ -62,12 +82,55 @@ export class TerminalStateMirror {
 		if (cols === this.terminal.cols && rows === this.terminal.rows) {
 			return;
 		}
+		// Flush buffered output first so it is written at the old dimensions, keeping
+		// the write/resize/write ordering identical to an unbatched feed.
+		this.flushPendingOutput();
 		this.enqueueOperation(() => {
 			this.terminal.resize(cols, rows);
 		});
 	}
 
+	private scheduleFlush(): void {
+		if (this.flushTimer !== null) {
+			return;
+		}
+		this.flushTimer = setTimeout(() => {
+			this.flushTimer = null;
+			this.flushPendingOutput();
+		}, FLUSH_INTERVAL_MS);
+		// Do not keep the event loop alive solely to flush the mirror; reads force a
+		// flush, and dispose() clears any pending timer.
+		this.flushTimer.unref?.();
+	}
+
+	private flushPendingOutput(): void {
+		if (this.flushTimer !== null) {
+			clearTimeout(this.flushTimer);
+			this.flushTimer = null;
+		}
+		if (this.pendingChunks.length === 0 || this.disposed) {
+			this.pendingChunks = [];
+			this.pendingBytes = 0;
+			return;
+		}
+		// A Node Buffer is a Uint8Array, so it can be handed to xterm directly with no
+		// extra allocation. concat copies into one fresh, privately-owned buffer.
+		const batch =
+			this.pendingChunks.length === 1 ? this.pendingChunks[0] : Buffer.concat(this.pendingChunks, this.pendingBytes);
+		this.pendingChunks = [];
+		this.pendingBytes = 0;
+		this.enqueueOperation(
+			() =>
+				new Promise<void>((resolve) => {
+					this.terminal.write(batch, () => {
+						resolve();
+					});
+				}),
+		);
+	}
+
 	async getSnapshot(): Promise<TerminalRestoreSnapshot> {
+		this.flushPendingOutput();
 		await this.operationQueue;
 		if (this.disposed) {
 			return { snapshot: "", cols: this.terminal.cols, rows: this.terminal.rows };
@@ -88,6 +151,7 @@ export class TerminalStateMirror {
 	 * since those do not produce linear scrollback.
 	 */
 	async getCommittedLines(): Promise<string[]> {
+		this.flushPendingOutput();
 		await this.operationQueue;
 		// Re-check after the await: dispose() can win the race while we yield (the
 		// session closing mid-capture), and touching `terminal.buffer` afterwards
@@ -120,6 +184,12 @@ export class TerminalStateMirror {
 			return;
 		}
 		this.disposed = true;
+		if (this.flushTimer !== null) {
+			clearTimeout(this.flushTimer);
+			this.flushTimer = null;
+		}
+		this.pendingChunks = [];
+		this.pendingBytes = 0;
 		this.terminal.dispose();
 	}
 
