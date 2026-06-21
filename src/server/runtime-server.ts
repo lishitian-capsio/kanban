@@ -113,13 +113,19 @@ function readWorkspaceIdFromRequest(request: IncomingMessage, requestUrl: URL): 
 }
 
 export async function createRuntimeServer(deps: CreateRuntimeServerDependencies): Promise<RuntimeServer> {
-	// Bun 1.3.x (JavaScriptCore) busy-waits the event loop when the only
-	// pending work is an unresolved Promise — even with active I/O watchers.
-	// The agent loop installs its own keepalive while running, but between
-	// turns and during board-sync / metadata-monitor / state-broadcast gaps
-	// the event loop can spin at 100% CPU. A single process-lifetime timer
-	// keeps epoll_wait engaged without affecting shutdown (unref + manual
-	// clear in close()).
+	// Bun 1.3.x (JavaScriptCore) busy-waits the event loop when the ONLY pending
+	// work is an unresolved Promise AND there is no other active *ref'd* handle.
+	// In practice the runtime always has the node:http listening socket (a ref'd
+	// handle), which keeps the loop blocked in epoll_wait — so this server never
+	// hits the pure-idle busy-wait. This keepalive is therefore defense-in-depth,
+	// not the load-bearing fix.
+	//
+	// NOTE: `EventLoopKeepalive` uses an UNREF'd timer, which does NOT by itself
+	// keep the loop in epoll_wait (verified: an unref'd timer does not suppress
+	// the busy-wait; only a ref'd handle does). It is kept unref'd deliberately so
+	// it can never delay process exit; the real guard against busy-wait is the
+	// listening socket. Do not assume removing/adding `.unref()` here changes CPU
+	// behaviour without measuring — see also src/agent-sdk/utils/yield.ts.
 	const eventLoopKeepalive = new EventLoopKeepalive();
 
 	const webUiDir = getWebUiDir();

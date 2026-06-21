@@ -16,13 +16,25 @@
  *
  * ## Fix
  *
- * A recurring `setInterval` keeps the event loop sleeping in `epoll_wait`.
- * The `EventLoopKeepalive` class and `keepaliveWhile()` wrapper provide a
- * clean way to install and clean up this keepalive timer.
+ * The reliable guard is having ANY active *ref'd* handle on the loop (a
+ * listening socket, a child-process pipe/PTY, or a ref'd timer): Bun then
+ * blocks in `epoll_wait` instead of spinning. Measured behaviour (Bun 1.3.14):
+ *   - unresolved Promise, no ref'd handle .......... 100% CPU (busy-wait)
+ *   - + node:http / Bun.serve listener ............. 0%  (socket keeps it asleep)
+ *   - + child pipe / PTY (await proc.exited) ....... 0%
+ *   - + setInterval(…).unref() ..................... 100% (UNREF'd timer does NOT help)
+ *   - + setInterval(…)  (ref'd) .................... 0%
  *
- * The older `yieldIfDue()` and `ExponentialYield` approaches (compensated
- * sleep loops) are retained for the agent-loop hot-path where Promises
- * resolve frequently and the keepalive alone is insufficient.
+ * `EventLoopKeepalive` below uses an UNREF'd timer on purpose: in the contexts
+ * where it is used (the runtime server, the agent loop) there is already a ref'd
+ * handle keeping the loop asleep, so the timer is defense-in-depth that must
+ * never delay process exit. It is NOT, by itself, what prevents the busy-wait —
+ * do not "fix" it by removing `.unref()` without measuring.
+ *
+ * The `yieldIfDue()` and `ExponentialYield` approaches (compensated sleep loops)
+ * are the real mitigation for the agent-loop hot-path: they insert genuine
+ * macrotask sleeps so the loop drains microtasks and reaches the poll phase,
+ * which a far-future timer cannot do.
  */
 
 import { scheduler } from "node:timers/promises";
