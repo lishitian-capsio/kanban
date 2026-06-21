@@ -1,0 +1,19 @@
+{
+  "id": "a4131",
+  "title": "修复系统卡死高CPU 主因Bun事件循环busy-wait",
+  "prompt": "修复:系统老是卡死 / 高 CPU。主因怀疑是 Bun 1.3.x 事件循环在「唯一待决工作是未 resolve 的 Promise」时 busy-wait（事件驱动/异步等待子进程被 Bun bug 咬中），board-sync 提交/推送 churn 是次要负载。请用 systematic-debugging 先确认主因再修。\n\n## 主线索（先读）\n- src/server/runtime-server.ts:112-122 注释 + b29cfa7a 补丁:Bun 1.3.x (JavaScriptCore) 当唯一待决工作是未 resolve 的 Promise（例 PTY 子进程 bunProc.exited）时会 busy-wait 事件循环 → 100% CPU，即使有活跃 I/O watcher。pi 自带 keepalive，CLI/terminal agent session 没有。现有创可贴:`const eventLoopKeepaliveTimer = setInterval(() => {}, 1_000)`（约 :122），close() 清除。\n- 现象:用户报「老是卡死」，说明创可贴没覆盖全。\n- 终端 session 等待子进程退出的代码:src/terminal/*（pty-session.ts、session-manager.ts，await bunProc.exited 之类）。\n\n## 要做\n1. systematic-debugging 复现并定位:在「有 CLI/terminal agent session 在跑」时观测进程 CPU 与事件循环;确认 100% CPU 是否来自 Bun busy-wait（未决 Promise），以及现有 1s keepalive 为何没压住（是否多 session/某些路径未覆盖、keepalive 是否在所有跑 session 的上下文都生效、是否被 close 或重建打断）。区分:① 事件循环 busy-wait（主因怀疑）② board-sync git commit/push churn（次要负载，见下）。\n2. 主修(事件循环):\n   - 评估根治路径:升级 Bun 越过 1.3.x 的 busy-wait bug（首选，若已有修复版本）；或改掉「裸 await 子进程 exited 作为唯一待决 promise」的模式（例如用已 ref 的 I/O/事件而非空转 keepalive），让事件循环真正阻塞在 epoll_wait。\n   - 若仍需 keepalive,确认它覆盖所有「有活跃 session」的场景且开销可忽略;不要用更短间隔的忙轮询凑数。\n   - 给出修复前/后 CPU 占用对比作为证据（空闲 + 跑 1 个/多个 session 各测）。\n3. 次要(board-sync churn，仅在确认其确有显著负载时一并处理):合并防抖 + commit/push 解耦 + 仅语义变化触发，降低 kanban/board 分支的提交/推送频率（现状活跃时约每分钟一次 + 每次 push 网络）。相关 src/workspace/board-sync.ts、board-worktree.ts。\n\n## 验收\n- 跑 CLI/terminal agent session 时进程不再 100% CPU、系统不卡;给出复现步骤与前后 CPU 对比。\n- 不破坏 graceful shutdown（keepalive/资源在 close 正确释放，接 b29cfa7a）。\n- typecheck / biome / 相关单测通过。\n\n先复现确认主因（事件循环 busy-wait vs board-sync churn 各占多少），再动手;别假设，拿 CPU 数据说话。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782032801443,
+  "updatedAt": 1782036959126,
+  "column": "trash",
+  "rank": "a28",
+  "dependsOn": []
+}
