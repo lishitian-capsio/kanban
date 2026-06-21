@@ -3,14 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { RuntimeAgentId, RuntimeHomeChatThread, RuntimeHomeChatThreadsData } from "../core/api-contract";
 import { createHomeAgentSessionId } from "../core/home-agent-session";
 import { loadWorkspaceHomeThreads, mutateWorkspaceHomeThreads } from "../state/workspace-state";
-import {
-	closeHomeThread,
-	createHomeThread,
-	listHomeThreads,
-	renameHomeThread,
-	type SetHomeThreadTakeoverInput,
-	setHomeThreadTakeover,
-} from "./home-thread-registry";
+import { closeHomeThread, createHomeThread, listHomeThreads, renameHomeThread } from "./home-thread-registry";
 
 /**
  * Persistence seam for the home chat thread registry. The default
@@ -76,7 +69,6 @@ export class HomeThreadStore {
 			id,
 			agentId: request.agentId,
 			name: request.name,
-			takeoverEnabled: false,
 			createdAt: now,
 			updatedAt: now,
 		};
@@ -91,17 +83,6 @@ export class HomeThreadStore {
 			throw new Error(`Home chat thread "${id}" not found after rename.`);
 		}
 		return renamed;
-	}
-
-	async setTakeover(id: string, input: SetHomeThreadTakeoverInput): Promise<RuntimeHomeChatThread> {
-		const now = this.now();
-		const next = await this.persistence.mutate((current) => setHomeThreadTakeover(current, id, input, now));
-		const updated = next.threads.find((thread) => thread.id === id);
-		if (!updated) {
-			// Unreachable: setHomeThreadTakeover throws when the id is missing.
-			throw new Error(`Home chat thread "${id}" not found after takeover update.`);
-		}
-		return updated;
 	}
 
 	async close(id: string): Promise<RuntimeHomeChatThread> {

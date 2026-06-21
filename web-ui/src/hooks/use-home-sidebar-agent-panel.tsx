@@ -224,7 +224,6 @@ export function useHomeSidebarAgentPanel({
 						onCreateThread={homeThreads.createThread}
 						onRenameThread={homeThreads.renameThread}
 						onCloseThread={homeThreads.closeThread}
-						onSetThreadTakeover={homeThreads.setThreadTakeover}
 					/>
 				</div>
 			</div>

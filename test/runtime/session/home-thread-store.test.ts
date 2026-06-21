@@ -38,7 +38,6 @@ describe("HomeThreadStore", () => {
 			id: "thread-1",
 			agentId: "pi",
 			name: "Planning",
-			takeoverEnabled: false,
 			createdAt: 1000,
 			updatedAt: 1000,
 		});
@@ -65,20 +64,11 @@ describe("HomeThreadStore", () => {
 		expect(onCloseSession).toHaveBeenCalledWith(`__home_agent__:workspace-1:claude:${created.id}`);
 	});
 
-	it("sets a thread's takeover switch", async () => {
-		const { store } = makeStore();
-		const created = await store.create({ agentId: "claude", name: "Coordinate" });
-		const updated = await store.setTakeover(created.id, { enabled: true, extension: "playbook" });
-		expect(updated.takeoverEnabled).toBe(true);
-		expect(updated.takeoverExtension).toBe("playbook");
-		expect((await store.list()).find((t) => t.id === created.id)?.takeoverEnabled).toBe(true);
-	});
-
 	it("lists threads sorted by creation time", async () => {
 		const persistence = inMemoryPersistence({
 			threads: [
-				{ id: "b", agentId: "pi", name: "B", takeoverEnabled: false, createdAt: 200, updatedAt: 200 },
-				{ id: "a", agentId: "pi", name: "A", takeoverEnabled: false, createdAt: 100, updatedAt: 100 },
+				{ id: "b", agentId: "pi", name: "B", createdAt: 200, updatedAt: 200 },
+				{ id: "a", agentId: "pi", name: "A", createdAt: 100, updatedAt: 100 },
 			],
 		});
 		const { store } = makeStore({ persistence });

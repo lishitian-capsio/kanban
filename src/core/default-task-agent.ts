@@ -1,5 +1,5 @@
 import type { RuntimeAgentId } from "./api-contract";
-import { isHomeAgentSessionId, resolveHomeAgentId } from "./home-agent-session";
+import { resolveHomeAgentId } from "./home-agent-session";
 
 export interface ResolveCreateTaskAgentIdInput {
 	/**
@@ -44,26 +44,6 @@ export function resolveCreateTaskAgentId(input: ResolveCreateTaskAgentIdInput): 
 		if (callerAgentId) {
 			return callerAgentId;
 		}
-	}
-	return undefined;
-}
-
-/**
- * Resolve the originating home chat session to stamp on a newly created task.
- *
- * When a task is created from a home chat thread (the calling agent ran
- * `kanban task create` with `KANBAN_SESSION_TASK_ID` set to its home session id),
- * we record that full session id on the task so the takeover hook can route the
- * task's later state-machine transitions back to the originating thread.
- *
- * Recording is unconditional whenever an originating home session exists — it is
- * NOT gated on the thread's takeover switch (that switch only gates injection at
- * the exit). Human-created tasks (web-ui dialog) have no caller session and stay
- * unbound. Pure and never throws: an absent or non-home caller id → `undefined`.
- */
-export function resolveCreateTaskOriginSession(callerSessionId?: string | undefined): string | undefined {
-	if (callerSessionId && isHomeAgentSessionId(callerSessionId)) {
-		return callerSessionId;
 	}
 	return undefined;
 }

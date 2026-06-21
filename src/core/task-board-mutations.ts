@@ -24,10 +24,6 @@ export interface RuntimeCreateTaskInput {
 	agentId?: RuntimeAgentId;
 	agentSettings?: RuntimeTaskAgentSettings;
 	owner?: RuntimeTaskOwner;
-	// The originating home chat session id (`__home_agent__:ws:agent:thread`), when an agent
-	// created this task from a home thread. Used by the takeover hook to route the task's
-	// state-machine transitions back to that thread. Omitted for human-created tasks.
-	originHomeSessionId?: string;
 	baseRef: string;
 }
 
@@ -333,7 +329,6 @@ export function addTaskToColumn(
 		...(input.agentId ? { agentId: input.agentId } : {}),
 		...(input.agentSettings !== undefined ? { agentSettings: cloneTaskAgentSettings(input.agentSettings) } : {}),
 		...(cloneTaskOwner(input.owner) ? { owner: cloneTaskOwner(input.owner) } : {}),
-		...(input.originHomeSessionId?.trim() ? { originHomeSessionId: input.originHomeSessionId.trim() } : {}),
 		baseRef,
 		createdAt: now,
 		updatedAt: now,

@@ -6,7 +6,7 @@
 // button creates a new thread with its own agent.
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Check, ChevronDown, Pencil, Plus, Sparkles, X } from "lucide-react";
+import { Check, ChevronDown, Pencil, Plus, X } from "lucide-react";
 import { useState } from "react";
 
 import { HomeThreadCloseDialog } from "@/components/home-agent/home-thread-close-dialog";
@@ -26,7 +26,6 @@ interface HomeThreadBarProps {
 	onCreateThread: (input: { name: string; agentId: RuntimeAgentId }) => void | Promise<void>;
 	onRenameThread: (threadId: string, name: string) => void | Promise<void>;
 	onCloseThread: (threadId: string) => void | Promise<void>;
-	onSetThreadTakeover: (threadId: string, enabled: boolean) => void | Promise<void>;
 }
 
 export function HomeThreadBar({
@@ -38,7 +37,6 @@ export function HomeThreadBar({
 	onCreateThread,
 	onRenameThread,
 	onCloseThread,
-	onSetThreadTakeover,
 }: HomeThreadBarProps): React.ReactElement | null {
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [createOpen, setCreateOpen] = useState(false);
@@ -88,26 +86,6 @@ export function HomeThreadBar({
 									<ThreadAgentBadge agents={agents} agentId={thread.agentId} />
 									{thread.isDefault ? null : (
 										<span className="flex shrink-0 items-center gap-0.5">
-											<button
-												type="button"
-												aria-label={
-													thread.takeoverEnabled ? "Disable thread takeover" : "Enable thread takeover"
-												}
-												aria-pressed={thread.takeoverEnabled}
-												title="Agent takeover: inject task updates back into this thread"
-												className={cn(
-													"cursor-pointer rounded-sm p-1 hover:bg-surface-4",
-													thread.takeoverEnabled
-														? "text-accent hover:text-accent-hover"
-														: "text-text-tertiary hover:text-text-primary",
-												)}
-												onClick={(event) => {
-													event.stopPropagation();
-													void onSetThreadTakeover(thread.id, !thread.takeoverEnabled);
-												}}
-											>
-												<Sparkles size={12} />
-											</button>
 											<button
 												type="button"
 												aria-label="Rename thread"

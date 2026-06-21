@@ -159,14 +159,6 @@ export const runtimeBoardCardObjectSchema = z.object({
 	agentId: runtimeAgentIdSchema.optional(),
 	agentSettings: runtimeTaskAgentSettingsSchema.optional(),
 	owner: runtimeTaskOwnerSchema.optional(),
-	// The home chat session that originated this task (`__home_agent__:ws:agent:thread`),
-	// stamped at creation when an agent created the task from a home thread (read from
-	// `KANBAN_SESSION_TASK_ID`). Independent of `agentId` (the task may run a different
-	// agent than the originating thread). The takeover hook routes task state-machine
-	// transitions back to this session when the thread's takeover switch is on. Absent on
-	// human-created (web-ui dialog) tasks and on tasks predating this field — both degrade
-	// to no injection.
-	originHomeSessionId: z.string().optional(),
 	baseRef: z.string(),
 	createdAt: z.number(),
 	updatedAt: z.number(),
@@ -222,16 +214,6 @@ export const runtimeHomeChatThreadSchema = z.object({
 	id: z.string(),
 	agentId: runtimeAgentIdSchema,
 	name: z.string(),
-	// Per-thread agent-takeover switch. When on, task state-machine transitions for tasks
-	// this thread originated are rendered into a prompt and injected back into this thread's
-	// session (see the takeover hook). Defaults to off so existing threads.json files (and
-	// the default thread) are unchanged and unmanaged. Read dynamically at event time — flip
-	// on to fold in running tasks, flip off to stop injecting immediately.
-	takeoverEnabled: z.boolean().default(false),
-	// Optional load point for a takeover extension (a vault document slug whose body shapes
-	// the takeover behavior, per the vault-types-are-skills model). v1 only persists/forwards
-	// the reference; rendering the extension's content is a later task.
-	takeoverExtension: z.string().optional(),
 	createdAt: z.number(),
 	updatedAt: z.number(),
 });
@@ -266,16 +248,6 @@ export const runtimeHomeChatThreadCloseRequestSchema = z.object({
 	id: z.string(),
 });
 export type RuntimeHomeChatThreadCloseRequest = z.infer<typeof runtimeHomeChatThreadCloseRequestSchema>;
-
-export const runtimeHomeChatThreadTakeoverUpdateRequestSchema = z.object({
-	id: z.string(),
-	enabled: z.boolean(),
-	// undefined → keep the current extension; null → clear it; string → set it.
-	extension: z.string().nullable().optional(),
-});
-export type RuntimeHomeChatThreadTakeoverUpdateRequest = z.infer<
-	typeof runtimeHomeChatThreadTakeoverUpdateRequestSchema
->;
 
 // Shared by create/rename/close — each returns the affected thread (close → the removed thread).
 export const runtimeHomeChatThreadMutationResponseSchema = z.object({

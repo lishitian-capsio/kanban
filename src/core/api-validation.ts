@@ -10,7 +10,6 @@ import {
 	type RuntimeHomeChatThreadCloseRequest,
 	type RuntimeHomeChatThreadCreateRequest,
 	type RuntimeHomeChatThreadRenameRequest,
-	type RuntimeHomeChatThreadTakeoverUpdateRequest,
 	type RuntimeHookIngestRequest,
 	type RuntimeKanbanAccountSwitchRequest,
 	type RuntimeKanbanDeviceAuthCompleteRequest,
@@ -44,7 +43,6 @@ import {
 	runtimeHomeChatThreadCloseRequestSchema,
 	runtimeHomeChatThreadCreateRequestSchema,
 	runtimeHomeChatThreadRenameRequestSchema,
-	runtimeHomeChatThreadTakeoverUpdateRequestSchema,
 	runtimeHookIngestRequestSchema,
 	runtimeKanbanAccountSwitchRequestSchema,
 	runtimeKanbanDeviceAuthCompleteRequestSchema,
@@ -328,19 +326,6 @@ export function parseHomeChatThreadCloseRequest(value: unknown): RuntimeHomeChat
 	}
 	return {
 		id,
-	};
-}
-
-export function parseHomeChatThreadTakeoverUpdateRequest(value: unknown): RuntimeHomeChatThreadTakeoverUpdateRequest {
-	const parsed = parseWithSchema(runtimeHomeChatThreadTakeoverUpdateRequestSchema, value);
-	const id = parsed.id.trim();
-	if (!id) {
-		throw new Error("Home chat thread id cannot be empty.");
-	}
-	return {
-		id,
-		enabled: parsed.enabled,
-		...(parsed.extension === undefined ? {} : { extension: parsed.extension }),
 	};
 }
 

@@ -69,7 +69,6 @@ function createThread(overrides: Partial<RuntimeHomeChatThread> = {}): RuntimeHo
 		id: "thread-1",
 		agentId: "claude",
 		name: "Debugging",
-		takeoverEnabled: false,
 		createdAt: 100,
 		updatedAt: 100,
 		...overrides,
