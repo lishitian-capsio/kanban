@@ -1,5 +1,5 @@
 {
-  "id": "ab397",
+  "id": "06463",
   "title": "测试任务",
   "prompt": "这是一个测试任务,用于验证看板任务创建/启动流程是否正常。无需实际改动代码。",
   "startInPlanMode": false,
@@ -10,10 +10,11 @@
     "name": "Shitian",
     "email": "shitian@capsio.ai"
   },
+  "originHomeSessionId": "__home_agent__:kanban:claude:c053369b-cc39-4da7-8a64-61b7aa85f7aa",
   "baseRef": "main",
-  "createdAt": 1782024969735,
-  "updatedAt": 1782025083275,
-  "column": "review",
+  "createdAt": 1782025744599,
+  "updatedAt": 1782025744599,
+  "column": "backlog",
   "rank": "a0",
   "dependsOn": []
 }
