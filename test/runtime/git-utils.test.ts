@@ -13,7 +13,7 @@ vi.mock("node:child_process", () => ({
 	}),
 }));
 
-import { readGitUserIdentity, runGit } from "../../src/workspace/git-utils";
+import { readGitUserIdentity, runGit, writeGitUserIdentity } from "../../src/workspace/git-utils";
 
 function createExecError(options: {
 	code: string | number;
@@ -110,5 +110,61 @@ describe("readGitUserIdentity", () => {
 		childProcessMocks.execFilePromise.mockRejectedValue(createExecError({ code: 1, stdout: "", stderr: "" }));
 		const identity = await readGitUserIdentity("/repo");
 		expect(identity).toBeNull();
+	});
+});
+
+describe("writeGitUserIdentity", () => {
+	beforeEach(() => {
+		childProcessMocks.execFile.mockReset();
+		childProcessMocks.execFilePromise.mockReset();
+	});
+
+	function recordedGitArgs(): string[][] {
+		return childProcessMocks.execFilePromise.mock.calls.map(([, args]) =>
+			(args as string[]).filter((arg) => arg !== "-c" && arg !== "core.quotepath=false"),
+		);
+	}
+
+	it("writes repo-local user.name and user.email (never --global)", async () => {
+		childProcessMocks.execFilePromise.mockResolvedValue({ stdout: "", stderr: "" });
+
+		await writeGitUserIdentity("/repo", { name: "Ada Lovelace", email: "ada@example.com" });
+
+		const calls = recordedGitArgs();
+		expect(calls).toContainEqual(["config", "user.name", "Ada Lovelace"]);
+		expect(calls).toContainEqual(["config", "user.email", "ada@example.com"]);
+		for (const call of childProcessMocks.execFilePromise.mock.calls) {
+			expect(call[1]).not.toContain("--global");
+		}
+	});
+
+	it("clears an empty field via --unset, tolerating it being absent (exit 5)", async () => {
+		childProcessMocks.execFilePromise.mockImplementation(async (_cmd, args: string[]) => {
+			if (args.includes("--unset")) {
+				throw createExecError({ code: 5, stdout: "", stderr: "" });
+			}
+			return { stdout: "", stderr: "" };
+		});
+
+		await expect(writeGitUserIdentity("/repo", { name: "Ada Lovelace", email: "" })).resolves.toBeUndefined();
+
+		const calls = recordedGitArgs();
+		expect(calls).toContainEqual(["config", "user.name", "Ada Lovelace"]);
+		expect(calls).toContainEqual(["config", "--unset", "user.email"]);
+	});
+
+	it("throws when both name and email are empty", async () => {
+		await expect(writeGitUserIdentity("/repo", { name: "  ", email: "" })).rejects.toThrow();
+		expect(childProcessMocks.execFilePromise).not.toHaveBeenCalled();
+	});
+
+	it("throws with the git error when the config write fails (e.g. not a git repo)", async () => {
+		childProcessMocks.execFilePromise.mockRejectedValue(
+			createExecError({ code: 128, stdout: "", stderr: "fatal: not in a git directory" }),
+		);
+
+		await expect(writeGitUserIdentity("/repo", { name: "Ada Lovelace", email: "" })).rejects.toThrow(
+			/not in a git directory/,
+		);
 	});
 });

@@ -90,6 +90,8 @@ import type {
 	RuntimeProjectRemoveResponse,
 	RuntimeProjectsResponse,
 	RuntimeRunUpdateResponse,
+	RuntimeSetGitUserIdentityRequest,
+	RuntimeSetGitUserIdentityResponse,
 	RuntimeShellSessionStartRequest,
 	RuntimeShellSessionStartResponse,
 	RuntimeSlashCommandsResponse,
@@ -234,6 +236,8 @@ import {
 	runtimeProjectRemoveResponseSchema,
 	runtimeProjectsResponseSchema,
 	runtimeRunUpdateResponseSchema,
+	runtimeSetGitUserIdentityRequestSchema,
+	runtimeSetGitUserIdentityResponseSchema,
 	runtimeShellSessionStartRequestSchema,
 	runtimeShellSessionStartResponseSchema,
 	runtimeSlashCommandsResponseSchema,
@@ -533,6 +537,10 @@ export interface RuntimeTrpcContext {
 		) => Promise<RuntimeVaultViewDeleteResponse>;
 		getVaultSettings: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeVaultSettingsGetResponse>;
 		getGitUserIdentity: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeGitUserIdentityResponse>;
+		setGitUserIdentity: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeSetGitUserIdentityRequest,
+		) => Promise<RuntimeSetGitUserIdentityResponse>;
 		updateVaultSettings: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeVaultSettingsUpdateRequest,
@@ -1034,6 +1042,12 @@ export const runtimeAppRouter = t.router({
 		getGitUserIdentity: workspaceProcedure.output(runtimeGitUserIdentityResponseSchema).query(async ({ ctx }) => {
 			return await ctx.workspaceApi.getGitUserIdentity(ctx.workspaceScope);
 		}),
+		setGitUserIdentity: workspaceProcedure
+			.input(runtimeSetGitUserIdentityRequestSchema)
+			.output(runtimeSetGitUserIdentityResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.setGitUserIdentity(ctx.workspaceScope, input);
+			}),
 		updateVaultSettings: workspaceProcedure
 			.input(runtimeVaultSettingsUpdateRequestSchema)
 			.output(runtimeVaultSettingsUpdateResponseSchema)

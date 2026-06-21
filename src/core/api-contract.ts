@@ -124,6 +124,27 @@ export const runtimeGitUserIdentityResponseSchema = z.object({
 });
 export type RuntimeGitUserIdentityResponse = z.infer<typeof runtimeGitUserIdentityResponseSchema>;
 
+// Write the workspace repo's git identity (the real repo-local `git config
+// user.name`/`user.email`, not a Kanban-only setting). Either field may be empty —
+// an empty field clears that setting — but not both, matching the read-side null
+// semantics. The email, when present, must look like an address.
+export const runtimeSetGitUserIdentityRequestSchema = z
+	.object({
+		name: z.string(),
+		email: z.string().refine((value) => value.trim() === "" || /^[^\s@]+@[^\s@]+$/.test(value.trim()), {
+			message: "Enter a valid email address.",
+		}),
+	})
+	.refine((value) => value.name.trim().length > 0 || value.email.trim().length > 0, {
+		message: "Provide a git user name or email — at least one is required.",
+	});
+export type RuntimeSetGitUserIdentityRequest = z.infer<typeof runtimeSetGitUserIdentityRequestSchema>;
+
+export const runtimeSetGitUserIdentityResponseSchema = z.object({
+	identity: runtimeTaskOwnerSchema.nullable(),
+});
+export type RuntimeSetGitUserIdentityResponse = z.infer<typeof runtimeSetGitUserIdentityResponseSchema>;
+
 // Durable task spec fields, pre-title-resolution. Exported so the on-disk sharded
 // task store (src/state/task-shard-store.ts) can extend this exact shape with its
 // storage-only fields (column, rank, dependsOn) instead of redefining the columns.

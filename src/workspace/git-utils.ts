@@ -133,6 +133,42 @@ export async function readGitUserIdentity(cwd: string): Promise<GitUserIdentity 
 	return { name, email };
 }
 
+/**
+ * Write the **repo-local** git identity (`user.name` / `user.email`) at `cwd` — this
+ * is the real `.git/config`, not a Kanban-only setting, so it governs the author of
+ * every commit the repo (and its task worktrees, which share the same config) makes.
+ * Never writes `--global`. A non-empty field is set; an empty field is cleared with
+ * `--unset` (tolerating it already being absent, git exit 5), keeping the on-disk
+ * config in sync with what the caller passed. Rejecting both-empty matches
+ * {@link readGitUserIdentity}'s null semantics. Throws with the git error on failure
+ * (e.g. when `cwd` is not a git repository).
+ */
+export async function writeGitUserIdentity(cwd: string, identity: GitUserIdentity): Promise<void> {
+	const name = identity.name.trim();
+	const email = identity.email.trim();
+	if (!name && !email) {
+		throw new Error("Provide a git user name or email — at least one is required.");
+	}
+	await applyGitConfigField(cwd, "user.name", name);
+	await applyGitConfigField(cwd, "user.email", email);
+}
+
+async function applyGitConfigField(cwd: string, key: string, value: string): Promise<void> {
+	if (value) {
+		const result = await runGit(cwd, ["config", key, value]);
+		if (!result.ok) {
+			throw new Error(result.error || `Failed to set git ${key}.`);
+		}
+		return;
+	}
+	// Empty value clears the repo-local setting; exit 5 means it was never set, which
+	// is the desired end state, so it is not an error.
+	const result = await runGit(cwd, ["config", "--unset", key]);
+	if (!result.ok && result.exitCode !== 5) {
+		throw new Error(result.error || `Failed to clear git ${key}.`);
+	}
+}
+
 export function getGitCommandErrorMessage(error: unknown): string {
 	if (error && typeof error === "object" && "stderr" in error) {
 		const stderr = (error as { stderr?: unknown }).stderr;

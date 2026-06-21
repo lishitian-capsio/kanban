@@ -36,7 +36,7 @@ import {
 } from "../workspace/get-workspace-changes";
 import { getCommitDiff, getGitLog, getGitRefs } from "../workspace/git-history";
 import { discardGitChanges, getGitSyncSummary, runGitCheckoutAction, runGitSyncAction } from "../workspace/git-sync";
-import { readGitUserIdentity } from "../workspace/git-utils";
+import { readGitUserIdentity, writeGitUserIdentity } from "../workspace/git-utils";
 import { searchWorkspaceFiles } from "../workspace/search-workspace-files";
 import {
 	deleteTaskWorktree,
@@ -507,8 +507,16 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 			const identity = await readGitUserIdentity(workspaceScope.workspacePath);
 			return { identity };
 		},
+		setGitUserIdentity: async (workspaceScope, input) => {
+			await writeGitUserIdentity(workspaceScope.workspacePath, { name: input.name, email: input.email });
+			const identity = await readGitUserIdentity(workspaceScope.workspacePath);
+			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
+			return { identity };
+		},
 		updateVaultSettings: async (workspaceScope, input) => {
-			const settings = await new VaultSettingsStore(workspaceScope.workspacePath).set({ vaultMode: input.vaultMode });
+			const settings = await new VaultSettingsStore(workspaceScope.workspacePath).set({
+				vaultMode: input.vaultMode,
+			});
 			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
 			return { settings };
 		},
