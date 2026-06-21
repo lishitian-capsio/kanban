@@ -1,0 +1,20 @@
+{
+  "id": "26eb1",
+  "title": "移除看板的 Owner 过滤(All owners 下拉)",
+  "prompt": "只做一件事:移除看板顶部的 Owner 过滤(那个默认显示「All owners」的下拉),并清理为它而加的特殊逻辑。不要动 owner 的其它部分(卡片 owner badge、顶栏 Created by 标签、owner 数据字段都保留)。\n\n定位(web-ui/src/components/kanban-board.tsx):\n- 第 23 行 import { collectBoardOwnerOptions, filterBoardByOwner } from '@/utils/task-owner'\n- 第 98 行 const [ownerFilter, setOwnerFilter] = useState\n- 第 100-108 行 ownerOptions / 清理 stale 选择的 useEffect / isOwnerFilterActive / visibleData = filterBoardByOwner(data, ownerFilter)\n- 第 387-401 行 渲染的 <select id='kb-owner-filter'> Owner 下拉(含 <option>All owners</option>)\n- 第 407 行附近 isOwnerFilterActive 的清除按钮、第 427 行 isReorderDisabled={isOwnerFilterActive}\n\n要求:\n1. 删除 owner 过滤的 state / options / effect / select UI / 清除按钮。\n2. 让看板直接渲染 data(不再经 filterBoardByOwner 的 visibleData)。\n3. 恢复正常拖拽排序:isReorderDisabled 不再因 owner 过滤而置真;若拖拽用了 raw-index 等为「过滤时」准备的特殊分支,一并回退成正常的基于可见列表的排序逻辑,不留死代码。\n4. 若 collectBoardOwnerOptions / filterBoardByOwner 移除后在别处已无人使用,连同其在 @/utils/task-owner 的实现与相关单测一起删除;仍被 owner badge / Created by 用到的(如 getTaskOwnerLabel/Tooltip)保留。\n5. web:typecheck、biome 通过,无悬空引用 / 死代码;相关测试(top-bar.test、若有 board owner 过滤测试)相应更新。\n\n先定位确认上述行号与依赖关系,再做最小改动。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originHomeSessionId": "__home_agent__:kanban:claude:c053369b-cc39-4da7-8a64-61b7aa85f7aa",
+  "baseRef": "main",
+  "createdAt": 1782027419105,
+  "updatedAt": 1782027419105,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
