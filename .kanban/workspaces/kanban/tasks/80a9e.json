@@ -3,7 +3,7 @@
   "title": "Settings 可编辑仓库 git 身份(user.name/email)",
   "prompt": "在 Kanban 的 Settings 里增加一个可编辑【仓库 git config 身份】的入口:能查看并修改当前 workspace 仓库的 git config user.name / user.email。已与用户确认:改的是【真正的 git config】(影响该仓库所有 git 提交的作者:任务提交、board 提交等),不是单独的 Kanban 设置。\n\n现状:\n- 已有【只读】tRPC getGitUserIdentity(src/trpc/workspace-api.ts:506）→ 调 readGitUserIdentity(src/workspace/git-utils.ts:123，执行 git config user.name / git config user.email 两条命令读取）。\n- 没有写入接口。owner 默认值本就读 git config（CLI task.ts:444、web-ui 创建路径），所以改了 git config 后新任务 owner 默认会自动跟着变，无需额外改 owner 逻辑。\n\n要做:\n1. 后端:在 git-utils.ts 加 writeGitUserIdentity(cwd, {name,email})，用 runGit 写【仓库本地】config —— 即执行 git config user.name \"<name>\" 和 git config user.email \"<email>\"（写本地 .git/config，不要加 --global）。注意 worktree 共享同一 .git/config，任务 worktree 的提交也会用到，符合预期。\n2. tRPC:新增 setGitUserIdentity(workspaceScope, {name,email}) 与现有 getGitUserIdentity 配对；app-router 加对应 contract schema（name/email，email 做基本格式校验，允许任一为空但不能两者皆空——与 readGitUserIdentity 返回 null 的语义一致）。写完后按需广播刷新。\n3. web-ui:在 Settings 对话框里加一个「Git 身份」小节（放 General 或新分组）:两个输入框 name + email，初始值用 getGitUserIdentity 预填，Save 调 setGitUserIdentity；基本校验 + 保存成功/失败提示（sonner）。\n4. 不改 owner 的派生逻辑本身（仍由 git config 兜底）；只是现在用户能从 UI 改这个源。\n\n约束:\n- 写的是仓库本地 git config（非 --global）；失败（如非 git 仓库）要有清晰报错。\n- typecheck（后端 + web:typecheck）、biome 通过；补/更新相关测试（git-utils 读写、若有 settings 组件测试）。\n\n先定位 getGitUserIdentity / readGitUserIdentity、Settings 对话框组件，以及现有 tRPC 写接口模式（参考 updateVaultSettings），再做最小改动。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,8 +12,8 @@
   },
   "baseRef": "main",
   "createdAt": 1782027821049,
-  "updatedAt": 1782028118850,
-  "column": "backlog",
+  "updatedAt": 1782028149071,
+  "column": "in_progress",
   "rank": "a0",
   "dependsOn": []
 }
