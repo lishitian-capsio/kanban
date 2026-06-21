@@ -1,0 +1,19 @@
+{
+  "id": "fa55f",
+  "title": "测试任务",
+  "prompt": "这是一个测试任务,用于验证看板任务创建/启动流程是否正常。无需实际改动代码。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782050125826,
+  "updatedAt": 1782050125826,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
