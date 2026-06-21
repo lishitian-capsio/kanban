@@ -1,3 +1,12 @@
 {
-  "items": []
+  "items": [
+    {
+      "id": "2be5e",
+      "name": "image.png",
+      "mime": "image/png",
+      "category": "image",
+      "size": 4874,
+      "addedAt": 1782027523090
+    }
+  ]
 }
