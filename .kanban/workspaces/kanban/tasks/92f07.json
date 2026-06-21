@@ -1,0 +1,20 @@
+{
+  "id": "92f07",
+  "title": "优化运行时高CPU:无viewer惰性化xterm applyOutput + 微批 + 收紧scrollback",
+  "prompt": "优化任务:降低运行时高 CPU——基于 a4131 调查已确认的热路径动手优化（a4131 只做了 profile/纠正诊断，未实现优化）。目标:空闲（无任务 session、仅有 home 侧边栏 session）时运行时 CPU 从当前 ~72% 单核降到接近空闲;活跃 session 时 CPU 随输出量线性且可控。\n\n## 已确认的根因（来自 a4131 systematic-debugging，勿重复推翻）\n- 高 CPU 不是 Bun busy-wait（已用数据证伪:node:http listening socket 让事件循环停在 epoll_wait，`await proc.exited`=0%）。\n- 真因 = 每个 PTY 输出块的处理开销 + GC churn:session-manager.ts onData（约 :524）对每个 session 的每个 chunk 调用 filterTerminalProtocolOutput + terminalStateMirror.applyOutput（@xterm/headless 全量模拟，TERMINAL_SCROLLBACK=10_000，即使无 viewer 也跑，只在 turn 边界/viewer attach 时才读）+ 监听器 fanout。applyOutput 每 chunk new Uint8Array(chunk) + new Promise 走串行队列 ⇒ GC churn。\n- 实测:空闲（0 任务 session，仅 home 侧边栏 claude session 的 TUI 持续重绘）运行时 ~72% 单核（主线程 ~36% + HeapHelper/GC ~28%）。CPU 随活跃 session 的 PTY 输出量增长。\n- 微 profile:scroll/newline 主屏输出慢（~1.27ms/chunk，clone/scroll/lineFeed 占 ~50% self）;alternate-screen TUI 重绘便宜（~6µs/chunk）。\n\n## 要做（按收益排序，先量后改，每步给 CPU 前后对比）\n1. 【无 viewer 时不跑全量 xterm 模拟】最大头:applyOutput 的产物只在 turn 边界 / viewer attach 时才被读。当没有 ws viewer 订阅该 session 时，不要对每个 chunk 跑 @xterm/headless 全量模拟;改为惰性——把原始/已过滤输出累积（带上限的环形缓冲/字节缓冲），在真正需要时（turn 边界提交 transcript、或 viewer attach）再重建。需保证现有 transcript 捕获（committed scrollback、turn 边界 assistant 消息）语义不变。\n2. 【合并/节流 applyOutput】对仍需喂 mirror 的场景，把短时间内多个 chunk 合并成一次 applyOutput（微批，如按 ~16-32ms 或累积字节阈值 flush），减少每 chunk 的 new Uint8Array/new Promise 与串行队列开销，压低 GC。\n3. 【收紧 scrollback】TERMINAL_SCROLLBACK 从 10_000 降到合理值（评估 transcript 需要的最小行数，如 2_000-5_000），减少 clone/scroll 成本与内存。\n4. 监听器 fanout:无订阅者时短路，不做无谓的拷贝/分发。\n\n## 约束\n- 不破坏:committed-scrollback transcript 捕获、turn 边界 assistant 消息、viewer 实时流（attach 后能看到正确画面）、alternate-screen（claude/codex TUI）显示。\n- 不引入忙轮询/短间隔定时器来\"修\"CPU;keepalive 现状（unref 的长定时器）保持，勿回退。\n- typecheck / biome / 相关单测通过;为新的「无 viewer 惰性路径」「微批 flush」补单测。\n\n## 验收（拿 /proc CPU 采样，外部测量，perf 被 perf_event_paranoid 挡，用 Bun --cpu-prof-md 或 /proc utime+stime delta）\n- 空闲（仅 home 侧边栏 session）运行时 CPU 显著下降（目标个位数 % 单核）。\n- 跑 1 个产出密集 session 时 CPU 可控、不卡。\n- 给出修复前/后对比数据。\n\n先读 session-manager.ts(onData/applyOutput 调用)、terminal-state-mirror、terminal-transcript-capture，确认「无 viewer 惰性化」不破坏 transcript 语义，再动手。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originHomeSessionId": "__home_agent__:kanban:claude:c053369b-cc39-4da7-8a64-61b7aa85f7aa",
+  "baseRef": "main",
+  "createdAt": 1782038630469,
+  "updatedAt": 1782038630469,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
