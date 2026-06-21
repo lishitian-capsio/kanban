@@ -3,7 +3,7 @@
   "title": "侧边栏(Kanban Agent dock)支持最小化收起 + 停靠模式关闭/重开",
   "prompt": "给 Kanban Agent 侧边栏（home chat dock）增加两个能力:① 最小化/收起;② 停靠模式下也能关闭/隐藏。当前停靠模式只能 dock 左右 / 变浮窗 / 拖宽，关闭（X）只在浮动模式才出现，且没有任何收起。\n\n相关文件:\n- web-ui/src/components/home-agent/chat-dock-header.tsx —— 头部控件（现有 Dock left / Dock right / Detach float / 浮动时 Close X）。\n- web-ui/src/components/home-agent/chat-dock-state.ts —— 纯 dock 状态模型（position: left|right|float、width、float rect、lastDockedSide），side-effect free + 已有单测。\n- web-ui/src/hooks/use-chat-dock.ts —— 持久化 + DOM。\n- web-ui/src/components/home-agent/dockable-chat-panel.tsx —— 渲染。\n- web-ui/src/App.tsx —— 挂载处。\n\n要做:\n1. 最小化/收起（docked 模式）: 头部加一个「收起」按钮（lucide 合适图标，如 PanelRightClose / Minus）。点了把侧边栏收成一条很窄的边缘条（或一个贴边小图标），不再占用聊天宽度;边缘条上有明显的「展开」入口，点一下恢复到收起前的宽度与停靠侧。收起状态要持久化（参考现有 dock 宽度/位置的持久化方式，localStorage）。\n2. 停靠模式也能关闭/隐藏: 不必先 Detach 成浮窗。docked 模式头部也提供关闭/隐藏入口，关闭后侧边栏整体隐藏;需要一个可靠的「重新打开」入口（比如主界面顶栏放一个 Kanban Agent 图标按钮来重新唤出，或屏幕边缘的唤出把手），保证关了还能找回来。打开/关闭状态持久化。\n3. 收起 与 关闭 语义区分清楚: 收起 = 仍在、缩成边缘条、一键展开; 关闭/隐藏 = 完全收掉、靠顶栏/把手重新唤出。两者都要能恢复，绝不出现「关了就再也打不开」。\n\n实现要点/约束:\n- 把「collapsed」「open/closed」纳入 chat-dock-state.ts 的纯状态模型 + reducer，并补单测（保持该文件 side-effect free 的现有风格）;DOM/持久化在 use-chat-dock.ts。\n- 浮动模式现有 Close（X）行为保持不变。\n- 切左右停靠、拖宽、浮动等现有行为不回退。\n- 用现有 UI 基元（@/components/ui 的 Button/Tooltip、lucide 图标），遵循暗色主题与设计 token。\n- web:typecheck、biome 通过;补/更新相关单测（chat-dock-state.test.ts 等）。\n\n先读 chat-dock-state.ts + use-chat-dock.ts + chat-dock-header.tsx + App.tsx，理清现有 dock 状态与挂载，再做最小改动，并给出「关闭后从哪里重新打开」的具体方案。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -13,8 +13,8 @@
   "originHomeSessionId": "__home_agent__:kanban:claude:c053369b-cc39-4da7-8a64-61b7aa85f7aa",
   "baseRef": "main",
   "createdAt": 1782028355369,
-  "updatedAt": 1782028355369,
-  "column": "backlog",
-  "rank": "a0",
+  "updatedAt": 1782028427919,
+  "column": "in_progress",
+  "rank": "a1",
   "dependsOn": []
 }
