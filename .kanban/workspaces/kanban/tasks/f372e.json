@@ -1,0 +1,20 @@
+{
+  "id": "f372e",
+  "title": "移除 Kanban agent 接管 task 机制(session-takeover,保留 vaultMode)",
+  "prompt": "移除「Kanban agent 接管 task」整套机制(agent-takeover / session-takeover)。这是 6/18 落地的功能(commit 403669ea「agent-takeover foundation」、task 43f28「接管地基:状态机跃迁进程内 hook → 渲染 prompt」)。用户决定移除它。\n\n【重要边界】这与 vault 的 vaultMode（src/prompts/append-system-prompt.ts 里的 vault-takeover / RuntimeVaultSettings.vaultMode）是【两套不同东西】——vaultMode 保留，不要动。本任务只移除「任务状态机跃迁 → 进程内 hook → 给 home agent 渲染『[Kanban 接管] 任务…』prompt 让它接管该任务」这套。\n\n要移除/清理的范围（先定位确认，再删；plan 阶段先给清单与判断）:\n- src/session/session-takeover.ts —— 整文件（TakeoverEvent / classifyTakeoverEvent / renderTakeoverPrompt / SessionTakeoverCoordinator）。删除。\n- src/server/runtime-server.ts:~220-282 —— SessionTakeoverCoordinator 的构建、resolveTarget、handleSummary 接线，连同其 import。删除。\n- src/server/runtime-state-hub.ts —— 注册「in-process takeover observer」的 seam（约 :68-71 及其调用）。删除该 observer 机制。\n- src/trpc/runtime-api.ts:~747 updateHomeThreadTakeover + 相关 parse（parseHomeChatThreadTakeoverUpdateRequest）。删除端点。\n- src/core/api-contract.ts —— takeover 相关 contract（thread 的 takeoverEnabled/takeoverExtension、HomeChatThreadTakeoverUpdate 请求 schema、以及为路由 takeover 而加的 originating-thread 字段中仅服务 takeover 的部分）。\n- src/session/home-thread-registry.ts / home-thread-store.ts —— RuntimeHomeChatThread 的 takeoverEnabled / takeoverExtension 字段、setHomeThreadTakeover / setTakeover。删除。注意 threads.json 的向后兼容:老数据里若有这些字段，读取时安全忽略，不要因 schema 变严而解析失败。\n- web-ui:home-thread-bar.tsx、use-home-threads.ts —— per-thread「接管」开关 UI 与其 hook 调用。删除。\n- app-router.ts —— updateHomeThreadTakeover 路由声明。\n\n【需要在 plan 阶段判断清楚的点】\n- src/core/task-board-mutations.ts:~28 的「哪个 home thread 创建了这个任务」(originating thread) 记录:注释说是「用于 takeover hook 路由」。但 originating-thread / home-thread 归属可能也被 [home-agent-task-default]（任务默认用创建它的那个 agent）等用到。务必确认:这块是【仅服务 takeover】还是【也被别处依赖】。仅服务 takeover 才删，否则保留该归属记录、只摘掉 takeover 的消费。给出依赖判断结论。\n- home 多线程本身（thread 列表/创建/关闭/per-thread agent、parallel sessions）要保留，只摘掉「接管开关」这一项。\n\n约束:\n- 不破坏 home 多线程、per-thread agent、session resume、vaultMode。\n- threads.json / 既有持久化向后兼容（旧字段忽略而非报错）。\n- typecheck（后端 + web:typecheck）、biome 通过；删除对应单测、更新受影响测试，无悬空引用/死代码。\n\n先全量定位 takeover 的所有引用（grep takeover/接管，排除 vault），产出「删除清单 + originating-thread 依赖判断」再动手。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originHomeSessionId": "__home_agent__:kanban:claude:c053369b-cc39-4da7-8a64-61b7aa85f7aa",
+  "baseRef": "main",
+  "createdAt": 1782047194254,
+  "updatedAt": 1782047194254,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
