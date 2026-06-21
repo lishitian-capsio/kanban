@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	type ChatDockState,
 	chatDockReducer,
 	clampChatDockWidth,
+	DEFAULT_CHAT_DOCK_COLLAPSED,
+	DEFAULT_CHAT_DOCK_OPEN,
 	DEFAULT_CHAT_DOCK_POSITION,
 	DEFAULT_CHAT_DOCK_SIDE,
 	DEFAULT_CHAT_FLOAT_RECT,
@@ -75,35 +78,89 @@ describe("normalizeChatFloatRect", () => {
 });
 
 describe("chatDockReducer", () => {
-	const base = { position: DEFAULT_CHAT_DOCK_POSITION, lastDockedSide: DEFAULT_CHAT_DOCK_SIDE } as const;
+	const base: ChatDockState = {
+		position: DEFAULT_CHAT_DOCK_POSITION,
+		lastDockedSide: DEFAULT_CHAT_DOCK_SIDE,
+		collapsed: DEFAULT_CHAT_DOCK_COLLAPSED,
+		open: DEFAULT_CHAT_DOCK_OPEN,
+	};
 
 	it("docking to a side sets both position and lastDockedSide", () => {
 		expect(chatDockReducer(base, { type: "dock", side: "left" })).toEqual({
 			position: "left",
 			lastDockedSide: "left",
+			collapsed: false,
+			open: true,
 		});
 		expect(chatDockReducer(base, { type: "dock", side: "right" })).toEqual({
 			position: "right",
 			lastDockedSide: "right",
+			collapsed: false,
+			open: true,
 		});
 	});
 
 	it("floating keeps the last docked side so close can restore it", () => {
 		const docked = chatDockReducer(base, { type: "dock", side: "left" });
 		const floated = chatDockReducer(docked, { type: "float" });
-		expect(floated).toEqual({ position: "float", lastDockedSide: "left" });
+		expect(floated).toEqual({ position: "float", lastDockedSide: "left", collapsed: false, open: true });
 	});
 
 	it("closing the float returns to the last docked side", () => {
-		const floated = { position: "float", lastDockedSide: "left" } as const;
+		const floated: ChatDockState = { position: "float", lastDockedSide: "left", collapsed: false, open: true };
 		expect(chatDockReducer(floated, { type: "close" })).toEqual({
 			position: "left",
 			lastDockedSide: "left",
+			collapsed: false,
+			open: true,
 		});
 	});
 
 	it("defaults dock to the right side", () => {
 		expect(DEFAULT_CHAT_DOCK_POSITION).toBe("right");
 		expect(DEFAULT_CHAT_DOCK_SIDE).toBe("right");
+		expect(DEFAULT_CHAT_DOCK_COLLAPSED).toBe(false);
+		expect(DEFAULT_CHAT_DOCK_OPEN).toBe(true);
+	});
+
+	it("collapse shrinks a docked panel to the edge strip and expand restores it", () => {
+		const collapsed = chatDockReducer(base, { type: "collapse" });
+		expect(collapsed).toEqual({ ...base, collapsed: true });
+		expect(chatDockReducer(collapsed, { type: "expand" })).toEqual({ ...base, collapsed: false });
+	});
+
+	it("ignores collapse while floating (no collapsed float)", () => {
+		const floated: ChatDockState = { position: "float", lastDockedSide: "right", collapsed: false, open: true };
+		expect(chatDockReducer(floated, { type: "collapse" })).toBe(floated);
+	});
+
+	it("floating clears a collapsed docked panel", () => {
+		const collapsed: ChatDockState = { position: "left", lastDockedSide: "left", collapsed: true, open: true };
+		expect(chatDockReducer(collapsed, { type: "float" })).toEqual({
+			position: "float",
+			lastDockedSide: "left",
+			collapsed: false,
+			open: true,
+		});
+	});
+
+	it("hide closes the panel and preserves placement", () => {
+		const docked: ChatDockState = { position: "left", lastDockedSide: "left", collapsed: false, open: true };
+		expect(chatDockReducer(docked, { type: "hide" })).toEqual({ ...docked, open: false });
+	});
+
+	it("reopen always brings the panel back expanded so it is never stuck", () => {
+		const hiddenAndCollapsed: ChatDockState = {
+			position: "right",
+			lastDockedSide: "right",
+			collapsed: true,
+			open: false,
+		};
+		expect(chatDockReducer(hiddenAndCollapsed, { type: "reopen" })).toEqual({
+			position: "right",
+			lastDockedSide: "right",
+			collapsed: false,
+			open: true,
+		});
 	});
 });

@@ -7,14 +7,21 @@
 //   - float: a free-floating, draggable, resizable window (react-rnd) inside a
 //     full-screen pointer-events-none overlay so the rest of the app stays
 //     interactive. z-40 keeps it below Radix dialogs/dropdowns (z-50).
+// When docked and `collapsed`, the chat is replaced by a thin edge strip whose
+// only job is a one-click expand back to the previous width and side. The fully
+// hidden (`open === false`) state is handled by the caller, which simply stops
+// rendering this component (reopen lives in the top bar).
+import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { Rnd } from "react-rnd";
 
 import { cn } from "@/components/ui/cn";
+import { Tooltip } from "@/components/ui/tooltip";
 import type { UseChatDockResult } from "@/hooks/use-chat-dock";
 import { useHorizontalResize } from "@/hooks/use-horizontal-resize";
 
 import { CHAT_DOCK_DRAG_HANDLE_CLASS, ChatDockHeader } from "./chat-dock-header";
 import {
+	CHAT_DOCK_COLLAPSED_WIDTH,
 	MAX_CHAT_DOCK_WIDTH,
 	MIN_CHAT_DOCK_WIDTH,
 	MIN_CHAT_FLOAT_HEIGHT,
@@ -35,9 +42,37 @@ function DockHeaderWithChildren({ dock, children }: DockableChatPanelProps): Rea
 				onDockRight={dock.dockRight}
 				onFloat={dock.floatPanel}
 				onClose={dock.closeFloat}
+				onCollapse={dock.collapse}
+				onHide={dock.hide}
 			/>
 			<div className="flex min-h-0 flex-1 [&>*]:w-full [&>*]:self-stretch">{children}</div>
 		</div>
+	);
+}
+
+function CollapsedChatStrip({ dock }: { dock: UseChatDockResult }): React.ReactElement {
+	const isLeft = dock.position === "left";
+	const ExpandIcon = isLeft ? PanelRightOpen : PanelLeftOpen;
+	return (
+		<aside
+			className={cn("relative flex h-full min-h-0 shrink-0 flex-col bg-surface-1", isLeft ? "order-1" : "order-3")}
+			style={{
+				width: CHAT_DOCK_COLLAPSED_WIDTH,
+				[isLeft ? "borderRight" : "borderLeft"]: "1px solid var(--color-divider)",
+			}}
+		>
+			<Tooltip content="Expand Kanban Agent" side={isLeft ? "right" : "left"}>
+				<button
+					type="button"
+					aria-label="Expand Kanban Agent"
+					onClick={dock.expand}
+					className="flex flex-1 cursor-pointer flex-col items-center gap-2 py-2 text-text-secondary transition-colors hover:bg-surface-3 hover:text-text-primary"
+				>
+					<ExpandIcon size={16} className="shrink-0" />
+					<span className="text-[11px] font-medium tracking-wide [writing-mode:vertical-rl]">Kanban Agent</span>
+				</button>
+			</Tooltip>
+		</aside>
 	);
 }
 
@@ -79,6 +114,10 @@ export function DockableChatPanel({ dock, children }: DockableChatPanelProps): R
 				</Rnd>
 			</div>
 		);
+	}
+
+	if (dock.collapsed) {
+		return <CollapsedChatStrip dock={dock} />;
 	}
 
 	return (

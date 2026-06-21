@@ -1,11 +1,21 @@
 // Dock controls shown at the top of the home chat panel.
 //
 // Three independent target-state buttons (no cycle): dock-left, dock-right,
-// float. The button matching the current dock position is highlighted. In the
-// floating state an extra close button returns the panel to its last docked
-// side, and the title region carries the drag-handle class so react-rnd can use
-// it (the buttons sit outside that region and never start a drag).
-import { GripVertical, PanelLeft, PanelRight, PictureInPicture2, X } from "lucide-react";
+// float. The button matching the current dock position is highlighted. While
+// docked, two extra controls appear: collapse (shrink to the edge strip) and
+// hide (remove the panel, reopen from the top bar). In the floating state an
+// extra close button returns the panel to its last docked side, and the title
+// region carries the drag-handle class so react-rnd can use it (the buttons sit
+// outside that region and never start a drag).
+import {
+	GripVertical,
+	PanelLeft,
+	PanelLeftClose,
+	PanelRight,
+	PanelRightClose,
+	PictureInPicture2,
+	X,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/components/ui/cn";
@@ -21,6 +31,8 @@ interface ChatDockHeaderProps {
 	onDockRight: () => void;
 	onFloat: () => void;
 	onClose?: () => void;
+	onCollapse?: () => void;
+	onHide?: () => void;
 }
 
 function DockButton({
@@ -60,8 +72,12 @@ export function ChatDockHeader({
 	onDockRight,
 	onFloat,
 	onClose,
+	onCollapse,
+	onHide,
 }: ChatDockHeaderProps): React.ReactElement {
 	const floating = position === "float";
+	// Collapse folds the panel toward whichever edge it is docked against.
+	const CollapseIcon = position === "left" ? PanelLeftClose : PanelRightClose;
 	return (
 		<div className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-surface-2 p-1">
 			<div
@@ -74,6 +90,11 @@ export function ChatDockHeader({
 				<span className="truncate text-xs font-medium">Kanban Agent</span>
 			</div>
 			<div className="flex shrink-0 items-center gap-0.5">
+				{!floating && onCollapse ? (
+					<DockButton active={false} label="Collapse to edge" onClick={onCollapse}>
+						<CollapseIcon size={14} />
+					</DockButton>
+				) : null}
 				<DockButton active={position === "left"} label="Dock to left" onClick={onDockLeft}>
 					<PanelLeft size={14} />
 				</DockButton>
@@ -85,6 +106,11 @@ export function ChatDockHeader({
 				</DockButton>
 				{floating && onClose ? (
 					<DockButton active={false} label="Close floating window" onClick={onClose}>
+						<X size={14} />
+					</DockButton>
+				) : null}
+				{!floating && onHide ? (
+					<DockButton active={false} label="Hide panel" onClick={onHide}>
 						<X size={14} />
 					</DockButton>
 				) : null}

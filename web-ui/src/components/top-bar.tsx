@@ -3,6 +3,7 @@ import {
 	ArrowDown,
 	ArrowLeft,
 	ArrowUp,
+	Bot,
 	Bug,
 	Check,
 	ChevronDown,
@@ -320,6 +321,8 @@ export function TopBar({
 	isGitHistoryOpen,
 	onToggleVault,
 	isVaultOpen,
+	onToggleHomeChat,
+	isHomeChatOpen,
 	onOpenSettings,
 	showDebugButton,
 	onOpenDebugDialog,
@@ -366,6 +369,8 @@ export function TopBar({
 	isGitHistoryOpen?: boolean;
 	onToggleVault?: () => void;
 	isVaultOpen?: boolean;
+	onToggleHomeChat?: () => void;
+	isHomeChatOpen?: boolean;
 	onOpenSettings?: (section?: SettingsSection) => void;
 	showDebugButton?: boolean;
 	onOpenDebugDialog?: () => void;
@@ -732,6 +737,26 @@ export function TopBar({
 								/>
 							) : null}
 						</>
+					) : null}
+
+					{/* Kanban Agent panel: toggle/reopen entry (visible on the home board). */}
+					{onToggleHomeChat ? (
+						<Tooltip side="bottom" content={isHomeChatOpen ? "Hide Kanban Agent" : "Show Kanban Agent"}>
+							<Button
+								variant="ghost"
+								size="sm"
+								icon={<Bot size={16} />}
+								onClick={onToggleHomeChat}
+								aria-label={isHomeChatOpen ? "Hide Kanban Agent" : "Show Kanban Agent"}
+								aria-pressed={isHomeChatOpen}
+								data-testid="toggle-home-chat-button"
+								className={cn(
+									"ml-0.5",
+									isMobile && MOBILE_TOUCH_TARGET,
+									isHomeChatOpen && "bg-surface-3 text-text-primary",
+								)}
+							/>
+						</Tooltip>
 					) : null}
 
 					{/* Settings: always visible */}

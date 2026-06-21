@@ -2,8 +2,13 @@
 //
 // `dock` is one of left | right | float. The reducer keeps `lastDockedSide`
 // around while floating so closing the float window can restore the side the
-// user last docked to. Everything here is side-effect free and unit-tested;
-// persistence and DOM live in use-chat-dock / dockable-chat-panel.
+// user last docked to. Two further axes are orthogonal to `position`:
+//   - `collapsed`: a docked panel shrunk to a thin edge strip (still present,
+//     one click to expand). Only meaningful while docked, so `float` clears it.
+//   - `open`: whether the panel is shown at all. Closing hides it entirely; the
+//     top-bar toggle reopens it (always expanded, never lost).
+// Everything here is side-effect free and unit-tested; persistence and DOM live
+// in use-chat-dock / dockable-chat-panel.
 
 export type ChatDockPosition = "left" | "right" | "float";
 export type ChatDockSide = "left" | "right";
@@ -17,6 +22,11 @@ export interface ChatFloatRect {
 
 export const DEFAULT_CHAT_DOCK_POSITION: ChatDockPosition = "right";
 export const DEFAULT_CHAT_DOCK_SIDE: ChatDockSide = "right";
+export const DEFAULT_CHAT_DOCK_COLLAPSED = false;
+export const DEFAULT_CHAT_DOCK_OPEN = true;
+
+// Width of the collapsed edge strip (just the expand affordance, no chat).
+export const CHAT_DOCK_COLLAPSED_WIDTH = 40;
 
 export const DEFAULT_CHAT_DOCK_WIDTH = 380;
 export const MIN_CHAT_DOCK_WIDTH = 280;
@@ -94,18 +104,41 @@ export function normalizeChatFloatRect(value: unknown): ChatFloatRect {
 export interface ChatDockState {
 	position: ChatDockPosition;
 	lastDockedSide: ChatDockSide;
+	collapsed: boolean;
+	open: boolean;
 }
 
-export type ChatDockAction = { type: "dock"; side: ChatDockSide } | { type: "float" } | { type: "close" };
+export type ChatDockAction =
+	| { type: "dock"; side: ChatDockSide }
+	| { type: "float" }
+	| { type: "close" }
+	| { type: "collapse" }
+	| { type: "expand" }
+	| { type: "hide" }
+	| { type: "reopen" };
 
 export function chatDockReducer(state: ChatDockState, action: ChatDockAction): ChatDockState {
 	switch (action.type) {
+		// Picking a docked side or floating always implies the panel is visible.
 		case "dock":
-			return { position: action.side, lastDockedSide: action.side };
+			return { ...state, position: action.side, lastDockedSide: action.side, open: true };
 		case "float":
-			return { position: "float", lastDockedSide: state.lastDockedSide };
+			// Floating has its own window chrome; there is no collapsed float.
+			return { ...state, position: "float", collapsed: false, open: true };
+		// Existing float "close" (X) returns to the last docked side, never hides.
 		case "close":
-			return { position: state.lastDockedSide, lastDockedSide: state.lastDockedSide };
+			return { ...state, position: state.lastDockedSide, open: true };
+		// Collapse is a docked-only edge strip; ignore it while floating.
+		case "collapse":
+			return state.position === "float" ? state : { ...state, collapsed: true };
+		case "expand":
+			return { ...state, collapsed: false };
+		// Hide removes the panel entirely; reopen always brings it back expanded
+		// so it can never be stuck collapsed-and-hidden with no way out.
+		case "hide":
+			return { ...state, open: false };
+		case "reopen":
+			return { ...state, open: true, collapsed: false };
 		default:
 			return state;
 	}

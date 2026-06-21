@@ -459,6 +459,14 @@ export default function App(): ReactElement {
 		latestTaskChatMessage,
 		taskChatMessagesByTaskId,
 	});
+	const isHomeChatAvailable = !selectedCard && homeSidebarAgentPanel !== null;
+	const handleToggleHomeChat = useCallback(() => {
+		if (chatDock.open) {
+			chatDock.hide();
+		} else {
+			chatDock.reopen();
+		}
+	}, [chatDock]);
 	const { runningShortcutLabel, handleSelectShortcutLabel, handleRunShortcut, handleCreateShortcut } =
 		useShortcutActions({
 			currentProjectId,
@@ -850,7 +858,7 @@ export default function App(): ReactElement {
 						setSidebarCollapsed={sidebarLayout.setSidebarCollapsed}
 					/>
 				) : null}
-				{!selectedCard && homeSidebarAgentPanel ? (
+				{isHomeChatAvailable && chatDock.open ? (
 					<DockableChatPanel dock={chatDock}>{homeSidebarAgentPanel}</DockableChatPanel>
 				) : null}
 				<div className="order-2 flex flex-col flex-1 min-w-0 overflow-hidden">
@@ -929,6 +937,8 @@ export default function App(): ReactElement {
 						isGitHistoryOpen={isGitHistoryOpen}
 						onToggleVault={hasNoProjects || selectedCard ? undefined : handleToggleVault}
 						isVaultOpen={isVaultOpen}
+						onToggleHomeChat={isHomeChatAvailable ? handleToggleHomeChat : undefined}
+						isHomeChatOpen={chatDock.open}
 						hideProjectDependentActions={shouldHideProjectDependentTopBarActions}
 					/>
 					<div className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden">
