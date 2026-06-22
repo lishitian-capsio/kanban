@@ -3,7 +3,7 @@
   "title": "功能：侧边栏 CLI agent 显示正在/已执行的 prompt 与执行状态",
   "prompt": "需求：在 kanban 侧边栏（home agent 面板）里，当用的是 CLI agent（claude/codex 等、走终端面板）时，要能清楚看到该 agent【正在执行的 prompt】是什么，并且【执行完成后】这条 prompt 与完成状态仍然清晰可见——不要只埋在终端 scrollback 里。\n\n现状（已排查）：\n- 侧边栏 home 面板 web-ui/src/components/home-agent/home-sidebar-agent-panel.tsx：pi 走结构化聊天 KanbanAgentChatPanel（user 气泡 + 'Thinking…' 进度 + 完成后保留 assistant 消息）；CLI agent 走【原始终端】AgentTerminalPanel（agent-terminal-panel.tsx），prompt 直接进终端由 CLI 回显，未被标注成『正在执行的 prompt』。\n- AgentTerminalPanel 只有一个状态 badge：describeState→ Running/Ready for review/Interrupted/Failed/Idle（agent-terminal-panel.tsx:55-72、219），说『在跑』不说『在跑什么』。\n- 执行完成（state→awaiting_review/idle）：仅 badge 变化 + 终端输出留存；prompt 无标签、易划走；没有『你让它执行的是这条 prompt，已完成』的呈现。\n- 数据/机理：home 会话复用与任务卡相同的 RuntimeTaskSessionSummary 状态机 + getTaskChatMessages（home-sidebar-agent-panel.tsx:115-119，useTaskChatMessages(taskId)）。CLI 的 prompt 来自 startTaskSession 的 kickoff + writeInput 回车提交，已被 terminal-transcript-capture.ts 捕获为 user 消息并持久化（journal）。home 会话 id 见 src/core/home-agent-session.ts / parseHomeAgentSessionId。\n- 即：要展示的 prompt 数据已经有（kickoff + 后续 user 消息都在 transcript 里），缺的是【在终端面板这条路径上把它结构化、显著地呈现出来】。\n\n期望（先确认设计，倾向方案 A）：\n- 方案 A（推荐）：在侧边栏 CLI 终端面板上方（或可折叠头部）显示当前会话【正在执行 / 最近执行】的 prompt——取自该 home 会话 transcript 的最新 user 消息（首轮即 kickoff）。运行中（state=running）高亮『正在执行』+ 复用现有进度感（spinner）；完成后（awaiting_review/idle）切到『已完成』态，prompt 仍然显示，可看到『提交了什么 → 现在状态』。多轮时反映最近一轮提交的 prompt，并可查看本会话历史 prompt（至少最近一条始终可见）。\n- 方案 B（更重）：给 CLI 终端面板也并列一个结构化的 user/assistant 消息条（类似 pi），把 transcript 的 user 消息渲染成带标签的气泡。成本更高且与原始终端体验并存需斟酌，除非确有必要优先 A。\n\n实现要求：\n- 仅作用于侧边栏 home 面板的 CLI agent 路径（pi 已有结构化聊天，不必重复；但若顺带统一展示也可，以不回退 pi 体验为前提）。\n- prompt 可能很长：可折叠/截断 + 展开查看，别撑爆侧边栏窄布局；遵守 dark theme + 现有 UI 基元（Collapsible/Tooltip 等）。\n- 执行完成态要明确（已完成/待审/中断/失败），与 describeState 一致，不要新造一套状态语义。\n- 复用现有 getTaskChatMessages / session summary / 广播；遵守 perf10（高频 slice 订阅放叶子组件，别 App 级订阅）。不改 wire 契约形状（除非选 B 动 transcript 渲染，那也只是前端）。\n- web:typecheck + biome 干净；加组件测试覆盖『运行中显示正在执行的 prompt』与『完成后 prompt 仍可见 + 状态为已完成』。\n\n参照记忆：home-multithread-ui-implemented、perf10-runtime-store-selectors、terminal-agent transcript 捕获（terminal-transcript-capture）。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,8 +12,8 @@
   },
   "baseRef": "main",
   "createdAt": 1782118597320,
-  "updatedAt": 1782118898658,
-  "column": "backlog",
-  "rank": "a0",
+  "updatedAt": 1782118928452,
+  "column": "in_progress",
+  "rank": "a3",
   "dependsOn": []
 }
