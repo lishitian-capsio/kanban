@@ -6,20 +6,6 @@
       "name": "会话",
       "createdAt": 1781682755696,
       "updatedAt": 1781682755696
-    },
-    {
-      "id": "d7e7f524-2f5e-47a1-a492-f6d534fccd43",
-      "agentId": "claude",
-      "name": "Vault",
-      "createdAt": 1781767352700,
-      "updatedAt": 1781767352700
-    },
-    {
-      "id": "72348aac-9729-4e5e-8873-220358cc04d9",
-      "agentId": "claude",
-      "name": "test",
-      "createdAt": 1781776267907,
-      "updatedAt": 1781776267907
     }
   ]
 }
