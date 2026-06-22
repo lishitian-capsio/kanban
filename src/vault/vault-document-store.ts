@@ -1,12 +1,19 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 
-import type { RuntimeVaultDocument, RuntimeVaultFrontmatterValue } from "../core/api-contract";
+import type {
+	RuntimeVaultDocument,
+	RuntimeVaultFrontmatterValue,
+	RuntimeVaultSearchResult,
+} from "../core/api-contract";
 import { createUniqueTaskId } from "../core/task-id";
 import { lockedFileSystem } from "../fs/locked-file-system";
 import { parseVaultDocument, serializeVaultDocument, slugify, type VaultDocument } from "./vault-document";
+import { buildVaultLinkIndex, type VaultLinkIndex } from "./vault-link-index";
 import { getVaultDocsDir, getVaultFilesDir } from "./vault-paths";
+import { getVaultReadCache, type VaultReadCache, type VaultReadResult, type VaultScanResult } from "./vault-read-cache";
+import { searchVaultDocuments, type VaultSearchOptions } from "./vault-search";
 import { VaultTypeRegistry } from "./vault-type-registry";
 
 const DOC_EXTENSION = ".md";
@@ -65,6 +72,8 @@ export class VaultDocumentStore {
 	private readonly now: () => number;
 	private readonly randomUuid: () => string;
 	private readonly typeRegistry: VaultTypeRegistry;
+	/** Process-wide read cache shared by every store instance for this vault. */
+	private readonly cache: VaultReadCache;
 
 	constructor(
 		private readonly repoPath: string,
@@ -75,11 +84,28 @@ export class VaultDocumentStore {
 		this.now = options.now ?? Date.now;
 		this.randomUuid = options.randomUuid ?? randomUUID;
 		this.typeRegistry = options.typeRegistry ?? new VaultTypeRegistry(repoPath);
+		this.cache = getVaultReadCache(this.docsDir);
 	}
 
 	async list(type?: string): Promise<RuntimeVaultDocument[]> {
-		const entries = await this.scan(type);
-		return entries.map((entry) => toRuntimeDocument(entry.doc, entry.relativePath));
+		const { documents } = await this.readCachedDocuments();
+		return type ? documents.filter((document) => document.type === type) : documents.slice();
+	}
+
+	/**
+	 * The full link index over the vault, memoized per cache version so repeated
+	 * `getDocumentLinks` calls (and successive documents) reuse one built graph
+	 * instead of rebuilding all three resolver maps + edges every request.
+	 */
+	async getLinkIndex(): Promise<VaultLinkIndex> {
+		const { version, documents } = await this.readCachedDocuments();
+		return this.cache.derive("link-index", version, () => buildVaultLinkIndex(documents));
+	}
+
+	/** Full-text search over the cached documents — no per-keystroke disk read or parse. */
+	async search(query: string, options?: VaultSearchOptions): Promise<RuntimeVaultSearchResult[]> {
+		const { documents } = await this.readCachedDocuments();
+		return searchVaultDocuments(documents, query, options);
 	}
 
 	async get(id: string): Promise<RuntimeVaultDocument | null> {
@@ -102,6 +128,7 @@ export class VaultDocumentStore {
 			};
 			const doc: VaultDocument = { id, type: input.type, frontmatter, body: input.body ?? "" };
 			const relativePath = await this.writeDocument(doc);
+			this.cache.invalidate();
 			return toRuntimeDocument(doc, relativePath);
 		});
 	}
@@ -124,6 +151,7 @@ export class VaultDocumentStore {
 			};
 			const doc: VaultDocument = { id: input.id, type: input.type, frontmatter, body: input.body ?? "" };
 			const relativePath = await this.writeDocument(doc);
+			this.cache.invalidate();
 			return toRuntimeDocument(doc, relativePath);
 		});
 	}
@@ -158,6 +186,7 @@ export class VaultDocumentStore {
 			if (relativePath !== existing.relativePath) {
 				await rm(existing.absolutePath, { force: true });
 			}
+			this.cache.invalidate();
 			return toRuntimeDocument(doc, relativePath);
 		});
 	}
@@ -169,6 +198,7 @@ export class VaultDocumentStore {
 				return false;
 			}
 			await rm(existing.absolutePath, { force: true });
+			this.cache.invalidate();
 			return true;
 		});
 	}
@@ -200,6 +230,71 @@ export class VaultDocumentStore {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Read the full document list through the shared cache. A warm read pays only a
+	 * cheap fs signature probe; a cold/stale read re-scans and re-parses every file.
+	 */
+	private async readCachedDocuments(): Promise<VaultReadResult> {
+		return await this.cache.read({
+			computeSignature: () => this.computeSignature(),
+			scan: () => this.scanAll(),
+		});
+	}
+
+	/** Expensive scan over the whole vault: read + parse every `.md`, with its fs signature. */
+	private async scanAll(): Promise<VaultScanResult> {
+		const files = await this.collectDocumentFiles();
+		const probed = await Promise.all(
+			files.map(async (file) => {
+				const [stats, doc] = await Promise.all([safeStat(file.absolutePath), readDocument(file.absolutePath)]);
+				return { file, stats, doc };
+			}),
+		);
+
+		const documents: RuntimeVaultDocument[] = [];
+		const signatureParts: string[] = [];
+		for (const { file, stats, doc } of probed) {
+			if (stats) {
+				signatureParts.push(signatureEntry(file.relativePath, stats.mtimeMs, stats.size));
+			}
+			if (doc) {
+				documents.push(toRuntimeDocument(doc, file.relativePath));
+			}
+		}
+		return { documents, signature: signatureParts.sort().join("\n") };
+	}
+
+	/** Cheap fs probe: list + `stat` every `.md` (no contents read) → a change-detecting signature. */
+	private async computeSignature(): Promise<string> {
+		const files = await this.collectDocumentFiles();
+		const parts = await Promise.all(
+			files.map(async (file) => {
+				const stats = await safeStat(file.absolutePath);
+				return stats ? signatureEntry(file.relativePath, stats.mtimeMs, stats.size) : null;
+			}),
+		);
+		return parts
+			.filter((part): part is string => part !== null)
+			.sort()
+			.join("\n");
+	}
+
+	/** Enumerate every document file path across all scannable type dirs (no read/parse). */
+	private async collectDocumentFiles(): Promise<{ absolutePath: string; relativePath: string }[]> {
+		const types = await this.listTypeDirs();
+		const perType = await Promise.all(
+			types.map(async (typeName) => {
+				const dir = join(this.docsDir, typeName);
+				const filenames = await listMarkdownFiles(dir);
+				return filenames.map((filename) => {
+					const absolutePath = join(dir, filename);
+					return { absolutePath, relativePath: relative(this.repoPath, absolutePath) };
+				});
+			}),
+		);
+		return perType.flat();
 	}
 
 	/** Scan `docs/` (optionally one type's subdir), parsing each `.md` and skipping torn files. */
@@ -273,6 +368,20 @@ async function listMarkdownFiles(dir: string): Promise<string[]> {
 			return [];
 		}
 		throw error;
+	}
+}
+
+/** One signature line for a file: path + mtime + size detects any add/remove/in-place edit. */
+function signatureEntry(relativePath: string, mtimeMs: number, size: number): string {
+	return `${relativePath}:${mtimeMs}:${size}`;
+}
+
+async function safeStat(absolutePath: string): Promise<{ mtimeMs: number; size: number } | null> {
+	try {
+		const stats = await stat(absolutePath);
+		return { mtimeMs: stats.mtimeMs, size: stats.size };
+	} catch {
+		return null;
 	}
 }
 

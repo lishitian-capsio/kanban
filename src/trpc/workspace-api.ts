@@ -26,8 +26,6 @@ import { saveWorkspaceState, WorkspaceStateConflictError } from "../state/worksp
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { SavedViewStore } from "../vault/saved-view-store";
 import { VaultDocumentStore } from "../vault/vault-document-store";
-import { buildVaultLinkIndex } from "../vault/vault-link-index";
-import { searchVaultDocuments } from "../vault/vault-search";
 import { VaultSettingsStore } from "../vault/vault-settings-store";
 import { readArtifactContent } from "../workspace/artifact-content";
 import { detectArtifacts } from "../workspace/artifact-detection";
@@ -481,14 +479,15 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 			return { document };
 		},
 		getDocumentLinks: async (workspaceScope, input) => {
-			const documents = await new VaultDocumentStore(workspaceScope.workspacePath).list();
-			const index = buildVaultLinkIndex(documents);
+			const index = await new VaultDocumentStore(workspaceScope.workspacePath).getLinkIndex();
 			return { outgoing: index.outgoing(input.id), backlinks: index.backlinks(input.id) };
 		},
 		searchDocuments: async (workspaceScope, input) => {
 			const type = input.type?.trim() ? input.type.trim() : undefined;
-			const documents = await new VaultDocumentStore(workspaceScope.workspacePath).list(type);
-			const results = searchVaultDocuments(documents, input.query, { limit: input.limit });
+			const results = await new VaultDocumentStore(workspaceScope.workspacePath).search(input.query, {
+				type,
+				limit: input.limit,
+			});
 			return { results };
 		},
 		createDocument: async (workspaceScope, input) => {
