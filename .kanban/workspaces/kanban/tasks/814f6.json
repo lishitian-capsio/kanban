@@ -1,0 +1,19 @@
+{
+  "id": "814f6",
+  "title": "perf #4: React.memo(BoardCard) + 稳定每卡 onClick",
+  "prompt": "性能优化 #4(快赢)。\n\n问题:BoardCard 未 memo(921 行组件),board-column 在循环里用新建箭头函数 onClick={() => …} 传入(不稳定 prop,会让任何 memo 失效);拖拽起止在 board 根写 state,无 memo 边界时所有列/卡重渲染;每卡 useLayoutEffect 量文本宽度每次 board 渲染都重跑;renderStatusMarker 未 memo。\n\n定位:\n- web-ui/src/components/board-card.tsx:227 (无 memo)\n- web-ui/src/components/board-column.tsx:154-203 循环建卡,不稳定 onClick :192-198\n- 拖拽 state web-ui/src/components/kanban-board.tsx:340-363\n- 每卡测量 effect board-card.tsx:312-324\n- 未 memo 的 renderStatusMarker :422-434\n\n修法:\n1) React.memo(BoardCard)\n2) 把 onClick 提为稳定 useCallback(id)(否则 memo 是 no-op)\n3) memoize status marker\n4) 测量 effect 在 props 稳定后只跑必要时\n\n注意:@hello-pangea/dnd 在这里不做逐像素流更新,无逐像素风暴。别破坏拖拽行为。验证拖拽顺滑、卡片交互正常。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782106556874,
+  "updatedAt": 1782106556874,
+  "column": "backlog",
+  "rank": "Zv",
+  "dependsOn": []
+}
