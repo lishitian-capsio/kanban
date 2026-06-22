@@ -199,11 +199,23 @@ export async function probeGitWorkspaceState(cwd: string): Promise<GitWorkspaceP
 	};
 }
 
+// The top-level directory of a worktree is an invariant for a given `cwd`, but the
+// workspace metadata monitor re-probes every tracked task once per second. Resolving it
+// with a fresh `git rev-parse --show-toplevel` spawn on every probe is the dominant idle
+// cost (one wasted git process per tracked task per tick), so cache the resolved root by
+// worktree path. Only successful resolutions are cached; failures fall through to retry.
+const repoRootCache = new Map<string, string>();
+
 async function resolveRepoRoot(cwd: string): Promise<string> {
+	const cached = repoRootCache.get(cwd);
+	if (cached !== undefined) {
+		return cached;
+	}
 	const result = await runGit(cwd, ["rev-parse", "--show-toplevel"]);
 	if (!result.ok || !result.stdout) {
 		throw new Error("No git repository detected for this workspace.");
 	}
+	repoRootCache.set(cwd, result.stdout);
 	return result.stdout;
 }
 
