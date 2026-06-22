@@ -1,0 +1,19 @@
+{
+  "id": "807d8",
+  "title": "Database MCP server: db_query / db_list_tables / db_describe + 接进 agent 启动",
+  "prompt": "把 Database 共享核心包成一个 MCP server,并接进任务 agent 的 session 启动流程,让任务里的编码 agent 能直接查数据库。依赖:核心 + 查询执行后端 + Schema 内省后端 均已完成。\n\n要求:\n- MCP server 暴露工具:db_query(执行 SQL,走核心查询执行层)、db_list_tables、db_describe(走内省层)。工具实现一律调用共享核心,不要重复实现连接/查询/内省。\n- 作用域:agent 只能访问本 workspace 已登记的连接;遵循核心安全策略,且 agent 入口默认更严(即便连接开了写,agent 默认只读,除非显式放行)。\n- 结果给 agent 之前必须截断 + 分页:不能把几万行塞进 agent 上下文(既慢又烧 token),返回带行数上限与「还有更多」的提示。\n- 接线:在任务 session 启动时把这个 MCP server 注入 agent 配置。参考项目里现有的 MCP 配置惯例(如 Linear MCP 的接入方式)与各 CLI agent 的 MCP 支持。注意 agent 是 claude/codex/droid/gemini/opencode 等外部 CLI agent。\n遵循 AGENTS.md:不用 any;统一 logging facade;禁止 console.*。不要提交。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782141985514,
+  "updatedAt": 1782141985514,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}
