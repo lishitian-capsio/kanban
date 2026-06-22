@@ -87,6 +87,66 @@ describe("TerminalSessionManager", () => {
 		expect(manager.getSummary("task-resume")?.agentSessionId).toBe("550e8400-e29b-41d4-a716-446655440000");
 	});
 
+	type CaptureFn = (input: { startedAtMs: number }) => Promise<string | null>;
+	type CaptureGlue = (entry: unknown, session: unknown, capture: CaptureFn, startedAtMs: number) => Promise<void>;
+
+	function seedCaptureEntry(manager: TerminalSessionManager, session: unknown): { entry: unknown; taskId: string } {
+		const taskId = "task-codex-capture";
+		const entry = {
+			summary: createSummary({ taskId, agentId: "codex", agentSessionId: null }),
+			active: { session },
+		};
+		(manager as unknown as { entries: Map<string, unknown> }).entries.set(taskId, entry);
+		return { entry, taskId };
+	}
+
+	function getCaptureGlue(manager: TerminalSessionManager): CaptureGlue {
+		return (manager as unknown as { captureAndApplyAgentSessionId: CaptureGlue }).captureAndApplyAgentSessionId.bind(
+			manager,
+		);
+	}
+
+	const CODEX_SESSION_ID = "019ddd7c-fe34-79c1-ba7e-408ca3103dff";
+
+	it("captures an agent session id after launch and persists it onto the live summary", async () => {
+		const manager = new TerminalSessionManager();
+		const emitted: RuntimeTaskSessionSummary[] = [];
+		manager.onSummary((summary) => emitted.push(summary));
+		const session = {};
+		const { entry, taskId } = seedCaptureEntry(manager, session);
+
+		await getCaptureGlue(manager)(entry, session, async () => CODEX_SESSION_ID, 0);
+
+		expect(manager.getSummary(taskId)?.agentSessionId).toBe(CODEX_SESSION_ID);
+		expect(emitted.at(-1)?.agentSessionId).toBe(CODEX_SESSION_ID);
+	});
+
+	it("does not persist a captured id when the live session was replaced (restart) before capture", async () => {
+		const manager = new TerminalSessionManager();
+		const launchedSession = {};
+		const { taskId } = seedCaptureEntry(manager, /* a different live session */ {});
+		const entry = (manager as unknown as { entries: Map<string, unknown> }).entries.get(taskId);
+
+		await getCaptureGlue(manager)(entry, launchedSession, async () => CODEX_SESSION_ID, 0);
+
+		expect(manager.getSummary(taskId)?.agentSessionId).toBeNull();
+	});
+
+	it("leaves the summary untouched and emits nothing when no session id is captured", async () => {
+		const manager = new TerminalSessionManager();
+		let emitCount = 0;
+		manager.onSummary(() => {
+			emitCount += 1;
+		});
+		const session = {};
+		const { entry, taskId } = seedCaptureEntry(manager, session);
+
+		await getCaptureGlue(manager)(entry, session, async () => null, 0);
+
+		expect(manager.getSummary(taskId)?.agentSessionId).toBeNull();
+		expect(emitCount).toBe(0);
+	});
+
 	it("closes a session: removes the entry and clears its persisted transcript", async () => {
 		const clear = vi.fn(async () => undefined);
 		const journal = {

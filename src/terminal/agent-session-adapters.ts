@@ -21,6 +21,7 @@ import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-pro
 import { getMachineKanbanHomePath } from "../state/workspace-state";
 import { projectCodexHome } from "./codex-home-projector";
 import { configureCodexHooks, hasCodexConfigOverride } from "./codex-hook-config";
+import { captureCodexSessionId, resolveCodexSessionsDir } from "./codex-session-capture";
 import { createHookRuntimeEnv } from "./hook-runtime-context";
 import {
 	getOpenCodeAuthPathCandidates,
@@ -95,6 +96,15 @@ export interface PreparedAgentLaunch {
 	 * session summary so the conversation can be resumed again later.
 	 */
 	agentSessionId?: string;
+	/**
+	 * Async hook to capture the agent-native session id *after* launch, for agents that
+	 * allocate it themselves at startup rather than accepting a pinned id (Codex writes a
+	 * rollout file once its TUI boots). Returns the captured id, or null if none could be
+	 * resolved. Callers persist a non-null result onto the summary so the conversation can be
+	 * resumed after a restart. Run on every launch (fresh and resume) so it self-heals whether
+	 * the agent reuses the id or mints a fresh one on resume.
+	 */
+	captureAgentSessionId?: (input: { startedAtMs: number }) => Promise<string | null>;
 }
 
 interface HookContext {
@@ -533,6 +543,17 @@ function normalizeClaudeSessionId(sessionId: string | null | undefined): string 
 	return trimmed;
 }
 
+// Codex `resume <SESSION_ID>` accepts a UUID (or a thread name), but Kanban only
+// ever records the UUID it captured from a rollout, so anything that no longer
+// parses as one is treated as "no recorded session".
+function normalizeCodexSessionId(sessionId: string | null | undefined): string | null {
+	const trimmed = sessionId?.trim();
+	if (!trimmed || !UUID_PATTERN.test(trimmed)) {
+		return null;
+	}
+	return trimmed;
+}
+
 const claudeAdapter: AgentSessionAdapter = {
 	async prepare(input) {
 		const args = [...input.args];
@@ -743,7 +764,16 @@ const codexAdapter: AgentSessionAdapter = {
 			codexArgs.push("--dangerously-bypass-approvals-and-sandbox");
 		}
 
-		if (input.resumeFromTrash) {
+		// Re-attach to a prior conversation. A recorded session id (captured from a
+		// previous launch's rollout, see `captureAgentSessionId` below) takes priority:
+		// `resume <id>` precisely continues that exact thread. The `--last` trash
+		// fallback only applies when there is no recorded id (e.g. resuming a session
+		// that predates session-id capture). The continuation prompt is forwarded later
+		// as the trailing positional PROMPT.
+		const recordedCodexSessionId = normalizeCodexSessionId(input.agentSessionId);
+		if (recordedCodexSessionId && !codexArgs.includes("resume")) {
+			codexArgs.push("resume", recordedCodexSessionId);
+		} else if (input.resumeFromTrash) {
 			if (!codexArgs.includes("resume")) {
 				codexArgs.push("resume");
 			}
@@ -784,23 +814,22 @@ const codexAdapter: AgentSessionAdapter = {
 			Object.assign(env, codexHomeProjection.env);
 		}
 
+		// Codex allocates its own session id at startup and only surfaces it via the
+		// rollout file it writes under `<CODEX_HOME>/sessions`. Capture it after launch
+		// (matching the task's worktree cwd) so the conversation can be resumed via
+		// `resume <id>` after a Kanban restart. The sessions dir tracks the projected
+		// custom-provider CODEX_HOME, else the inherited env / `~/.codex` default.
+		const codexSessionsDir = resolveCodexSessionsDir(codexHomeProjection?.codexHome ?? null);
+		const captureCwd = input.cwd;
+		const captureAgentSessionId = ({ startedAtMs }: { startedAtMs: number }) =>
+			captureCodexSessionId({ sessionsDir: codexSessionsDir, cwd: captureCwd, sinceMs: startedAtMs });
+
 		const trimmed = input.prompt.trim();
 		if (input.startInPlanMode) {
 			const planCommand = trimmed ? `/plan ${trimmed}` : "/plan";
 			deferredStartupInput = toBracketedPasteSubmission(planCommand);
 		} else if (trimmed) {
 			codexArgs.push(trimmed);
-		}
-
-		if (hooks) {
-			return {
-				binary,
-				args: codexArgs,
-				env,
-				deferredStartupInput,
-				detectOutputTransition: codexPromptDetector,
-				shouldInspectOutputForTransition: shouldInspectCodexOutputForTransition,
-			};
 		}
 
 		return {
@@ -810,6 +839,7 @@ const codexAdapter: AgentSessionAdapter = {
 			deferredStartupInput,
 			detectOutputTransition: codexPromptDetector,
 			shouldInspectOutputForTransition: shouldInspectCodexOutputForTransition,
+			captureAgentSessionId,
 		};
 	},
 };

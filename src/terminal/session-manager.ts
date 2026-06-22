@@ -11,6 +11,7 @@ import type {
 	RuntimeTaskSessionSummary,
 	RuntimeTaskTurnCheckpoint,
 } from "../core/api-contract";
+import { createLogger } from "../logging";
 import type { SessionMessage } from "../session/session-message";
 import { NoopSessionMessageJournal, type SessionMessageJournal } from "../session/session-message-journal";
 import { SessionMessageMergeCache } from "../session/session-message-merge-cache";
@@ -21,6 +22,7 @@ import {
 	type AgentAdapterLaunchInput,
 	type AgentOutputTransitionDetector,
 	type AgentOutputTransitionInspectionPredicate,
+	type PreparedAgentLaunch,
 	prepareAgentLaunch,
 } from "./agent-session-adapters";
 import {
@@ -42,6 +44,8 @@ import {
 import type { TerminalSessionListener, TerminalSessionService } from "./terminal-session-service";
 import { TerminalStateMirror } from "./terminal-state-mirror";
 import { TerminalTranscriptCapture } from "./terminal-transcript-capture";
+
+const log = createLogger("terminal-session-manager");
 
 const MAX_WORKSPACE_TRUST_BUFFER_CHARS = 16_384;
 const AUTO_RESTART_WINDOW_MS = 5_000;
@@ -717,7 +721,53 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 		});
 		this.emitSummary(entry.summary);
 
+		// Some agents (Codex) allocate their session id at startup rather than accepting a
+		// pinned one, so the adapter exposes a post-launch capture hook. Run it in the
+		// background and persist the result so the conversation can be resumed after a
+		// restart. Fire-and-forget: it must not delay the session-start response.
+		if (launch.captureAgentSessionId) {
+			void this.captureAndApplyAgentSessionId(entry, session, launch.captureAgentSessionId, startedAt);
+		}
+
 		return cloneSummary(entry.summary);
+	}
+
+	/**
+	 * Resolve an agent-native session id via the adapter's post-launch capture hook and
+	 * persist it onto the live summary (which the existing `listSummaries()` persistence
+	 * path then writes to disk, so it survives a restart). Guarded by session identity:
+	 * if the live session was replaced (restart/stop) between launch and capture, the
+	 * captured id is dropped to avoid mis-resuming a different conversation.
+	 */
+	private async captureAndApplyAgentSessionId(
+		entry: SessionEntry,
+		session: PtySession,
+		capture: NonNullable<PreparedAgentLaunch["captureAgentSessionId"]>,
+		startedAtMs: number,
+	): Promise<void> {
+		let capturedId: string | null;
+		try {
+			capturedId = await capture({ startedAtMs });
+		} catch (error) {
+			log.warn("Failed to capture agent session id", { taskId: entry.summary.taskId, error });
+			return;
+		}
+		if (!capturedId) {
+			return;
+		}
+		const current = this.entries.get(entry.summary.taskId);
+		if (!current || current.active?.session !== session) {
+			return;
+		}
+		if (current.summary.agentSessionId === capturedId) {
+			return;
+		}
+		const summary = updateSummary(current, { agentSessionId: capturedId });
+		log.debug("Captured agent session id after launch", {
+			taskId: current.summary.taskId,
+			agentSessionId: capturedId,
+		});
+		this.emitSummary(summary);
 	}
 
 	async startShellSession(request: StartShellSessionRequest): Promise<RuntimeTaskSessionSummary> {
