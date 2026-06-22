@@ -115,6 +115,84 @@ describe("TerminalStateMirror", () => {
 		expect(lines).not.toContain("L59");
 	});
 
+	// The committed-line cursor lives in the mirror: each call returns only the
+	// lines that scrolled off since the previous call, never the whole scrollback.
+	it("returns only newly committed lines on subsequent calls", async () => {
+		const mirror = createMirror(80, 24);
+
+		for (let i = 0; i < 30; i += 1) {
+			mirror.applyOutput(Buffer.from(`L${i}\r\n`, "utf8"));
+		}
+		const first = await mirror.getCommittedLines();
+
+		for (let i = 30; i < 40; i += 1) {
+			mirror.applyOutput(Buffer.from(`L${i}\r\n`, "utf8"));
+		}
+		const second = await mirror.getCommittedLines();
+
+		expect(first[0]).toBe("L0");
+		expect(first).toContain("L6");
+		expect(second).not.toContain("L0");
+		expect(second).not.toContain("L6");
+		expect(second[0]).toBe("L7");
+		// Concatenating the deltas reconstructs the full committed history exactly.
+		expect([...first, ...second]).toEqual(Array.from({ length: 17 }, (_, i) => `L${i}`));
+	});
+
+	it("returns an empty delta when nothing new has been committed since the last read", async () => {
+		const mirror = createMirror(80, 24);
+
+		for (let i = 0; i < 30; i += 1) {
+			mirror.applyOutput(Buffer.from(`L${i}\r\n`, "utf8"));
+		}
+		await mirror.getCommittedLines();
+
+		expect(await mirror.getCommittedLines()).toEqual([]);
+	});
+
+	// The -1 re-anchor in the delta scan must still rejoin a wrapped continuation row
+	// into its logical line.
+	it("rejoins wrapped continuation rows in the committed delta", async () => {
+		const mirror = createMirror(10, 5);
+
+		mirror.applyOutput(Buffer.from("ABCDEFGHIJKLMNO\r\n", "utf8"));
+		for (let i = 0; i < 10; i += 1) {
+			mirror.applyOutput(Buffer.from(`x${i}\r\n`, "utf8"));
+		}
+
+		const lines = await mirror.getCommittedLines();
+
+		expect(lines).toContain("ABCDEFGHIJKLMNO");
+	});
+
+	// Alternate screen produces no linear scrollback: the cursor must be left
+	// untouched so returning to the normal buffer does not re-emit prior lines.
+	it("preserves the committed cursor across an alternate-screen excursion", async () => {
+		const mirror = createMirror(80, 24);
+
+		for (let i = 0; i < 30; i += 1) {
+			mirror.applyOutput(Buffer.from(`L${i}\r\n`, "utf8"));
+		}
+		const first = await mirror.getCommittedLines();
+		expect(first[0]).toBe("L0");
+
+		mirror.applyOutput(Buffer.from("[?1049h", "utf8"));
+		expect(await mirror.getCommittedLines()).toEqual([]);
+
+		mirror.applyOutput(Buffer.from("[?1049l", "utf8"));
+		for (let i = 30; i < 40; i += 1) {
+			mirror.applyOutput(Buffer.from(`L${i}\r\n`, "utf8"));
+		}
+		const after = await mirror.getCommittedLines();
+
+		// None of the already-committed lines are re-emitted, and capture resumes
+		// immediately after the last committed line.
+		for (const line of first) {
+			expect(after).not.toContain(line);
+		}
+		expect(after[0]).toBe("L7");
+	});
+
 	// The batched feed must still answer terminal queries even when nothing ever
 	// reads the mirror (no viewer, no turn boundary) — the micro-batch timer flushes.
 	it("flushes batched output on the micro-batch timer without an explicit read", async () => {

@@ -59,21 +59,25 @@ describe("TerminalTranscriptCapture", () => {
 		expect(message?.content).toBe("I'll start by reading the file.\nDone.");
 	});
 
-	it("only captures the delta of committed lines across turns", () => {
+	it("emits each committed-line delta it is handed as its own assistant message", () => {
+		// Delta tracking now lives in the mirror; the capture emits exactly what it is
+		// handed each turn and performs no internal dedup of its own.
 		const capture = new TerminalTranscriptCapture("task-1");
 
-		capture.captureCommittedLines(["line one", "line two"]);
-		const second = capture.captureCommittedLines(["line one", "line two", "line three"]);
+		const first = capture.captureCommittedLines(["line one", "line two"]);
+		const second = capture.captureCommittedLines(["line three"]);
 
+		expect(first?.content).toBe("line one\nline two");
 		expect(second?.content).toBe("line three");
+		expect(capture.listMessages()).toHaveLength(2);
 	});
 
-	it("returns null when no new committed lines appeared", () => {
+	it("returns null when handed no committed lines", () => {
 		const capture = new TerminalTranscriptCapture("task-1");
 
-		capture.captureCommittedLines(["only line"]);
-
-		expect(capture.captureCommittedLines(["only line"])).toBeNull();
+		expect(capture.captureCommittedLines([])).toBeNull();
+		expect(capture.captureCommittedLines(["", "   "])).toBeNull();
+		expect(capture.listMessages()).toHaveLength(0);
 	});
 
 	it("trims surrounding blank lines from assistant captures", () => {
@@ -93,14 +97,18 @@ describe("TerminalTranscriptCapture", () => {
 		expect(message?.content).toBe("Build succeeded.");
 	});
 
-	it("re-captures from scratch after the turn baseline resets but keeps messages", () => {
+	it("resetTurnBaseline discards half-typed input but keeps captured messages", () => {
 		const capture = new TerminalTranscriptCapture("task-1");
 		capture.captureCommittedLines(["first session output"]);
 
+		// A half-typed line that never got an Enter, then a mirror restart.
+		capture.recordInput("hal");
 		capture.resetTurnBaseline();
-		const message = capture.captureCommittedLines(["new session output"]);
+		const committed = capture.recordInput("lo\r");
 
-		expect(message?.content).toBe("new session output");
+		// The discarded "hal" prefix is gone; only post-reset input is committed.
+		expect(committed).toHaveLength(1);
+		expect(committed[0]?.content).toBe("lo");
 		expect(capture.listMessages()).toHaveLength(2);
 	});
 });

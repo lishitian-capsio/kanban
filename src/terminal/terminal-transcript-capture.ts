@@ -26,9 +26,6 @@ const MAX_PENDING_INPUT_CHARS = 8_192;
 
 export class TerminalTranscriptCapture {
 	private readonly buffer: SessionMessageBuffer = createSessionMessageBuffer();
-	// Number of committed (scrolled-off) scrollback lines already turned into
-	// assistant messages. Reset whenever the underlying PTY/mirror restarts.
-	private committedLineCount = 0;
 	// Decoded, ANSI-stripped keystrokes awaiting an Enter submission.
 	private pendingInput = "";
 	// Lines of the most recent user message, used to drop the prompt echo that the
@@ -69,14 +66,13 @@ export class TerminalTranscriptCapture {
 	}
 
 	/**
-	 * Capture the assistant turn from the terminal's committed scrollback. The
-	 * caller passes the full ordered list of scrolled-off (stable) lines; we emit
-	 * only the portion not yet captured. Returns null when nothing new appeared.
+	 * Capture the assistant turn from the terminal's committed scrollback. The mirror
+	 * owns the scrolled-off cursor and hands us only the freshly committed (delta)
+	 * lines, which we emit as a single `assistant` message. Returns null when the
+	 * delta is empty after trimming blank edges and the echoed prompt.
 	 */
 	captureCommittedLines(committedLines: string[]): SessionMessage | null {
-		const fresh = committedLines.slice(this.committedLineCount);
-		this.committedLineCount = committedLines.length;
-		const trimmed = dropEchoedPrompt(trimBlankEdges(fresh), this.lastUserMessageLines);
+		const trimmed = dropEchoedPrompt(trimBlankEdges(committedLines), this.lastUserMessageLines);
 		if (trimmed.length === 0) {
 			return null;
 		}
@@ -91,19 +87,17 @@ export class TerminalTranscriptCapture {
 	}
 
 	/**
-	 * Reset the scrollback baseline (and any half-typed input) without discarding
-	 * captured messages. Used when the PTY/mirror restarts: the new terminal starts
-	 * with empty scrollback, so committed-line indices must restart from zero.
+	 * Drop any half-typed input without discarding captured messages. Used when the
+	 * PTY/mirror restarts: the fresh mirror starts with an empty scrollback cursor of
+	 * its own, so the transcript only needs to forget the in-progress keystroke line.
 	 */
 	resetTurnBaseline(): void {
-		this.committedLineCount = 0;
 		this.pendingInput = "";
 	}
 
 	/** Drop all captured messages and reset every cursor. */
 	reset(): void {
 		this.buffer.messages = [];
-		this.committedLineCount = 0;
 		this.pendingInput = "";
 		this.lastUserMessageLines = new Set();
 		clearActiveTurnState(this.buffer);

@@ -46,6 +46,10 @@ export class TerminalStateMirror {
 	private pendingChunks: Buffer[] = [];
 	private pendingBytes = 0;
 	private flushTimer: ReturnType<typeof setTimeout> | null = null;
+	// Physical scrollback row count already returned as committed by getCommittedLines.
+	// Advancing it in the mirror lets each turn-boundary read scan only the freshly
+	// scrolled-off rows instead of materializing the entire ~5k-line scrollback.
+	private committedRowCount = 0;
 
 	constructor(cols: number, rows: number, options: TerminalStateMirrorOptions = {}) {
 		this.terminal = new Terminal({
@@ -143,12 +147,14 @@ export class TerminalStateMirror {
 	}
 
 	/**
-	 * Plain-text lines that have scrolled above the live viewport — the stable,
-	 * "committed" part of the transcript. The volatile viewport (live input box,
-	 * spinners) is excluded so callers can treat the result as append-only history.
-	 * Wrapped continuation rows are re-joined into their logical line. Returns an
-	 * empty array while the alternate screen buffer is active (full-screen TUIs),
-	 * since those do not produce linear scrollback.
+	 * Plain-text lines that have scrolled above the live viewport since the previous
+	 * call — the freshly "committed" part of the transcript (the volatile viewport,
+	 * live input box and spinners are excluded). Callers can treat each result as an
+	 * append-only delta: a per-mirror cursor advances so we scan only the newly
+	 * scrolled-off rows rather than the whole ~5k-line scrollback. Wrapped continuation
+	 * rows are re-joined into their logical line. Returns an empty array while the
+	 * alternate screen buffer is active (full-screen TUIs), since those do not produce
+	 * linear scrollback, and the cursor is left untouched across that excursion.
 	 */
 	async getCommittedLines(): Promise<string[]> {
 		this.flushPendingOutput();
@@ -163,8 +169,14 @@ export class TerminalStateMirror {
 		if (buffer.type !== "normal") {
 			return [];
 		}
+		// Re-anchor one row before the cursor so a wrapped continuation row sitting at
+		// the boundary rejoins the logical line already emitted last call; that
+		// re-emitted line is then dropped from the delta. On the first read there is
+		// nothing prior to re-anchor against, so scan from row 0 and keep everything.
+		const reprocessPrev = this.committedRowCount > 0;
+		const start = reprocessPrev ? this.committedRowCount - 1 : 0;
 		const lines: string[] = [];
-		for (let y = 0; y < buffer.baseY; y += 1) {
+		for (let y = start; y < buffer.baseY; y += 1) {
 			const line = buffer.getLine(y);
 			if (!line) {
 				continue;
@@ -176,7 +188,8 @@ export class TerminalStateMirror {
 				lines.push(text);
 			}
 		}
-		return lines;
+		this.committedRowCount = buffer.baseY;
+		return reprocessPrev ? lines.slice(1) : lines;
 	}
 
 	dispose(): void {
