@@ -1,0 +1,19 @@
+{
+  "id": "6c5fe",
+  "title": "perf #15: 通用 sharded-store 读写并行化",
+  "prompt": "性能优化 #15(打磨,低风险;潜在技术债)。\n\n问题:通用 sharded-json-store 的 readShardDir 串行读、writeShardDir 串行写,且写后又 listShardIds 再 readdir 一次来算删除集。今天 N 很小(只支撑 committed-providers + 遗留迁移读,requirements 已退役),影响低,但若复用到更大集合就是隐患。\n\n定位:\n- src/state/sharded-json-store.ts:52-74 (readShardDir,串行)\n- :83-92 (writeShardDir,串行写 + 第二次 listShardIds readdir)\n\n修法:reads/writes 用 Promise.all 并行;复用写前的 listShardIds 结果做删除 pass,而非再读一遍目录。\n\n注意:保持 writeJsonFileAtomic 的 content-compare 跳过未变文件、以及删除『map 中缺失的 <id>.json』的语义。验证 round-trip 一致;现有 sharded-json-store 单测通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782106660146,
+  "updatedAt": 1782106660146,
+  "column": "backlog",
+  "rank": "Zk",
+  "dependsOn": []
+}
