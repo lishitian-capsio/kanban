@@ -13,6 +13,13 @@
       "name": "database",
       "createdAt": 1782140859904,
       "updatedAt": 1782140859904
+    },
+    {
+      "id": "8dd105c5-bfb2-4481-b34e-5acaa4b8f860",
+      "agentId": "claude",
+      "name": "性能优化",
+      "createdAt": 1782142030052,
+      "updatedAt": 1782142030052
     }
   ]
 }
