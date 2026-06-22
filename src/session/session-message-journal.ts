@@ -46,6 +46,14 @@ const MESSAGES_FILENAME = "messages.jsonl";
 export interface SessionMessageJournal {
 	/** Persist a message. Coalesces consecutive same-id updates; never throws. */
 	recordMessage(taskId: string, message: SessionMessage): void;
+	/**
+	 * Monotonic per-task counter that advances whenever the logical persisted
+	 * content for a task could have changed (`recordMessage`, `clear`) and stays
+	 * put across reads and content-preserving compaction. It is a cheap change
+	 * token: callers cache derived results (e.g. a merged transcript) against it
+	 * and recompute only when it moves, without re-reading the file.
+	 */
+	getGeneration(taskId: string): number;
 	/** Read the durable transcript for a task (deduped by id, capped). */
 	loadMessages(taskId: string): Promise<SessionMessage[]>;
 	/** Drop the persisted transcript for a task. */
@@ -109,6 +117,8 @@ export class FileSessionMessageJournal implements SessionMessageJournal {
 	private readonly lastAppended = new Map<string, LastAppended>();
 	/** Count of superseded same-id lines appended since the last compaction. */
 	private readonly staleAppends = new Map<string, number>();
+	/** Monotonic per-task change token (see `getGeneration`). */
+	private readonly generations = new Map<string, number>();
 
 	constructor(options: FileSessionMessageJournalOptions) {
 		this.sessionsDir = options.sessionsDir;
@@ -126,6 +136,14 @@ export class FileSessionMessageJournal implements SessionMessageJournal {
 		return join(this.taskDirectory(taskId), MESSAGES_FILENAME);
 	}
 
+	getGeneration(taskId: string): number {
+		return this.generations.get(taskId) ?? 0;
+	}
+
+	private bumpGeneration(taskId: string): void {
+		this.generations.set(taskId, this.getGeneration(taskId) + 1);
+	}
+
 	recordMessage(taskId: string, message: SessionMessage): void {
 		const clone = cloneSessionMessage(message);
 		const tail = this.tails.get(taskId);
@@ -134,6 +152,7 @@ export class FileSessionMessageJournal implements SessionMessageJournal {
 			this.enqueueAppend(taskId, tail);
 		}
 		this.tails.set(taskId, clone);
+		this.bumpGeneration(taskId);
 		this.scheduleFlush(taskId);
 	}
 
@@ -310,6 +329,7 @@ export class FileSessionMessageJournal implements SessionMessageJournal {
 		this.tails.delete(taskId);
 		this.lastAppended.delete(taskId);
 		this.staleAppends.delete(taskId);
+		this.bumpGeneration(taskId);
 		const chain = this.writeChains.get(taskId) ?? Promise.resolve();
 		const next = chain.then(() => rm(this.messagesPath(taskId), { force: true })).catch(() => undefined);
 		this.writeChains.set(taskId, next);
@@ -358,6 +378,10 @@ export class FileSessionMessageJournal implements SessionMessageJournal {
 
 export class NoopSessionMessageJournal implements SessionMessageJournal {
 	recordMessage(_taskId: string, _message: SessionMessage): void {}
+	getGeneration(_taskId: string): number {
+		// Never persists, so the persisted side is always empty and never changes.
+		return 0;
+	}
 	async loadMessages(_taskId: string): Promise<SessionMessage[]> {
 		return [];
 	}

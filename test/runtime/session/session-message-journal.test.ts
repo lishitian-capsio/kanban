@@ -258,6 +258,54 @@ describe("FileSessionMessageJournal", () => {
 			dir.cleanup();
 		}
 	});
+
+	it("advances the per-task generation on record but not on read/compaction", async () => {
+		const dir = createTempDir("kanban-journal-");
+		try {
+			const journal = new FileSessionMessageJournal({ sessionsDir: dir.path });
+			expect(journal.getGeneration("t1")).toBe(0);
+
+			journal.recordMessage("t1", message({ id: "m1", content: "a", createdAt: 1 }));
+			const afterFirst = journal.getGeneration("t1");
+			expect(afterFirst).toBeGreaterThan(0);
+
+			await journal.flush();
+			await journal.loadMessages("t1");
+			// A read (and its opportunistic compaction) preserves logical content, so
+			// the generation must not move — that is what keeps the merge cache warm.
+			expect(journal.getGeneration("t1")).toBe(afterFirst);
+
+			journal.recordMessage("t1", message({ id: "m2", content: "b", createdAt: 2 }));
+			expect(journal.getGeneration("t1")).toBeGreaterThan(afterFirst);
+		} finally {
+			dir.cleanup();
+		}
+	});
+
+	it("advances the generation when a transcript is cleared", async () => {
+		const dir = createTempDir("kanban-journal-");
+		try {
+			const journal = new FileSessionMessageJournal({ sessionsDir: dir.path });
+			journal.recordMessage("t1", message({ id: "m1", content: "a", createdAt: 1 }));
+			const before = journal.getGeneration("t1");
+			await journal.clear("t1");
+			expect(journal.getGeneration("t1")).toBeGreaterThan(before);
+		} finally {
+			dir.cleanup();
+		}
+	});
+
+	it("tracks generations independently per task", async () => {
+		const dir = createTempDir("kanban-journal-");
+		try {
+			const journal = new FileSessionMessageJournal({ sessionsDir: dir.path });
+			journal.recordMessage("t1", message({ id: "m1", content: "a", createdAt: 1 }));
+			expect(journal.getGeneration("t1")).toBeGreaterThan(0);
+			expect(journal.getGeneration("t2")).toBe(0);
+		} finally {
+			dir.cleanup();
+		}
+	});
 });
 
 describe("NoopSessionMessageJournal", () => {
@@ -267,6 +315,13 @@ describe("NoopSessionMessageJournal", () => {
 		await journal.flush();
 		expect(await journal.loadMessages("t1")).toEqual([]);
 		await journal.clear("t1");
+	});
+
+	it("reports a constant generation since it never persists", () => {
+		const journal = new NoopSessionMessageJournal();
+		expect(journal.getGeneration("t1")).toBe(0);
+		journal.recordMessage("t1", message({ id: "a", content: "x", createdAt: 1 }));
+		expect(journal.getGeneration("t1")).toBe(0);
 	});
 });
 

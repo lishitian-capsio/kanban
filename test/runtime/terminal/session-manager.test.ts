@@ -91,6 +91,7 @@ describe("TerminalSessionManager", () => {
 		const clear = vi.fn(async () => undefined);
 		const journal = {
 			recordMessage: vi.fn(),
+			getGeneration: vi.fn(() => 0),
 			loadMessages: vi.fn(async () => []),
 			clear,
 			flush: vi.fn(async () => undefined),

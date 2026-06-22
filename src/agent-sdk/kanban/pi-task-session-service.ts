@@ -11,11 +11,8 @@ import type {
 } from "../../core/api-contract";
 import { createSessionMessage, now, type SessionMessage } from "../../session/session-message";
 import { clearActiveTurnState } from "../../session/session-message-buffer";
-import {
-	mergeSessionMessages,
-	NoopSessionMessageJournal,
-	type SessionMessageJournal,
-} from "../../session/session-message-journal";
+import { NoopSessionMessageJournal, type SessionMessageJournal } from "../../session/session-message-journal";
+import { SessionMessageMergeCache } from "../../session/session-message-merge-cache";
 import type { SessionMessageSource } from "../../session/session-message-source";
 import type { AgentEvent } from "../types";
 import {
@@ -100,6 +97,7 @@ class PiMessageStore {
 	private entries = new Map<string, KanbanTaskSessionEntry>();
 	private summaryListeners = new Set<(summary: RuntimeTaskSessionSummary) => void>();
 	private messageListeners = new Set<(taskId: string, message: SessionMessage) => void>();
+	private readonly mergeCache = new SessionMessageMergeCache();
 
 	constructor(private readonly journal: SessionMessageJournal) {}
 
@@ -140,6 +138,12 @@ class PiMessageStore {
 		return this.journal.loadMessages(taskId);
 	}
 
+	loadMergedMessages(taskId: string): Promise<SessionMessage[]> {
+		return this.mergeCache.resolve(taskId, this.journal.getGeneration(taskId), this.listMessages(taskId), () =>
+			this.journal.loadMessages(taskId),
+		);
+	}
+
 	onSummary(listener: (summary: RuntimeTaskSessionSummary) => void): () => void {
 		this.summaryListeners.add(listener);
 		return () => this.summaryListeners.delete(listener);
@@ -156,6 +160,7 @@ class PiMessageStore {
 			entry.messages = [];
 			clearActiveTurnState(entry);
 		}
+		this.mergeCache.invalidate(taskId);
 		// clear() synchronously enqueues the file removal, so a subsequent
 		// loadMessages chains after it — fire-and-forget is ordering-safe.
 		void this.journal.clear(taskId);
@@ -163,6 +168,7 @@ class PiMessageStore {
 
 	async deleteTaskEntry(taskId: string): Promise<void> {
 		this.entries.delete(taskId);
+		this.mergeCache.invalidate(taskId);
 		await this.journal.clear(taskId);
 	}
 
@@ -487,8 +493,7 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 	}
 
 	async loadTaskSessionMessages(taskId: string): Promise<SessionMessage[]> {
-		const persisted = await this.messageStore.loadPersistedMessages(taskId);
-		return mergeSessionMessages(persisted, this.messageStore.listMessages(taskId));
+		return this.messageStore.loadMergedMessages(taskId);
 	}
 
 	applyTurnCheckpoint(taskId: string, checkpoint: RuntimeTaskTurnCheckpoint): RuntimeTaskSessionSummary | null {

@@ -12,11 +12,8 @@ import type {
 	RuntimeTaskTurnCheckpoint,
 } from "../core/api-contract";
 import type { SessionMessage } from "../session/session-message";
-import {
-	mergeSessionMessages,
-	NoopSessionMessageJournal,
-	type SessionMessageJournal,
-} from "../session/session-message-journal";
+import { NoopSessionMessageJournal, type SessionMessageJournal } from "../session/session-message-journal";
+import { SessionMessageMergeCache } from "../session/session-message-merge-cache";
 import type { SessionMessageListener, SessionMessageSource } from "../session/session-message-source";
 import { type AgentProviderEnv, buildAgentProviderEnv } from "../unified-proxy/env-injector";
 import { buildBridgeProxyEnvVars } from "../unified-proxy/network-bridge";
@@ -288,6 +285,7 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 	private readonly summaryListeners = new Set<(summary: RuntimeTaskSessionSummary) => void>();
 	private readonly messageListeners = new Set<SessionMessageListener>();
 	private readonly messageJournal: SessionMessageJournal;
+	private readonly mergeCache = new SessionMessageMergeCache();
 
 	constructor(options: TerminalSessionManagerOptions = {}) {
 		this.messageJournal = options.messageJournal ?? new NoopSessionMessageJournal();
@@ -341,8 +339,9 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 	}
 
 	async loadTaskSessionMessages(taskId: string): Promise<SessionMessage[]> {
-		const persisted = await this.messageJournal.loadMessages(taskId);
-		return mergeSessionMessages(persisted, this.listMessages(taskId));
+		return this.mergeCache.resolve(taskId, this.messageJournal.getGeneration(taskId), this.listMessages(taskId), () =>
+			this.messageJournal.loadMessages(taskId),
+		);
 	}
 
 	private emitMessage(taskId: string, message: SessionMessage): void {
@@ -1183,6 +1182,7 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 	 */
 	async closeTaskSession(taskId: string): Promise<void> {
 		const entry = this.entries.get(taskId);
+		this.mergeCache.invalidate(taskId);
 		if (!entry) {
 			await this.messageJournal.clear(taskId);
 			return;
