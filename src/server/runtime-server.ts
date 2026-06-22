@@ -4,7 +4,6 @@ import { createServer as createHttpsServer } from "node:https";
 import { join } from "node:path";
 
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
-import { EventLoopKeepalive } from "../agent-sdk/utils/yield";
 import { handleMcpOauthCallback } from "../agent-sdk/kanban/mcp-runtime-service";
 import {
 	createInMemoryPiTaskSessionService,
@@ -105,20 +104,14 @@ function readWorkspaceIdFromRequest(request: IncomingMessage, requestUrl: URL): 
 }
 
 export async function createRuntimeServer(deps: CreateRuntimeServerDependencies): Promise<RuntimeServer> {
-	// Bun 1.3.x (JavaScriptCore) busy-waits the event loop when the ONLY pending
-	// work is an unresolved Promise AND there is no other active *ref'd* handle.
-	// In practice the runtime always has the node:http listening socket (a ref'd
-	// handle), which keeps the loop blocked in epoll_wait — so this server never
-	// hits the pure-idle busy-wait. This keepalive is therefore defense-in-depth,
-	// not the load-bearing fix.
-	//
-	// NOTE: `EventLoopKeepalive` uses an UNREF'd timer, which does NOT by itself
-	// keep the loop in epoll_wait (verified: an unref'd timer does not suppress
-	// the busy-wait; only a ref'd handle does). It is kept unref'd deliberately so
-	// it can never delay process exit; the real guard against busy-wait is the
-	// listening socket. Do not assume removing/adding `.unref()` here changes CPU
-	// behaviour without measuring — see also src/agent-sdk/utils/yield.ts.
-	const eventLoopKeepalive = new EventLoopKeepalive();
+	// Bun 1.3.x (JavaScriptCore) busy-waits the event loop when the only
+	// pending work is an unresolved Promise (e.g. PTY child process
+	// `bunProc.exited`) — even with active I/O watchers. The pi agent loop
+	// installs its own keepalive while running, but CLI/terminal agent
+	// sessions have no such protection. A short-interval ref'd timer keeps
+	// the event loop blocked in epoll_wait. Cleared in close() so it does
+	// not prevent graceful shutdown.
+	const eventLoopKeepaliveTimer = setInterval(() => {}, 1_000);
 
 	const webUiDir = getWebUiDir();
 
@@ -611,7 +604,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		url,
 		close: async () => {
 			// Release the event-loop keepalive so the process can exit cleanly.
-			eventLoopKeepalive[Symbol.dispose]();
+			clearInterval(eventLoopKeepaliveTimer);
 			// Flush a final board commit + push (covers the shutdown coordinator's last
 			// interrupted-session save) before tearing down the broadcast channel.
 			await boardSyncService.dispose();
