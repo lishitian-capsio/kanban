@@ -39,6 +39,7 @@ import {
 	KanbanAddProviderDialog,
 	type KanbanProviderDialogInitialValues,
 } from "@/components/shared/kanban-add-provider-dialog";
+import { buildProviderEditInitialValues } from "@/components/shared/provider-edit-initial-values";
 import { KanbanOauthSignInPanel } from "@/components/shared/kanban-oauth-signin-panel";
 import {
 	getRuntimeShortcutIconComponent,
@@ -66,6 +67,7 @@ import {
 } from "@/runtime/runtime-config-query";
 import type {
 	RuntimeAgentId,
+	RuntimeAgentProviderConfig,
 	RuntimeAgentProviderSet,
 	RuntimeConfigResponse,
 	RuntimeKanbanProviderCatalogItem,
@@ -488,20 +490,13 @@ export function RuntimeSettingsDialog({
 	const officialIsDefault =
 		isOfficialLoginProviderId(selectedAgentDefaultId) || (selectedAgentSupportsOfficial && !selectedAgentDefaultId);
 
-	const handleOpenEditProviderDialog = useCallback((provider: RuntimeKanbanProviderCatalogItem) => {
+	// Initialize the edit form from the *per-agent* provider config, NOT the global
+	// name-keyed catalog: the catalog collapses same-named providers across agents
+	// into one entry, which would surface another agent's base URL / model / key
+	// preview (or an empty key) for the provider being edited.
+	const handleOpenEditProviderDialog = useCallback((provider: RuntimeAgentProviderConfig) => {
 		setProviderDialogMode("edit");
-		setProviderDialogInitialValues({
-			providerId: provider.id,
-			name: provider.name,
-			baseUrl: provider.baseUrl ?? "",
-			defaultModelId: provider.defaultModelId ?? "",
-			protocols: provider.protocols.map((p) => p.protocol),
-			protocolConfigs: provider.protocols.map((p) => ({ protocol: p.protocol, baseUrl: p.baseUrl })),
-			models: provider.models,
-			modelsSourceUrl: provider.modelsSourceUrl ?? "",
-			anthropic: provider.anthropic,
-			apiKeyPreview: provider.apiKeyPreview,
-		});
+		setProviderDialogInitialValues(buildProviderEditInitialValues(provider));
 		setProviderDialogOpen(true);
 	}, []);
 
@@ -1099,12 +1094,7 @@ export function RuntimeSettingsDialog({
 													size="sm"
 													variant="ghost"
 													icon={<Pencil size={12} />}
-													onClick={() => {
-														const catalogItem = providerCatalogAll.find((p) => p.id === providerId);
-														if (catalogItem) {
-															handleOpenEditProviderDialog(catalogItem);
-														}
-													}}
+													onClick={() => handleOpenEditProviderDialog(provider)}
 												>
 													Edit
 												</Button>

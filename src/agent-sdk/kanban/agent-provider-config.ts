@@ -22,6 +22,7 @@ import {
 	runtimeProviderProtocolSchema,
 	runtimeReasoningEffortSchema,
 } from "../../core/api-contract";
+import { maskApiKey } from "../../core/api-key-mask";
 import { lockedFileSystem } from "../../fs/locked-file-system";
 import { createLogger } from "../../logging";
 import {
@@ -128,18 +129,22 @@ let cachedState: AgentProvidersFile | null = null;
  * tightens the enums it leaves as free strings — notably `reasoning.effort` and
  * the protocol names — so corrupt on-disk values are caught rather than trusted.
  */
-const storedProviderConfigSchema = runtimeAgentProviderConfigSchema.omit({ agentId: true }).extend({
-	protocols: z.array(z.object({ protocol: runtimeProviderProtocolSchema, baseUrl: z.string().optional() })).optional(),
-	reasoning: z
-		.object({
-			enabled: z.boolean().optional(),
-			effort: runtimeReasoningEffortSchema.optional(),
-			budgetTokens: z.number().optional(),
-		})
-		.optional(),
-	// `anthropic` is inherited from the wire schema, which already validates
-	// `apiKeyField` as a strict enum — no further tightening needed here.
-});
+const storedProviderConfigSchema = runtimeAgentProviderConfigSchema
+	.omit({ agentId: true, apiKeyPreview: true })
+	.extend({
+		protocols: z
+			.array(z.object({ protocol: runtimeProviderProtocolSchema, baseUrl: z.string().optional() }))
+			.optional(),
+		reasoning: z
+			.object({
+				enabled: z.boolean().optional(),
+				effort: runtimeReasoningEffortSchema.optional(),
+				budgetTokens: z.number().optional(),
+			})
+			.optional(),
+		// `anthropic` is inherited from the wire schema, which already validates
+		// `apiKeyField` as a strict enum — no further tightening needed here.
+	});
 
 /**
  * Fold the pre-namespace on-disk shape (flat top-level `apiKeyField` /
@@ -325,6 +330,10 @@ function reconcileSet(set: AgentProviderSet): AgentProviderSet {
 /** Trim/normalize a provider config's string fields prior to persistence. */
 function cleanProviderConfig(agentId: string, config: AgentProviderConfig): AgentProviderConfig {
 	const cleaned: AgentProviderConfig = { ...config, agentId };
+	// `apiKeyPreview` is a read-only, redaction-time wire field. The client merges
+	// edits onto the redacted set (which carries it), so it can ride back in here —
+	// never persist it; the real key lives in `apiKey`.
+	delete (cleaned as { apiKeyPreview?: unknown }).apiKeyPreview;
 	if (cleaned.provider !== undefined) {
 		cleaned.provider = cleaned.provider.trim() || undefined;
 	}
@@ -537,13 +546,21 @@ export function getAllAgentProviderSets(): Record<string, AgentProviderSet> {
 	return { ...state.agents };
 }
 
-/** Return provider sets with every `apiKey` stripped — safe to send over the wire. */
+/**
+ * Return provider sets safe to send over the wire: the real `apiKey` is removed
+ * and replaced with a partially-masked `apiKeyPreview` (or `null` when unset), so
+ * a per-agent edit form can show *which* key is configured without the secret
+ * ever leaving the runtime.
+ */
 export function redactAgentProviderSets(sets: Record<string, AgentProviderSet>): Record<string, AgentProviderSet> {
 	const out: Record<string, AgentProviderSet> = {};
 	for (const [agentId, set] of Object.entries(sets)) {
 		out[agentId] = {
 			...set,
-			providers: set.providers.map(({ apiKey, ...rest }) => ({ ...rest })),
+			providers: set.providers.map(({ apiKey, ...rest }) => {
+				const trimmed = apiKey?.trim();
+				return { ...rest, apiKeyPreview: trimmed ? maskApiKey(trimmed) : null };
+			}),
 		};
 	}
 	return out;

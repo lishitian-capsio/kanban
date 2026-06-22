@@ -1427,6 +1427,13 @@ export const runtimeAgentProviderConfigSchema = z.object({
 	/** Remote `/models` discovery endpoint the model list was fetched from. */
 	modelsSourceUrl: z.string().optional(),
 	apiKey: z.string().optional(),
+	/**
+	 * Non-secret, partially-masked preview of the configured API key (e.g.
+	 * `sk-ab••••wxyz`), attached on the redacted wire response so an edit form can
+	 * show *which* key is set without the real secret ever leaving the runtime.
+	 * `null` when no key is configured. Never persisted — stripped before write.
+	 */
+	apiKeyPreview: z.string().nullable().optional(),
 	baseUrl: z.string().optional(),
 	protocols: z
 		.array(
