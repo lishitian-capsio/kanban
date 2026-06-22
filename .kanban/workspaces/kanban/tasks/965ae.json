@@ -1,0 +1,19 @@
+{
+  "id": "965ae",
+  "title": "perf #5: vault [[ 自动补全 memoize Fzf 索引 + debounce",
+  "prompt": "性能优化 #5(完全独立,低风险)。\n\n问题:vault 编辑器在 [[ wikilink 自动补全时,每次按键都新建一个 Fzf 实例并扫描全部文档 —— O(总文档数)/按键。小 vault 无感,但路线图要把 vault 做成知识库,会随文档增长劣化。\n\n定位:\n- 受控编辑器无 debounce web-ui/src/components/vault/editor/doc-editor.tsx:87-115\n- 每按键搜索 web-ui/src/components/vault/links/use-wikilink-editor-completion.ts:62-76\n- 每次新建 Fzf web-ui/src/components/vault/links/wikilink-candidates.ts\n\n修法:\n1) 按 candidates 标识 memoize Fzf 实例(索引建一次,而非每按键)\n2) debounce 查询 ~150-200ms\n3) 仅在 [[ 激活时 lazy 加载 candidates\n\n注意:[[ 之外的编辑器是正常受控 MDEditor,无需动;md-editor ghosting CSS 无性能成本,别碰。验证补全结果正确、输入不卡。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782106563013,
+  "updatedAt": 1782106563013,
+  "column": "backlog",
+  "rank": "Zu",
+  "dependsOn": []
+}
