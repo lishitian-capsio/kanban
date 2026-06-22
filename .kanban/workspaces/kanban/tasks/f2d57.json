@@ -1,0 +1,19 @@
+{
+  "id": "f2d57",
+  "title": "perf #12: board 列在 @hello-pangea/dnd 下虚拟化",
+  "prompt": "性能优化 #12(大看板扩展;高风险高成本,承接 #4 改同一文件 board-column.tsx,务必在 #4 之后)。\n\n问题:board-column 把每张卡都渲染进 DOM,无窗口化。100+ 任务的列会挂载 100+ 个重型 BoardCard(各带测量 + 多个 hook)。配合 #4,单次 board 渲染要 reconcile 每张卡。\n\n定位:\n- web-ui/src/components/board-column.tsx:154-203(渲染每张卡,无窗口化)\n\n修法:列内窗口化渲染(@hello-pangea/dnd 有 documented virtual-list 模式),或更便宜的过渡方案:用 content-visibility: auto 做屏外剔除。\n\n警示:虚拟化 @hello-pangea/dnd 的 Droppable 是公认的难组合(库需要可测量的 draggable)。优先评估 content-visibility 的低风险方案,若上真窗口化务必充分测试拖拽。\n\n注意:确保 #4 的 memo/稳定 onClick 已在 main(本任务从 #4 完成后的 main 分支)。验证大看板滚动与拖拽正常、卡片不丢。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782106630954,
+  "updatedAt": 1782106630954,
+  "column": "backlog",
+  "rank": "Zn",
+  "dependsOn": []
+}
