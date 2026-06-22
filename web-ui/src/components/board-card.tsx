@@ -568,7 +568,11 @@ function BoardCardComponent({
 					>
 						<div
 							className={cn(
-								"rounded-md border border-border-bright bg-surface-2 p-2.5",
+								// `kb-board-card-body` opts each card into off-screen render culling
+								// (content-visibility) so large columns don't pay layout/paint for cards
+								// the user can't see. Kept off the draggable shell so rbd still measures the
+								// card and the drag drop-shadow isn't clipped by paint containment.
+								"kb-board-card-body rounded-md border border-border-bright bg-surface-2 p-2.5",
 								isCardInteractive && "cursor-pointer hover:bg-surface-3 hover:border-border-bright",
 								isDragging && "shadow-lg",
 								isHovered && isCardInteractive && "bg-surface-3 border-border-bright",

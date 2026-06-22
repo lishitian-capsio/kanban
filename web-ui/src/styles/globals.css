@@ -364,6 +364,21 @@ body,
 	border-radius: var(--radius-md);
 }
 
+/*
+ * Off-screen render culling for cards. A column with 100+ tasks otherwise pays
+ * full layout + paint for every card. `content-visibility: auto` lets the browser
+ * skip rendering the subtree of cards scrolled out of the column viewport, while
+ * keeping them in the DOM (so @hello-pangea/dnd can always find every draggable).
+ * `contain-intrinsic-size: auto …` makes the browser remember each card's real
+ * rendered height, so once a card has been seen, scrolling it off-screen causes no
+ * layout shift and rbd keeps a stable measurement; the fallback length only applies
+ * to cards that have never been rendered yet.
+ */
+.kb-board-card-body {
+	content-visibility: auto;
+	contain-intrinsic-size: auto 92px;
+}
+
 .kb-board-card-dependency-source {
 	box-shadow: inset 0 0 0 1px var(--color-accent);
 }

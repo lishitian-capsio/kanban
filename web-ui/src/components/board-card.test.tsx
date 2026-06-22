@@ -212,6 +212,19 @@ describe("BoardCard", () => {
 		expect(nextCancelButton).toBeUndefined();
 	});
 
+	it("marks the card body for off-screen render culling", async () => {
+		await act(async () => {
+			root.render(<BoardCard card={createCard()} index={0} columnId="backlog" />);
+		});
+
+		// The culling opt-in must live on the inner body, not the draggable shell, so that
+		// @hello-pangea/dnd still measures the card and the drag shadow isn't clipped.
+		const shell = container.querySelector(".kb-board-card-shell");
+		expect(shell).toBeInstanceOf(HTMLElement);
+		expect(shell?.classList.contains("kb-board-card-body")).toBe(false);
+		expect(container.querySelector(".kb-board-card-shell .kb-board-card-body")).toBeInstanceOf(HTMLElement);
+	});
+
 	it("copies the full task id and toasts when the id chip is clicked", async () => {
 		const onActivate = vi.fn();
 		await act(async () => {
