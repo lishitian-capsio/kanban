@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,8 +33,14 @@ function createMockPtyProcess() {
 		onExit?: (event: { exitCode: number; signal?: number }) => void;
 	} = {};
 
+	// node-pty exposes the underlying conpty input socket as `_agent.inSocket`
+	// (private). PtySession reaches it to swallow benign post-close write errors
+	// that surface asynchronously on Windows, so the mock mirrors that shape.
+	const inSocket = new EventEmitter();
+
 	return {
 		pid: 4242,
+		_agent: { inSocket },
 		onData: vi.fn((listener: (data: string | Buffer | Uint8Array) => void) => {
 			listeners.onData = listener;
 		}),
@@ -51,7 +58,16 @@ function createMockPtyProcess() {
 		emitExit: (event: { exitCode: number; signal?: number }) => {
 			listeners.onExit?.(event);
 		},
+		emitInputSocketError: (error: unknown) => {
+			inSocket.emit("error", error);
+		},
 	};
+}
+
+function socketClosedError(): NodeJS.ErrnoException {
+	const error = new Error("Socket is closed") as NodeJS.ErrnoException;
+	error.code = "ERR_SOCKET_CLOSED";
+	return error;
 }
 
 describe("PtySession", () => {
@@ -320,5 +336,99 @@ describe("PtySession", () => {
 		});
 
 		expect(() => session.write("hello")).toThrow("permission denied");
+	});
+
+	it("ignores synchronous ERR_SOCKET_CLOSED write errors (Windows conpty)", () => {
+		setPlatform("win32");
+		const ptyProcess = createMockPtyProcess();
+		ptyProcess.write.mockImplementation(() => {
+			throw socketClosedError();
+		});
+		ptyMocks.spawn.mockReturnValue(ptyProcess);
+
+		const session = PtySession.spawn({
+			binary: "claude",
+			args: [],
+			cwd: "C:/repo",
+			cols: 120,
+			rows: 40,
+		});
+
+		expect(() => session.write("hello")).not.toThrow();
+	});
+
+	it("ignores write errors whose message contains 'socket is closed'", () => {
+		setPlatform("win32");
+		const ptyProcess = createMockPtyProcess();
+		ptyProcess.write.mockImplementation(() => {
+			// No machine-readable code — only the human-readable message is present.
+			throw new Error("write EPIPE: Socket is closed");
+		});
+		ptyMocks.spawn.mockReturnValue(ptyProcess);
+
+		const session = PtySession.spawn({
+			binary: "claude",
+			args: [],
+			cwd: "C:/repo",
+			cols: 120,
+			rows: 40,
+		});
+
+		expect(() => session.write("hello")).not.toThrow();
+	});
+
+	it("does not write to a pty that has already exited", () => {
+		setPlatform("win32");
+		const ptyProcess = createMockPtyProcess();
+		ptyMocks.spawn.mockReturnValue(ptyProcess);
+
+		const session = PtySession.spawn({
+			binary: "claude",
+			args: [],
+			cwd: "C:/repo",
+			cols: 120,
+			rows: 40,
+		});
+
+		ptyProcess.emitExit({ exitCode: 0 });
+
+		expect(() => session.write("hello")).not.toThrow();
+		expect(ptyProcess.write).not.toHaveBeenCalled();
+	});
+
+	it("swallows benign asynchronous ERR_SOCKET_CLOSED errors from the input socket", () => {
+		setPlatform("win32");
+		const ptyProcess = createMockPtyProcess();
+		ptyMocks.spawn.mockReturnValue(ptyProcess);
+
+		PtySession.spawn({
+			binary: "claude",
+			args: [],
+			cwd: "C:/repo",
+			cols: 120,
+			rows: 40,
+		});
+
+		// Mirrors a write that races the child's exit and flushes onto an already
+		// destroyed conpty input socket — node emits 'error' on a later tick.
+		expect(() => ptyProcess.emitInputSocketError(socketClosedError())).not.toThrow();
+	});
+
+	it("re-surfaces non-benign asynchronous input socket errors", () => {
+		setPlatform("win32");
+		const ptyProcess = createMockPtyProcess();
+		ptyMocks.spawn.mockReturnValue(ptyProcess);
+
+		PtySession.spawn({
+			binary: "claude",
+			args: [],
+			cwd: "C:/repo",
+			cols: 120,
+			rows: 40,
+		});
+
+		const fatal = new Error("unexpected pipe failure") as NodeJS.ErrnoException;
+		fatal.code = "EPERM";
+		expect(() => ptyProcess.emitInputSocketError(fatal)).toThrow("unexpected pipe failure");
 	});
 });

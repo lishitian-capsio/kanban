@@ -35,12 +35,15 @@ function isIgnorablePtyWriteError(error: unknown): boolean {
 	if (!(error instanceof Error)) {
 		return false;
 	}
+	// Prefer the machine-readable code over message matching. ERR_SOCKET_CLOSED is
+	// raised by Node's net layer when node-pty (Windows/conpty) writes onto an
+	// input socket that the exiting child already closed — a benign post-close race.
 	const code = (error as NodeJS.ErrnoException).code;
-	if (code === "EIO" || code === "EBADF") {
+	if (code === "EIO" || code === "EBADF" || code === "ERR_SOCKET_CLOSED") {
 		return true;
 	}
 	const msg = error.message.toLowerCase();
-	return msg.includes("ebadf") || msg.includes("eio");
+	return msg.includes("ebadf") || msg.includes("eio") || msg.includes("socket is closed");
 }
 
 function isIgnorablePtyResizeError(error: unknown): boolean {
@@ -53,6 +56,36 @@ function isIgnorablePtyResizeError(error: unknown): boolean {
 	}
 	const msg = error.message.toLowerCase();
 	return msg.includes("already exited") || msg.includes("ebadf") || msg.includes("eio");
+}
+
+// node-pty does not expose the underlying conpty input socket on its public
+// `IPty` contract, but on Windows a write that races the child's exit surfaces
+// asynchronously as an `error` event on that socket — which the synchronous
+// try/catch in `write()` cannot intercept. We reach the socket defensively to
+// swallow only the benign post-close write errors; if the internal shape ever
+// changes, the optional-chained access simply finds nothing and we fall back to
+// the synchronous guard + ignore-list.
+interface PtyErrorSocket {
+	on(event: "error", listener: (error: unknown) => void): unknown;
+}
+
+interface PtyInternalSockets {
+	_agent?: { inSocket?: PtyErrorSocket };
+}
+
+function attachIgnorablePtyWriteErrorHandler(ptyProcess: pty.IPty): void {
+	const inSocket = (ptyProcess as unknown as PtyInternalSockets)._agent?.inSocket;
+	if (!inSocket || typeof inSocket.on !== "function") {
+		return;
+	}
+	inSocket.on("error", (error) => {
+		if (isIgnorablePtyWriteError(error)) {
+			return;
+		}
+		// Preserve fail-loud behaviour for unknown errors: re-throwing inside the
+		// emit propagates exactly as it would have without any listener.
+		throw error;
+	});
 }
 
 function terminatePtyProcess(ptyProcess: pty.IPty): void {
@@ -136,6 +169,7 @@ export class PtySession {
 				this.exited = true;
 				this.onExitCallback?.(event);
 			});
+			attachIgnorablePtyWriteErrorHandler(this.nodePty);
 		} else {
 			this.bunProc = backend.proc;
 			this.bunProc.exited.then((exitCode) => {
@@ -211,6 +245,9 @@ export class PtySession {
 	}
 
 	write(data: string | Buffer): void {
+		if (this.exited) {
+			return;
+		}
 		try {
 			if (this.nodePty) {
 				this.nodePty.write(typeof data === "string" ? data : data.toString("utf8"));
