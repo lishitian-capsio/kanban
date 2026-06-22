@@ -1,0 +1,19 @@
+{
+  "id": "8cf85",
+  "title": "perf #10: 根 store 选择器订阅(拆 context / useSyncExternalStore)",
+  "prompt": "性能优化 #10(基础性改动,撬动 #2/#4 的收益;承接 #2,改同一文件 use-runtime-state-stream.ts,务必在 #2 之后)。\n\n问题:整个 runtime 状态(board/sessions/chat/projects/sync)通过单个 useReducer store 流过 1253 行的 App.tsx 顶部,无 memo 边界。12 条 WS 通道全 dispatch 进同一 reducer 产出同一 store 对象。一个 board_sync_status_updated(~5s commit/push)或 task_sessions_updated 就重渲染 board+detail+top bar+sidebar 只为一个 badge;流式时每个 chat token 重渲染整个 App 子树。\n\n定位:\n- web-ui/src/runtime/use-runtime-state-stream.ts:315 (useRuntimeStateStream),reducer :155-313,socket handlers :382-487\n- web-ui/src/hooks/use-project-navigation.ts:96\n- web-ui/src/App.tsx:87,133\n- 通道汇总见 L1-6 表\n\n修法:选择器式订阅 —— 拆成多个 context,或采用现成的 useSyncExternalStore 模式(范本 = web-ui/src/stores/workspace-metadata-store.ts,已用 per-taskId 粒度订阅)。使 chat token 不触碰 board、sync badge 不触碰 chat。\n\n已知缓解(别破坏):board/sessions 是局部 useState (App.tsx:89-90),setBoard 有 revision 守卫 (use-workspace-sync.ts:115-120)。验证各面板只在相关数据变化时重渲染;全功能回归。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782106614580,
+  "updatedAt": 1782106614580,
+  "column": "backlog",
+  "rank": "Zp",
+  "dependsOn": []
+}
