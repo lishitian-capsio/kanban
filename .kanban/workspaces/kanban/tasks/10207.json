@@ -12,8 +12,8 @@
   },
   "baseRef": "main",
   "createdAt": 1782104075145,
-  "updatedAt": 1782104871767,
-  "column": "backlog",
+  "updatedAt": 1782104911354,
+  "column": "in_progress",
   "rank": "a0",
   "dependsOn": []
 }
