@@ -7,7 +7,31 @@ import type {
 import { getGitSyncSummary, probeGitWorkspaceState } from "../workspace/git-sync";
 import { getTaskWorkspacePathInfo } from "../workspace/task-worktree";
 
-const WORKSPACE_METADATA_POLL_INTERVAL_MS = 1_000;
+// The metadata monitor's git refresh is already event-driven for the cases that
+// matter: board mutations, agent commits (turn checkpoints) and hook firings all
+// call back into `updateWorkspaceState`, which refreshes immediately. The interval
+// timer is a *fallback* poll that catches changes which emit no event — chiefly an
+// agent actively writing files in a worktree, or a manual external edit. Polling
+// every tracked task once per second spawned git probes unconditionally even when
+// nothing was happening, which is a continuous O(N tasks) idle CPU cost.
+//
+// So the poll cadence is adaptive: it starts fast, and while consecutive refreshes
+// detect no change it backs off exponentially toward a cap. The instant a refresh
+// observes a change (or an event-driven refresh arrives) the cadence snaps back to
+// the fast base interval. Tradeoff: a purely external edit made while the board is
+// open and otherwise idle is reflected after up to the max interval instead of 1s —
+// acceptable for git-status freshness, and self-correcting (the first detected delta
+// restores the 1s cadence for the duration of the activity).
+export const WORKSPACE_METADATA_POLL_INTERVAL_MS = 1_000;
+export const WORKSPACE_METADATA_MAX_POLL_INTERVAL_MS = 5_000;
+const WORKSPACE_METADATA_POLL_BACKOFF_FACTOR = 2;
+
+export function computeNextPollIntervalMs(currentIntervalMs: number, changed: boolean): number {
+	if (changed) {
+		return WORKSPACE_METADATA_POLL_INTERVAL_MS;
+	}
+	return Math.min(currentIntervalMs * WORKSPACE_METADATA_POLL_BACKOFF_FACTOR, WORKSPACE_METADATA_MAX_POLL_INTERVAL_MS);
+}
 
 interface TrackedTaskWorkspace {
 	taskId: string;
@@ -30,6 +54,9 @@ interface WorkspaceMetadataEntry {
 	trackedTasks: TrackedTaskWorkspace[];
 	subscriberCount: number;
 	pollTimer: NodeJS.Timeout | null;
+	pollLoopActive: boolean;
+	pollIntervalMs: number;
+	lastRefreshChanged: boolean;
 	refreshPromise: Promise<RuntimeWorkspaceMetadata> | null;
 	homeGit: CachedHomeGitMetadata;
 	taskMetadataByTaskId: Map<string, CachedTaskWorkspaceMetadata>;
@@ -142,6 +169,9 @@ function createWorkspaceEntry(workspacePath: string): WorkspaceMetadataEntry {
 		trackedTasks: [],
 		subscriberCount: 0,
 		pollTimer: null,
+		pollLoopActive: false,
+		pollIntervalMs: WORKSPACE_METADATA_POLL_INTERVAL_MS,
+		lastRefreshChanged: false,
 		refreshPromise: null,
 		homeGit: {
 			summary: null,
@@ -272,12 +302,13 @@ export function createWorkspaceMetadataMonitor(
 ): WorkspaceMetadataMonitor {
 	const workspaces = new Map<string, WorkspaceMetadataEntry>();
 
-	const stopWorkspaceTimer = (entry: WorkspaceMetadataEntry) => {
-		if (!entry.pollTimer) {
-			return;
+	const stopPollLoop = (entry: WorkspaceMetadataEntry) => {
+		entry.pollLoopActive = false;
+		entry.pollIntervalMs = WORKSPACE_METADATA_POLL_INTERVAL_MS;
+		if (entry.pollTimer) {
+			clearTimeout(entry.pollTimer);
+			entry.pollTimer = null;
 		}
-		clearInterval(entry.pollTimer);
-		entry.pollTimer = null;
 	};
 
 	const refreshWorkspace = async (workspaceId: string): Promise<RuntimeWorkspaceMetadata> => {
@@ -308,7 +339,9 @@ export function createWorkspaceMetadataMonitor(
 			);
 
 			const nextSnapshot = buildWorkspaceMetadataSnapshot(entry);
-			if (!areWorkspaceMetadataEqual(previousSnapshot, nextSnapshot)) {
+			const changed = !areWorkspaceMetadataEqual(previousSnapshot, nextSnapshot);
+			entry.lastRefreshChanged = changed;
+			if (changed) {
 				deps.onMetadataUpdated(workspaceId, nextSnapshot);
 			}
 			return nextSnapshot;
@@ -334,22 +367,63 @@ export function createWorkspaceMetadataMonitor(
 		return existing;
 	};
 
-	const ensureWorkspaceTimer = (workspaceId: string, entry: WorkspaceMetadataEntry) => {
+	// Arm a single fallback poll at the entry's current (possibly backed-off)
+	// interval. Self-rescheduling via setTimeout rather than a fixed setInterval so
+	// each tick can pick its own next delay.
+	const armPollTimer = (workspaceId: string, entry: WorkspaceMetadataEntry) => {
 		if (entry.pollTimer) {
-			return;
+			clearTimeout(entry.pollTimer);
+			entry.pollTimer = null;
 		}
-		const timer = setInterval(() => {
-			void refreshWorkspace(workspaceId);
-		}, WORKSPACE_METADATA_POLL_INTERVAL_MS);
+		const timer = setTimeout(() => {
+			const current = workspaces.get(workspaceId);
+			if (current) {
+				current.pollTimer = null;
+			}
+			void runPollTick(workspaceId);
+		}, entry.pollIntervalMs);
 		timer.unref();
 		entry.pollTimer = timer;
+	};
+
+	const runPollTick = async (workspaceId: string): Promise<void> => {
+		const entry = workspaces.get(workspaceId);
+		if (!entry || !entry.pollLoopActive) {
+			return;
+		}
+		await refreshWorkspace(workspaceId);
+		const current = workspaces.get(workspaceId);
+		if (!current || !current.pollLoopActive) {
+			return;
+		}
+		current.pollIntervalMs = computeNextPollIntervalMs(current.pollIntervalMs, current.lastRefreshChanged);
+		armPollTimer(workspaceId, current);
+	};
+
+	const ensurePollLoop = (workspaceId: string, entry: WorkspaceMetadataEntry) => {
+		if (entry.pollLoopActive) {
+			return;
+		}
+		entry.pollLoopActive = true;
+		entry.pollIntervalMs = WORKSPACE_METADATA_POLL_INTERVAL_MS;
+		armPollTimer(workspaceId, entry);
+	};
+
+	// An event-driven signal (board mutation, etc.) means something just changed, so
+	// reset the fallback cadence to the fast base interval and re-arm immediately.
+	const wakePollLoop = (workspaceId: string, entry: WorkspaceMetadataEntry) => {
+		if (!entry.pollLoopActive) {
+			return;
+		}
+		entry.pollIntervalMs = WORKSPACE_METADATA_POLL_INTERVAL_MS;
+		armPollTimer(workspaceId, entry);
 	};
 
 	return {
 		connectWorkspace: async ({ workspaceId, workspacePath, board }) => {
 			const entry = updateWorkspaceEntry({ workspaceId, workspacePath, board });
 			entry.subscriberCount += 1;
-			ensureWorkspaceTimer(workspaceId, entry);
+			ensurePollLoop(workspaceId, entry);
 			return await refreshWorkspace(workspaceId);
 		},
 		updateWorkspaceState: async ({ workspaceId, workspacePath, board }) => {
@@ -357,6 +431,9 @@ export function createWorkspaceMetadataMonitor(
 			if (entry.subscriberCount === 0) {
 				return buildWorkspaceMetadataSnapshot(entry);
 			}
+			// A workspace-state broadcast is an event-driven change signal, so refresh
+			// now and restore the fast fallback cadence in case the loop had backed off.
+			wakePollLoop(workspaceId, entry);
 			return await refreshWorkspace(workspaceId);
 		},
 		disconnectWorkspace: (workspaceId) => {
@@ -368,7 +445,7 @@ export function createWorkspaceMetadataMonitor(
 			if (entry.subscriberCount > 0) {
 				return;
 			}
-			stopWorkspaceTimer(entry);
+			stopPollLoop(entry);
 			workspaces.delete(workspaceId);
 		},
 		disposeWorkspace: (workspaceId) => {
@@ -376,12 +453,12 @@ export function createWorkspaceMetadataMonitor(
 			if (!entry) {
 				return;
 			}
-			stopWorkspaceTimer(entry);
+			stopPollLoop(entry);
 			workspaces.delete(workspaceId);
 		},
 		close: () => {
 			for (const entry of workspaces.values()) {
-				stopWorkspaceTimer(entry);
+				stopPollLoop(entry);
 			}
 			workspaces.clear();
 		},
