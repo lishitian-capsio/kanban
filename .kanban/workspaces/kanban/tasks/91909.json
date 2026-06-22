@@ -3,7 +3,7 @@
   "title": "perf #7: terminal mirror getCommittedLines 增量游标(停止全量 5k 重扫)",
   "prompt": "性能优化 #7(便宜、干净)。\n\n问题:getCommittedLines() 每个 turn 边界都全量扫描 0..baseY(最多 5000 行)、逐行 translateToString,而下游 transcript capture 只取新增的尾部 delta、其余丢弃。频率是每次 awaiting_review turn 转换。不是热循环,但每次都物化最多 ~5000 个字符串只为拿一小段 delta,产生瞬时 string[] 内存尖峰。\n\n定位:\n- src/terminal/terminal-state-mirror.ts:153-180 (全量扫描 0..baseY)\n- 下游只切尾部 src/terminal/terminal-transcript-capture.ts:76-86\n- 触发点 session-manager.ts:1227 (转 awaiting_review),串行于 captureChain\n\n修法:把 committedLineCount 游标推进 mirror,使其只迭代 [committedLineCount-1, baseY) 并只返回 delta(-1 是为保留 :173 的换行重接)。\n\n注意:这是之前 micro-batch/scrollback 优化(memory 92f07)所在的同一文件,别回退那些(16ms/64KB micro-batch、scrollback 5000、force-flush)。验证 transcript 捕获内容与之前一致;现有 mirror 单测通过。",
   "startInPlanMode": false,
-  "autoReviewEnabled": true,
+  "autoReviewEnabled": false,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,8 +12,8 @@
   },
   "baseRef": "main",
   "createdAt": 1782106580206,
-  "updatedAt": 1782108209715,
-  "column": "trash",
+  "updatedAt": 1782108385876,
+  "column": "review",
   "rank": "a8",
   "dependsOn": []
 }

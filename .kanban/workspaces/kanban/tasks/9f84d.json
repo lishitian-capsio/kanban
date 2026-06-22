@@ -3,7 +3,7 @@
   "title": "perf #2: 聊天记录虚拟化 + 消息项 memo + markdown 解析缓存",
   "prompt": "性能优化 #2(最重的 UI 交互)。\n\n问题:聊天面板用普通 .map() 渲染消息列表,无虚拟化;消息项组件无 React.memo;每个流式 token 都重新解析 markdown + Prism 高亮;reducer 每个 token 重建 by-task map;auto-scroll 用 useLayoutEffect 依赖整个 messages。长会话下每个 token 触发 O(N 消息) 重渲染。\n\n定位:\n- 普通 .map 列表 web-ui/src/components/detail-panels/kanban-agent-chat-panel.tsx:430\n- 消息项未 memo …/kanban-chat-message-item.tsx:178\n- markdown 每次重解析 …/kanban-markdown-content.tsx:212\n- 每 token client setState web-ui/src/hooks/use-kanban-chat-session.ts:124-129\n- reducer 重建 map web-ui/src/runtime/use-runtime-state-stream.ts:222-231\n- auto-scroll layout effect kanban-agent-chat-panel.tsx:245-258\n\n修法:\n1) 用已安装的 react-virtuoso 虚拟化消息列表(followOutput 流式模式)\n2) React.memo 消息项,key 用 id+content\n3) 按 content memoize 解析后的 markdown,只有当前活跃消息重解析\n4) 可选:client 端 token 合并\n\n注意:别破坏 upsertTaskChatMessage 在 use-runtime-state-stream.ts:131-139 的去重短路。验证长会话流式时滚动顺滑、不丢消息。",
   "startInPlanMode": false,
-  "autoReviewEnabled": true,
+  "autoReviewEnabled": false,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,8 +12,8 @@
   },
   "baseRef": "main",
   "createdAt": 1782106533415,
-  "updatedAt": 1782108209714,
-  "column": "trash",
+  "updatedAt": 1782108377175,
+  "column": "review",
   "rank": "a8G",
   "dependsOn": []
 }

@@ -3,7 +3,7 @@
   "title": "perf #1b: 元数据轮询空闲退避/事件驱动 (1s→3-5s)",
   "prompt": "性能优化 #1b(承接 #1a,改的是同一模块,务必在 #1a 之后)。\n\n问题:workspace 元数据监控固定 1s setInterval,对每个任务无条件跑 3 个 git probe spawn 来算 stateToken,即便完全空闲。这是持续的 O(N 任务) 空闲 CPU。\n\n定位:\n- src/server/workspace-metadata-monitor.ts:337-346 (1s setInterval, WORKSPACE_METADATA_POLL_INTERVAL_MS=1000 在 :10)\n- refreshWorkspace :283-322;已有 stateToken 短路在 :222-228(但 3 个 probe spawn 仍无条件跑)\n\n修法(择优):空闲时退避到 3-5s,或事件驱动 —— 用 PTY lastOutputAt / board-sync 写入作为刷新触发,而不是无脑定时。保持 UI 数据新鲜度可接受(说明你的取舍)。可选把对每个 worktree 的 git status 合并成对共享父 repo 的一次 git status,替代 per-worktree spawn。\n\n验证:空闲态每秒 git spawn 数显著下降;打开看板时元数据仍能及时反映任务 git 状态变化;现有测试通过。",
   "startInPlanMode": false,
-  "autoReviewEnabled": true,
+  "autoReviewEnabled": false,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,8 +12,8 @@
   },
   "baseRef": "main",
   "createdAt": 1782106524293,
-  "updatedAt": 1782108209715,
-  "column": "trash",
+  "updatedAt": 1782108378887,
+  "column": "review",
   "rank": "a8C",
   "dependsOn": []
 }

@@ -3,7 +3,7 @@
   "title": "perf #1a: 缓存 resolveRepoRoot,消除元数据轮询每 tick 的 git rev-parse spawn",
   "prompt": "性能优化 #1a(最高 ROI,接近零风险)。\n\n问题:workspace 元数据监控每秒轮询一次,对每个被跟踪任务都调用 probeGitWorkspaceState,其中 git rev-parse --show-toplevel(解析 repo 根)是常量却每次重新 spawn 一个 git 进程。10 个任务 ≈ 每秒多 spawn 10 个无谓 git 进程,是空闲 CPU/风扇狂转的主要来源。\n\n定位:\n- src/workspace/git-sync.ts:113-200 (probeGitWorkspaceState),resolveRepoRoot 调用点约 git-sync.ts:202\n- src/workspace/git-utils.ts:45 (runGit = execFile)\n- 调用方 src/server/workspace-metadata-monitor.ts:283-322 (refreshWorkspace)\n\n修法:按 worktree 路径缓存 resolveRepoRoot 的结果(它对某 worktree 是不变量),后续 probe 直接命中缓存,去掉这一个 spawn。只做缓存,不动轮询节奏(节奏是 #1b)。\n\n验证:确认每 tick 的 git spawn 数从 ~3/任务 降到 ~2/任务;现有测试通过。不要改 probe 的语义。",
   "startInPlanMode": false,
-  "autoReviewEnabled": true,
+  "autoReviewEnabled": false,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,8 +12,8 @@
   },
   "baseRef": "main",
   "createdAt": 1782106515833,
-  "updatedAt": 1782108209714,
-  "column": "trash",
+  "updatedAt": 1782108369375,
+  "column": "review",
   "rank": "a8Z",
   "dependsOn": []
 }

@@ -3,7 +3,7 @@
   "title": "perf #3: board 分片并行读取 + 去掉二次 Zod 全量校验",
   "prompt": "性能优化 #3(快赢,线性扩展)。\n\n问题:读取看板时,task-shard-store 在 for 循环里串行 readFile 每个 task 分片(N 次串行 I/O),每片 safeParse 后,最后又对整块 board 做一次 runtimeBoardDataSchema.parse 全量重校验(已校验过的再校一遍)。146 个分片的串行读已测得 ~0.48s。每次 workspace snapshot / 广播都会读。\n\n定位:\n- src/state/task-shard-store.ts:166-182 (readStoredTasks, for…await readJson)\n- 二次全量校验 :226\n- 调用方 loadShardedBoard :242,排序在 :211 (rank sort)\n\n修法:\n1) 把串行读改成 await Promise.all(ids.map(readJson)),顺序由后续 rank sort (:211) 恢复\n2) 去掉/降级第二次全量 board parse —— 每片已单独校验过;若要保留可设为 dev-only\n\n注意:保持 torn/invalid 分片被静默跳过的崩溃容错;wire contract 不变。验证 board 读取结果与之前一致,现有测试通过。",
   "startInPlanMode": false,
-  "autoReviewEnabled": true,
+  "autoReviewEnabled": false,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,8 +12,8 @@
   },
   "baseRef": "main",
   "createdAt": 1782106540924,
-  "updatedAt": 1782108209714,
-  "column": "trash",
+  "updatedAt": 1782108371281,
+  "column": "review",
   "rank": "a8V",
   "dependsOn": []
 }
