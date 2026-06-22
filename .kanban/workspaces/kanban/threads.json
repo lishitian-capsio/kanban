@@ -34,13 +34,6 @@
       "name": "test",
       "createdAt": 1781776267907,
       "updatedAt": 1781776267907
-    },
-    {
-      "id": "d35aeb37-1ee8-4c90-8c4c-a6c5c6ca5584",
-      "agentId": "codex",
-      "name": "xxx",
-      "createdAt": 1782098090632,
-      "updatedAt": 1782098090632
     }
   ]
 }

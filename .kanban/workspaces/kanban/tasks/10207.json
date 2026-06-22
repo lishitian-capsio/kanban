@@ -1,0 +1,19 @@
+{
+  "id": "10207",
+  "title": "任务详情页增加 All changes / Last turn 两个 diff tab",
+  "prompt": "在任务详情页（web-ui 任务 detail 视图）新增一个代码改动查看区，包含两个并列的 tab：\n\n1. **All changes**：展示该任务 worktree 相对其 baseRef 的完整累计 diff（即任务开始以来的所有改动）。\n2. **Last turn**：只展示最近一次 agent turn 产生的改动 diff。\n\n要求：\n- 复用已有的设计系统（Tailwind tokens、src/components/ui 原语、lucide 图标），tab 切换样式参考现有组件，深色主题。\n- diff 渲染要可读：文件分组、增删行高亮、长 diff 可滚动（overflow 容器内滚动，不要撑破页面）。\n- 数据来源：先排查 runtime 是否已有获取 worktree diff / per-turn diff 的能力（git diff against baseRef、turn-checkpoints/turn 边界相关逻辑）；若已有则复用，缺失的部分通过 tRPC + 后端 git ops 补齐，遵循现有 contract 约定。\n- 'Last turn' 的 turn 边界定义需与现有 session/turn 机制（如 turn-checkpoints、awaiting_review 转换）保持一致，不要新造一套。\n- 处理空状态：无改动时显示友好的空态；任务无 worktree 时禁用或隐藏该区域。\n- 补充必要的单元测试，保持 web:typecheck 与 biome 通过。\n\n先做调研与方案设计，找到现有 diff/turn 能力的落点，再实现。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782104075145,
+  "updatedAt": 1782104177317,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}

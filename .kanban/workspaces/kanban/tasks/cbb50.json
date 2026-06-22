@@ -1,0 +1,19 @@
+{
+  "id": "cbb50",
+  "title": "实现 board 同步重设计:自动commit + 手动push/pull(S1-S5)",
+  "prompt": "实现 board 同步重设计:自动 commit + 显式手动 push/pull。按设计文档 .plan/docs/board-sync-redesign.md(tag design/board-sync-redesign)落地 S1–S5。这是【实现任务】,要改代码并通过测试。\n\n## 已锁定决策(不可推翻)\n- 热路径/防抖/关机路径 = 只做【本地 commit】,绝无网络 git I/O。\n- push 与 pull = 完全手动,仅在用户显式点击时联网。**不做退出兜底 push、不做空闲兜底 push、不做开机 boot fetch。**\n- 看板完整状态仍随仓库走、clone-即用(改成手动后,跨机器接续需用户先 Push——已接受)。\n- board-ref 指针 / kanban/board 分支 / board worktree 全部保留不动。\n\n## 根因(设计文档 §4 已确认)\n当前热路径 broadcastWorkspaceStateAndSyncBoard(runtime-server.ts:255-259)→ scheduleSync → 防抖 → runCommitAndPush(含网络 push + non-ff reconcile fetch/merge/re-push),无退避/无熔断;move-to-done 写入风暴 + push 失败重跑 + remote 无 board 分支反复 fetch 不存在 ref + 串行队列被网络操作堵死 + push 整合分支 pulledChanges→广播→写回反馈环 → 100% CPU 卡死。去掉自动 push 即根除;commit 不参与回环,可留热路径。\n\n## 要做(S1–S5,均见设计文档 §5/§6/§8)\nS1 自动 commit 引擎(src/workspace/board-sync.ts):\n- 新增内部 runCommitOnly(target) = isBoardDecouplingActive 守卫 → commitBoardWorktree → emitStatus;【不调用】runStartupReconcile / pushBoardWorktree / broadcastWorkspaceState。\n- scheduleSync 防抖回调由 enqueue(runCommitAndPush) 改为 enqueue(runCommitOnly)(现 :265)。防抖/合并(5s、latestTargetByRepo、timersByRepo、timer.unref()、按 repo 串行 enqueue)保留。\n- 钉死不变量(加注释):runCommitOnly 全程无任何 scheduleSync / broadcastWorkspaceState 调用 → 断环。\n- dispose() 关机改为最终一次【本地 commit】(去掉 push)。\n- 暂停语义(autoSyncPausedByRepo)收窄为\"暂停 = 连本地 commit 也跳过,只刷新 badge\"。\n- 删除 runCommitAndPush(原自动路径)、syncOnStartup、runStartupReconcile、startupDoneByRepo。fetchAndFastForwardBoardWorktree 若仅被 startup 用,可保留并标 currently-unused(供未来复用)或清理,二选一,勿留悬空调用。\nS2 去启动联网(src/server/runtime-server.ts):删 boot 的 void boardSyncService.syncOnStartup(...)(:595-601)。broadcastWorkspaceStateAndSyncBoard(:255-259)语义不变(仍 scheduleSync,只是现在只 commit)。\nS3 手动路径加固(board-sync.ts runManualPush/:281-318、runManualPull/:320-358):\n- push/pull 内 git 子调用加单次超时(runGit 层或调用点),避免无限期挂起堵 enqueue 串行队列。\n- 失败只 recordResult(error) 返回,【绝不自动重试】(加注释)。\n- 保留 inFlightByRepo 并发守卫;前端 runningAction 期间禁用按钮(已有)。\nS4 前端文案(web-ui,复用现有组件,无新 wire 契约):\n- BoardSyncStatusControl badge/tooltip 文案从\"自动同步中\"改为反映\"本地已提交 N 个,待 Push\"(aheadCount 角标);暂停开关文案改\"暂停自动提交\";tooltip 注明\"behind 数需点 Pull 刷新\"。\n- 现有 Push/Pull 按钮、ahead/behind 角标、冲突 dialog 全部保留。\nS5 测试与验证:\n- 更新 board-sync 单测:防抖路径断言【无任何 push/网络调用】;pushNow/pullNow 手动路径测试基本不变(仍联网/可冲突)。\n- 端到端验证:move-to-done 在「有 remote / 无 remote / remote 无 board 分支 / 断网」四场景均【不触发 push/fetch、CPU 不飙升】;启动不再出现 \"remote has no board branch\" 告警;离线下自动 commit 与有网一致;仅点 Push/Pull 才联网、失败 surface 无自动重试。\n\n## 约束\n- 无数据迁移、无 wire 契约变更、无 board-ref/分支/worktree 变更——纯行为收窄,改动集中在 board-sync.ts + runtime-server.ts + 前端文案。\n- 解耦未激活的仓库(board-ref 缺失)行为不变,全程 no-op。\n- typecheck(后端 + web:typecheck)、biome 通过。\n- 注意 Windows:本重设计的主要收益之一是消除 Windows 启动 fetch 失败与 move-to-done 卡死;Linux 无法直接复现 conpty,靠单测 + 代码审查保证逻辑正确。\n\n先读 board-sync.ts(全)、board-worktree.ts、runtime-server.ts:200-360/588-617,再按 S1–S5 最小改动。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782102843769,
+  "updatedAt": 1782103644061,
+  "column": "trash",
+  "rank": "a04",
+  "dependsOn": []
+}

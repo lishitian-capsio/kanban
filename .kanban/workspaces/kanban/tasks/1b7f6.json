@@ -1,0 +1,19 @@
+{
+  "id": "1b7f6",
+  "title": "调查修复:运行时重启后任务被异常移入 trash",
+  "prompt": "调查并修复:Kanban 运行时重启后,任务被异常移动到 trash(数据没丢,但 column 变成 trash)。先用 systematic-debugging 复现/定位根因,再修。\n\n现象(本会话多次观察到):\n- 重新编译 / 重启运行时后,原本在 in_progress / backlog 的任务,column 变成了 \"trash\"。session 标记为 interrupted。\n- 极端情况下整块看板(100+ 任务)都变成 trash,task list 返回空(因为 list 默认排除 trash)。\n- 任务分片文件仍在(.kanban/worktrees/__board__/kanban/.kanban/workspaces/<id>/tasks/*.json,方案 C 后 board 数据在 __board__ worktree),只是 column=trash;git 历史也在。\n\n排查方向(先定位,别假设):\n1. 重启/关机路径是否会把 in_progress(或有活会话)任务改判/移动 column。检查:运行时 dispose / shutdown 时对 session 的处理(markInterruptedAndStopAll 之类)、是否连带改了任务 column;启动时 load board 后是否有\"清理孤儿/中断任务 → trash\"的逻辑。\n2. 是否与 board 数据现在在 __board__ worktree 有关:重启时 board worktree 的加载 / 与代码树旧路径 .kanban/workspaces/<id>/tasks 的回退/合并是否错位,导致读到一个\"全 trash\"或空的版本,或把活任务写成 trash。\n3. 是否 board-sync / 启动 reconcile 在重启时拉了一个旧/错的 board 分支提交覆盖了当前状态(注意:cbb50 正在重做 board 同步;留意与其交互,别冲突——若 cbb50 已合,以其新行为为准)。\n4. interrupted 的 session 是否被错误地当成\"应 trash 的任务\"。\n\n要求:\n- 给出根因(重启的哪一步、哪段代码把 column 改成 trash 或读成 trash)。\n- 修复:运行时重启绝不应自动把任务移入 trash;in_progress 任务在重启后应保持其 column(session 可标 interrupted,但 column 不变),可正常重新 start。\n- 若发现是 board 数据加载/路径回退错位导致\"读成全 trash\",修正加载逻辑,保证读到正确的当前状态。\n- 注意:这台机器历史上同跑过多个运行时实例抢同一份 .kanban,排查时确认是否仍有该情况干扰(单实例下复现)。\n- typecheck / 相关单测通过;为\"重启后任务 column 不被改成 trash\"补回归测试。\n\n先复现(可在隔离 git worktree 起一个带 --skip-shutdown-cleanup 的运行时,建几个任务、移到 in_progress、重启、看 column),定位后再修。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782102935863,
+  "updatedAt": 1782104838098,
+  "column": "trash",
+  "rank": "a0",
+  "dependsOn": []
+}

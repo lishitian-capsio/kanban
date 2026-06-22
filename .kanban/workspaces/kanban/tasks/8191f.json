@@ -1,0 +1,19 @@
+{
+  "id": "8191f",
+  "title": "重新设计 board 同步:自动commit + 显式统一push(去掉自动push,修move-to-done卡死)",
+  "prompt": "这是一个【只出设计/调研方案、不写实现代码】的任务。重新设计 Kanban 的 board 同步机制(当前 board-sync,方案 C / P3)。产出设计文档到 .plan/docs/。\n\n## 为什么重做\n当前 board-sync(src/workspace/board-sync.ts + board-worktree.ts,6/18 P3 提交 25960c6a):看板写盘 → 防抖 → 在 kanban/board worktree commit → 【自动 push】。问题:\n- 【最严重】把卡片 move 到 done 时 Bun CPU 100% 长期不降、整个 Kanban 卡死。疑似 done → 看板状态变更 → scheduleSync → commit/【自动 push】触发自反馈循环或无退避重试(尤其 remote 无 board 分支、push 失败时)。\n- Windows 启动告警:remote has no board branch;remote 无该分支时自动 push 反复失败。\n\n## 已锁定的设计决策(用户拍板 —— 按此设计,不要推翻)\n**取消\"自行同步\"(去掉每次变更的自动 push)。改为:**\n- **自动 commit 保留**:看板状态变更仍【本地自动提交】到 kanban/board 分支(在 board worktree 里),合并/防抖以减少提交数。本地提交便宜、无网络、无远端交互 → 不会有 push 失败/重试/自反馈这些卡死来源。\n- **push 统一为一个显式/集中动作**:不再每次变更自动 push。远端同步收敛成单一的\"Push\"(由用户手动触发,或在明确边界如空闲/退出时集中一次性 push 当前累计提交),而不是 chatty 的自动 push。pull 同理收敛为显式/集中动作。\n=> 这直接移除了 move-to-done 卡死的根(热路径里不再有 push 与其重试)。\n\n## 硬约束(不可违反)\n- 看板完整状态(column/rank/依赖/spec)仍随仓库走、clone-即用(见 [board-state-must-travel-with-repo])。注意:改成显式 push 后,跨机器接续需要用户先 push 过——这是可接受的取舍(用户已选)。本地 commit 始终累积,push 时整体带走。\n- 与代码分支解耦(board 在自己分支/worktree)保留;board-ref 指针、kanban/board 分支、board worktree 保留。\n\n## 本设计要敲定\n1. 【根因定位】move-to-done → 100% CPU 不降的确切机制(读 board-sync.ts scheduleSync/runCommitAndPush、scheduleSync 调用点 runtime-server.ts:~330、runtime-state-hub broadcast 链):是自反馈循环 / push 无退避重试 / 其它。给出代码层因果——并确认\"去掉自动 push\"是否就消除了它(若 commit 本身也参与循环,也要断掉)。\n2. 【自动 commit 引擎】防抖/合并策略;断环:commit 不得反过来再触发一轮 sync;离线/无 remote 完全不影响本地 commit。\n3. 【显式 push/pull】交互与 UI:一个\"Push\"(及 pull)入口 + 状态(ahead/behind、上次推送时间);push 失败/冲突 surface 到 UI(沿用现有 board sync status / 冲突 dialog 思路),有上限+退避,绝不自旋。是否在退出/空闲时自动 push 一次作为兜底(可选,需明确且不阻塞、不自旋)。\n4. 迁移:如何平滑替换现有自动 push 的 board-sync。\n\n## 产出\n- 设计文档:现状与根因、按\"自动 commit + 显式统一 push\"重设计的架构、上面各点决策与取舍、风险、分阶段实施拆解。\n- 不写实现代码。先读相关文件确认根因,再成文。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782099562726,
+  "updatedAt": 1782102657957,
+  "column": "trash",
+  "rank": "a08",
+  "dependsOn": []
+}
