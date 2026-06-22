@@ -1143,11 +1143,48 @@ export async function loadWorkspaceContext(
 }
 
 /**
+ * Repos whose `.kanban` reached the fully-prepared terminal state earlier in this
+ * process. `loadWorkspaceContext` runs on many hot paths (registry init, every
+ * `loadWorkspaceState`, the projects tRPC api, task-worktree ops), and on an
+ * already-migrated repo the whole {@link prepareRepoRuntimeHome} chain degrades to a
+ * handful of serial `pathExists`/`stat` probes plus two `git` spawns
+ * (`isGitWorktree` + `isBoardRefTrackedOnCodeBranch`, ~10-15ms each) that can only
+ * ever answer "nothing to do". Caching the terminal state lets repeat in-process
+ * calls skip the entire chain.
+ *
+ * The cache is keyed by repo path (the workspace id is derived 1:1 from it) and is
+ * only populated once a repo reaches the **fully decoupled** terminal state —
+ * `migrateDecoupleBoardToBranch` returning `true`. That state is reached last and
+ * presupposes every earlier one-time migration has run, so it is the single
+ * authoritative "nothing left to do" signal. Repos that legitimately cannot decouple
+ * yet (unborn / no-commit) or that degraded mid-migration are never cached, so the
+ * chain keeps re-running and retrying on every load exactly as before.
+ */
+const fullyPreparedRepoRuntimeHomes = new Set<string>();
+
+/** Test-only: has this repo's runtime home been marked fully prepared in-process? */
+export function isRepoRuntimeHomePreparedForTests(repoPath: string): boolean {
+	return fullyPreparedRepoRuntimeHomes.has(repoPath);
+}
+
+/** Test-only: drop all in-process "fully prepared" marks so the chain re-runs. */
+export function resetRepoRuntimeHomePreparedCacheForTests(): void {
+	fullyPreparedRepoRuntimeHomes.clear();
+}
+
+/**
  * Ensure a repo's `.kanban` is ready: copy-migrate any legacy machine-rooted
  * data once, then ensure the git-boundary `.gitignore` exists. Idempotent and
  * non-destructive (never touches `~/.kanban`).
+ *
+ * Once a repo has reached the fully-prepared terminal state it is cached in
+ * {@link fullyPreparedRepoRuntimeHomes} and repeat in-process calls return without
+ * touching the filesystem or git.
  */
 async function prepareRepoRuntimeHome(repoPath: string, workspaceId: string): Promise<void> {
+	if (fullyPreparedRepoRuntimeHomes.has(repoPath)) {
+		return;
+	}
 	// Reconcile the board worktree first so every downstream committed-data path
 	// resolution sees a ready worktree. A no-op until board-branch decoupling is
 	// activated (the `.kanban/board-ref` pointer is written by the P2 migration).
@@ -1160,8 +1197,12 @@ async function prepareRepoRuntimeHome(repoPath: string, workspaceId: string): Pr
 	await migrateWorkspaceBoardToShards(repoPath, workspaceId);
 	await migrateToCommittedProviders(repoPath, workspaceId);
 	// Runs last so it seeds the board branch from the *final* committed state every
-	// earlier migration produced in `<repo>/.kanban`.
-	await migrateDecoupleBoardToBranch(repoPath, workspaceId);
+	// earlier migration produced in `<repo>/.kanban`. Its `true` return is the
+	// authoritative "fully prepared" signal — cache it so later loads skip the chain.
+	const fullyDecoupled = await migrateDecoupleBoardToBranch(repoPath, workspaceId);
+	if (fullyDecoupled) {
+		fullyPreparedRepoRuntimeHomes.add(repoPath);
+	}
 }
 
 /**
@@ -1188,18 +1229,18 @@ async function prepareRepoRuntimeHome(repoPath: string, workspaceId: string): Pr
  * `rm --cached` + commit. Rollback: revert the decouple commit to restore tracking,
  * or delete `board-ref` + the board branch to return to the pre-migration state.
  */
-async function migrateDecoupleBoardToBranch(repoPath: string, workspaceId: string): Promise<void> {
+async function migrateDecoupleBoardToBranch(repoPath: string, workspaceId: string): Promise<boolean> {
 	if (await isBoardRefTrackedOnCodeBranch(repoPath)) {
-		return;
+		return true;
 	}
 	// The pointer can only be tracked on top of a commit, so an unborn repo cannot be
 	// decoupled yet — leave its data in the main checkout until it has a first commit.
 	if (!(await codeBranchHasCommit(repoPath))) {
-		return;
+		return false;
 	}
-	await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
+	return await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
 		if (await isBoardRefTrackedOnCodeBranch(repoPath)) {
-			return;
+			return true;
 		}
 		const branch = DEFAULT_BOARD_BRANCH;
 		try {
@@ -1210,7 +1251,7 @@ async function migrateDecoupleBoardToBranch(repoPath: string, workspaceId: strin
 					branch,
 					error: setup.error,
 				});
-				return;
+				return false;
 			}
 
 			// Seed the board branch only while it is still empty, so a retry after a
@@ -1226,6 +1267,7 @@ async function migrateDecoupleBoardToBranch(repoPath: string, workspaceId: strin
 			await writeBoardRef(repoPath, { version: BOARD_REF_VERSION, branch });
 			await ensureCodeBranchKanbanIgnored(repoPath);
 			await commitCodeBranchDecoupling(repoPath);
+			return true;
 		} catch (error) {
 			// Never let a decouple failure brick a workspace load: degrade to the
 			// undecoupled (or half-decoupled but worktree-seeded) state and retry next
@@ -1235,6 +1277,7 @@ async function migrateDecoupleBoardToBranch(repoPath: string, workspaceId: strin
 				branch,
 				error,
 			});
+			return false;
 		}
 	});
 }

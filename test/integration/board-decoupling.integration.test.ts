@@ -6,7 +6,13 @@ import { describe, expect, it } from "vitest";
 
 import type { RuntimeBoardData } from "../../src/core/api-contract";
 import { getBoardRefPath, isBoardDecouplingActive, readBoardRef } from "../../src/state/board-ref";
-import { loadWorkspaceContext, loadWorkspaceState, saveWorkspaceState } from "../../src/state/workspace-state";
+import {
+	isRepoRuntimeHomePreparedForTests,
+	loadWorkspaceContext,
+	loadWorkspaceState,
+	resetRepoRuntimeHomePreparedCacheForTests,
+	saveWorkspaceState,
+} from "../../src/state/workspace-state";
 import { getBoardWorktreeDataHome, getBoardWorktreePath } from "../../src/workspace/board-worktree";
 import { createGitTestEnv } from "../utilities/git-env";
 import { createTempDir } from "../utilities/temp-dir";
@@ -267,9 +273,57 @@ describe.sequential("board-branch decoupling migration (P2)", () => {
 				const headAfterFirst = git(repoPath, ["rev-parse", "HEAD"]);
 				const boardHeadAfterFirst = git(getBoardWorktreePath(repoPath), ["rev-parse", "HEAD"]);
 
+				// Drop the in-process "fully prepared" mark so the second load genuinely
+				// re-runs the whole migration chain — that is what idempotency must prove,
+				// not the cache short-circuit (which is covered separately).
+				resetRepoRuntimeHomePreparedCacheForTests();
 				await loadWorkspaceContext(repoPath);
 				expect(git(repoPath, ["rev-parse", "HEAD"])).toBe(headAfterFirst);
 				expect(git(getBoardWorktreePath(repoPath), ["rev-parse", "HEAD"])).toBe(boardHeadAfterFirst);
+			});
+		} finally {
+			cleanup();
+		}
+	});
+
+	it("in-process cache: a fully-decoupled repo is marked prepared and the mark is resettable", async () => {
+		const { path: parent, cleanup } = createTempDir("kanban-decouple-cache-");
+		const repoPath = join(parent, "acme");
+		try {
+			await withTemporaryHome(async () => {
+				spawnSync("mkdir", ["-p", repoPath]);
+				git(repoPath, ["init", "-q", "-b", "main", "."]);
+				git(repoPath, ["commit", "-q", "--allow-empty", "-m", "init"]);
+
+				expect(isRepoRuntimeHomePreparedForTests(repoPath)).toBe(false);
+
+				// Reaching the terminal decoupled state marks the repo prepared so later
+				// loads in this process skip the whole migration chain.
+				await loadWorkspaceContext(repoPath);
+				expect(git(repoPath, ["ls-files", ".kanban/board-ref"])).toBe(".kanban/board-ref");
+				expect(isRepoRuntimeHomePreparedForTests(repoPath)).toBe(true);
+
+				resetRepoRuntimeHomePreparedCacheForTests();
+				expect(isRepoRuntimeHomePreparedForTests(repoPath)).toBe(false);
+			});
+		} finally {
+			cleanup();
+		}
+	});
+
+	it("in-process cache: an unborn repo (no commit) is never marked prepared", async () => {
+		const { path: parent, cleanup } = createTempDir("kanban-decouple-unborn-");
+		const repoPath = join(parent, "acme");
+		try {
+			await withTemporaryHome(async () => {
+				spawnSync("mkdir", ["-p", repoPath]);
+				git(repoPath, ["init", "-q", "-b", "main", "."]);
+
+				// No commit yet → decoupling cannot complete → the chain must keep re-running
+				// on every load (and so must never be cached as fully prepared).
+				await loadWorkspaceContext(repoPath);
+				expect(git(repoPath, ["ls-files", ".kanban/board-ref"])).toBe("");
+				expect(isRepoRuntimeHomePreparedForTests(repoPath)).toBe(false);
 			});
 		} finally {
 			cleanup();
