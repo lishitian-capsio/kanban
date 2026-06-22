@@ -3,7 +3,7 @@
   "title": "perf17: 前端微优化（依赖连线几何 memo + metadata delta + model label Map）",
   "prompt": "性能优化（perf17，前端 web-ui，三个独立小点合一）。\n\n1) 依赖连线几何每帧重算：\n- web-ui/src/components/dependencies/dependency-overlay.tsx 每次 board render 都从 DOM 测量重算每条依赖边的 SVG path / cubic Bezier 点，无 memo；20+ 依赖时每帧都跑。\n- 修复：按 (startTaskId, endTaskId, layout) 三元组 memo path 几何，锚点未移动则复用；useMemo 渲染列表配稳定 layout key。\n\n2) workspace metadata 变更检测用六路 keys union：\n- web-ui/src/stores/workspace-metadata-store.ts:322-329 replaceWorkspaceMetadata 对 info/snapshot/stateVersion 的 prev+next 六个字典做 Object.keys union 再遍历，100+ 任务时每次 snapshot/metadata 广播都 O(n)。\n- 修复：只迭代真正变更的 task id（优先用广播自带的变更 delta；否则做 Set 差集只遍历变化项），避免六路 union。注意别破坏 perf10 的 per-field/per-taskId 监听隔离语义。\n\n3) model effort label 每卡片线性 find：\n- web-ui/src/components/detail-panels/kanban-model-picker-options.ts:66 formatKanbanReasoningEffortLabel 用 CLINE_REASONING_EFFORT_OPTIONS.find() 按 effort 取 label，每卡片渲染一次线性查找。\n- 修复：预建 Map<effort,label> 一次复用（边际收益，顺手）。\n\n三点互相独立，可分别提交。验证 web:typecheck + biome 干净；保持 perf10 的 useSyncExternalStore 选择器/泄漏隔离不回退。建议加渲染计数/记忆化的轻量测试覆盖 1) 与 2)。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782114671869,
-  "updatedAt": 1782114671869,
+  "updatedAt": 1782114766933,
   "column": "backlog",
   "rank": "Zy",
   "dependsOn": []

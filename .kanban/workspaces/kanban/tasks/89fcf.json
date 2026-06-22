@@ -3,7 +3,7 @@
   "title": "perf15: vault 读路径缓存（list/link-index/search 统一版本化缓存）",
   "prompt": "性能优化（perf15）。问题：vault（docs）读路径完全没有缓存，每次 tRPC 调用都从磁盘重扫并重新解析所有 .md，而这些是按键触发的（wikilink 自动补全、搜索框每个 keystroke），大库下每次按键读数百个文件，用户能直接感知卡顿。\n\n已确认的热点：\n1. src/vault/vault-document-store.ts 的 async list()/scan()：每次 readdir 类型目录 + 并行 readFile+解析所有 .md。被 listDocuments、自动补全、搜索反复调用。\n2. src/trpc/workspace-api.ts:483 getDocumentLinks：每次 buildVaultLinkIndex(store.list()) 重扫全库重建整张图（3 个 Map：title/alias/slug 解析 + outgoing + backlinks），仅为取单文档 backlinks。\n3. src/vault/vault-search.ts:49-81 searchVaultDocuments：每个 keystroke O(n) 给全库每篇按每个 term 打分（构造 lowercase haystack + 词边界扫描）。\n\n修复方向（统一一份缓存喂多个消费者）：\n- 在 VaultDocumentStore 维护一份带版本号的 RuntimeVaultDocument[] 缓存：mutation（create/update/delete）时 bump 版本/失效；list() 命中缓存直接返回，不再每次扫盘+解析。注意 vault 文件可能被 agent/外部直接改盘（board card 拖拽会写 frontmatter.status），需要可靠的失效信号——评估用 mutation 钩子 + 目录 mtime/manifest 校验，避免读到陈旧数据（参考 memory：requirements 读=UNION(docs,shards)、status 落盘等历史坑）。\n- link index（buildVaultLinkIndex）与 search 复用同一份缓存的 docs，并各自按 vault 版本缓存其派生结构（link 图、可选倒排索引）。倒排索引：title/frontmatter/body term→docId，搜索时先交集再只给命中项打分。\n- getDocumentLinks 可只算请求文档的 backlinks（或新增 getDocumentBacklinks(id)），不必每次返回全量 outgoing。\n- 失效要走现有广播（vault_documents_updated 等），前端命中缓存版本即可。\n\n不要改 wire 契约形状（RuntimeVaultDocument / getDocumentLinks 返回结构）。先写覆盖『mutation 后缓存失效、读到最新』『多次 list 不重复扫盘』的测试，再实现。注意并发与多 workspace 隔离（缓存按 workspace/store 实例）。验证：typecheck + biome + 现有 vault 测试零回归。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782114649708,
-  "updatedAt": 1782114649708,
+  "updatedAt": 1782114764494,
   "column": "backlog",
   "rank": "a0",
   "dependsOn": []
