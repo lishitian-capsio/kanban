@@ -1,10 +1,11 @@
 import type { KeyboardEvent } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { InlineCompletionItem } from "@/components/inline-completion-picker";
+import { useDebouncedEffect } from "@/utils/react-use";
 
 import type { VaultDoc } from "../data/vault-doc-model";
-import { searchWikilinkCandidates } from "./wikilink-candidates";
+import { createWikilinkCandidateIndex, type WikilinkCandidateIndex } from "./wikilink-candidates";
 import {
 	applyWikilinkCompletion,
 	detectActiveWikilinkToken,
@@ -13,6 +14,8 @@ import {
 } from "./wikilink-completion";
 
 const CANDIDATE_LIMIT = 8;
+/** Trailing debounce on the `[[` search term so we don't re-rank on every keystroke. */
+export const WIKILINK_SEARCH_DEBOUNCE_MS = 150;
 
 export interface UseWikilinkEditorCompletionParams {
 	/** Current editor body (parent-owned). */
@@ -61,15 +64,42 @@ export function useWikilinkEditorCompletion({
 
 	const activeToken = useMemo(() => detectActiveWikilinkToken(value, caret), [value, caret]);
 
+	// Debounce the term that actually drives ranking. The menu still opens/closes
+	// instantly off `activeToken`; only the (potentially large) fuzzy search lags.
+	const searchTerm = useMemo(() => (activeToken ? wikilinkSearchTerm(activeToken.query) : ""), [activeToken]);
+	const [debouncedTerm, setDebouncedTerm] = useState(searchTerm);
+	useDebouncedEffect(
+		() => {
+			setDebouncedTerm(searchTerm);
+		},
+		WIKILINK_SEARCH_DEBOUNCE_MS,
+		[searchTerm],
+	);
+
+	// Build the fuzzy index lazily — only once `[[` is active — and reuse it across
+	// keystrokes, rebuilding only when the candidate pool changes. Building it
+	// eagerly would scan every vault doc on each editor mount even if `[[` is never
+	// typed; rebuilding per keystroke is the O(docs)/keystroke cost we're removing.
+	const indexCacheRef = useRef<{ candidates: VaultDoc[]; index: WikilinkCandidateIndex } | null>(null);
+	const resolveIndex = useCallback((): WikilinkCandidateIndex => {
+		const cached = indexCacheRef.current;
+		if (cached && cached.candidates === candidates) {
+			return cached.index;
+		}
+		const index = createWikilinkCandidateIndex(candidates);
+		indexCacheRef.current = { candidates, index };
+		return index;
+	}, [candidates]);
+
 	const matches = useMemo(() => {
 		if (!activeToken) {
 			return [];
 		}
-		return searchWikilinkCandidates(candidates, wikilinkSearchTerm(activeToken.query), {
+		return resolveIndex().search(debouncedTerm, {
 			limit: CANDIDATE_LIMIT,
 			excludeId: currentDocId,
 		});
-	}, [activeToken, candidates, currentDocId]);
+	}, [activeToken, debouncedTerm, resolveIndex, currentDocId]);
 
 	const items = useMemo<InlineCompletionItem[]>(
 		() => matches.map((match) => ({ id: match.id, label: match.title, detail: match.type })),

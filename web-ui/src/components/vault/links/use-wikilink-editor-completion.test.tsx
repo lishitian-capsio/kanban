@@ -1,9 +1,9 @@
 import { act, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { VaultDoc } from "../data/vault-doc-model";
-import { useWikilinkEditorCompletion } from "./use-wikilink-editor-completion";
+import { useWikilinkEditorCompletion, WIKILINK_SEARCH_DEBOUNCE_MS } from "./use-wikilink-editor-completion";
 
 function doc(id: string, name: string, type = "customer"): VaultDoc {
 	return { id, type, name, frontmatter: {}, body: "", relativePath: `docs/${id}.md`, createdAt: 0, updatedAt: 0 };
@@ -54,6 +54,7 @@ let root: Root;
 let previousActEnvironment: boolean | undefined;
 
 beforeEach(() => {
+	vi.useFakeTimers();
 	previousActEnvironment = (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
 	(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 	container = document.createElement("div");
@@ -65,6 +66,7 @@ afterEach(() => {
 	act(() => root.unmount());
 	container.remove();
 	(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+	vi.useRealTimers();
 });
 
 const nativeSetValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
@@ -76,6 +78,10 @@ function type(text: string, caret = text.length): void {
 		textarea.selectionStart = caret;
 		textarea.selectionEnd = caret;
 		textarea.dispatchEvent(new Event("input", { bubbles: true }));
+	});
+	// Flush the debounced search so matches reflect the typed token.
+	act(() => {
+		vi.advanceTimersByTime(WIKILINK_SEARCH_DEBOUNCE_MS + 20);
 	});
 }
 
@@ -108,6 +114,32 @@ describe("useWikilinkEditorCompletion", () => {
 		expect((container.querySelector("textarea") as HTMLTextAreaElement).value).toBe("See [[Acme Corp]]");
 		// Menu closes once the link is completed.
 		expect(container.querySelector('[data-testid="menu"]')).toBeNull();
+	});
+
+	it("debounces the fuzzy search (matches only narrow after the delay)", () => {
+		act(() => root.render(<Harness />));
+		const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+		// Type a narrowing query but do NOT advance the debounce timer yet.
+		act(() => {
+			nativeSetValue?.call(textarea, "See [[Ac");
+			textarea.selectionStart = "See [[Ac".length;
+			textarea.selectionEnd = "See [[Ac".length;
+			textarea.dispatchEvent(new Event("input", { bubbles: true }));
+		});
+		// Menu is open immediately, but ranking still reflects the pre-debounce
+		// (empty) term: both linkable docs show before the timer fires.
+		const beforeDelay = Array.from(container.querySelectorAll('[data-testid="menu"] button')).map(
+			(b) => b.textContent,
+		);
+		expect(beforeDelay).toEqual(["Acme Corp", "Beta Industries"]);
+		// Once the debounce fires, the query narrows the list.
+		act(() => {
+			vi.advanceTimersByTime(WIKILINK_SEARCH_DEBOUNCE_MS + 20);
+		});
+		const afterDelay = Array.from(container.querySelectorAll('[data-testid="menu"] button')).map(
+			(b) => b.textContent,
+		);
+		expect(afterDelay).toEqual(["Acme Corp"]);
 	});
 
 	it("keeps a typed label when completing", () => {

@@ -40,28 +40,50 @@ export interface SearchWikilinkCandidatesOptions {
 	excludeId?: string;
 }
 
+/** A prebuilt fuzzy index over a fixed candidate pool, queryable per keystroke. */
+export interface WikilinkCandidateIndex {
+	search(query: string, options?: SearchWikilinkCandidatesOptions): WikilinkCandidate[];
+}
+
 /**
- * Fuzzy-rank vault docs for the `[[` menu. Matching is a presentation concern, so
- * `fzf` runs client-side over title + aliases (the same lib the customer picker
- * uses); link *resolution* still belongs to the B1 backend engine.
+ * Build a reusable fuzzy index over `docs` for the `[[` menu. The `fzf` instance
+ * is constructed **once** here and reused across keystrokes — callers should hold
+ * onto the returned index rather than rebuilding it per query, which scans the
+ * whole candidate pool and matters as a vault grows. Matching is a presentation
+ * concern (the same lib the customer picker uses); link *resolution* still belongs
+ * to the B1 backend engine. `excludeId` is applied at query time (a doc never
+ * links to itself), so the index need not be rebuilt when only the current doc
+ * changes.
+ */
+export function createWikilinkCandidateIndex(docs: VaultDoc[]): WikilinkCandidateIndex {
+	const candidates = docs.map(toCandidate);
+	const finder = new Fzf(candidates, { selector: haystack });
+	return {
+		search(query, options = {}) {
+			const limit = options.limit ?? DEFAULT_LIMIT;
+			const include = (candidate: WikilinkCandidate): boolean => candidate.id !== options.excludeId;
+			const trimmed = query.trim();
+			if (!trimmed) {
+				return candidates.filter(include).slice(0, limit);
+			}
+			return finder
+				.find(trimmed)
+				.map((result) => result.item)
+				.filter(include)
+				.slice(0, limit);
+		},
+	};
+}
+
+/**
+ * One-shot convenience wrapper around {@link createWikilinkCandidateIndex} for
+ * call sites that search a pool exactly once (e.g. tests). Hot paths that query
+ * repeatedly should build the index once and reuse it instead.
  */
 export function searchWikilinkCandidates(
 	docs: VaultDoc[],
 	query: string,
 	options: SearchWikilinkCandidatesOptions = {},
 ): WikilinkCandidate[] {
-	const limit = options.limit ?? DEFAULT_LIMIT;
-	const candidates = docs
-		.filter((doc) => doc.id !== options.excludeId)
-		.map(toCandidate);
-
-	const trimmed = query.trim();
-	if (!trimmed) {
-		return candidates.slice(0, limit);
-	}
-	const finder = new Fzf(candidates, { selector: haystack });
-	return finder
-		.find(trimmed)
-		.slice(0, limit)
-		.map((result) => result.item);
+	return createWikilinkCandidateIndex(docs).search(query, options);
 }
