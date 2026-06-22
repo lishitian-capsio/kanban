@@ -51,6 +51,18 @@ function shouldSuppressDeviceAttributeQuery(
 	return body === "" || body === "0" || body === ">" || body === ">0";
 }
 
+/**
+ * Strip/intercept terminal protocol queries from a PTY output chunk.
+ *
+ * Ownership contract: the returned Buffer is *retainable* — the caller may hold it (or
+ * defer using it) past the current tick. It is one of: a `Buffer.concat` of segments
+ * (freshly owned), a subarray view onto `incoming`, or a subarray view onto an owned
+ * concat of a carried-over `pendingChunk` and `incoming`. The view cases are safe to
+ * retain because `incoming` is itself retainable per the onData contract established in
+ * `normalizeOutputChunk` (pty-session.ts) — its bytes are never mutated by the producer.
+ * This lets the headless mirror store the result directly and copy only once, at its
+ * batched flush, instead of copying every chunk.
+ */
 export function filterTerminalProtocolOutput(
 	state: TerminalProtocolFilterState,
 	incoming: Buffer,

@@ -41,8 +41,9 @@ export class TerminalStateMirror {
 	// the lazy `Terminal.buffer` getter would register on an already-disposed
 	// DisposableStore and log "Trying to add a disposable ... already been disposed of".
 	private disposed = false;
-	// Raw output chunks awaiting a single batched xterm write. Copied on entry
-	// because the protocol filter can hand back a view onto the reused PTY buffer.
+	// Raw output chunks awaiting a single batched xterm write. Retained by reference
+	// (no per-chunk copy): the protocol filter hands back retainable buffers/views per
+	// its ownership contract, and concat at flush produces the single owned write buffer.
 	private pendingChunks: Buffer[] = [];
 	private pendingBytes = 0;
 	private flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -68,9 +69,13 @@ export class TerminalStateMirror {
 		if (this.disposed) {
 			return;
 		}
-		// Copy: the filtered chunk may be a subarray view onto the PTY read buffer,
-		// which can be reused before the deferred flush runs.
-		this.pendingChunks.push(Buffer.from(chunk));
+		// Retain by reference, no per-chunk copy. Under a token flood this is the hot
+		// path, and Buffer.from(chunk) here was one heap allocation per chunk feeding GC.
+		// The chunk is retainable per filterTerminalProtocolOutput's ownership contract
+		// (ultimately the onData contract in pty-session.ts): its bytes are not mutated
+		// by the producer, so holding the view until the batched flush is safe. The single
+		// owning copy happens once per batch in flushPendingOutput (Buffer.concat).
+		this.pendingChunks.push(chunk);
 		this.pendingBytes += chunk.byteLength;
 		if (this.pendingBytes >= FLUSH_BYTE_THRESHOLD) {
 			this.flushPendingOutput();
@@ -118,7 +123,9 @@ export class TerminalStateMirror {
 			return;
 		}
 		// A Node Buffer is a Uint8Array, so it can be handed to xterm directly with no
-		// extra allocation. concat copies into one fresh, privately-owned buffer.
+		// extra allocation. A single pending chunk is written as-is (it is retainable per
+		// the filter contract); multiple chunks concat into one fresh, privately-owned
+		// buffer — the only output copy, amortized across the whole batch.
 		const batch =
 			this.pendingChunks.length === 1 ? this.pendingChunks[0] : Buffer.concat(this.pendingChunks, this.pendingBytes);
 		this.pendingChunks = [];

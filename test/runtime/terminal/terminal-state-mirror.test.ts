@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import {
+	createTerminalProtocolFilterState,
+	filterTerminalProtocolOutput,
+} from "../../../src/terminal/terminal-protocol-filter";
 import { TerminalStateMirror } from "../../../src/terminal/terminal-state-mirror";
 
 const mirrors: TerminalStateMirror[] = [];
@@ -217,6 +221,44 @@ describe("TerminalStateMirror", () => {
 
 		const snapshot = await mirror.getSnapshot();
 		expect(snapshot.snapshot).toContain("tail");
+	});
+
+	// Ownership contract: the protocol filter hands the mirror a buffer that may be a
+	// subarray VIEW onto the upstream chunk (not a private copy). The mirror retains it
+	// directly and only materializes one owned buffer at flush, so streaming through the
+	// real filter must still produce correct content after a deferred (timer) flush.
+	it("retains filter-produced views and flushes correct streamed content on the timer", async () => {
+		const mirror = createMirror(80, 24);
+		const filterState = createTerminalProtocolFilterState();
+
+		// Feed several chunks through the actual filter exactly as session-manager does,
+		// then rely on the micro-batch timer (no explicit read) to flush them.
+		for (let i = 0; i < 30; i += 1) {
+			const filtered = filterTerminalProtocolOutput(filterState, Buffer.from(`L${i}\r\n`, "utf8"));
+			if (filtered.byteLength > 0) {
+				mirror.applyOutput(filtered);
+			}
+		}
+		await new Promise((resolve) => setTimeout(resolve, 60));
+
+		const lines = await mirror.getCommittedLines();
+		expect(lines[0]).toBe("L0");
+		expect(lines).toContain("L5");
+	});
+
+	// A subarray view shares memory with a larger backing buffer. The mirror must read the
+	// view's own slice (not the whole backing buffer) when it copies at flush time.
+	it("flushes only the viewed slice when applyOutput is given a subarray view", async () => {
+		const mirror = createMirror(120, 24);
+
+		const backing = Buffer.from("HEADERvisible-payloadTRAILER", "utf8");
+		const view = backing.subarray("HEADER".length, "HEADER".length + "visible-payload".length);
+		mirror.applyOutput(view);
+
+		const snapshot = await mirror.getSnapshot();
+		expect(snapshot.snapshot).toContain("visible-payload");
+		expect(snapshot.snapshot).not.toContain("HEADER");
+		expect(snapshot.snapshot).not.toContain("TRAILER");
 	});
 
 	// Ordering: a resize between two writes must apply after the first write and

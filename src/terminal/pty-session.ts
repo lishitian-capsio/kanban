@@ -24,6 +24,16 @@ export interface SpawnPtySessionRequest {
 
 type PtyOutputChunk = string | Buffer | Uint8Array;
 
+// Ownership contract: this is the sole funnel turning raw PTY output into the `Buffer`
+// handed to onData, and it guarantees that Buffer is *retainable* — its bytes are not
+// mutated by the producer after the call, so a downstream consumer may hold the Buffer
+// (or a subarray view of it) past the current tick. Two consumers rely on this: the
+// protocol filter returns subarray views onto this Buffer, and the headless mirror
+// retains those views until a deferred batched flush (see terminal-state-mirror.ts).
+//   - string (Bun without a binary frame): Buffer.from copies into fresh owned memory.
+//   - Uint8Array (Bun terminal): Buffer.from copies out of Bun's reused frame buffer.
+//   - Buffer (node-pty): a tty.ReadStream emits a distinct chunk per read that Node
+//     never overwrites in place, so it is already retainable and needs no copy.
 function normalizeOutputChunk(data: PtyOutputChunk): Buffer {
 	if (typeof data === "string") {
 		return Buffer.from(data, "utf8");
