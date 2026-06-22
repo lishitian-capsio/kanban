@@ -1,7 +1,7 @@
 {
   "id": "10207",
-  "title": "任务详情页增加 All changes / Last turn 两个 diff tab",
-  "prompt": "在任务详情页（web-ui 任务 detail 视图）新增一个代码改动查看区，包含两个并列的 tab：\n\n1. **All changes**：展示该任务 worktree 相对其 baseRef 的完整累计 diff（即任务开始以来的所有改动）。\n2. **Last turn**：只展示最近一次 agent turn 产生的改动 diff。\n\n要求：\n- 复用已有的设计系统（Tailwind tokens、src/components/ui 原语、lucide 图标），tab 切换样式参考现有组件，深色主题。\n- diff 渲染要可读：文件分组、增删行高亮、长 diff 可滚动（overflow 容器内滚动，不要撑破页面）。\n- 数据来源：先排查 runtime 是否已有获取 worktree diff / per-turn diff 的能力（git diff against baseRef、turn-checkpoints/turn 边界相关逻辑）；若已有则复用，缺失的部分通过 tRPC + 后端 git ops 补齐，遵循现有 contract 约定。\n- 'Last turn' 的 turn 边界定义需与现有 session/turn 机制（如 turn-checkpoints、awaiting_review 转换）保持一致，不要新造一套。\n- 处理空状态：无改动时显示友好的空态；任务无 worktree 时禁用或隐藏该区域。\n- 补充必要的单元测试，保持 web:typecheck 与 biome 通过。\n\n先做调研与方案设计，找到现有 diff/turn 能力的落点，再实现。",
+  "title": "任务详情页新增 Artifacts(产物)tab — 只读弱引用",
+  "prompt": "在任务详情页的 DiffToolbar 上新增第三个 tab「Artifacts / 产物」,与现有 All Changes(working_copy)、Last Turn(last_turn)并列。落点:web-ui/src/components/card-detail-view.tsx 的 DiffToolbar / CardDetailView;移动端 Diff tab 区域同步。\n\n== 核心原则:只读 + 弱引用 ==\n- **只读**:产物可点击、可查看,绝不可编辑。不写回 worktree。\n- **弱引用(关键约束)**:不建任何产物注册表、不存 ID/元数据、不做内容快照。产物清单在每次读取时从任务 worktree 现算,只持有「相对路径 + 现场计算的类型标签」;点开时按路径实时读当前文件内容,不缓存。文件被改名/删除 → 下次刷新该引用自然消失。worktree 在任务合并/完成被清理后,这些产物引用一并消失 —— 这是已确认接受的代价,**不要为此加快照或持久化**。\n\n== 产物检测(尊重任意插件,纯路径观察,零侵入)==\n- 复用现有 worktree 改动检测能力(src/workspace/get-workspace-changes.ts 已有 getWorkspaceChanges 等);从本任务 worktree 被新建/修改的文件中,筛出「成果类」文件(md / 图片 / pdf / json / csv 等非纯源码)。不限定目录,谁写的都抓。\n- 对已知约定路径打类型标签 + 图标(如 docs/plan/** → plan、docs/superpowers/specs/** → spec、.plan/** 、.capsio/** → report、Vault 的 docs/<type>/** → 对应类型);识别不了的归「其他产物 / Other」。\n- 不要求任何插件注册或配合,纯按路径/扩展名识别。\n\n== 数据接口 ==\n- 新增只读 tRPC 端点 workspace.getArtifacts(taskId, baseRef),返回产物清单:[{ path, type/label, status: new|modified }]。遵循现有 api-contract / workspace-api 约定,补 zod schema。\n- 不改动现有 workspace.getChanges 的 working_copy / last_turn 两个 mode。\n- 点开单条时读取该文件内容(在 worktree 内按相对路径只读读取;复用已有文件读取能力,注意路径安全,禁止越出 worktree)。\n\n== 查看器(只读)==\n- markdown → 渲染预览(复用 vault 的 markdown 渲染,如 @uiw/react-md-editor preview / react-markdown)\n- 图片 → 内联预览\n- 文本 / json → 只读代码视图\n- 二进制 / 不可预览 → 显示相对路径 + 下载入口\n\n== 实时性 / 边界 ==\n- 复用现有 diff hook 的轮询节奏(参考 web-ui/src/runtime/use-runtime-workspace-changes.ts),任务运行中产物实时出现。\n- 空态:无产物显示「暂无产物」;任务无 worktree 时该 tab 同现有 diff 一样隐藏/禁用。\n\n== 设计系统 / 质量 ==\n- 复用 Tailwind tokens、src/components/ui 原语、lucide 图标,深色主题;tab 样式与现有 DiffModeButton 一致。\n- 补单元测试(检测分类逻辑做成纯函数单测;tab 渲染/切换组件测;getArtifacts 后端测)。保持 web:typecheck 与 biome 通过。\n\n先快速核对现有 DiffToolbar / getChanges / get-workspace-changes 的落点(已知大致在上述文件),复用为主,再实现。",
   "startInPlanMode": false,
   "autoReviewEnabled": false,
   "autoReviewMode": "commit",
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782104075145,
-  "updatedAt": 1782104177317,
+  "updatedAt": 1782104871767,
   "column": "backlog",
   "rank": "a0",
   "dependsOn": []
