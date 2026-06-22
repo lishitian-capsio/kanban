@@ -1,0 +1,19 @@
+{
+  "id": "43bfa",
+  "title": "性能审计:定位四层热点瓶颈(不改代码,只产出报告)",
+  "prompt": "对 Kanban 做一次系统性能审计,覆盖以下四个层面,实测定位热点瓶颈,最终产出一份带优先级的报告(写到 .plan/docs/performance-audit-2026-06.md)。这是审计任务,不要实现任何优化修复,只测量、分析、给出可拆分的优化建议清单。\n\n## 审计范围\n\n### 1. 前端 UI 卡顿 (web-ui, React)\n- 用 React DevTools Profiler / Chrome Performance 思路分析:看板拖拽、任务列表渲染、聊天面板(session 消息流/虚拟化缺失)、vault 文档编辑(@uiw/react-md-editor)。\n- 找出:不必要的重渲染、缺失 memo/虚拟化的大列表、过大的 context 触发全树更新、ws 广播导致的高频 setState。\n- 关注 task_chat_message / board_sync_status / workspace snapshot 这些 ws 通道的更新频率与前端订阅粒度。\n\n### 2. 运行时 CPU/内存 (后端 runtime 进程)\n- 多任务并行时进程 CPU 占用、内存涨幅、风扇狂转。\n- 重点复查终端 PTY → xterm headless mirror 链路 (src/terminal/terminal-state-mirror.ts, terminal-transcript-capture.ts):之前已做过 micro-batch(16ms/64KB)+ scrollback 5k 优化,确认是否仍是热点、是否有回归或新热点。\n- session message journal 的写盘频率 (coalesce/debounce 是否生效)。\n\n### 3. 启动/加载慢\n- Kanban 启动、workspace 加载、board/vault/requirements 分片数据读取 (task-shard-store, requirement-store, sharded-json-store, vault store) 的 I/O 量与耗时。\n- prepareRepoRuntimeHome 里的迁移逻辑 (board sharding / requirements vault migration) 是否每次启动都跑、是否有重复扫描。\n- board-sync 启动时的 git fetch / worktree add 耗时。\n\n### 4. 并发任务/agent\n- worktree 创建、session 启动 (TerminalSessionManager) 的延迟,尤其多任务同时 start 时。\n- 参考 AGENTS.md 里的告警:避免 zsh -i / shell fallback 在热路径上拖慢 agent 启动;确认现状是否符合(直接 PATH 检查 + 直接 spawn)。\n\n## 产出要求\n报告须包含:每个热点的【定位(文件:行)+ 实测数据/证据 + 影响面 + 建议优化方向 + 预估收益/风险 + 是否可独立并行】。最后给一个按 ROI 排序的优化任务清单(我会据此在看板上拆任务)。优先用现成 profiling 工具,不要自造测量框架。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782105253553,
+  "updatedAt": 1782105253553,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
