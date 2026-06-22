@@ -1,0 +1,19 @@
+{
+  "id": "54b71",
+  "title": "perf #8: 用 p-limit 限制每 workspace 并发 agent 进程数",
+  "prompt": "性能优化 #8(增量限流器,低风险)。\n\n问题:同时启动多个任务时,若 worktree 已存在,N 个 PTY spawn + adapter 写文件完全并行无节流;没有任何东西限制并发 agent 进程数 —— N 个同时 start ⇒ N 个真实 CLI 进程(claude/codex/…)一起跑,是大批量同时启动时最可能的 CPU 抖动来源。现有唯一上限 MAX_AUTO_RESTARTS_PER_WINDOW=3 (session-manager.ts:51) 只管崩溃重启。\n\n定位:\n- tRPC 入口 src/trpc/app-router.ts:657-661 (纯 await,无批处理)\n- 编排 src/trpc/runtime-api.ts:237\n\n修法:给 agent 进程 spawn 数加可配置的 p-limit(每 workspace/host,默认 ≈ CPU 核数)。这是增量式限流,不要在 session-manager 那条精简的关键路径上加锁(见 L4-2:那条路径目前无锁、并行良好,刻意保持)。\n\n验证:同时启动 >CPU 数 的任务时并发进程被限制、排队推进;少量任务启动无可感延迟;现有测试通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782106587936,
+  "updatedAt": 1782106587936,
+  "column": "backlog",
+  "rank": "Zr",
+  "dependsOn": []
+}
