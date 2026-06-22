@@ -17,6 +17,13 @@ interface GitCommandResult {
 export interface RunGitOptions {
 	trimStdout?: boolean;
 	env?: NodeJS.ProcessEnv;
+	/**
+	 * Hard wall-clock cap (ms) for the git invocation. On expiry the child is killed and
+	 * the call resolves as a failure (`ok: false`) instead of hanging indefinitely. Used to
+	 * bound network git ops (push/fetch/merge) so a stalled connection or a credential
+	 * prompt can never wedge a serialized work queue. Omit for unbounded local ops.
+	 */
+	timeoutMs?: number;
 }
 
 function normalizeProcessExitCode(code: unknown): number {
@@ -40,6 +47,7 @@ export async function runGit(cwd: string, args: string[], options: RunGitOptions
 			encoding: "utf8",
 			maxBuffer: GIT_MAX_BUFFER_BYTES,
 			env: options.env || createGitProcessEnv(),
+			...(options.timeoutMs ? { timeout: options.timeoutMs, killSignal: "SIGKILL" } : {}),
 		});
 		const normalizedStdout = String(stdout ?? "").trim();
 		const normalizedStderr = String(stderr ?? "").trim();

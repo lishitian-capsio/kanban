@@ -72,8 +72,16 @@ export function BoardSyncStatusControl({
 	}, [needsAttention, detailOpen]);
 
 	const tooltipLines = [`Board branch: ${branchLabel}`];
+	if (status.aheadCount > 0) {
+		tooltipLines.push(
+			`${status.aheadCount} local commit${status.aheadCount === 1 ? "" : "s"} committed, awaiting Push.`,
+		);
+	}
+	if (status.hasRemote) {
+		tooltipLines.push("Behind count refreshes when you Pull.");
+	}
 	if (status.autoSyncPaused) {
-		tooltipLines.push("Auto-sync is paused.");
+		tooltipLines.push("Auto-commit is paused.");
 	}
 	if (status.lastError) {
 		tooltipLines.push(status.lastError);
@@ -174,7 +182,7 @@ export function BoardSyncStatusControl({
 					</Tooltip>
 					<Tooltip
 						side="bottom"
-						content={status.autoSyncPaused ? "Resume automatic board sync." : "Pause automatic board sync."}
+						content={status.autoSyncPaused ? "Resume automatic board commits." : "Pause automatic board commits."}
 					>
 						<Button
 							variant="ghost"
@@ -190,7 +198,9 @@ export function BoardSyncStatusControl({
 							}
 							onClick={onTogglePause}
 							disabled={isTogglingPause}
-							aria-label={status.autoSyncPaused ? "Resume automatic board sync" : "Pause automatic board sync"}
+							aria-label={
+								status.autoSyncPaused ? "Resume automatic board commits" : "Pause automatic board commits"
+							}
 							className={cn(status.autoSyncPaused && "text-status-orange")}
 						/>
 					</Tooltip>

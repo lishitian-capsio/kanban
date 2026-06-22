@@ -14,7 +14,6 @@ import {
 import {
 	commitBoardRefUpdate,
 	commitBoardWorktree,
-	fetchAndFastForwardBoardWorktree,
 	getBoardWorktreeAheadBehind,
 	getBoardWorktreePath,
 	pullBoardWorktree,
@@ -24,7 +23,7 @@ import {
 
 const log = createLogger("board-sync");
 
-/** Default debounce window coalescing a burst of board writes into one commit + push. */
+/** Default debounce window coalescing a burst of board writes into one local commit. */
 const DEFAULT_BOARD_SYNC_DEBOUNCE_MS = 5_000;
 
 const BOARD_SYNC_COMMIT_MESSAGE = "board: sync runtime state";
@@ -59,32 +58,27 @@ export interface CreateBoardSyncServiceDependencies {
 
 export interface BoardSyncService {
 	/**
-	 * Schedule a debounced commit + push for the workspace's board branch. A burst of
-	 * writes within the debounce window collapses into a single sync. A no-op when
-	 * board-branch decoupling is not active for the repo. While auto-sync is paused the
-	 * debounce only refreshes the status (so the badge tracks the growing ahead count)
-	 * without committing or pushing.
+	 * Schedule a debounced **local commit** for the workspace's board branch. A burst of
+	 * writes within the debounce window collapses into a single commit. This path is
+	 * purely local — it never pushes, fetches, or otherwise touches the network (push and
+	 * pull are explicit, user-only actions). A no-op when board-branch decoupling is not
+	 * active for the repo. While auto-commit is paused the debounce only refreshes the
+	 * status (so the badge tracks the growing ahead count) without committing.
 	 */
 	scheduleSync: (target: BoardSyncTarget) => void;
-	/**
-	 * Run the one-time startup reconcile (fetch + fast-forward) for a workspace and
-	 * rebroadcast if it pulled remote commits. Idempotent per repo for the process
-	 * lifetime — safe to call eagerly at boot and again before the first push.
-	 */
-	syncOnStartup: (target: BoardSyncTarget) => Promise<void>;
 	/** Read the current board sync status (reflects in-memory pause/conflict/in-flight flags). */
 	getStatus: (target: BoardSyncTarget) => Promise<RuntimeBoardSyncStatus>;
-	/** Manually commit + push now, bypassing the debounce. Returns the post-action status. */
+	/** Manually commit + push now, bypassing the debounce. The only push entry point. Returns the post-action status. */
 	pushNow: (target: BoardSyncTarget) => Promise<RuntimeBoardSyncActionResponse>;
-	/** Manually fetch + integrate the remote now. Returns the post-action status. */
+	/** Manually fetch + integrate the remote now. The only fetch entry point. Returns the post-action status. */
 	pullNow: (target: BoardSyncTarget) => Promise<RuntimeBoardSyncActionResponse>;
-	/** Pause or resume the debounced auto-sync for a repo (session-scoped). */
+	/** Pause or resume the debounced auto-commit for a repo (session-scoped). */
 	setAutoSyncPaused: (target: BoardSyncTarget, paused: boolean) => Promise<RuntimeBoardSyncStatus>;
 	/** Rename the board branch via the non-destructive migration, then repoint board-ref. */
 	renameBranch: (target: BoardSyncTarget, newBranch: string) => Promise<RuntimeBoardBranchUpdateResponse>;
-	/** Run any pending sync for a repo immediately (used by tests / targeted flushes). */
+	/** Run any pending local commit for a repo immediately (used by tests / targeted flushes). */
 	flush: (repoPath: string) => Promise<void>;
-	/** Cancel timers and run a final commit + push for every known workspace (shutdown). */
+	/** Cancel timers and run a final **local commit** for every known workspace (shutdown). No network I/O. */
 	dispose: () => Promise<void>;
 }
 
@@ -97,10 +91,9 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 	const debounceMs = deps.debounceMs ?? DEFAULT_BOARD_SYNC_DEBOUNCE_MS;
 	const timersByRepo = new Map<string, NodeJS.Timeout>();
 	const latestTargetByRepo = new Map<string, BoardSyncTarget>();
-	// Serializes all git work for a given repo so a debounced sync, a startup reconcile,
-	// a manual action, and a shutdown flush never run concurrently against the same worktree.
+	// Serializes all git work for a given repo so a debounced commit, a manual push/pull,
+	// and a shutdown flush never run concurrently against the same worktree.
 	const queueByRepo = new Map<string, Promise<unknown>>();
-	const startupDoneByRepo = new Set<string>();
 	const autoSyncPausedByRepo = new Set<string>();
 	const inFlightByRepo = new Set<string>();
 	const lastResultByRepo = new Map<string, BoardSyncLastResult>();
@@ -186,58 +179,28 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 		return status;
 	};
 
-	const runStartupReconcile = async (target: BoardSyncTarget): Promise<void> => {
-		if (startupDoneByRepo.has(target.repoPath)) {
-			return;
-		}
-		startupDoneByRepo.add(target.repoPath);
+	/**
+	 * The automatic hot-path action: a purely local board commit, nothing else.
+	 *
+	 * INVARIANT (load-bearing — see `.plan/docs/board-sync-redesign.md` §4/§5.1): this
+	 * function must NEVER call `scheduleSync`, `broadcastWorkspaceState`, `pushBoardWorktree`,
+	 * `pullBoardWorktree`, or `fetch`/`merge` git ops. `commitBoardWorktree` is a local
+	 * `git add -A` + `git commit` only — it never rebroadcasts or reschedules — so the
+	 * commit path is provably free of the broadcast→saveState→scheduleSync feedback loop
+	 * (and the push-failure retry storm) that pegged CPU on move-to-done. Push and pull are
+	 * explicit, user-only actions; the network is touched there and ONLY there.
+	 */
+	const runCommitOnly = async (target: BoardSyncTarget): Promise<void> => {
 		if (!isBoardDecouplingActive(target.repoPath)) {
 			return;
 		}
 		inFlightByRepo.add(target.repoPath);
 		try {
-			const branch = await resolveBranch(target.repoPath);
-			const { changed } = await fetchAndFastForwardBoardWorktree(target.repoPath, branch);
-			if (changed) {
-				await deps.broadcastWorkspaceState(target.workspaceId, target.workspacePath);
-			}
-		} catch (error) {
-			log.warn("board startup reconcile failed", { repoPath: target.repoPath, error });
-		} finally {
-			inFlightByRepo.delete(target.repoPath);
-		}
-		await emitStatus(target);
-	};
-
-	const runCommitAndPush = async (target: BoardSyncTarget): Promise<void> => {
-		if (!isBoardDecouplingActive(target.repoPath)) {
-			return;
-		}
-		// A startup reconcile may still be pending if the first write beat the boot call.
-		await runStartupReconcile(target);
-		inFlightByRepo.add(target.repoPath);
-		try {
-			const branch = await resolveBranch(target.repoPath);
 			await commitBoardWorktree(target.repoPath, BOARD_SYNC_COMMIT_MESSAGE);
-			const push = await pushBoardWorktree(target.repoPath, branch);
-			if (push.pulledChanges) {
-				await deps.broadcastWorkspaceState(target.workspaceId, target.workspacePath);
-			}
-			if (push.status === "conflict") {
-				recordResult(target.repoPath, { conflict: true, error: CONFLICT_MESSAGE });
-				log.warn("board sync surfaced a merge conflict; local data left intact, awaiting resolution", {
-					repoPath: target.repoPath,
-					branch,
-				});
-			} else if (push.status === "error") {
-				recordResult(target.repoPath, { conflict: false, error: push.error ?? "Board sync failed." });
-			} else {
-				recordResult(target.repoPath, { conflict: false, error: null });
-			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			recordResult(target.repoPath, { conflict: false, error: message });
-			log.warn("board commit/push failed", { repoPath: target.repoPath, error });
+			log.warn("board commit failed", { repoPath: target.repoPath, error });
 		} finally {
 			inFlightByRepo.delete(target.repoPath);
 		}
@@ -257,20 +220,15 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 			timersByRepo.delete(target.repoPath);
 			const latest = latestTargetByRepo.get(target.repoPath) ?? target;
 			if (autoSyncPausedByRepo.has(target.repoPath)) {
-				// Paused: don't commit/push, but refresh the badge so the ahead count tracks
-				// the accumulating local writes.
+				// Paused means even the local commit is skipped; we only refresh the badge so
+				// the ahead count still tracks the accumulating (uncommitted) local writes.
 				void enqueue(target.repoPath, () => emitStatus(latest).then(() => undefined));
 				return;
 			}
-			void enqueue(target.repoPath, () => runCommitAndPush(latest));
+			void enqueue(target.repoPath, () => runCommitOnly(latest));
 		}, debounceMs);
 		timer.unref();
 		timersByRepo.set(target.repoPath, timer);
-	};
-
-	const syncOnStartup = async (target: BoardSyncTarget): Promise<void> => {
-		latestTargetByRepo.set(target.repoPath, target);
-		await enqueue(target.repoPath, () => runStartupReconcile(target));
 	};
 
 	const getStatus = async (target: BoardSyncTarget): Promise<RuntimeBoardSyncStatus> => {
@@ -278,6 +236,12 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 		return await buildStatus(target);
 	};
 
+	// The ONLY push entry point — runs only when the user clicks Push. A single attempt:
+	// the underlying git sub-calls carry a per-invocation timeout (see board-worktree.ts)
+	// so a hung network op can't wedge the per-repo serial queue, and any failure is just
+	// surfaced via `recordResult` — NEVER auto-retried (no backoff loop, no self-spin). The
+	// `inFlightByRepo` guard + the frontend disabling the button during `runningAction`
+	// prevent concurrent re-entry.
 	const runManualPush = async (target: BoardSyncTarget): Promise<RuntimeBoardSyncActionResponse> => {
 		if (!isBoardDecouplingActive(target.repoPath)) {
 			return { ok: false, status: await buildStatus(target), error: "Board-branch decoupling is not active." };
@@ -317,6 +281,10 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 		return { ok, status, error };
 	};
 
+	// The ONLY fetch entry point — runs only when the user clicks Pull. Like the push path
+	// it is a single attempt with timed-out git sub-calls and NO auto-retry: a failure or a
+	// real merge conflict is surfaced via `recordResult` (local data left intact), never
+	// retried on a loop.
 	const runManualPull = async (target: BoardSyncTarget): Promise<RuntimeBoardSyncActionResponse> => {
 		if (!isBoardDecouplingActive(target.repoPath)) {
 			return { ok: false, status: await buildStatus(target), error: "Board-branch decoupling is not active." };
@@ -439,7 +407,7 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 			await queueByRepo.get(repoPath);
 			return;
 		}
-		await enqueue(repoPath, () => runCommitAndPush(target));
+		await enqueue(repoPath, () => runCommitOnly(target));
 	};
 
 	const dispose = async (): Promise<void> => {
@@ -447,14 +415,16 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 			clearTimeout(timer);
 		}
 		timersByRepo.clear();
-		// Final commit + push for every workspace touched this session so the last writes
-		// (including the shutdown coordinator's interrupted-session save) are published.
+		// Final **local commit** (no push) for every workspace touched this session so the
+		// last writes — including the shutdown coordinator's interrupted-session save — are
+		// captured on the board branch. Unpushed commits stay durable locally and the user
+		// can Push them next session; shutdown never touches the network.
 		const repos = new Set([...latestTargetByRepo.keys(), ...queueByRepo.keys()]);
 		await Promise.all(
 			[...repos].map(async (repoPath) => {
 				const target = latestTargetByRepo.get(repoPath);
 				if (target && !autoSyncPausedByRepo.has(repoPath)) {
-					await enqueue(repoPath, () => runCommitAndPush(target));
+					await enqueue(repoPath, () => runCommitOnly(target));
 				}
 				await queueByRepo.get(repoPath);
 			}),
@@ -463,7 +433,6 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 
 	return {
 		scheduleSync,
-		syncOnStartup,
 		getStatus,
 		pushNow,
 		pullNow,

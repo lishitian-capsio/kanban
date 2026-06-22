@@ -146,34 +146,31 @@ describe("createBoardSyncService", () => {
 		}
 	});
 
-	it("syncOnStartup fast-forwards from the remote and rebroadcasts once", async () => {
-		const { cloneA, cloneB, cleanups } = makeRemoteDecoupledClones("kanban-board-sync-");
+	it("the debounced auto path commits locally but never pushes to the remote", async () => {
+		const { cloneA, cleanups } = makeRemoteDecoupledClones("kanban-board-sync-");
 		try {
 			await writeBoardRef(cloneA, { version: 1, branch: "kanban/board" });
-			await writeBoardRef(cloneB, { version: 1, branch: "kanban/board" });
-
-			// A seeds + publishes the board branch; B tracks it.
 			await setupBoardWorktree(cloneA, "kanban/board");
+			// Seed + publish so the remote-tracking ref is up to date (synced, ahead 0).
 			writeData(cloneA, "a.txt", "1");
 			await commitBoardWorktree(cloneA, "board: seed");
-			await pushBoardWorktree(cloneA, "kanban/board");
-			await setupBoardWorktree(cloneB, "kanban/board");
-
-			// A publishes more; B is now behind.
-			writeData(cloneA, "a2.txt", "2");
-			await commitBoardWorktree(cloneA, "board: more");
 			await pushBoardWorktree(cloneA, "kanban/board");
 
 			const broadcast = vi.fn();
 			const service = createBoardSyncService({ broadcastWorkspaceState: broadcast, debounceMs: 10 });
-			await service.syncOnStartup(target(cloneB));
+			const before = boardCommitCount(cloneA);
 
-			expect(existsSync(join(getBoardWorktreeDataHome(cloneB), "files", "a2.txt"))).toBe(true);
-			expect(broadcast).toHaveBeenCalledTimes(1);
+			// A committed-data write goes through the (auto) debounce path.
+			writeData(cloneA, "a2.txt", "2");
+			service.scheduleSync(target(cloneA));
+			await service.flush(cloneA);
 
-			// Idempotent: a second startup reconcile does nothing (already done this session).
-			await service.syncOnStartup(target(cloneB));
-			expect(broadcast).toHaveBeenCalledTimes(1);
+			// It committed locally...
+			expect(boardCommitCount(cloneA)).toBe(before + 1);
+			// ...but did NOT push: the worktree is now ahead of the (unchanged) remote-tracking
+			// ref, and no pull-driven rebroadcast fired. The auto path is purely local.
+			expect(await service.getStatus(target(cloneA))).toMatchObject({ state: "ahead", aheadCount: 1 });
+			expect(broadcast).not.toHaveBeenCalled();
 			await service.dispose();
 		} finally {
 			for (const cleanup of cleanups) {
@@ -182,7 +179,7 @@ describe("createBoardSyncService", () => {
 		}
 	});
 
-	it("surfaces a remote conflict on sync without destroying local data or broadcasting", async () => {
+	it("pushNow surfaces a remote conflict without destroying local data or broadcasting", async () => {
 		const { cloneA, cloneB, cleanups } = makeRemoteDecoupledClones("kanban-board-sync-");
 		try {
 			await writeBoardRef(cloneA, { version: 1, branch: "kanban/board" });
@@ -199,13 +196,14 @@ describe("createBoardSyncService", () => {
 			await commitBoardWorktree(cloneB, "board: b edit");
 			await pushBoardWorktree(cloneB, "kanban/board");
 
-			// A edits the same file and syncs via the service → conflict, surfaced.
+			// A edits the same file and pushes via the explicit path → conflict, surfaced.
 			const broadcast = vi.fn();
 			const service = createBoardSyncService({ broadcastWorkspaceState: broadcast, debounceMs: 10 });
 			writeData(cloneA, "shared.txt", "from-a\n");
-			service.scheduleSync(target(cloneA));
-			await service.flush(cloneA);
+			const result = await service.pushNow(target(cloneA));
 
+			expect(result.ok).toBe(false);
+			expect(result.status).toMatchObject({ state: "conflict" });
 			// Local data is intact (no conflict markers, clean tree) and no pull broadcast fired.
 			expect(readFileSync(join(getBoardWorktreeDataHome(cloneA), "files", "shared.txt"), "utf8")).toBe("from-a\n");
 			expect(git(getBoardWorktreePath(cloneA), ["status", "--porcelain"])).toBe("");

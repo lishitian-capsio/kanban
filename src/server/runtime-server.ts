@@ -210,8 +210,9 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 	};
 
 	// Board-branch decoupling: after each committed-data change the board worktree is
-	// committed + (debounced) pushed; on boot it is fast-forwarded from the remote. A
-	// no-op for repos that have not activated decoupling (no `.kanban/board-ref`).
+	// (debounced) committed **locally** — push and pull are explicit, user-only actions, so
+	// the hot path never touches the network. A no-op for repos that have not activated
+	// decoupling (no `.kanban/board-ref`).
 	const boardSyncService: BoardSyncService = createBoardSyncService({
 		broadcastWorkspaceState: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
 		// Push the recomputed status to the workspace's clients (the top-bar badge) on every
@@ -584,29 +585,23 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		throw new Error("Failed to start local server.");
 	}
 	const activeWorkspaceId = deps.workspaceRegistry.getActiveWorkspaceId();
-	const activeWorkspacePath = deps.workspaceRegistry.getActiveWorkspacePath();
 	const url = activeWorkspaceId
 		? buildKanbanRuntimeUrl(`/${encodeURIComponent(activeWorkspaceId)}`)
 		: getKanbanRuntimeOrigin();
 
-	// Reconcile the active workspace's board branch against its remote at boot so it
-	// reflects edits another machine pushed while this one was offline. Fire-and-forget
-	// so a slow fetch never delays server start; it rebroadcasts if it pulls anything.
-	if (activeWorkspaceId && activeWorkspacePath) {
-		void boardSyncService.syncOnStartup({
-			repoPath: activeWorkspacePath,
-			workspaceId: activeWorkspaceId,
-			workspacePath: activeWorkspacePath,
-		});
-	}
+	// No boot reconcile: per the board-sync redesign (auto commit + explicit push/pull,
+	// `.plan/docs/board-sync-redesign.md`) startup never touches the network. The badge
+	// shows the last-known (fetch-free) ahead/behind; the user pulls explicitly to refresh
+	// it. This also removes the "remote has no board branch" boot fetch failure on Windows.
 
 	return {
 		url,
 		close: async () => {
 			// Release the event-loop keepalive so the process can exit cleanly.
 			clearInterval(eventLoopKeepaliveTimer);
-			// Flush a final board commit + push (covers the shutdown coordinator's last
-			// interrupted-session save) before tearing down the broadcast channel.
+			// Flush a final local board commit (covers the shutdown coordinator's last
+			// interrupted-session save) before tearing down the broadcast channel. No push —
+			// unpushed commits stay durable locally for the user to Push next session.
 			await boardSyncService.dispose();
 			await Promise.all(
 				Array.from(piTaskSessionServiceByWorkspaceId.values()).map(async (service) => {

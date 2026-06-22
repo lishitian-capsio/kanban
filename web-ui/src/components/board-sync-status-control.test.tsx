@@ -64,7 +64,7 @@ describe("BoardSyncStatusControl", () => {
 		expect(badge?.textContent).toContain("Synced");
 		expect(container.querySelector("button[aria-label='Push board branch']")).not.toBeNull();
 		expect(container.querySelector("button[aria-label='Pull board branch']")).not.toBeNull();
-		expect(container.querySelector("button[aria-label='Pause automatic board sync']")).not.toBeNull();
+		expect(container.querySelector("button[aria-label='Pause automatic board commits']")).not.toBeNull();
 	});
 
 	it("surfaces ahead/behind counts on the action buttons", () => {
@@ -95,7 +95,7 @@ describe("BoardSyncStatusControl", () => {
 			onTogglePause,
 		});
 
-		const resume = container.querySelector("button[aria-label='Resume automatic board sync']");
+		const resume = container.querySelector("button[aria-label='Resume automatic board commits']");
 		expect(resume).not.toBeNull();
 		act(() => (resume as HTMLButtonElement).click());
 		expect(onTogglePause).toHaveBeenCalledTimes(1);

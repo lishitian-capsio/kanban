@@ -18,6 +18,14 @@ const log = createLogger("board-worktree");
 
 const BOARD_WORKTREE_SETUP_LOCKFILE_NAME = "kanban-board-worktree-setup.lock";
 
+/**
+ * Hard cap for a single network git op (push / fetch) on the board branch. Push and pull
+ * are user-triggered and serialized per repo; this bound guarantees a stalled connection or
+ * a credential prompt can't hang the work queue indefinitely. On expiry the git child is
+ * killed and the op reports failure (surfaced, never auto-retried).
+ */
+const BOARD_NETWORK_GIT_TIMEOUT_MS = 30_000;
+
 // Dedicated identity for the parentless initial commit of an orphan board branch,
 // mirroring the checkpoint identity in turn-checkpoints.ts. Also used for the
 // machine-authored code-branch decoupling commit so it never fails on a repo with
@@ -129,7 +137,10 @@ async function remoteBranchExists(repoPath: string, remote: string, branch: stri
  */
 async function fetchBoardBranchIntoTrackingRef(worktreePath: string, remote: string, branch: string): Promise<boolean> {
 	const refspec = `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`;
-	const result = await runGit(worktreePath, ["fetch", remote, refspec], { env: buildBoardCommitEnv() });
+	const result = await runGit(worktreePath, ["fetch", remote, refspec], {
+		env: buildBoardCommitEnv(),
+		timeoutMs: BOARD_NETWORK_GIT_TIMEOUT_MS,
+	});
 	return result.ok;
 }
 
@@ -199,7 +210,10 @@ export async function pushBoardWorktree(repoPath: string, branch: string): Promi
 		return { status: "no-remote", pulledChanges: false };
 	}
 
-	const push = await runGit(worktreePath, ["push", remote, `${branch}:${branch}`], { env: buildBoardCommitEnv() });
+	const push = await runGit(worktreePath, ["push", remote, `${branch}:${branch}`], {
+		env: buildBoardCommitEnv(),
+		timeoutMs: BOARD_NETWORK_GIT_TIMEOUT_MS,
+	});
 	if (push.ok) {
 		// `Everything up-to-date` means there was nothing ahead to publish.
 		const status: BoardPushStatus = push.output.toLowerCase().includes("up-to-date") ? "up-to-date" : "pushed";
@@ -233,7 +247,10 @@ export async function pushBoardWorktree(repoPath: string, branch: string): Promi
 		return { status: "conflict", pulledChanges: false, error: merge.output };
 	}
 
-	const rePush = await runGit(worktreePath, ["push", remote, `${branch}:${branch}`], { env: buildBoardCommitEnv() });
+	const rePush = await runGit(worktreePath, ["push", remote, `${branch}:${branch}`], {
+		env: buildBoardCommitEnv(),
+		timeoutMs: BOARD_NETWORK_GIT_TIMEOUT_MS,
+	});
 	if (!rePush.ok) {
 		return { status: "error", pulledChanges: true, error: rePush.error ?? rePush.output };
 	}
@@ -241,11 +258,16 @@ export async function pushBoardWorktree(repoPath: string, branch: string): Promi
 }
 
 /**
- * Startup reconcile: fetch the board branch and fast-forward the worktree to the
- * remote tip when the worktree is strictly behind (another machine pushed while this
- * one was offline). Never merges or rewrites — a divergence is left for the push path
- * to reconcile. Returns `{ changed: true }` only when the fast-forward moved HEAD, so
- * the caller knows to reload + rebroadcast the board. See §3.6 step 4.
+ * Fetch the board branch and fast-forward the worktree to the remote tip when the
+ * worktree is strictly behind (another machine pushed while this one was offline).
+ * Never merges or rewrites — a divergence is left for the push path to reconcile.
+ * Returns `{ changed: true }` only when the fast-forward moved HEAD, so the caller
+ * knows to reload + rebroadcast the board.
+ *
+ * CURRENTLY UNUSED by the runtime: the board-sync redesign (auto commit + explicit
+ * push/pull, `.plan/docs/board-sync-redesign.md`) removed the boot reconcile that was
+ * its only caller — startup no longer touches the network. Kept (and still unit-tested)
+ * as the building block for any future opt-in boot reconcile.
  */
 export async function fetchAndFastForwardBoardWorktree(
 	repoPath: string,
@@ -455,15 +477,24 @@ export async function renameBoardBranch(
 	// ④ Publish the new branch, then retire the old one on the remote.
 	const remote = await getDefaultRemote(repoPath);
 	if (remote) {
-		const pushNew = await runGit(worktreePath, ["push", remote, `${trimmedNew}:${trimmedNew}`], { env });
+		const pushNew = await runGit(worktreePath, ["push", remote, `${trimmedNew}:${trimmedNew}`], {
+			env,
+			timeoutMs: BOARD_NETWORK_GIT_TIMEOUT_MS,
+		});
 		if (!pushNew.ok) {
 			await rollbackBoardBranchRename(repoPath, worktreePath, oldBranch, trimmedNew, archiveTag, env);
 			return { ok: false, archivedTag: null, error: pushNew.error ?? pushNew.output };
 		}
 		// Best-effort: the archive tag and old-branch deletion are cleanup, not gates —
 		// the rename is already live once the new branch is pushed.
-		await runGit(worktreePath, ["push", remote, `refs/tags/${archiveTag}`], { env });
-		const deleteOld = await runGit(worktreePath, ["push", remote, `:${oldBranch}`], { env });
+		await runGit(worktreePath, ["push", remote, `refs/tags/${archiveTag}`], {
+			env,
+			timeoutMs: BOARD_NETWORK_GIT_TIMEOUT_MS,
+		});
+		const deleteOld = await runGit(worktreePath, ["push", remote, `:${oldBranch}`], {
+			env,
+			timeoutMs: BOARD_NETWORK_GIT_TIMEOUT_MS,
+		});
 		if (!deleteOld.ok) {
 			log.warn("renamed the board branch but could not delete the old branch on the remote", {
 				repoPath,
