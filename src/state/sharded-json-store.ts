@@ -53,24 +53,26 @@ export async function readShardDir<T>(
 	dir: string,
 	schema: z.ZodType<T, z.ZodTypeDef, unknown>,
 ): Promise<Map<string, T>> {
-	const result = new Map<string, T>();
-	for (const id of await listShardIds(dir)) {
-		const filePath = shardFilePath(dir, id);
-		const raw = await readFile(filePath, "utf8");
-		let parsedJson: unknown;
-		try {
-			parsedJson = JSON.parse(raw) as unknown;
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			throw new Error(`Malformed JSON in shard ${filePath}. ${message}`);
-		}
-		const validated = schema.safeParse(parsedJson);
-		if (!validated.success) {
-			throw new Error(`Invalid shard ${filePath}. ${formatSchemaIssues(validated.error)}`);
-		}
-		result.set(id, validated.data);
-	}
-	return result;
+	const ids = await listShardIds(dir);
+	const entries = await Promise.all(
+		ids.map(async (id): Promise<[string, T]> => {
+			const filePath = shardFilePath(dir, id);
+			const raw = await readFile(filePath, "utf8");
+			let parsedJson: unknown;
+			try {
+				parsedJson = JSON.parse(raw) as unknown;
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				throw new Error(`Malformed JSON in shard ${filePath}. ${message}`);
+			}
+			const validated = schema.safeParse(parsedJson);
+			if (!validated.success) {
+				throw new Error(`Invalid shard ${filePath}. ${formatSchemaIssues(validated.error)}`);
+			}
+			return [id, validated.data];
+		}),
+	);
+	return new Map(entries);
 }
 
 /**
@@ -81,12 +83,16 @@ export async function readShardDir<T>(
  * the relevant workspace lock; the per-file writes pass `lock: null`.
  */
 export async function writeShardDir<T>(dir: string, shards: Map<string, T>): Promise<void> {
-	for (const [id, value] of shards) {
-		await lockedFileSystem.writeJsonFileAtomic(shardFilePath(dir, id), value, { lock: null });
-	}
-	for (const existingId of await listShardIds(dir)) {
-		if (!shards.has(existingId)) {
-			await rm(shardFilePath(dir, existingId), { force: true });
-		}
-	}
+	// List existing shards before writing so the delete pass reuses this result
+	// instead of re-reading the directory; new `<id>.json` files written below are
+	// (correctly) absent from it, so only pre-existing ids missing from the map are removed.
+	const existingIds = await listShardIds(dir);
+	await Promise.all([
+		...[...shards].map(([id, value]) =>
+			lockedFileSystem.writeJsonFileAtomic(shardFilePath(dir, id), value, { lock: null }),
+		),
+		...existingIds
+			.filter((existingId) => !shards.has(existingId))
+			.map((existingId) => rm(shardFilePath(dir, existingId), { force: true })),
+	]);
 }
