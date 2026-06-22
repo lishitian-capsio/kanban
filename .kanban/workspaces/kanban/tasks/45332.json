@@ -1,0 +1,19 @@
+{
+  "id": "45332",
+  "title": "修复 getGitUserIdentity 重复请求循环",
+  "prompt": "用户反馈浏览器 Network 中 workspace.getGitUserIdentity?batch=1&input=%7B%7D 一直重复刷新。请在独立 worktree 中调查并修复该前端请求循环。重点检查 web-ui 中 getGitUserIdentity 的调用位置、React Query/tRPC input 是否稳定、是否缺少 staleTime/cache 策略、是否被高频 runtime stream/chat/board sync 状态更新牵连导致重复 refetch、以及组件订阅是否放在过高层级。要求：保持现有架构约束，优先使用已有 UI/runtime store 模式；不要引入 any；补充或更新能覆盖重复请求/重渲染风险的测试；完成后说明根因、修改文件和验证命令。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "codex",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782113433570,
+  "updatedAt": 1782113433570,
+  "column": "backlog",
+  "rank": "Zi",
+  "dependsOn": []
+}
