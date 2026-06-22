@@ -1,10 +1,12 @@
 import { spawn } from "node:child_process";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTRPCProxyClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import type { Command } from "commander";
 import type { RuntimeHookEvent, RuntimeTaskHookActivity } from "../core/api-contract";
 import { buildKanbanCommandParts } from "../core/kanban-command";
+import { getMachineKanbanHomePath } from "../state/workspace-state";
 import { buildKanbanRuntimeUrl, getRuntimeFetch } from "../core/runtime-endpoint";
 import { buildWindowsCmdArgsArray, resolveWindowsComSpec, shouldUseWindowsCmdLaunch } from "../core/windows-cmd-launch";
 import { parseHookRuntimeContextFromEnv } from "../terminal/hook-runtime-context";
@@ -736,6 +738,88 @@ async function runHooksIngest(
 	}
 }
 
+export interface CleanupHookPaths {
+	claudeSettingsPath: string;
+	hooksRoot: string;
+	kiroConfigPath: string;
+}
+
+export type CleanupResultStatus = "removed" | "skipped" | "cleaned";
+export interface CleanupResult {
+	target: string;
+	status: CleanupResultStatus;
+}
+
+export function cleanupAgentHooks(paths: CleanupHookPaths): CleanupResult[] {
+	const results: CleanupResult[] = [];
+
+	// 1. Claude Code — hooks are merged into the user's global ~/.claude/settings.json,
+	//    so we only strip the `hooks` key and preserve everything else.
+	const claudeSettingsPath = paths.claudeSettingsPath;
+	if (existsSync(claudeSettingsPath)) {
+		try {
+			const raw = readFileSync(claudeSettingsPath, "utf8");
+			const settings = JSON.parse(raw) as Record<string, unknown>;
+			if (settings.hooks) {
+				delete settings.hooks;
+				writeFileSync(claudeSettingsPath, JSON.stringify(settings, null, 2));
+				results.push({ target: `Claude Code (${claudeSettingsPath})`, status: "cleaned" });
+			} else {
+				results.push({ target: `Claude Code (${claudeSettingsPath})`, status: "skipped" });
+			}
+		} catch {
+			results.push({ target: `Claude Code (${claudeSettingsPath})`, status: "skipped" });
+		}
+	} else {
+		results.push({ target: `Claude Code (${claudeSettingsPath})`, status: "skipped" });
+	}
+
+	// 2. Kanban-managed agent hook directories (~/.kanban/hooks/<agentId>/)
+	//    These are fully owned by Kanban — safe to remove entirely.
+	const hookAgents = ["gemini", "droid", "opencode"] as const;
+	const hooksRoot = paths.hooksRoot;
+	for (const agentId of hookAgents) {
+		const dir = join(hooksRoot, agentId);
+		if (existsSync(dir)) {
+			rmSync(dir, { recursive: true, force: true });
+			results.push({ target: `${agentId} (${dir})`, status: "removed" });
+		} else {
+			results.push({ target: `${agentId} (${dir})`, status: "skipped" });
+		}
+	}
+
+	// 3. Kiro — agent config at ~/.kiro/agents/kanban.json
+	const kiroConfigPath = paths.kiroConfigPath;
+	if (existsSync(kiroConfigPath)) {
+		rmSync(kiroConfigPath, { force: true });
+		results.push({ target: `Kiro (${kiroConfigPath})`, status: "removed" });
+	} else {
+		results.push({ target: `Kiro (${kiroConfigPath})`, status: "skipped" });
+	}
+
+	return results;
+}
+
+function runHooksCleanup(): void {
+	const paths: CleanupHookPaths = {
+		claudeSettingsPath: join(homedir(), ".claude", "settings.json"),
+		hooksRoot: join(getMachineKanbanHomePath(), "hooks"),
+		kiroConfigPath: join(homedir(), ".kiro", "agents", "kanban.json"),
+	};
+	const results = cleanupAgentHooks(paths);
+	const anyCleaned = results.some((r) => r.status !== "skipped");
+	if (!anyCleaned) {
+		process.stdout.write("kanban hooks cleanup: No persistent hook configs found. Nothing to clean.\n");
+		return;
+	}
+	process.stdout.write("kanban hooks cleanup: Cleaned up persistent hook configs.\n");
+	for (const r of results) {
+		if (r.status === "skipped") continue;
+		const label = r.status === "cleaned" ? "cleaned (hooks removed)" : "removed";
+		process.stdout.write(`  ${label}: ${r.target}\n`);
+	}
+}
+
 export function registerHooksCommand(program: Command): void {
 	const hooks = program.command("hooks").description("Runtime hook helpers for agent integrations.");
 
@@ -805,6 +889,13 @@ export function registerHooksCommand(program: Command): void {
 				await runCodexHookSubcommand(options.event, options, payload);
 			},
 		);
+
+	hooks
+		.command("cleanup")
+		.description("Remove persistent Kanban hook configs from agent settings (e.g. ~/.claude/settings.json).")
+		.action(() => {
+			runHooksCleanup();
+		});
 
 	hooks
 		.command("codex-wrapper [agentArgs...]")

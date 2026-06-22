@@ -33,3 +33,16 @@ export function parseHookRuntimeContextFromEnv(env: NodeJS.ProcessEnv = process.
 		workspaceId,
 	};
 }
+
+/**
+ * Non-throwing variant of {@link parseHookRuntimeContextFromEnv}.
+ * Returns `null` when the required env vars are absent — used by `hooks ingest`
+ * so that stale persistent hook configs (e.g. in `~/.claude/settings.json`)
+ * silently no-op when the user runs an agent outside of a Kanban session.
+ */
+export function tryParseHookRuntimeContextFromEnv(env: NodeJS.ProcessEnv = process.env): HookRuntimeContext | null {
+	const taskId = env[KANBAN_SESSION_TASK_ID_ENV]?.trim();
+	const workspaceId = env[KANBAN_SESSION_WORKSPACE_ID_ENV]?.trim();
+	if (!taskId || !workspaceId) return null;
+	return { taskId, workspaceId };
+}
