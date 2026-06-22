@@ -1,0 +1,19 @@
+{
+  "id": "8bf52",
+  "title": "perf #11: 收窄 worktree 创建锁范围 + 缓存 ignored-paths",
+  "prompt": "性能优化 #11(git 正确性敏感,中风险)。\n\n问题:创建 worktree 时在 per-repo 锁内串行跑 5-8 个 git 操作 + 文件系统镜像。N 个任务需要全新 worktree 时,创建按 repo 串行(≈N× 单次创建成本)。已存在的 worktree 走 fast path(不上锁),完全并行。\n\n定位:\n- src/workspace/task-worktree.ts:437 (ensureTaskWorktreeIfDoesntExist),锁 :461 (withTaskWorktreeSetupLock,按 git common dir = 每 repo 一把锁,:99-104)\n- fast path :450-459\n- 锁内串行:rev-parse HEAD :462、rev-parse --verify baseRef :484、可选 remove :507、worktree prune :514、worktree add --detach :517 (+retry :532)、prepareNewTaskWorktree :534 → submodule init + syncIgnoredPathsIntoWorktree\n\n修法:把锁收窄到真正 repo-global 的步骤(worktree prune + worktree add);把 syncIgnoredPathsIntoWorktree/submodule init 移出锁(它们只针对隔离的新目录);跨并发创建缓存 listIgnoredPaths/exclude-file(per repo)。\n\n注意:git 正确性敏感,保持 worktree 创建语义与崩溃/重试容错。验证并发创建多个全新 worktree 正确、无竞态;现有测试通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782106623585,
+  "updatedAt": 1782106623585,
+  "column": "backlog",
+  "rank": "Zo",
+  "dependsOn": []
+}
