@@ -1,0 +1,19 @@
+{
+  "id": "c8e39",
+  "title": "修复 Provider 设置：API key 看不到 + 配置无法保存",
+  "prompt": "Bug 报告（来自用户）：在 Settings 的 per-agent Provider 配置界面里，API key 字段看不到内容——保存前看不到、保存后也看不到（疑似脱敏/回填 round-trip 有问题）。此外，其他配置数据（如 base URL、model、reasoning 等字段）改了之后也无法保存/不持久化。\n\n请用 systematic-debugging 的方式排查：\n1. 先复现：打开 web-ui Settings → Providers tab，新建/编辑某个 agent 的 provider，填入 API key 与其他字段，保存后重新打开，观察哪些字段丢失、哪些显示为空。\n2. 重点排查 API key 的存取链路：committed provider 配置（repo agent-providers/ 与 selection）vs 机器本地 secret（machine-home agent_providers.json）。API key 走的是 machine-home secret 存储，不会写入 committed repo——确认前端回填时是否正确从 secret 源读取并做了脱敏展示（注意 @runtime-api-key-mask alias），以及保存时是否把脱敏占位符误当成真实值写回导致覆盖。\n3. 排查其他字段无法保存：检查 saveAgentProvider / listAgentProviders tRPC 路径、provider store 的读写（src/state 下的 committed-provider store）、以及 protocols[]/baseUrl 的 collapseToAgentProtocol 读写逻辑是否在保存时丢字段。\n4. 关键文件线索：src/agent-sdk/kanban/ provider 相关、trpc/runtime-api.ts 的 saveAgentProvider/listAgentProviders、committed-provider store、web-ui 里 Providers tab 的表单组件。\n5. 写测试覆盖 round-trip（保存→读回字段完整、API key 脱敏但不被占位符覆盖），修复后跑相关 vitest 与 web:typecheck。\n\n注意：API key 等 secret 永远不能写入 committed repo；脱敏后的占位符不能在保存时覆盖真实 secret。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782105380102,
+  "updatedAt": 1782105380102,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
