@@ -1,0 +1,19 @@
+{
+  "id": "75d82",
+  "title": "Database 性能压测 + 调优: 大库/百万行/高并发",
+  "prompt": "Database 功能的性能收尾任务:在三个上层入口(MCP/CLI/UI)都就绪后,做 profiling 驱动的压测与调优,而不是凭感觉优化。依赖:MCP server、CLI、人侧 UI 均已完成。\n\n要求:\n- 造大数据集:百万行级的表、超多表/超多 schema 的大库,覆盖 PostgreSQL/MySQL/SQLite。\n- 压测场景:\n  - 大表数据浏览(UI 网格虚拟化 + keyset 分页是否真的不拉全量、不卡)。\n  - 大结果集查询(后端是否流式/分页、内存是否平稳、有无一次性读爆)。\n  - 高并发:多个 agent 同时查(连接池复用、并发限流是否生效、runtime 事件循环是否被churn)。\n  - 大库内省(懒加载 + 元数据缓存是否命中,重复展开是否还打 DB)。\n  - 查询超时/取消是否真能中断跑飞的查询。\n- 用 profiling 找瓶颈并逐一修复;补必要的回归/性能测试。修复要落在对应层(核心/查询/内省/各入口),不要在上层打补丁绕过。\n遵循 AGENTS.md:不用 any;统一 logging facade;禁止 console.*。不要提交。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782142021263,
+  "updatedAt": 1782142021263,
+  "column": "backlog",
+  "rank": "Zu",
+  "dependsOn": []
+}
