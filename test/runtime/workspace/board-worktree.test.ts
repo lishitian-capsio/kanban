@@ -209,6 +209,57 @@ describe("setupBoardWorktree clone bootstrap", () => {
 			cleanup();
 		}
 	});
+
+	it("orphans an empty branch when the remote is reachable but genuinely lacks the board branch", async () => {
+		// A reachable origin that simply has no board branch yet (brand-new project on the
+		// other side): the fetch fails with a "couldn't find remote ref" error, which is the
+		// legitimate degradation — orphan a fresh empty branch rather than surfacing an error.
+		const { repoPath: origin, cleanup: cleanupOrigin } = initRepo("kanban-board-origin-");
+		const { path: cloneParent, cleanup: cleanupClone } = createTempDir("kanban-board-clone-");
+		try {
+			const clonePath = join(cloneParent, "clone");
+			git(cloneParent, ["clone", "-q", origin, clonePath]);
+
+			const result = await setupBoardWorktree(clonePath, "kanban/board");
+			expect(result.ok).toBe(true);
+			expect(result.created).toBe(true);
+			expect(await boardWorktreeHasCommittedData(clonePath)).toBe(false);
+			expect(git(getBoardWorktreePath(clonePath), ["symbolic-ref", "--short", "HEAD"])).toBe("kanban/board");
+		} finally {
+			cleanupClone();
+			cleanupOrigin();
+		}
+	});
+
+	it("fails clearly instead of orphaning an empty board when the remote is unreachable", async () => {
+		// A cold clone whose board branch lives on a remote we can't reach (offline / slow /
+		// timed out). The fetch fails with a non-"missing ref" error; silently orphaning an
+		// empty branch here would mask the real board data on the remote, so setup must fail
+		// loudly (and the next boot retries) rather than emptying the board. A timeout SIGKILL
+		// produces the same failure class, so this also stands in for the timeout exit.
+		const { repoPath: origin, cleanup: cleanupOrigin } = initRepo("kanban-board-origin-");
+		const { path: cloneParent, cleanup: cleanupClone } = createTempDir("kanban-board-clone-");
+		try {
+			const clonePath = join(cloneParent, "clone");
+			git(cloneParent, ["clone", "-q", origin, clonePath]);
+			// Point origin at a path that is not a git repository → fetch fails fast with a
+			// connection-class error rather than "couldn't find remote ref".
+			git(clonePath, ["remote", "set-url", "origin", join(cloneParent, "does-not-exist")]);
+
+			const result = await setupBoardWorktree(clonePath, "kanban/board");
+			expect(result.ok).toBe(false);
+			expect(result.error).toBeTruthy();
+			// Crucially, no divergent empty board branch was orphaned over the remote's data...
+			expect(
+				spawnSync("git", ["-C", clonePath, "rev-parse", "--verify", "refs/heads/kanban/board"]).status,
+			).not.toBe(0);
+			// ...and no worktree was left behind.
+			expect(existsSync(getBoardWorktreePath(clonePath))).toBe(false);
+		} finally {
+			cleanupClone();
+			cleanupOrigin();
+		}
+	});
 });
 
 describe("commitBoardWorktree / boardWorktreeHasCommittedData", () => {

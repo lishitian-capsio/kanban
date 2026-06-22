@@ -158,6 +158,17 @@ async function isHeadBehindRemote(worktreePath: string, remote: string, branch: 
 	return head.ok && remoteHead.ok && head.stdout !== remoteHead.stdout;
 }
 
+/**
+ * Did a `git fetch <remote> <branch>` fail because the remote genuinely has no such
+ * branch (vs. a network/connection failure)? Git prints "couldn't find remote ref
+ * <branch>" for the former; an unreachable remote, a timeout SIGKILL, or a bad URL
+ * produce other messages. Used to keep the legitimate brand-new-project degradation
+ * (orphan an empty branch) distinct from a transient failure that must not mask data.
+ */
+function isMissingRemoteRefError(fetchOutput: string): boolean {
+	return fetchOutput.toLowerCase().includes("find remote ref");
+}
+
 function isNonFastForwardRejection(pushOutput: string): boolean {
 	const lowered = pushOutput.toLowerCase();
 	return (
@@ -552,9 +563,14 @@ async function createBoardWorktree(repoPath: string, worktreePath: string, branc
 	// fetch + track it instead of orphaning a fresh (empty) branch over the data.
 	const remote = await getDefaultRemote(repoPath);
 	if (remote) {
-		// Best-effort: a remote that lacks the branch (brand-new project on the
-		// other side) just leaves the remote ref absent, handled below.
-		await runGit(repoPath, ["fetch", remote, branch]);
+		// This is the cold-clone boot path. Bound the fetch with the network timeout so a
+		// stalled connection / credential prompt / unreachable remote can't hang startup
+		// indefinitely (the hot-start path early-returns above via `isGitWorktree`, so it
+		// never reaches here). On expiry the git child is SIGKILL'd and the fetch reports
+		// failure, classified below.
+		const fetchResult = await runGit(repoPath, ["fetch", remote, branch], {
+			timeoutMs: BOARD_NETWORK_GIT_TIMEOUT_MS,
+		});
 		if (await remoteBranchExists(repoPath, remote, branch)) {
 			const addResult = await runGit(repoPath, [
 				"worktree",
@@ -569,6 +585,21 @@ async function createBoardWorktree(repoPath: string, worktreePath: string, branc
 				throw new Error(addResult.error ?? addResult.output);
 			}
 			return;
+		}
+		// The remote ref is absent. Two very different causes, and conflating them is
+		// dangerous: a remote that genuinely lacks the branch (brand-new project on the
+		// other side) is the legitimate degradation — orphan a fresh empty branch. But a
+		// fetch that failed for a network reason (offline / unreachable / timed out) leaves
+		// the real board data sitting on the remote, so orphaning an empty branch over it
+		// would mask that data behind a divergent local board. Surface a clear error in that
+		// case instead — setup reports failure (boot continues; the next load retries).
+		if (!fetchResult.ok && !isMissingRemoteRefError(fetchResult.output)) {
+			throw new Error(
+				`Could not fetch the board branch '${branch}' from '${remote}' (the remote may be unreachable or slow). ` +
+					`Refusing to initialize an empty board over data that may live on the remote. ${
+						fetchResult.error ?? fetchResult.output
+					}`,
+			);
 		}
 		log.warn("board-ref present but remote has no board branch; initializing an empty board branch", {
 			repoPath,
