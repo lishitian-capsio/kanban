@@ -20,13 +20,6 @@
       "name": "test",
       "createdAt": 1781776267907,
       "updatedAt": 1781776267907
-    },
-    {
-      "id": "be5feaec-200f-412b-b8d0-cf1ae76cfd38",
-      "agentId": "codex",
-      "name": "讨论",
-      "createdAt": 1782110853629,
-      "updatedAt": 1782110853629
     }
   ]
 }
