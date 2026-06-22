@@ -1,0 +1,19 @@
+{
+  "id": "c7852",
+  "title": "perf16: 聊天 mergeSessionMessages 按版本缓存",
+  "prompt": "性能优化（perf16）。问题：每次拉取聊天（getTaskChatMessages 路径）都调 mergeSessionMessages 做文件 I/O + O(n) 合并（Map 去重 + 循环），长 transcript（数百条）下开聊天/每次刷新都重算，即使持久化集合与 live 集合都没变。\n\n热点：\n- src/session/session-message-journal.ts:375-393 mergeSessionMessages（loadTaskSessionMessages 里 mergeSessionMessages(persisted, liveInMemory)）。\n- 调用方 src/trpc/runtime-api.ts:472 附近 getTaskChatMessages。\n\n修复方向：\n- 按版本缓存 merged 结果：key = （持久化 journal 代际/写入计数）+（live buffer 状态标识，如最后消息 id + 长度 + tail 版本）。两者都未变则直接返回缓存，跳过 merge 循环与不必要的文件读。\n- 加一个廉价的 isMergeDirty() 前置判断；脏才重 merge。\n- 注意 pi journal 的 coalesce/tail 语义（同一 assistant message id 反复 re-emit、250ms debounce）与终端 manager fallback 路径，缓存版本标识要能反映 tail 变化，别返回缺尾的陈旧结果。\n\n按 taskId 维度缓存、多 workspace 隔离。先写测试（无变更时不重 merge / 有新消息时返回含新消息），再实现。验证 typecheck + biome + 相关 session 测试零回归。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782114660064,
+  "updatedAt": 1782114660064,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
