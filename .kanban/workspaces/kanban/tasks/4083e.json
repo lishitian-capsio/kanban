@@ -1,0 +1,19 @@
+{
+  "id": "4083e",
+  "title": "全面性能体检(profiling 驱动)",
+  "prompt": "对 Kanban 做一轮 profiling 驱动的全面性能体检,目标是量出真实瓶颈并产出一份按影响排序的发现清单,而不是凭感觉优化。\n\n范围(全栈,不预设子系统):\n- runtime 后端:启动/loadWorkspaceContext、board/requirement/vault 的分片读写、session 持久化(journal)、terminal mirror、事件循环 churn、worktree 设置、fetch/代理。\n- web-ui 前端:大列表/大看板渲染、重渲染范围、useSyncExternalStore 订阅粒度、chat token 流。\n- 跨进程:agent 启动并发、git 同步(board branch)。\n\n方法(硬要求):\n- 先建立可复现的负载场景(大看板/多任务、长 session 转录、大 vault、并发 agent 启动),再用 profiling(CPU/heap、必要时 trace)定位热点;不要靠直觉。\n- 每个发现给出:量化证据(数字/火焰图/计时)、根因、影响面、修复建议与风险等级。\n- 输出一份排序后的体检报告(写到 .plan/docs/ 下的 markdown,例如 perf-audit-<日期>.md),高影响低风险的明确赢点直接在本任务里修掉并补回归/性能测试;高风险或大改动只记录建议,留给后续单独任务,不要在本任务里大刀阔斧重构。\n- 参考既有性能工作的套路与已知热点(perf8~perf16:runtime-store 订阅粒度、terminal mirror 零拷贝/micro-batch、vault/session 读缓存、journal 压缩、worktree 锁收窄、agent-start 限流、board content-visibility 等),避免重复劳动,也避免回退这些已落地的优化。\n\n遵循 AGENTS.md:不用 any;统一 logging facade(createLogger),禁止 console.*;优先 SDK/三方既有能力;web-ui 用 Tailwind token + react-use。运行 vitest 时按记忆用 --exclude='**/.kanban/**' 排除 sibling worktree。不要提交。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782142146194,
+  "updatedAt": 1782142146194,
+  "column": "backlog",
+  "rank": "Zt",
+  "dependsOn": []
+}
