@@ -1,0 +1,19 @@
+{
+  "id": "a2f09",
+  "title": "功能：在每个 agent 会话视图中显示正在执行的 prompt（任务 spec / kickoff）",
+  "prompt": "需求：每个 agent 会话（任务）在 web-ui 会话/聊天视图里应能看到 agent 正在执行的那条 prompt——即任务启动时的 kickoff prompt / 任务 spec。目前这条 prompt 是临时注入给模型、不进 transcript，用户在会话里看不到 agent 到底在照哪条指令干活。\n\n现状（已排查）：\n- 看板卡片：显示运行状态 spinner + latestHookActivity（当前在做什么：工具调用/思考）+ 任务 prompt 的截断预览（getTaskPromptDescription）。web-ui/src/components/board-card.tsx。\n- 聊天详情面板 web-ui/src/components/detail-panels/kanban-agent-chat-panel.tsx：显示完整 transcript（user/assistant/tool/reasoning），但【不显示】任务 spec/kickoff prompt，头部也没有「正在执行此 prompt」。\n- 发给 agent 的 system/kickoff prompt（含任务 spec，src/prompts/append-system-prompt.ts 生成）是 ephemeral，只在推理时注入，从不写入 session message journal。\n- 数据层：RuntimeBoardCard.prompt 已带任务 spec（已传到 detail panel）；RuntimeTaskChatMessage 支持 role='system'；RuntimeTaskSessionSummary 有 latestHookActivity。\n\n期望（先确认设计再实现，倾向方案 A）：\n- 方案 A（推荐，轻量、不改持久化语义）：在聊天/详情面板顶部加一个清晰的「正在执行的 Prompt」区块/可折叠头部，直接渲染该 task 的 prompt（kickoff）。数据已经有（card.prompt 已在 detail panel 可用），主要是 UI。运行中高亮，多轮对话也始终能看到原始任务指令。\n- 方案 B（更重，按需评估）：把 kickoff prompt 作为一条可见的首条消息（system/user 角色）写进 transcript，让它和后续对话一起出现在历史里。注意这会改 session message journal 的写入语义与重启回放，且要避免与已有 transcript 去重/coalesce 冲突——除非确有必要，优先 A。\n\n实现要求：\n- 对所有 agent 一致（pi 与终端 agent claude/codex 等会话视图都要能看到），不是只 pi。\n- 多轮场景：始终能看到原始 kickoff/任务 spec；若后续还想显示「当前 turn 指令」可作为单独后续，不在本任务范围。\n- 遵守 dark theme + 现有 UI 基元（Dialog/Tooltip/Collapsible 等）；prompt 可能很长，要可折叠/可滚动，别撑爆布局。\n- 不改 wire 契约形状（除非选 B 才动 transcript）。web:typecheck + biome 干净；加组件测试覆盖「运行中会话头部显示该任务 prompt」。\n\n参照记忆：home-multithread-ui、perf10（高频 slice 订阅放叶子组件，别在 App 级订阅）。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782118597320,
+  "updatedAt": 1782118597320,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
