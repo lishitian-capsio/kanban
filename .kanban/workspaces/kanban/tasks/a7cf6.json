@@ -1,7 +1,7 @@
 {
   "id": "a7cf6",
-  "title": "调研：CLI agent 会话创建时的命名机制",
-  "prompt": "调研任务（只读调查，先不要改代码）：弄清楚 Kanban 中每个 CLI agent（claude/codex/droid/kiro/gemini/opencode 等）会话在创建时是如何命名/标识的。\n\n需要回答的问题：\n1. CLI agent 会话在创建时，名称/标识是怎么来的？是固定的、自动派生的，还是用户可以自定义的？相关代码在哪里（例如 src/terminal/、session-manager、startTaskSession、home-agent-session 等）？\n2. 'home (sidebar) chat 多线程' 里每个 thread 的命名是怎么处理的（参考 home-thread-registry / home-thread-store / RuntimeHomeChatThread）？是否已经支持自定义名称？\n3. 普通任务（board task）创建会话时与 home thread 创建会话时，命名路径有何不同？\n4. 如果要让'每个 CLI agent 会话在创建时支持自定义名称'，目前缺什么？需要改哪些文件？给出一个简要的改动清单和评估，不要实际改代码。\n\n产出：一份现状说明 + 改动建议清单。",
+  "title": "调研：让用户一眼认出每个 CLI agent 在跑什么（运行中+历史）",
+  "prompt": "调研任务（只读调查，先不要改代码）。\n\n【目标】让用户能一眼就知道每个 CLI agent 会话在跑什么 —— 既包括【正在运行】的会话，也包括【已经跑过的历史】会话。当前痛点：CLI agent 会话缺少可识别的标签/名称，用户看不出某个会话对应的是哪个任务、在做什么。'创建时自定义名称'只是候选方案之一，'自动从任务 prompt 派生标签'是另一种，调研时都要覆盖。\n\n【需要回答的问题】\n1. 现状：CLI agent 会话（claude/codex/droid/kiro/gemini/opencode）在创建时名称/标识从哪来？是固定的、自动派生的，还是可自定义？相关代码在哪（src/terminal/、session-manager、startTaskSession、home-agent-session 等）。\n2. 运行中可见性：正在运行的 CLI agent 会话，目前在哪些地方暴露给用户（web-ui 哪个组件/视图、CLI task list、终端 tab 标题等）？分别显示成什么？能不能看出它在跑哪个任务/什么内容？\n3. 历史可见性：已经跑过/结束的会话，历史在哪里留存（session transcript journal、sessions.json、~/.claude/projects 等），用户能从哪里回看？历史条目有没有可读的标签？\n4. home 多线程：home (sidebar) 每个 thread 的命名/标识如何处理（home-thread-registry / home-thread-store / RuntimeHomeChatThread）？是否已支持自定义名？普通 board task 会话与 home thread 会话的命名路径差异。\n5. 差距与方案：要达成'一眼认出每个 CLI agent 在跑什么（运行中+历史）'，目前缺什么？给出候选方案对比（自定义名称 vs 自动派生标签 vs 二者结合）、需要改的文件清单、以及对运行中视图和历史回看视图各自的改动评估。不要实际改代码。\n\n【产出】一份现状说明（运行中可见性 + 历史可见性 + 命名机制）+ 候选方案对比 + 改动建议清单。",
   "startInPlanMode": false,
   "autoReviewEnabled": false,
   "autoReviewMode": "commit",
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782106310258,
-  "updatedAt": 1782106310258,
+  "updatedAt": 1782106502172,
   "column": "backlog",
   "rank": "a0",
   "dependsOn": []
