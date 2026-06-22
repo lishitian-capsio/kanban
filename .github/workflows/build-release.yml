@@ -37,45 +37,50 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.x"
+          registry-url: "https://registry.npmjs.org"
           cache: npm
 
-      - name: Configure npm registry
+      - name: Configure npm mirror
         run: |
+          # Use npm mirror for better connectivity from GitHub Actions
           npm config set registry https://registry.npmjs.org/
-          bun config set registry https://registry.npmjs.org/
+          echo "Using npm registry: $(npm config get registry)"
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            web-ui/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json', '**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
 
       - name: Install dependencies
         run: |
-          echo "Installing dependencies with retry..."
-          for i in 1 2 3; do
-            echo "Attempt $i..."
-            if bun install --frozen-lockfile; then
-              echo "Installation successful on attempt $i"
-              exit 0
-            fi
-            echo "Attempt $i failed, waiting 10 seconds..."
-            sleep 10
-          done
-          echo "All installation attempts failed"
-          exit 1
+          echo "Installing root dependencies..."
+          npm ci || npm install
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
 
       - name: Install web-ui dependencies
         run: |
-          echo "Installing web-ui dependencies with retry..."
-          for i in 1 2 3; do
-            echo "Attempt $i..."
-            if bun install --cwd web-ui --frozen-lockfile; then
-              echo "Web-ui installation successful on attempt $i"
-              exit 0
-            fi
-            echo "Attempt $i failed, waiting 10 seconds..."
-            sleep 10
-          done
-          echo "All web-ui installation attempts failed"
-          exit 1
+          echo "Installing web-ui dependencies..."
+          cd web-ui && (npm ci || npm install)
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+
+      - name: Install desktop dependencies (if exists)
+        run: |
+          if [ -d "packages/desktop" ]; then
+            echo "Installing desktop dependencies..."
+            cd packages/desktop && (npm ci || npm install)
+          fi
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
 
       - name: Build package
-        run: bun run build
+        run: npm run build
         env:
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
@@ -88,6 +93,9 @@ jobs:
 
       - name: Pack tgz
         run: npm pack
+
+      - name: List generated package
+        run: ls -lh kanban-*.tgz
 
       - name: Upload tgz artifact
         uses: actions/upload-artifact@v4
