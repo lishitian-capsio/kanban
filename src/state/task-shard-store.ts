@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import {
+	type RuntimeBoardCard,
+	type RuntimeBoardColumn,
 	type RuntimeBoardColumnId,
 	type RuntimeBoardData,
 	type RuntimeBoardDependency,
@@ -10,6 +12,7 @@ import {
 	runtimeBoardColumnIdSchema,
 	runtimeBoardDataSchema,
 } from "../core/api-contract";
+import { resolveTaskTitle } from "../core/task-title";
 import { lockedFileSystem } from "../fs/locked-file-system";
 import { reconcileColumnRanks } from "./task-rank";
 
@@ -165,9 +168,12 @@ async function listTaskFileIds(tasksDir: string): Promise<string[]> {
 
 async function readStoredTasks(boardDir: string): Promise<StoredTask[]> {
 	const ids = await listTaskFileIds(tasksDirPath(boardDir));
+	// Read every shard concurrently — N serial reads dominated board-load latency
+	// (~0.48s for ~150 shards). Stable ordering is restored downstream by the rank
+	// sort in assembleBoard, so the parallel read order is irrelevant.
+	const rawShards = await Promise.all(ids.map((id) => readJson(taskFilePath(boardDir, id))));
 	const tasks: StoredTask[] = [];
-	for (const id of ids) {
-		const raw = await readJson(taskFilePath(boardDir, id));
+	for (const raw of rawShards) {
 		if (raw === null) {
 			continue;
 		}
@@ -207,23 +213,26 @@ function assembleBoard(
 	}
 
 	const dependencies: RuntimeBoardDependency[] = [];
-	const assembledColumns = columns.map((column) => {
+	const assembledColumns: RuntimeBoardColumn[] = columns.map((column) => {
 		const ordered = (tasksByColumn.get(column.id) ?? []).sort((a, b) =>
 			a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : 0,
 		);
-		const cards = ordered.map((task) => {
+		const cards: RuntimeBoardCard[] = ordered.map((task) => {
 			for (const edge of task.dependsOn) {
 				dependencies.push({ id: edge.id, fromTaskId: task.id, toTaskId: edge.toTaskId, createdAt: edge.createdAt });
 			}
 			const { column: _column, rank: _rank, dependsOn: _dependsOn, ...cardFields } = task;
-			return cardFields;
+			// Each shard is already validated against storedTaskSchema, so the legacy
+			// whole-board re-parse here was redundant work. The one piece it did that
+			// shard validation does NOT is the runtimeBoardCardSchema title transform
+			// (storedTaskSchema extends the object schema, sans transform) — apply it
+			// directly so the assembled board is byte-for-byte identical.
+			return { ...cardFields, title: resolveTaskTitle(cardFields.title, cardFields.prompt) };
 		});
 		return { id: column.id, title: column.title, cards };
 	});
 
-	// Re-validate through the wire schema so the assembled board is identical to the
-	// legacy single-file read path (title resolution, defaults, type guarantees).
-	return runtimeBoardDataSchema.parse({ columns: assembledColumns, dependencies });
+	return { columns: assembledColumns, dependencies };
 }
 
 /**
