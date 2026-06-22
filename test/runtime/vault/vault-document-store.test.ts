@@ -211,6 +211,83 @@ describe("VaultDocumentStore.remove", () => {
 	});
 });
 
+describe("VaultDocumentStore.get direct lookup", () => {
+	it("returns the document whose frontmatter id matches, not one whose filename merely ends with the id", async () => {
+		// The real document for id "me".
+		const real = await store.importDocument({
+			id: "me",
+			type: "note",
+			title: "Standalone",
+			createdAt: 1,
+			updatedAt: 1,
+		});
+
+		// A decoy whose filename ("find-me.md") ends with "-me.md" but whose frontmatter
+		// id is something else. A filename-only lookup would wrongly pick this up.
+		const decoy = serializeVaultDocument({ id: "zzzzz", type: "note", frontmatter: { title: "Find Me" }, body: "" });
+		await writeFile(join(docsRoot(), "note", "find-me.md"), decoy, "utf8");
+
+		const found = await store.get("me");
+		expect(found?.id).toBe("me");
+		expect(found?.title).toBe("Standalone");
+		expect(found?.relativePath).toBe(real.relativePath);
+	});
+
+	it("finds a document regardless of which type subdir it lives in", async () => {
+		const note = await store.create({ type: "note", title: "A note" });
+		const req = await store.create({ type: "requirement", title: "A requirement" });
+
+		expect((await store.get(note.id))?.type).toBe("note");
+		expect((await store.get(req.id))?.type).toBe("requirement");
+	});
+});
+
+describe("VaultDocumentStore mutation lookup robustness", () => {
+	it("updates the right document even when a decoy filename ends with the same id segment", async () => {
+		const real = await store.importDocument({
+			id: "x9",
+			type: "requirement",
+			title: "Target",
+			createdAt: 1,
+			updatedAt: 1,
+		});
+		const decoy = serializeVaultDocument({
+			id: "yyyyy",
+			type: "requirement",
+			frontmatter: { title: "Decoy x9" },
+			body: "",
+		});
+		await writeFile(join(docsRoot(), "requirement", "decoy-x9.md"), decoy, "utf8");
+
+		const updated = await store.update("x9", { body: "real body" });
+		expect(updated.id).toBe("x9");
+		expect(updated.body).toBe("real body");
+		expect(updated.relativePath).toBe(real.relativePath);
+
+		// The decoy is untouched.
+		const decoyOnDisk = parseVaultDocument(await readFile(join(docsRoot(), "requirement", "decoy-x9.md"), "utf8"));
+		expect(decoyOnDisk.id).toBe("yyyyy");
+		expect(decoyOnDisk.body).toBe("");
+	});
+
+	it("removes the right document and leaves a same-id-segment decoy in place", async () => {
+		await store.importDocument({ id: "x9", type: "requirement", title: "Target", createdAt: 1, updatedAt: 1 });
+		const decoy = serializeVaultDocument({
+			id: "yyyyy",
+			type: "requirement",
+			frontmatter: { title: "Decoy x9" },
+			body: "",
+		});
+		await writeFile(join(docsRoot(), "requirement", "decoy-x9.md"), decoy, "utf8");
+
+		expect(await store.remove("x9")).toBe(true);
+		expect(await store.get("x9")).toBeNull();
+		// Decoy survives.
+		const survivors = await readdir(join(docsRoot(), "requirement"));
+		expect(survivors).toEqual(["decoy-x9.md"]);
+	});
+});
+
 describe("VaultDocumentStore concurrency", () => {
 	it("serializes concurrent creates so every id is unique and none are lost", async () => {
 		const count = 12;

@@ -173,31 +173,60 @@ export class VaultDocumentStore {
 		});
 	}
 
+	/**
+	 * Locate a single document by id without parsing the whole vault. Filenames are
+	 * `<slug>-<id>.md` and ids are dash-free, so the id is always the final
+	 * hyphen-delimited segment — the candidate file is found by a cheap filename
+	 * match (directory listings only, no `gray-matter` parse), and only that file is
+	 * read. A malformed/hand-created filename can end with `-<id>.md` yet hold a
+	 * different frontmatter id, so the parsed `doc.id` is verified before accepting.
+	 */
 	private async findById(id: string): Promise<ScannedDocument | null> {
-		const entries = await this.scan();
-		return entries.find((entry) => entry.doc.id === id) ?? null;
+		const suffix = `-${id}${DOC_EXTENSION}`;
+		const types = await this.listTypeDirs();
+		for (const typeName of types) {
+			const dir = join(this.docsDir, typeName);
+			const filenames = await listMarkdownFiles(dir);
+			for (const filename of filenames) {
+				if (!filename.endsWith(suffix)) {
+					continue;
+				}
+				const absolutePath = join(dir, filename);
+				const doc = await readDocument(absolutePath);
+				if (!doc || doc.id !== id) {
+					continue;
+				}
+				return { doc, absolutePath, relativePath: relative(this.repoPath, absolutePath) };
+			}
+		}
+		return null;
 	}
 
 	/** Scan `docs/` (optionally one type's subdir), parsing each `.md` and skipping torn files. */
 	private async scan(type?: string): Promise<ScannedDocument[]> {
 		const types = type ? [type] : await this.listTypeDirs();
-		const entries: ScannedDocument[] = [];
-		for (const typeName of types) {
-			const dir = join(this.docsDir, typeName);
-			const filenames = await listMarkdownFiles(dir);
-			for (const filename of filenames) {
+		const perType = await Promise.all(types.map((typeName) => this.scanTypeDir(typeName, type)));
+		return perType.flat();
+	}
+
+	/** Parse every `.md` in one type's subdir in parallel, preserving filename order and skipping torn files. */
+	private async scanTypeDir(typeName: string, filterType: string | undefined): Promise<ScannedDocument[]> {
+		const dir = join(this.docsDir, typeName);
+		const filenames = await listMarkdownFiles(dir);
+		const parsed = await Promise.all(
+			filenames.map(async (filename): Promise<ScannedDocument | null> => {
 				const absolutePath = join(dir, filename);
 				const doc = await readDocument(absolutePath);
 				if (!doc) {
-					continue;
+					return null;
 				}
-				if (type && doc.type !== type) {
-					continue;
+				if (filterType && doc.type !== filterType) {
+					return null;
 				}
-				entries.push({ doc, absolutePath, relativePath: relative(this.repoPath, absolutePath) });
-			}
-		}
-		return entries;
+				return { doc, absolutePath, relativePath: relative(this.repoPath, absolutePath) };
+			}),
+		);
+		return parsed.filter((entry): entry is ScannedDocument => entry !== null);
 	}
 
 	private async listTypeDirs(): Promise<string[]> {
