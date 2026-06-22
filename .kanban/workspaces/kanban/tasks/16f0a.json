@@ -1,0 +1,19 @@
+{
+  "id": "16f0a",
+  "title": "修复 Windows 向已关闭 PTY 写输入崩溃(ERR_SOCKET_CLOSED)",
+  "prompt": "修复 Windows 上向已关闭 PTY 写输入导致的崩溃:`error: Socket is closed  code: \"ERR_SOCKET_CLOSED\"`。\n\n复现/现象（用户 Windows 环境,kanban 全局安装版）:\n- 子进程退出 / conpty 管道关闭后,仍有 writeInput 落到 node-pty 的 windows 写路径，抛 ERR_SOCKET_CLOSED 未被处理。\n- 栈:writeInput (session 层) → PtySession.write → node-pty terminal.js:92 → windowsTerminal.js:149/152/177 → node:net _write → \"Socket is closed\"。\n\n根因（已定位）:\n- src/terminal/pty-session.ts:213 `write(data)` 有 try/catch，但只吞 `isIgnorablePtyWriteError`(同文件 :55 白名单:消息含 \"already exited\" / \"ebadf\" / \"eio\")。Windows 的 \"Socket is closed\" / code ERR_SOCKET_CLOSED 不在白名单 → 被 rethrow → 崩。\n- 同文件 resize() (:229) 有 `if (this.exited) return` 守卫，但 write() 没有这个前置守卫。\n- node-pty 在 Windows 下 write 经 socket，可能在子进程退出后【异步 flush】时才抛（栈里 node:net._write 即此），同步 try/catch 未必能兜住。\n\n要做:\n1. write() 前置守卫:`if (this.exited) return;`（与 resize 一致），不往已退出的 pty 写。\n2. 扩充 isIgnorablePtyWriteError:把 `ERR_SOCKET_CLOSED`（按 error.code）与消息含 \"socket is closed\" 视为可忽略（Windows conpty 关闭后写的良性错误），return 而非 throw。按 code 判断优先于字符串匹配。\n3. 处理【异步抛出】:Windows node-pty 的 socket flush 在子进程退出后可能在后续 tick 抛 ERR_SOCKET_CLOSED，同步 try/catch 兜不住 → 评估并加防护:给 node-pty 实例 / 其底层 socket 挂 error 监听器吞掉该良性错误，或确保 onExit 标记 this.exited 后彻底不再触发任何 write 落盘；避免它冒泡成 uncaughtException 把运行时打挂。\n4. 不要静默吞掉【非良性】写错误（保持现有 rethrow 行为对未知错误成立）。\n\n约束:\n- 仅修健壮性,不改正常输入写入语义;Linux/mac（Bun terminal 与 node-pty 两条路径）行为不回退。\n- 注意 this.nodePty(node-pty 路径,Windows 常走这条) 与 this.bunProc(Bun 内置 terminal) 两条分支都要安全。\n- typecheck / biome / 相关单测通过;为「向已退出 pty 写应被安全忽略」补单测（可 mock pty 抛 ERR_SOCKET_CLOSED）。\n- 本修复主要受益 Windows;在 Linux 上无法直接复现 conpty 行为,需用单测 + 代码审查保证正确（mock 抛带 code=ERR_SOCKET_CLOSED 的错误）。\n\n先读 pty-session.ts 的 write/resize/exit 处理与 isIgnorablePtyWriteError，再做最小改动。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782098128866,
+  "updatedAt": 1782098128866,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
