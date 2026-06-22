@@ -8,6 +8,7 @@ import type {
 	RuntimeVaultSearchResult,
 } from "../core/api-contract";
 import { createUniqueTaskId } from "../core/task-id";
+import { mapFilesConcurrent } from "../fs/concurrent-files";
 import { lockedFileSystem } from "../fs/locked-file-system";
 import { parseVaultDocument, serializeVaultDocument, slugify, type VaultDocument } from "./vault-document";
 import { buildVaultLinkIndex, type VaultLinkIndex } from "./vault-link-index";
@@ -246,12 +247,12 @@ export class VaultDocumentStore {
 	/** Expensive scan over the whole vault: read + parse every `.md`, with its fs signature. */
 	private async scanAll(): Promise<VaultScanResult> {
 		const files = await this.collectDocumentFiles();
-		const probed = await Promise.all(
-			files.map(async (file) => {
-				const [stats, doc] = await Promise.all([safeStat(file.absolutePath), readDocument(file.absolutePath)]);
-				return { file, stats, doc };
-			}),
-		);
+		// Bounded by the shared file budget: each doc opens two fds (stat + read), so a
+		// vault with thousands of docs would otherwise blow the fd table on first scan.
+		const probed = await mapFilesConcurrent(files, async (file) => {
+			const [stats, doc] = await Promise.all([safeStat(file.absolutePath), readDocument(file.absolutePath)]);
+			return { file, stats, doc };
+		});
 
 		const documents: RuntimeVaultDocument[] = [];
 		const signatureParts: string[] = [];
@@ -269,12 +270,10 @@ export class VaultDocumentStore {
 	/** Cheap fs probe: list + `stat` every `.md` (no contents read) → a change-detecting signature. */
 	private async computeSignature(): Promise<string> {
 		const files = await this.collectDocumentFiles();
-		const parts = await Promise.all(
-			files.map(async (file) => {
-				const stats = await safeStat(file.absolutePath);
-				return stats ? signatureEntry(file.relativePath, stats.mtimeMs, stats.size) : null;
-			}),
-		);
+		const parts = await mapFilesConcurrent(files, async (file) => {
+			const stats = await safeStat(file.absolutePath);
+			return stats ? signatureEntry(file.relativePath, stats.mtimeMs, stats.size) : null;
+		});
 		return parts
 			.filter((part): part is string => part !== null)
 			.sort()

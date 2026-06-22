@@ -2,6 +2,7 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { z } from "zod";
 
+import { mapFilesConcurrent } from "../fs/concurrent-files";
 import { lockedFileSystem } from "../fs/locked-file-system";
 
 const SHARD_EXTENSION = ".json";
@@ -54,24 +55,22 @@ export async function readShardDir<T>(
 	schema: z.ZodType<T, z.ZodTypeDef, unknown>,
 ): Promise<Map<string, T>> {
 	const ids = await listShardIds(dir);
-	const entries = await Promise.all(
-		ids.map(async (id): Promise<[string, T]> => {
-			const filePath = shardFilePath(dir, id);
-			const raw = await readFile(filePath, "utf8");
-			let parsedJson: unknown;
-			try {
-				parsedJson = JSON.parse(raw) as unknown;
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				throw new Error(`Malformed JSON in shard ${filePath}. ${message}`);
-			}
-			const validated = schema.safeParse(parsedJson);
-			if (!validated.success) {
-				throw new Error(`Invalid shard ${filePath}. ${formatSchemaIssues(validated.error)}`);
-			}
-			return [id, validated.data];
-		}),
-	);
+	const entries = await mapFilesConcurrent(ids, async (id): Promise<[string, T]> => {
+		const filePath = shardFilePath(dir, id);
+		const raw = await readFile(filePath, "utf8");
+		let parsedJson: unknown;
+		try {
+			parsedJson = JSON.parse(raw) as unknown;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`Malformed JSON in shard ${filePath}. ${message}`);
+		}
+		const validated = schema.safeParse(parsedJson);
+		if (!validated.success) {
+			throw new Error(`Invalid shard ${filePath}. ${formatSchemaIssues(validated.error)}`);
+		}
+		return [id, validated.data];
+	});
 	return new Map(entries);
 }
 
@@ -87,12 +86,15 @@ export async function writeShardDir<T>(dir: string, shards: Map<string, T>): Pro
 	// instead of re-reading the directory; new `<id>.json` files written below are
 	// (correctly) absent from it, so only pre-existing ids missing from the map are removed.
 	const existingIds = await listShardIds(dir);
-	await Promise.all([
-		...[...shards].map(([id, value]) =>
-			lockedFileSystem.writeJsonFileAtomic(shardFilePath(dir, id), value, { lock: null }),
+	const operations: Array<() => Promise<unknown>> = [
+		...[...shards].map(
+			([id, value]) =>
+				() =>
+					lockedFileSystem.writeJsonFileAtomic(shardFilePath(dir, id), value, { lock: null }),
 		),
 		...existingIds
 			.filter((existingId) => !shards.has(existingId))
-			.map((existingId) => rm(shardFilePath(dir, existingId), { force: true })),
-	]);
+			.map((existingId) => () => rm(shardFilePath(dir, existingId), { force: true })),
+	];
+	await mapFilesConcurrent(operations, (operation) => operation());
 }

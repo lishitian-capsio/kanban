@@ -13,6 +13,7 @@ import {
 	runtimeBoardDataSchema,
 } from "../core/api-contract";
 import { resolveTaskTitle } from "../core/task-title";
+import { mapFilesConcurrent } from "../fs/concurrent-files";
 import { lockedFileSystem } from "../fs/locked-file-system";
 import { reconcileColumnRanks } from "./task-rank";
 
@@ -169,9 +170,11 @@ async function listTaskFileIds(tasksDir: string): Promise<string[]> {
 async function readStoredTasks(boardDir: string): Promise<StoredTask[]> {
 	const ids = await listTaskFileIds(tasksDirPath(boardDir));
 	// Read every shard concurrently — N serial reads dominated board-load latency
-	// (~0.48s for ~150 shards). Stable ordering is restored downstream by the rank
-	// sort in assembleBoard, so the parallel read order is irrelevant.
-	const rawShards = await Promise.all(ids.map((id) => readJson(taskFilePath(boardDir, id))));
+	// (~0.48s for ~150 shards). Bounded by the shared file-concurrency budget so a
+	// board with thousands of tasks can't open thousands of fds at once (EMFILE).
+	// Stable ordering is restored downstream by the rank sort in assembleBoard, so
+	// the parallel read order is irrelevant.
+	const rawShards = await mapFilesConcurrent(ids, (id) => readJson(taskFilePath(boardDir, id)));
 	const tasks: StoredTask[] = [];
 	for (const raw of rawShards) {
 		if (raw === null) {
@@ -287,29 +290,35 @@ export async function saveShardedBoard(boardDir: string, board: RuntimeBoardData
 		}
 	}
 
+	// Flatten the board into the per-task shards to write, reconciling ranks per
+	// column. Writing concurrently (bounded by the shared file budget) instead of
+	// one serial `await` per card keeps a thousand-task save off the critical path
+	// without risking an EMFILE burst.
+	const storedTasks: StoredTask[] = [];
 	for (const column of board.columns) {
 		const ranks = reconcileColumnRanks(
 			column.cards.map((cardEntry) => cardEntry.id),
 			existingRanks,
 		);
 		for (const cardEntry of column.cards) {
-			const stored: StoredTask = {
+			storedTasks.push({
 				...cardEntry,
 				column: column.id,
 				rank: ranks.get(cardEntry.id) as string,
 				dependsOn: dependsOnByTask.get(cardEntry.id) ?? [],
-			};
-			// writeJsonFileAtomic skips the write when the serialized content is
-			// unchanged, so unmoved tasks leave no diff.
-			await lockedFileSystem.writeJsonFileAtomic(taskFilePath(boardDir, cardEntry.id), stored, { lock: null });
+			});
 		}
 	}
+	// writeJsonFileAtomic skips the write when the serialized content is unchanged,
+	// so unmoved tasks leave no diff.
+	await mapFilesConcurrent(storedTasks, (stored) =>
+		lockedFileSystem.writeJsonFileAtomic(taskFilePath(boardDir, stored.id), stored, { lock: null }),
+	);
 
-	for (const existingId of await listTaskFileIds(tasksDirPath(boardDir))) {
-		if (!liveTaskIds.has(existingId)) {
-			await rm(taskFilePath(boardDir, existingId), { force: true });
-		}
-	}
+	const removedIds = (await listTaskFileIds(tasksDirPath(boardDir))).filter(
+		(existingId) => !liveTaskIds.has(existingId),
+	);
+	await mapFilesConcurrent(removedIds, (existingId) => rm(taskFilePath(boardDir, existingId), { force: true }));
 
 	const manifest = {
 		version: BOARD_MANIFEST_VERSION,
