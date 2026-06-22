@@ -1,0 +1,19 @@
+{
+  "id": "465aa",
+  "title": "DB客户端: Schema 浏览器 UI(侧栏树)",
+  "prompt": "在 web-ui 实现数据库 schema 浏览器(侧栏树)。\n\n依赖:Schema 内省后端 tRPC 端点(getSchemaTree / getTableColumns)已完成。\n\n要求:\n- 左侧树状导航:连接 → 库/schema → 表/视图 → 列。按需懒加载子节点(展开时才拉取),配合后端懒加载端点。\n- 点击表能查看其列(名称/类型/是否可空/主键/索引)。\n- 严格遵循 web-ui 规范:Tailwind v4 设计 token、Radix 原语(可用 collapsible/tree 行为)、lucide-react 图标、src/components/ui 基础组件、cn()。web-ui 日志用 @/utils/logger,禁止 console.*。优先 react-use hooks。\n- 拆成小的单一职责组件,共享逻辑抽到 hooks。\n- 只做 schema 浏览器树。不要提交。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782141002162,
+  "updatedAt": 1782141002162,
+  "column": "backlog",
+  "rank": "Zw",
+  "dependsOn": []
+}
