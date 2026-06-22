@@ -7,6 +7,14 @@
       "category": "image",
       "size": 4874,
       "addedAt": 1782027523090
+    },
+    {
+      "id": "d6dcd",
+      "name": "image.png",
+      "mime": "image/png",
+      "category": "image",
+      "size": 27035,
+      "addedAt": 1782110252251
     }
   ]
 }

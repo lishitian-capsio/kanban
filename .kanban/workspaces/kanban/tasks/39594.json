@@ -1,0 +1,19 @@
+{
+  "id": "39594",
+  "title": "CLI agent 会话名称：根据会话内容自动生成（免手动取名）",
+  "prompt": "目标：创建 CLI agent 会话时不必手动取名 —— 改成【根据会话内容自动生成】一个简短、可读的会话名称，让运行中和历史的会话都能一眼认出在跑什么。参考聊天类产品自动起标题的做法（先占位名 → 首轮对话产生内容后用一次轻量 LLM 调用据内容生成标题）。\n\n先读调研文档：.plan/docs/cli-agent-session-labels-investigation.md —— 它已定位现状与缺口，按它的结论实现，不要重复调研。\n\n关键现状（来自调研）：\n- home (sidebar) 多线程已有 RuntimeHomeChatThread.name + 完整重命名链路（home-thread-registry.ts / home-thread-store.ts / renameHomeThread tRPC / home-thread-rename-dialog.tsx）—— 目前是用户手动取名。\n- board 任务的 CLI agent 会话没有可读标签：RuntimeTaskSessionSummary（api-contract.ts:965-989）只有 taskId，无 name/label/title；运行中终端面板只显示 worktree 路径。\n\n要实现：\n1. 自动命名：会话创建时给占位名；产生足够内容后（例如首轮 assistant 回复完成 / 第一个 turn 边界），用一次轻量模型调用根据会话内容生成简短标题（建议 ≤ 一行）。失败要有降级（fallback 到任务 title 的首句派生 deriveTaskTitleFromPrompt，或占位名）。避免每个 turn 都重算（只在首次/名称仍为占位时生成）。\n2. home thread：把自动生成接进现有 thread name（默认自动名，仍保留用户手动重命名覆盖的能力）。\n3. board 会话：让这个可读名称能随会话被展示出来——按调研建议，最小做法是读时把名称 join 进 getTaskChatMessages / 会话 summary，终端面板标题显示该名称而非 worktree 路径。\n4. 命名生成逻辑要可单测（纯函数 + 注入的生成器），别把模型调用硬编进难以测试的位置。\n\n约束：自动生成不要阻塞会话启动（异步、后台生成，名字就绪后再更新 UI）；不要新增会话启动时的同步网络 I/O 到热路径；遵守项目 logging/typescript 规范。\n\n产出：自动命名落地 + home thread 与 board 会话都能显示该名称；附带单测。先不做'独立 Agents 总览页'，那是后续任务。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782109878585,
+  "updatedAt": 1782110355691,
+  "column": "in_progress",
+  "rank": "Zi",
+  "dependsOn": []
+}
