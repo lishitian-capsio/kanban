@@ -1,0 +1,19 @@
+{
+  "id": "a6351",
+  "title": "perf #16: 冷克隆 board-sync fetch 加网络超时",
+  "prompt": "性能优化 #16(边缘鲁棒性,首启才触发,低风险)。\n\n问题:热启动 board-sync 无启动网络 I/O(刻意设计,无需动)。但冷克隆的首次启动会在 createBoardWorktree 的 ensureBoardWorktree 关键路径上同步跑一次 git fetch,而这次 fetch 没有被 BOARD_NETWORK_GIT_TIMEOUT_MS 包裹 —— 远端慢/不可达会让首启挂住。热启动会 early-return 跳过它(isGitWorktree)。\n\n定位:\n- 冷克隆 fetch src/workspace/board-worktree.ts:557\n- 超时常量 BOARD_NETWORK_GIT_TIMEOUT_MS=30s (board-worktree.ts:27)\n- 设计说明 src/server/runtime-server.ts:592-595(No boot reconcile)\n\n修法:给 board-worktree.ts:557 的冷克隆 fetch 套上 BOARD_NETWORK_GIT_TIMEOUT_MS 网络超时,超时后给出清晰错误/降级而非无限挂起。\n\n注意:别给热启动路径引入任何新的启动网络 I/O。验证冷克隆首启在远端不可达时能超时退出、热启动行为不变。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782106667752,
+  "updatedAt": 1782106667752,
+  "column": "backlog",
+  "rank": "Zj",
+  "dependsOn": []
+}
