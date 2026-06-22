@@ -3,7 +3,7 @@
   "title": "修复：codex 会话不持久化/不可 resume，重启后丢失上下文",
   "prompt": "Bug：codex agent 的会话在 Kanban 重启后丢失上下文，无法续接。claude 已实现 session resume，codex 没接上。\n\n已定位的缺口（src/terminal/agent-session-adapters.ts）：\n- claudeAdapter（约 536-707，参照模板）：normalizeClaudeSessionId(input.agentSessionId) 校验 UUID；无 prior id 则 mint 新 UUID 走 --session-id <uuid>，有则走 --resume <recordedSessionId>，trash 兜底 --continue；返回 PreparedAgentLaunch.agentSessionId = boundAgentSessionId。session-manager.ts:714 持久化 agentSessionId: launch.agentSessionId ?? recordedAgentSessionId，重启重载。\n- codexAdapter（约 730-815）：收到 input.agentSessionId 但【从不使用】；不 mint、不 pin session id；只有 trash 兜底的 'resume --last'，没有按 prior id 精确续接；返回值【不含】agentSessionId → summary 里恒为 null → 重启丢全部上下文。\n\ncodex CLI 的 resume 能力（见 .plan/docs/CLI References/codex-cli-reference.md:206-211、370-391）：\n- 交互：codex resume [SESSION_ID] / resume --last / resume --all --last\n- exec：codex exec resume [SESSION_ID] / resume --last\n- SESSION_ID 是 UUID，positional（resume 后面跟，不是 --flag）。\n- codex 的 session rollout 文件写在 CODEX_HOME/sessions/<YYYY>/<MM>/<DD>/rollout-<ts>-<label>.jsonl，每个 rollout 内嵌 session id。\n\n【关键不确定点，先核实再实现】codex 是否支持像 claude 那样在【启动时】用 --session-id 预先 pin 一个我们自己生成的 UUID。\n- 若支持：照 claude 模板，首启 mint+pin --session-id、重启 resume <id>、回传 agentSessionId。\n- 若不支持（codex 只在启动后自己分配 id、写进 rollout）：改为【启动后捕获】——从该 task 的 CODEX_HOME（codex-home-projector 已为每 task 写稳定 CODEX_HOME=<machine-home>/codex-home/<taskId>/，所以 sessions/ 会持久存在）里解析最新 rollout 的 session id，存到 summary.agentSessionId；重启时用 codex [exec] resume <capturedId> 续接。注意区分交互 vs exec 模式与 Kanban 实际用的是哪种。\n\n实现要点：\n- codexAdapter 读取/校验 input.agentSessionId，按上面两种路径之一接上 resume，并在 PreparedAgentLaunch 里回传 agentSessionId，让 session-manager 持久化（与 claude 同一持久化路径，不要新造）。\n- 确认 codex 默认（official login / 无自定义 provider，projectCodexHome 返回 null → 用原生 ~/.codex）与自定义 provider（隔离 CODEX_HOME）两种情况下 resume 都能找到对应 sessions 目录。\n- 不破坏 codex-home-projector 既有行为；不把任何 API key 写盘。\n\n先确认 codex resume 的真实 flag 形态（必要时跑 codex --help / codex resume --help 核对），写覆盖『首启分配 id→重启用同 id resume→上下文续接』的回归测试，再实现。验证 typecheck + biome + 相关 terminal/session 测试零回归。参照记忆：claude-session-resume-implemented、codex-home-projector-implemented、no-cross-agent-session-sharing。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,8 +12,8 @@
   },
   "baseRef": "main",
   "createdAt": 1782118137310,
-  "updatedAt": 1782118137310,
-  "column": "backlog",
-  "rank": "a0",
+  "updatedAt": 1782118186005,
+  "column": "in_progress",
+  "rank": "a1",
   "dependsOn": []
 }
