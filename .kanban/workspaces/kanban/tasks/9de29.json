@@ -1,0 +1,19 @@
+{
+  "id": "9de29",
+  "title": "perf #13: 启动迁移 gate 预检并行化 / 进程内已迁移缓存",
+  "prompt": "性能优化 #13(打磨,低-中风险)。\n\n问题:每次加载 workspace 跑 8 个迁移严格串行;已迁移的 repo 上是 ~2 个 git spawn(isGitWorktree、isBoardRefTrackedOnCodeBranch,~10-15ms)+ ~13 个 pathExists/stat,全串行。loadWorkspaceContext 在很多路径被调用(registry init、每次 loadWorkspaceState、tRPC projects-api.ts:129、task-worktree 操作)。\n\n定位:\n- src/state/workspace-state.ts:1154-1164 (8 个串行迁移)\n\n修法:把相互独立的 gate 预检用 Promise.all 并发评估;或在进程内按 repoPath 缓存『此 repo 已完全迁移』,使同进程内重复调用直接跳过整条链。\n\n关键不变量:migrateDecoupleBoardToBranch 必须保持最后执行(last-runs-last)。其余 gate 预检相互独立可并发。验证迁移仍幂等、已迁移 repo 行为不变;现有测试通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782106645152,
+  "updatedAt": 1782106645152,
+  "column": "backlog",
+  "rank": "Zm",
+  "dependsOn": []
+}
