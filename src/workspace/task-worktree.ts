@@ -355,12 +355,46 @@ async function syncManagedIgnoredPathExcludes(repoPath: string, relativePaths: s
 	await lockedFileSystem.writeTextFileAtomic(excludePath, normalizedNextContent);
 }
 
-async function syncIgnoredPathsIntoWorktree(repoPath: string, worktreePath: string): Promise<void> {
+/**
+ * Computing the set of ignored paths to mirror is a repo-level operation (two
+ * git invocations) whose result is identical for every worktree of a repo. When
+ * many task worktrees are created at once each one would otherwise re-run those
+ * git commands; this short-lived per-repo cache collapses a startup burst into a
+ * single computation while staying fresh enough that a later, unrelated creation
+ * still sees up-to-date ignore rules.
+ */
+const MIRRORED_IGNORED_PATHS_CACHE_TTL_MS = 1000;
+const mirroredIgnoredPathsCache = new Map<string, { expiresAt: number; promise: Promise<string[]> }>();
+
+async function computeMirroredIgnoredPaths(repoPath: string): Promise<string[]> {
 	const ignoredPaths = getUniquePaths(await listIgnoredPaths(repoPath)).filter(
 		(relativePath) => !shouldSkipSymlink(relativePath),
 	);
 	const turbopackNodeModulesSkipPaths = new Set(await listTurbopackNodeModulesSymlinkSkipPaths(repoPath));
-	const mirroredIgnoredPaths = ignoredPaths.filter((relativePath) => !turbopackNodeModulesSkipPaths.has(relativePath));
+	return ignoredPaths.filter((relativePath) => !turbopackNodeModulesSkipPaths.has(relativePath));
+}
+
+function getMirroredIgnoredPaths(repoPath: string): Promise<string[]> {
+	const now = Date.now();
+	const cached = mirroredIgnoredPathsCache.get(repoPath);
+	if (cached && cached.expiresAt > now) {
+		return cached.promise;
+	}
+
+	const promise = computeMirroredIgnoredPaths(repoPath);
+	const entry = { expiresAt: now + MIRRORED_IGNORED_PATHS_CACHE_TTL_MS, promise };
+	mirroredIgnoredPathsCache.set(repoPath, entry);
+	// Never let a failed computation poison subsequent creations for the whole TTL.
+	promise.catch(() => {
+		if (mirroredIgnoredPathsCache.get(repoPath) === entry) {
+			mirroredIgnoredPathsCache.delete(repoPath);
+		}
+	});
+	return promise;
+}
+
+async function syncIgnoredPathsIntoWorktree(repoPath: string, worktreePath: string): Promise<void> {
+	const mirroredIgnoredPaths = await getMirroredIgnoredPaths(repoPath);
 
 	await syncManagedIgnoredPathExcludes(repoPath, mirroredIgnoredPaths);
 	for (const relativePath of mirroredIgnoredPaths) {
@@ -396,9 +430,31 @@ async function initializeSubmodulesIfNeeded(worktreePath: string): Promise<void>
 	await getGitStdout(["submodule", "update", "--init", "--recursive"], worktreePath);
 }
 
-async function prepareNewTaskWorktree(repoPath: string, worktreePath: string): Promise<void> {
+/**
+ * Submodule init writes into the repo-shared `$GIT_COMMON_DIR/modules/<name>`
+ * directory, so it must stay serialized alongside `worktree add` under the
+ * per-repo setup lock — concurrent inits of the same superproject would race on
+ * that shared gitdir. Mirroring ignored paths only touches the isolated new
+ * worktree, so it is deliberately NOT done here (see `mirrorIgnoredPathsForNewWorktree`).
+ */
+async function initializeNewWorktreeSubmodules(repoPath: string, worktreePath: string): Promise<void> {
 	try {
 		await initializeSubmodulesIfNeeded(worktreePath);
+	} catch (error) {
+		await removeTaskWorktreeInternal(repoPath, worktreePath).catch(() => {});
+		throw error;
+	}
+}
+
+/**
+ * Mirrors ignored paths into a freshly created worktree. This runs OUTSIDE the
+ * per-repo setup lock: it only writes into the isolated worktree directory (plus
+ * the deterministic, idempotent `.git/info/exclude` managed block), so multiple
+ * concurrent fresh worktrees can mirror their files in parallel. This is the same
+ * lock-free path the existing-worktree fast path already uses.
+ */
+async function mirrorIgnoredPathsForNewWorktree(repoPath: string, worktreePath: string): Promise<void> {
+	try {
 		await syncIgnoredPathsIntoWorktree(repoPath, worktreePath);
 	} catch (error) {
 		await removeTaskWorktreeInternal(repoPath, worktreePath).catch(() => {});
@@ -434,6 +490,22 @@ async function pruneEmptyParents(rootPath: string, fromPath: string): Promise<vo
 	}
 }
 
+/**
+ * Outcome of the locked, registry-mutating phase of worktree setup. The
+ * per-worktree file mirroring + patch application are intentionally deferred to
+ * after the lock, so the lock body returns enough context to finish that work.
+ */
+type WorktreeSetupResult =
+	| { kind: "existing"; baseCommit: string }
+	| { kind: "error"; response: RuntimeWorktreeEnsureResponse }
+	| {
+			kind: "created";
+			baseRef: string;
+			baseCommit: string;
+			storedPatch: { path: string; commit: string } | null;
+			warning: string | undefined;
+	  };
+
 export async function ensureTaskWorktreeIfDoesntExist(options: {
 	cwd: string;
 	taskId: string;
@@ -458,26 +530,30 @@ export async function ensureTaskWorktreeIfDoesntExist(options: {
 			};
 		}
 
-		return await withTaskWorktreeSetupLock(context.repoPath, async () => {
+		// The per-repo setup lock now scopes ONLY the steps that mutate the shared
+		// git worktree registry / common dir (worktree remove + prune + add, and
+		// submodule init into the shared modules dir). Read-only base-ref
+		// resolution stays inside for unchanged ordering w.r.t. the post-lock
+		// double-check, but the expensive per-worktree file mirroring (and patch
+		// application) is deliberately performed AFTER the lock so concurrent
+		// fresh worktrees no longer serialize on it.
+		const setup = await withTaskWorktreeSetupLock(context.repoPath, async (): Promise<WorktreeSetupResult> => {
 			const lockedExistingCommit = await tryRunGit(worktreePath, ["rev-parse", "HEAD"]);
 			if (lockedExistingCommit) {
-				await syncIgnoredPathsIntoWorktree(context.repoPath, worktreePath);
-				return {
-					ok: true,
-					path: worktreePath,
-					baseRef: options.baseRef.trim(),
-					baseCommit: lockedExistingCommit,
-				};
+				return { kind: "existing", baseCommit: lockedExistingCommit };
 			}
 
 			const requestedBaseRef = options.baseRef.trim();
 			if (!requestedBaseRef) {
 				return {
-					ok: false,
-					path: null,
-					baseRef: requestedBaseRef,
-					baseCommit: null,
-					error: "Task base branch is required for worktree creation.",
+					kind: "error",
+					response: {
+						ok: false,
+						path: null,
+						baseRef: requestedBaseRef,
+						baseCommit: null,
+						error: "Task base branch is required for worktree creation.",
+					},
 				};
 			}
 
@@ -488,14 +564,17 @@ export async function ensureTaskWorktreeIfDoesntExist(options: {
 			]);
 			if (!baseRefResult.ok) {
 				return {
-					ok: false,
-					path: null,
-					baseRef: requestedBaseRef,
-					baseCommit: null,
-					error: getWorktreeBaseRefResolutionErrorMessage(
-						requestedBaseRef,
-						baseRefResult.stderr || baseRefResult.output,
-					),
+					kind: "error",
+					response: {
+						ok: false,
+						path: null,
+						baseRef: requestedBaseRef,
+						baseCommit: null,
+						error: getWorktreeBaseRefResolutionErrorMessage(
+							requestedBaseRef,
+							baseRefResult.stderr || baseRefResult.output,
+						),
+					},
 				};
 			}
 			const requestedBaseCommit = baseRefResult.stdout;
@@ -518,11 +597,14 @@ export async function ensureTaskWorktreeIfDoesntExist(options: {
 			if (!addResult.ok) {
 				if (!storedPatch) {
 					return {
-						ok: false,
-						path: null,
-						baseRef: requestedBaseRef,
-						baseCommit: null,
-						error: addResult.stderr || addResult.output,
+						kind: "error",
+						response: {
+							ok: false,
+							path: null,
+							baseRef: requestedBaseRef,
+							baseCommit: null,
+							error: addResult.stderr || addResult.output,
+						},
 					};
 				}
 
@@ -531,25 +613,49 @@ export async function ensureTaskWorktreeIfDoesntExist(options: {
 					"Could not restore the saved task patch onto its original commit. Started from the task base ref instead.";
 				await getGitStdout(["worktree", "add", "--detach", worktreePath, baseCommit], context.repoPath);
 			}
-			await prepareNewTaskWorktree(context.repoPath, worktreePath);
 
-			if (storedPatch && baseCommit === storedPatch.commit) {
-				try {
-					await applyTaskPatch(storedPatch.path, worktreePath);
-					await rm(storedPatch.path, { force: true });
-				} catch (error) {
-					warning = `Saved task changes could not be reapplied automatically. ${getGitCommandErrorMessage(error)}`;
-				}
-			}
+			// Submodule init touches the repo-shared modules dir, so it stays under the lock.
+			await initializeNewWorktreeSubmodules(context.repoPath, worktreePath);
 
+			return { kind: "created", baseRef: requestedBaseRef, baseCommit, storedPatch, warning };
+		});
+
+		if (setup.kind === "error") {
+			return setup.response;
+		}
+
+		if (setup.kind === "existing") {
+			await syncIgnoredPathsIntoWorktree(context.repoPath, worktreePath);
 			return {
 				ok: true,
 				path: worktreePath,
-				baseRef: requestedBaseRef,
-				baseCommit,
-				warning,
+				baseRef: options.baseRef.trim(),
+				baseCommit: setup.baseCommit,
 			};
-		});
+		}
+
+		// Newly created worktree: mirror ignored paths and reapply any saved patch
+		// outside the lock so these per-worktree steps run in parallel across tasks.
+		const { baseRef, baseCommit, storedPatch } = setup;
+		let warning = setup.warning;
+		await mirrorIgnoredPathsForNewWorktree(context.repoPath, worktreePath);
+
+		if (storedPatch && baseCommit === storedPatch.commit) {
+			try {
+				await applyTaskPatch(storedPatch.path, worktreePath);
+				await rm(storedPatch.path, { force: true });
+			} catch (error) {
+				warning = `Saved task changes could not be reapplied automatically. ${getGitCommandErrorMessage(error)}`;
+			}
+		}
+
+		return {
+			ok: true,
+			path: worktreePath,
+			baseRef,
+			baseCommit,
+			warning,
+		};
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		return {

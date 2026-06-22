@@ -443,4 +443,72 @@ describe.sequential("task-worktree integration", () => {
 			}
 		});
 	});
+
+	it("creates many fresh worktrees concurrently without racing", async () => {
+		await withTemporaryHome(async () => {
+			const { path: sandboxRoot, cleanup } = createTempDir("kanban-task-worktree-concurrent-");
+			try {
+				const repoPath = join(sandboxRoot, "repo");
+				mkdirSync(repoPath, { recursive: true });
+
+				runGit(repoPath, ["init"]);
+				runGit(repoPath, ["config", "user.name", "Kanban Test"]);
+				runGit(repoPath, ["config", "user.email", "kanban-test@example.com"]);
+
+				writeFileSync(join(repoPath, "README.md"), "hello\n", "utf8");
+				writeFileSync(join(repoPath, ".gitignore"), "/node_modules/\n", "utf8");
+				mkdirSync(join(repoPath, "node_modules"), { recursive: true });
+				writeFileSync(join(repoPath, "node_modules", "package.json"), '{\n  "name": "fixture"\n}\n', "utf8");
+
+				runGit(repoPath, ["add", "README.md", ".gitignore"]);
+				runGit(repoPath, ["commit", "-m", "init"]);
+
+				const taskIds = Array.from({ length: 8 }, (_, index) => `concurrent-task-${index}`);
+				const results = await Promise.all(
+					taskIds.map((taskId) =>
+						ensureTaskWorktreeIfDoesntExist({
+							cwd: repoPath,
+							taskId,
+							baseRef: "HEAD",
+						}),
+					),
+				);
+
+				const seenPaths = new Set<string>();
+				const baseCommits = new Set<string>();
+				for (const result of results) {
+					expect(result.ok).toBe(true);
+					if (!result.ok || !result.path || !result.baseCommit) {
+						throw new Error("A concurrent task worktree was not created");
+					}
+					// Each fresh worktree's HEAD matches the base it reported (no race destroyed it)...
+					expect(runGit(result.path, ["rev-parse", "HEAD"])).toBe(result.baseCommit);
+					baseCommits.add(result.baseCommit);
+					// ...lives at a distinct path...
+					expect(seenPaths.has(result.path)).toBe(false);
+					seenPaths.add(result.path);
+					// ...and had its ignored paths mirrored in parallel (outside the lock).
+					expectMirroredPathBehavior(join(result.path, "node_modules"));
+					expect(runGit(result.path, ["status", "--porcelain", "--", "node_modules"])).toBe("");
+				}
+				// All concurrent creations agreed on a single base commit.
+				expect(baseCommits.size).toBe(1);
+
+				// The shared worktree registry is intact: every task worktree is
+				// registered exactly once, none pruned or corrupted by a concurrent
+				// prune/add under the lock. (The repo may also register unrelated
+				// worktrees such as the board-data worktree, so we check membership
+				// rather than an exact count.)
+				const registeredPaths = runGit(repoPath, ["worktree", "list", "--porcelain"])
+					.split("\n")
+					.filter((line) => line.startsWith("worktree "))
+					.map((line) => line.slice("worktree ".length));
+				for (const path of seenPaths) {
+					expect(registeredPaths.filter((registered) => registered === path)).toHaveLength(1);
+				}
+			} finally {
+				cleanup();
+			}
+		});
+	});
 });
