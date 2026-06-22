@@ -2,9 +2,9 @@
  * Partial masking for API key display.
  *
  * Keeps a few leading and trailing characters visible so a user can recognise
- * *which* key is set without exposing the secret, and replaces the middle with
- * dots. Very short keys are masked entirely so we never reveal almost the whole
- * key.
+ * *which* key is set without exposing the secret, and collapses the middle to a
+ * single ellipsis (so the key's length isn't leaked either). Very short keys are
+ * masked entirely so we never reveal almost the whole key.
  *
  * Shared by the backend — which derives a non-secret preview from the stored
  * key (the full secret never leaves the runtime) — and the web-ui add/edit
@@ -12,8 +12,11 @@
  * the same algorithm so the rendered mask is identical.
  */
 
-/** Bullet character used to fill the masked middle of a key. */
+/** Bullet character used when a key is too short to partially reveal. */
 export const API_KEY_MASK_DOT = "•";
+
+/** Ellipsis that replaces the hidden middle of a partially-revealed key. */
+export const API_KEY_MASK_ELLIPSIS = "…";
 
 /** Maximum number of characters revealed at each end of a long key. */
 export const API_KEY_MASK_MAX_REVEAL_PER_SIDE = 4;
@@ -31,9 +34,10 @@ export const API_KEY_MASK_MIN_LENGTH_FOR_PARTIAL = 9;
  * - Short keys (< {@link API_KEY_MASK_MIN_LENGTH_FOR_PARTIAL}) → fully masked.
  * - Longer keys → up to {@link API_KEY_MASK_MAX_REVEAL_PER_SIDE} characters
  *   visible at each end (and never more than a quarter of the key per side, so
- *   shorter keys stay mostly masked), with the middle replaced by dots.
+ *   shorter keys stay mostly masked), with the middle collapsed to a single
+ *   {@link API_KEY_MASK_ELLIPSIS}.
  *
- * @example maskApiKey("sk-abcdefghijklmnopqrstuvwxyz") // "sk-a••••••••••••••••••••wxyz"
+ * @example maskApiKey("sk-abcdefghijklmnopqrstuvwxyz") // "sk-a…wxyz"
  */
 export function maskApiKey(value: string): string {
 	const length = value.length;
@@ -46,5 +50,5 @@ export function maskApiKey(value: string): string {
 	const reveal = Math.min(API_KEY_MASK_MAX_REVEAL_PER_SIDE, Math.floor(length / 4));
 	const head = value.slice(0, reveal);
 	const tail = value.slice(length - reveal);
-	return `${head}${API_KEY_MASK_DOT.repeat(length - reveal * 2)}${tail}`;
+	return `${head}${API_KEY_MASK_ELLIPSIS}${tail}`;
 }

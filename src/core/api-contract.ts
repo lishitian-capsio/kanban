@@ -1448,7 +1448,7 @@ export const runtimeKanbanProviderCatalogItemSchema = z.object({
 	anthropic: runtimeAnthropicProviderSettingsSchema.optional(),
 	/**
 	 * Non-secret, partially-masked preview of the configured API key (e.g.
-	 * `sk-ab••••••wxyz`), so the edit dialog can let the user confirm *which*
+	 * `sk-ab…wxyz`), so the edit dialog can let the user confirm *which*
 	 * key is set without the full secret ever leaving the runtime. `null` when
 	 * no key is configured.
 	 */
@@ -1516,7 +1516,7 @@ export const runtimeAgentProviderConfigSchema = z.object({
 	apiKey: z.string().optional(),
 	/**
 	 * Non-secret, partially-masked preview of the configured API key (e.g.
-	 * `sk-ab••••wxyz`), attached on the redacted wire response so an edit form can
+	 * `sk-ab…wxyz`), attached on the redacted wire response so an edit form can
 	 * show *which* key is set without the real secret ever leaving the runtime.
 	 * `null` when no key is configured. Never persisted — stripped before write.
 	 */

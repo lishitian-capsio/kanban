@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	API_KEY_MASK_DOT,
+	API_KEY_MASK_ELLIPSIS,
 	API_KEY_MASK_MAX_REVEAL_PER_SIDE,
 	API_KEY_MASK_MIN_LENGTH_FOR_PARTIAL,
 	maskApiKey,
@@ -22,27 +23,29 @@ describe("maskApiKey", () => {
 		}
 	});
 
-	it("reveals head and tail for a long key with dots in the middle", () => {
+	it("reveals head and tail for a long key with a single ellipsis in the middle", () => {
 		const key = "sk-abcdefghijklmnopqrstuvwxyz"; // length 29
 		const masked = maskApiKey(key);
 		expect(masked.startsWith("sk-a")).toBe(true);
 		expect(masked.endsWith("wxyz")).toBe(true);
-		expect(masked).toBe(`sk-a${dots(key.length - API_KEY_MASK_MAX_REVEAL_PER_SIDE * 2)}wxyz`);
-		// Same length as the input so the field still reads like a key.
-		expect(masked).toHaveLength(key.length);
+		// The middle collapses to one ellipsis so the key's length isn't leaked.
+		expect(masked).toBe(`sk-a${API_KEY_MASK_ELLIPSIS}wxyz`);
+		expect(masked).toHaveLength(API_KEY_MASK_MAX_REVEAL_PER_SIDE * 2 + API_KEY_MASK_ELLIPSIS.length);
 	});
 
 	it("never reveals more than a quarter of the key per side for mid-length keys", () => {
-		// length 9 → floor(9/4) = 2 revealed per side, 5 dots in the middle.
-		expect(maskApiKey("123456789")).toBe(`12${dots(5)}89`);
-		// length 12 → floor(12/4) = 3 revealed per side, 6 dots in the middle.
-		expect(maskApiKey("abcdefghijkl")).toBe(`abc${dots(6)}jkl`);
+		// length 9 → floor(9/4) = 2 revealed per side.
+		expect(maskApiKey("123456789")).toBe(`12${API_KEY_MASK_ELLIPSIS}89`);
+		// length 12 → floor(12/4) = 3 revealed per side.
+		expect(maskApiKey("abcdefghijkl")).toBe(`abc${API_KEY_MASK_ELLIPSIS}jkl`);
 	});
 
 	it("caps revealed characters at the per-side maximum for very long keys", () => {
 		const key = "x".repeat(100);
 		const masked = maskApiKey(key);
-		const revealed = masked.replace(new RegExp(API_KEY_MASK_DOT, "g"), "");
+		const revealed = masked.split(API_KEY_MASK_ELLIPSIS).join("");
 		expect(revealed).toHaveLength(API_KEY_MASK_MAX_REVEAL_PER_SIDE * 2);
+		// The mask stays compact regardless of how long the real key is.
+		expect(masked).toHaveLength(API_KEY_MASK_MAX_REVEAL_PER_SIDE * 2 + API_KEY_MASK_ELLIPSIS.length);
 	});
 });

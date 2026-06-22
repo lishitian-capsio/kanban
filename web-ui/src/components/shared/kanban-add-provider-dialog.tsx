@@ -139,7 +139,7 @@ export interface KanbanProviderDialogInitialValues {
 	apiKey?: string;
 	/**
 	 * Non-secret, partially-masked preview of the already-saved API key (e.g.
-	 * `sk-ab••••••wxyz`). Lets the edit dialog show *which* key is set without
+	 * `sk-ab…wxyz`). Lets the edit dialog show *which* key is set without
 	 * the full secret; the real key is never sent to the frontend. `null`/absent
 	 * when no key is configured (or in add mode).
 	 */

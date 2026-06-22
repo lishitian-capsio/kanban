@@ -12,7 +12,7 @@ describe("buildProviderEditInitialValues", () => {
 			modelsSourceUrl: "https://relay.example.com/v1/models",
 			baseUrl: "https://relay.example.com/v1",
 			protocols: [{ protocol: "openai", baseUrl: "https://relay.example.com/v1" }],
-			apiKeyPreview: "sk-r••••wxyz",
+			apiKeyPreview: "sk-r…wxyz",
 			headers: { "x-team": "kanban" },
 			timeout: 30000,
 		};
@@ -27,7 +27,7 @@ describe("buildProviderEditInitialValues", () => {
 		expect(initial.modelsSourceUrl).toBe("https://relay.example.com/v1/models");
 		expect(initial.protocols).toEqual(["openai"]);
 		expect(initial.protocolConfigs).toEqual([{ protocol: "openai", baseUrl: "https://relay.example.com/v1" }]);
-		expect(initial.apiKeyPreview).toBe("sk-r••••wxyz");
+		expect(initial.apiKeyPreview).toBe("sk-r…wxyz");
 		expect(initial.headers).toEqual({ "x-team": "kanban" });
 		expect(initial.timeoutMs).toBe(30000);
 	});
@@ -40,19 +40,19 @@ describe("buildProviderEditInitialValues", () => {
 		const claudeConfig: RuntimeAgentProviderConfig = {
 			agentId: "claude",
 			provider: "anthropic",
-			apiKeyPreview: "sk-c••••AAAA",
+			apiKeyPreview: "sk-c…AAAA",
 			protocols: [{ protocol: "anthropic", baseUrl: "https://claude.example.com" }],
 		};
 		const codexConfig: RuntimeAgentProviderConfig = {
 			agentId: "codex",
 			provider: "anthropic",
-			apiKeyPreview: "sk-x••••BBBB",
+			apiKeyPreview: "sk-x…BBBB",
 			protocols: [{ protocol: "openai", baseUrl: "https://codex.example.com" }],
 		};
 
-		expect(buildProviderEditInitialValues(claudeConfig).apiKeyPreview).toBe("sk-c••••AAAA");
+		expect(buildProviderEditInitialValues(claudeConfig).apiKeyPreview).toBe("sk-c…AAAA");
 		expect(buildProviderEditInitialValues(claudeConfig).baseUrl).toBe("https://claude.example.com");
-		expect(buildProviderEditInitialValues(codexConfig).apiKeyPreview).toBe("sk-x••••BBBB");
+		expect(buildProviderEditInitialValues(codexConfig).apiKeyPreview).toBe("sk-x…BBBB");
 		expect(buildProviderEditInitialValues(codexConfig).baseUrl).toBe("https://codex.example.com");
 	});
 

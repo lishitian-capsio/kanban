@@ -88,12 +88,12 @@ describe("agent provider save round-trip", () => {
 			apiKey: "sk-real-key-000000",
 			protocols: [{ protocol: "openai", baseUrl: "https://relay.example.com/v1" }],
 			// Simulate the client echoing a masked preview back on save.
-			apiKeyPreview: "sk-r••••0000",
+			apiKeyPreview: "sk-r…0000",
 		} as Parameters<typeof saveAgentProvider>[1]);
 
 		const onDisk = readFileSync(providersPath, "utf8");
 		expect(onDisk).not.toContain("apiKeyPreview");
-		expect(onDisk).not.toContain("sk-r••••0000");
+		expect(onDisk).not.toContain("sk-r…0000");
 		// The real key must survive untouched.
 		resetAgentProviderConfigCache();
 		const provider = getAllAgentProviderSets().claude?.providers[0];
