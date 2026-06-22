@@ -1,0 +1,19 @@
+{
+  "id": "ddb4f",
+  "title": "provider Capabilities 改为模型级（方案B）",
+  "prompt": "把 provider 弹窗里的 Capabilities（streaming/tools/reasoning/vision/prompt-cache）从【provider 层全局多选】改造为【模型级能力】。先做只读定位确认下述判断，再实现。\n\n【已确认的现状/bug】\n- UI 多选是 dialog 表单字段，默认 [\"streaming\",\"tools\"]：web-ui/src/components/shared/kanban-add-provider-dialog.tsx（字段 :118/:151/:202，提交 :564-565/:584，toggle :470，渲染 :900）。\n- controller 也透传该字段：web-ui/src/hooks/use-runtime-settings-kanban-controller.ts:90,105。\n- 但持久化契约 runtimeAgentProviderConfigSchema（src/core/api-contract.ts，约 :1473）里【没有 capabilities 字段】→ 保存时被静默丢弃 → 重开读回为空 → 回落默认 [\"streaming\",\"tools\"]。用户改了永远不生效。能力枚举 runtimeKanbanProviderCapabilitySchema 在 :1463。\n\n【设计判断（要落实的方向 = 方案B）】\nstreaming/tools/reasoning/vision/prompt-cache 是【单个模型】的属性，不是 provider（一个 endpoint+key 可挂多模型，各自能力不同）的属性。把一组能力挂在 provider 层是错的粒度。\n目标：能力跟随 model —— 优先从模型 metadata / /models 发现派生（见 runtimeFetchRemoteModels* 与 fetchRemoteProviderModels），必要时支持按 model 覆盖；移除或改造 provider 弹窗里这个\"假装可配、保存即丢弃\"的全局 Capabilities 多选，消除误导。\n\n【关键不要混淆】\nsrc/agent-sdk/kanban/provider-protocol.ts 里的 AGENT_PROVIDER_CAPABILITY 是【另一个无关概念】= 每个 agent 的 generic(可自定义 OpenAI 兼容端点) vs vendor(gemini/kiro 锁原生 API) 分类。不要动它，也不要把两者合并。\n\n【验证】保存→重开 provider 配置不再丢失/重置；能力来源对得上模型；web:typecheck + 相关单测（kanban-add-provider-dialog.test.tsx 等）通过。先调研确认再改，给出最终改动清单。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782110607872,
+  "updatedAt": 1782110607872,
+  "column": "backlog",
+  "rank": "Zj",
+  "dependsOn": []
+}
