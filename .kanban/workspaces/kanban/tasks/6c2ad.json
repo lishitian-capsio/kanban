@@ -1,0 +1,19 @@
+{
+  "id": "6c2ad",
+  "title": "Vault 文档下载/导出（单篇 .md + 批量 zip）",
+  "prompt": "在 web-ui 给知识库 vault 文档加下载/导出能力。当前 vault markdown 文档（docs/<type>/*.md）在 UI 里只能查看/编辑，没有下载入口；只有 Files 二进制库那边有下载。用户希望能把 vault 文档下载出来。\n\n## 范围\n1. **单篇下载**：在 vault 文档详情页（web-ui/src/components/vault/detail/**）的标题/工具栏区加一个『下载 .md』按钮，导出该文档的完整 markdown（YAML frontmatter + 正文 body），文件名用文档的 slug/标题 + .md。\n2. **批量导出**：在 vault 列表/表格视图（web-ui/src/components/vault/** 的 Content/表格组件）加『导出』动作，把当前视图（或选中项，若已有多选；没有多选就先做导出全部/按类型导出）打包成 zip 下载。zip 内按 type 分目录，跟磁盘结构一致（docs/<type>/<slug>.md）。\n\n## 实现要点\n- **markdown 重建**：vault 文档的权威序列化（frontmatter+body→.md 文本）已在后端 store 写盘时使用（查 src/vault/ 下的 doc store / 序列化，可能用 yaml + gray-matter 之类）。**复用同一个序列化函数**，不要在前端手搓 frontmatter，避免和落盘格式漂移。若该序列化只在后端，加一个 tRPC（如 workspace.exportVaultDocument / exportVaultDocuments）返回 .md 文本或打包内容，保证导出的字节和 git 里的 .md 完全一致。\n- **单篇**：可走『后端返回 .md 文本 → 前端 Blob 下载』，或直接前端用现有 doc 数据（frontmatter+body）重建——优先后端复用序列化，前端只负责触发下载（参考 Files 库 blob 下载的前端做法）。\n- **zip**：优先后端生成 zip（已有依赖可查，如 archiver/jszip；没有就评估加一个成熟库，遵守 AGENTS.md『优先成熟三方库』）返回二进制；前端触发下载。若选择前端打包，用 jszip。\n- **设计规范**：按钮用 @/components/ui/button + lucide Download 图标，沿用 surface/token 暗色规范；不要 console.*，用 web-ui logger。\n- **不改 wire 契约里 vault 文档的现有形状**，只新增导出用的 tRPC procedure。\n\n## 验收\n- vault 文档详情页可下载单篇 .md，内容（frontmatter+body）与 .kanban/files/docs/<type>/ 下磁盘文件字节一致。\n- 列表/表格可批量导出 zip，目录结构 docs/<type>/<slug>.md。\n- web:typecheck 通过；相关单测（序列化复用、导出 procedure）补齐。从 worktree 跑 vitest 加 --exclude='**/.kanban/**'。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782118345898,
+  "updatedAt": 1782118345898,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
