@@ -1,5 +1,4 @@
 import type { RuntimeTaskSessionSummary, RuntimeWorkspaceStateResponse } from "../core/api-contract";
-import { updateTaskDependencies } from "../core/task-board-mutations";
 import { listWorkspaceIndexEntries, loadWorkspaceState, saveWorkspaceState } from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { deleteTaskWorktree, removeTaskWorktreeSetupLock } from "../workspace/task-worktree";
@@ -11,46 +10,6 @@ export interface RuntimeShutdownCoordinatorDependencies {
 	warn: (message: string) => void;
 	closeRuntimeServer: () => Promise<void>;
 	skipSessionCleanup?: boolean;
-}
-
-function moveTaskToTrash(
-	board: RuntimeWorkspaceStateResponse["board"],
-	taskId: string,
-): RuntimeWorkspaceStateResponse["board"] {
-	const columns = board.columns.map((column) => ({
-		...column,
-		cards: [...column.cards],
-	}));
-	let removedCard: RuntimeWorkspaceStateResponse["board"]["columns"][number]["cards"][number] | undefined;
-
-	for (const column of columns) {
-		const cardIndex = column.cards.findIndex((candidate) => candidate.id === taskId);
-		if (cardIndex === -1) {
-			continue;
-		}
-		removedCard = column.cards[cardIndex];
-		column.cards.splice(cardIndex, 1);
-		break;
-	}
-
-	if (!removedCard) {
-		return board;
-	}
-	const trashColumnIndex = columns.findIndex((column) => column.id === "trash");
-	if (trashColumnIndex === -1) {
-		return board;
-	}
-	const trashColumn = columns[trashColumnIndex];
-	if (!trashColumn.cards.some((candidate) => candidate.id === taskId)) {
-		trashColumn.cards.unshift({
-			...removedCard,
-			updatedAt: Date.now(),
-		});
-	}
-	return updateTaskDependencies({
-		...board,
-		columns,
-	});
 }
 
 async function persistInterruptedSessions(
@@ -67,10 +26,10 @@ async function persistInterruptedSessions(
 	const workspaceState = options?.workspaceState ?? (await loadWorkspaceState(workspacePath));
 	const worktreeTaskIds = collectProjectWorktreeTaskIdsForRemoval(workspaceState.board);
 	const worktreeTaskIdsToCleanup = interruptedTaskIds.filter((taskId) => worktreeTaskIds.has(taskId));
-	let nextBoard = workspaceState.board;
-	for (const taskId of interruptedTaskIds) {
-		nextBoard = moveTaskToTrash(nextBoard, taskId);
-	}
+	// A runtime shutdown/restart must NEVER reclassify a task. We mark affected sessions as
+	// interrupted (so the UI shows the agent stopped and the task can be re-started), but the
+	// board is left untouched — an in-progress task stays in-progress. Previously every
+	// work-column task was moved to "trash" here, which wiped the board on every restart.
 	const nextSessions = {
 		...workspaceState.sessions,
 	};
@@ -87,7 +46,7 @@ async function persistInterruptedSessions(
 		}
 	}
 	await saveWorkspaceState(workspacePath, {
-		board: nextBoard,
+		board: workspaceState.board,
 		sessions: nextSessions,
 	});
 	return worktreeTaskIdsToCleanup;
