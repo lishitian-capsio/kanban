@@ -40,6 +40,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-cache-
 
+      - name: Configure registry
+        run: |
+          # Create .npmrc for better registry resolution
+          echo "registry=https://registry.npmjs.org/" > .npmrc
+          echo "Created .npmrc with npmjs registry"
+          cat .npmrc
+
       # macOS node-gyp/electron rebuilds can fail with Python 3.12/distutils; pin 3.11.
       - name: Setup Python (for node-gyp on macOS)
         if: matrix.os == 'macos-latest'
@@ -51,7 +58,7 @@ jobs:
         run: |
           echo "Installing dependencies with retry..."
           for i in 1 2 3; do
-            if BUN_INSTALL_REGISTRY=https://registry.npmjs.org bun install --frozen-lockfile; then
+            if bun install --frozen-lockfile; then
               echo "Success on attempt $i"
               exit 0
             fi

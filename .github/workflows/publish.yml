@@ -73,11 +73,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-cache-
 
+      - name: Configure registry
+        run: |
+          echo "registry=https://registry.npmjs.org/" > .npmrc
+          cat .npmrc
+
       - name: Install dependencies
         run: |
           echo "Installing dependencies with retry..."
           for i in 1 2 3; do
-            if BUN_INSTALL_REGISTRY=https://registry.npmjs.org bun install --frozen-lockfile; then
+            if bun install --frozen-lockfile; then
               echo "Success on attempt $i"
               exit 0
             fi
