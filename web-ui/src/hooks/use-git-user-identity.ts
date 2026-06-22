@@ -1,3 +1,5 @@
+import { useCallback } from "react";
+
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import { useTrpcQuery } from "@/runtime/use-trpc-query";
 import type { TaskOwner } from "@/types";
@@ -16,16 +18,17 @@ export interface UseGitUserIdentityResult {
  */
 export function useGitUserIdentity(workspaceId: string | null): UseGitUserIdentityResult {
 	const enabled = workspaceId !== null;
+	const queryFn = useCallback(async () => {
+		if (!workspaceId) {
+			throw new Error("Missing workspace.");
+		}
+		const result = await getRuntimeTrpcClient(workspaceId).workspace.getGitUserIdentity.query();
+		return result.identity;
+	}, [workspaceId]);
 
 	const query = useTrpcQuery({
 		enabled,
-		queryFn: async () => {
-			if (!workspaceId) {
-				throw new Error("Missing workspace.");
-			}
-			const result = await getRuntimeTrpcClient(workspaceId).workspace.getGitUserIdentity.query();
-			return result.identity;
-		},
+		queryFn,
 		retainDataOnError: true,
 	});
 
