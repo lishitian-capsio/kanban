@@ -67,6 +67,7 @@ import { isHomeAgentSessionId, resolveHomeAgentId } from "../core/home-agent-ses
 import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
 import { resolveTaskTitle } from "../core/task-title.js";
 import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-prompt";
+import { limitAgentStart } from "../server/agent-start-limiter";
 import { openInBrowser } from "../server/browser";
 import type { HomeThreadStore } from "../session/home-thread-store";
 import { getSelectedCommittedProvider } from "../state/committed-provider-store";
@@ -287,22 +288,26 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					const piTaskSessionService = await deps.getScopedPiTaskSessionService(workspaceScope);
 					const resolvedPiTitle = resolveTaskTitle(body.taskTitle?.trim(), body.prompt);
 					const homeAgentSystemPrompt = await resolvePiHomeAgentSystemPrompt(body.taskId, taskCwd);
-					const summary = await piTaskSessionService.startTaskSession({
-						taskId: body.taskId,
-						cwd: taskCwd,
-						prompt: body.prompt,
-						taskTitle: resolvedPiTitle.length > 0 ? resolvedPiTitle : undefined,
-						images: body.images,
-						resumeFromTrash: body.resumeFromTrash,
-						providerId: piLaunchConfig.providerId,
-						modelId: piLaunchConfig.modelId,
-						mode: requestedKanbanTaskMode,
-						startInPlanMode: body.startInPlanMode,
-						apiKey: piLaunchConfig.apiKey,
-						baseUrl: piLaunchConfig.baseUrl,
-						reasoningEffort: piLaunchConfig.reasoningEffort,
-						systemPrompt: homeAgentSystemPrompt,
-					});
+					// Throttle the spawn + adapter-file-write burst so a bulk start doesn't
+					// fire N concurrent process launches at once (host-wide CPU guard).
+					const summary = await limitAgentStart(() =>
+						piTaskSessionService.startTaskSession({
+							taskId: body.taskId,
+							cwd: taskCwd,
+							prompt: body.prompt,
+							taskTitle: resolvedPiTitle.length > 0 ? resolvedPiTitle : undefined,
+							images: body.images,
+							resumeFromTrash: body.resumeFromTrash,
+							providerId: piLaunchConfig.providerId,
+							modelId: piLaunchConfig.modelId,
+							mode: requestedKanbanTaskMode,
+							startInPlanMode: body.startInPlanMode,
+							apiKey: piLaunchConfig.apiKey,
+							baseUrl: piLaunchConfig.baseUrl,
+							reasoningEffort: piLaunchConfig.reasoningEffort,
+							systemPrompt: homeAgentSystemPrompt,
+						}),
+					);
 
 					let nextSummary = summary;
 					if (shouldCaptureTurnCheckpoint) {
@@ -337,33 +342,38 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 						error: "No runnable agent command is configured. Open Settings, install a supported CLI, and select it.",
 					};
 				}
-				const summary = await terminalManager.startTaskSession({
-					taskId: body.taskId,
-					agentId: resolved.agentId,
-					binary: resolved.binary,
-					args: resolved.args,
-					// Per-session provider selection: the card's agentSettings.providerId
-					// picks which of the agent's registered providers to inject. Falls
-					// back to the workspace's committed provider for this agent, then the
-					// agent's default provider, when unset.
-					providerId: body.agentSettings?.providerId ?? undefined,
-					committedProvider: await loadSelectedCommittedProvider(workspaceScope, effectiveAgentId),
-					autonomousModeEnabled: scopedRuntimeConfig.agentAutonomousModeEnabled,
-					cwd: taskCwd,
-					prompt: body.prompt,
-					images: body.images,
-					startInPlanMode: body.startInPlanMode,
-					resumeFromTrash: body.resumeFromTrash,
-					cols: body.cols,
-					rows: body.rows,
-					workspaceId: workspaceScope.workspaceId,
-					proxyEnabled: scopedRuntimeConfig.proxyEnabled,
-					proxyHost: scopedRuntimeConfig.proxyHost,
-					proxyPort: scopedRuntimeConfig.proxyPort,
-					proxyUsername: scopedRuntimeConfig.proxyUsername,
-					proxyPassword: scopedRuntimeConfig.proxyPassword,
-					noProxy: scopedRuntimeConfig.noProxy,
-				});
+				// Throttle the spawn + adapter-file-write burst so a bulk start doesn't
+				// fire N concurrent CLI process launches at once (host-wide CPU guard).
+				const committedProvider = await loadSelectedCommittedProvider(workspaceScope, effectiveAgentId);
+				const summary = await limitAgentStart(() =>
+					terminalManager.startTaskSession({
+						taskId: body.taskId,
+						agentId: resolved.agentId,
+						binary: resolved.binary,
+						args: resolved.args,
+						// Per-session provider selection: the card's agentSettings.providerId
+						// picks which of the agent's registered providers to inject. Falls
+						// back to the workspace's committed provider for this agent, then the
+						// agent's default provider, when unset.
+						providerId: body.agentSettings?.providerId ?? undefined,
+						committedProvider,
+						autonomousModeEnabled: scopedRuntimeConfig.agentAutonomousModeEnabled,
+						cwd: taskCwd,
+						prompt: body.prompt,
+						images: body.images,
+						startInPlanMode: body.startInPlanMode,
+						resumeFromTrash: body.resumeFromTrash,
+						cols: body.cols,
+						rows: body.rows,
+						workspaceId: workspaceScope.workspaceId,
+						proxyEnabled: scopedRuntimeConfig.proxyEnabled,
+						proxyHost: scopedRuntimeConfig.proxyHost,
+						proxyPort: scopedRuntimeConfig.proxyPort,
+						proxyUsername: scopedRuntimeConfig.proxyUsername,
+						proxyPassword: scopedRuntimeConfig.proxyPassword,
+						noProxy: scopedRuntimeConfig.noProxy,
+					}),
+				);
 
 				let nextSummary = summary;
 				if (shouldCaptureTurnCheckpoint) {

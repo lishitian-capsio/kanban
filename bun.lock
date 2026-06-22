@@ -23,6 +23,7 @@
         "open": "^11.0.0",
         "openai": "^4.86.0",
         "ora": "^9.3.0",
+        "p-limit": "^6.2.0",
         "partial-json": "^0.1.7",
         "proper-lockfile": "^4.1.2",
         "tree-kill": "^1.2.2",
@@ -47,10 +48,14 @@
         "vitest": "^4.1.0",
       },
       "optionalDependencies": {
+        "@biomejs/cli-darwin-arm64": "2.3.5",
+        "@biomejs/cli-darwin-x64": "2.3.5",
         "@biomejs/cli-linux-arm64": "2.3.5",
         "@biomejs/cli-linux-arm64-musl": "2.3.5",
         "@biomejs/cli-linux-x64": "2.3.5",
         "@biomejs/cli-linux-x64-musl": "2.3.5",
+        "@biomejs/cli-win32-arm64": "2.3.5",
+        "@biomejs/cli-win32-x64": "2.3.5",
         "@rolldown/binding-linux-x64-gnu": "1.0.0-rc.9",
       },
     },
@@ -61,6 +66,10 @@
   "packages": {
     "@biomejs/biome": ["@biomejs/biome@2.3.5", "https://registry.npmmirror.com@biomejs/biome/-/biome-2.3.5.tgz", { "optionalDependencies": { "@biomejs/cli-linux-arm64": "2.3.5", "@biomejs/cli-linux-arm64-musl": "2.3.5", "@biomejs/cli-linux-x64": "2.3.5", "@biomejs/cli-linux-x64-musl": "2.3.5" }, "bin": { "biome": "bin/biome" } }, ""],
 
+    "@biomejs/cli-darwin-arm64": ["@biomejs/cli-darwin-arm64@2.3.5", "https://registry.npmmirror.com/@biomejs/cli-darwin-arm64/-/cli-darwin-arm64-2.3.5.tgz", { "os": "darwin", "cpu": "arm64" }, "sha512-fLdTur8cJU33HxHUUsii3GLx/TR0BsfQx8FkeqIiW33cGMtUD56fAtrh+2Fx1uhiCsVZlFh6iLKUU3pniZREQw=="],
+
+    "@biomejs/cli-darwin-x64": ["@biomejs/cli-darwin-x64@2.3.5", "https://registry.npmmirror.com/@biomejs/cli-darwin-x64/-/cli-darwin-x64-2.3.5.tgz", { "os": "darwin", "cpu": "x64" }, "sha512-qpT8XDqeUlzrOW8zb4k3tjhT7rmvVRumhi2657I2aGcY4B+Ft5fNwDdZGACzn8zj7/K1fdWjgwYE3i2mSZ+vOA=="],
+
     "@biomejs/cli-linux-arm64": ["@biomejs/cli-linux-arm64@2.3.5", "https://registry.npmmirror.com/@biomejs/cli-linux-arm64/-/cli-linux-arm64-2.3.5.tgz", { "os": "linux", "cpu": "arm64" }, "sha512-u/pybjTBPGBHB66ku4pK1gj+Dxgx7/+Z0jAriZISPX1ocTO8aHh8x8e7Kb1rB4Ms0nA/SzjtNOVJ4exVavQBCw=="],
 
     "@biomejs/cli-linux-arm64-musl": ["@biomejs/cli-linux-arm64-musl@2.3.5", "https://registry.npmmirror.com/@biomejs/cli-linux-arm64-musl/-/cli-linux-arm64-musl-2.3.5.tgz", { "os": "linux", "cpu": "arm64" }, "sha512-eGUG7+hcLgGnMNl1KHVZUYxahYAhC462jF/wQolqu4qso2MSk32Q+QrpN7eN4jAHAg7FUMIo897muIhK4hXhqg=="],
@@ -68,6 +77,10 @@
     "@biomejs/cli-linux-x64": ["@biomejs/cli-linux-x64@2.3.5", "https://registry.npmmirror.com@biomejs/cli-linux-x64/-/cli-linux-x64-2.3.5.tgz", { "os": "linux", "cpu": "x64" }, ""],
 
     "@biomejs/cli-linux-x64-musl": ["@biomejs/cli-linux-x64-musl@2.3.5", "https://registry.npmmirror.com@biomejs/cli-linux-x64-musl/-/cli-linux-x64-musl-2.3.5.tgz", { "os": "linux", "cpu": "x64" }, ""],
+
+    "@biomejs/cli-win32-arm64": ["@biomejs/cli-win32-arm64@2.3.5", "https://registry.npmmirror.com/@biomejs/cli-win32-arm64/-/cli-win32-arm64-2.3.5.tgz", { "os": "win32", "cpu": "arm64" }, "sha512-DlBiMlBZZ9eIq4H7RimDSGsYcOtfOIfZOaI5CqsWiSlbTfqbPVfWtCf92wNzx8GNMbu1s7/g3ZZESr6+GwM/SA=="],
+
+    "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.3.5", "https://registry.npmmirror.com/@biomejs/cli-win32-x64/-/cli-win32-x64-2.3.5.tgz", { "os": "win32", "cpu": "x64" }, "sha512-nUmR8gb6yvrKhtRgzwo/gDimPwnO5a4sCydf8ZS2kHIJhEmSmk+STsusr1LHTuM//wXppBawvSQi2xFXJCdgKQ=="],
 
     "@colors/colors": ["@colors/colors@1.6.0", "https://registry.npmmirror.com@colors/colors/-/colors-1.6.0.tgz", {}, ""],
 
@@ -585,6 +598,8 @@
 
     "p-finally": ["p-finally@1.0.0", "https://registry.npmmirror.comp-finally/-/p-finally-1.0.0.tgz", {}, ""],
 
+    "p-limit": ["p-limit@6.2.0", "https://registry.npmmirror.com/p-limit/-/p-limit-6.2.0.tgz", { "dependencies": { "yocto-queue": "^1.1.1" } }, "sha512-kuUqqHNUqoIWp/c467RI4X6mmyuojY5jGutNU0wVTmEOOfcuwLqyMVoAi9MKi2Ak+5i9+nhmrK4ufZE8069kHA=="],
+
     "parseurl": ["parseurl@1.3.3", "https://registry.npmmirror.comparseurl/-/parseurl-1.3.3.tgz", {}, ""],
 
     "partial-json": ["partial-json@0.1.7", "https://registry.npmmirror.compartial-json/-/partial-json-0.1.7.tgz", {}, ""],
@@ -800,6 +815,8 @@
     "xtend": ["xtend@4.0.2", "https://registry.npmmirror.comxtend/-/xtend-4.0.2.tgz", {}, ""],
 
     "yaml": ["yaml@2.8.3", "https://registry.npmmirror.comyaml/-/yaml-2.8.3.tgz", { "bin": "bin.mjs" }, ""],
+
+    "yocto-queue": ["yocto-queue@1.2.2", "https://registry.npmmirror.com/yocto-queue/-/yocto-queue-1.2.2.tgz", {}, "sha512-4LCcse/U2MHZ63HAJVE+v71o7yOdIe4cZ70Wpf8D/IyjDKYQLV5GD46B+hSTjJsvV5PztjvHoU580EftxjDZFQ=="],
 
     "yoctocolors": ["yoctocolors@2.1.2", "https://registry.npmmirror.comyoctocolors/-/yoctocolors-2.1.2.tgz", {}, ""],
 
