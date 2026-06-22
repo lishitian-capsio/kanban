@@ -1,0 +1,19 @@
+{
+  "id": "ac08a",
+  "title": "perf #14: journal flush/dispose 时机会性压缩",
+  "prompt": "性能优化 #14(纯打磨,低风险)。\n\n问题:session-message journal 的合并很健康(同 id token 只替换内存尾、按 250ms debounce/id-change/flush 追加),但每次 debounce tick 都 JSON.stringify 并追加当前增长中消息的全文 —— 一条 50KB 消息 10s 内写 ~40 行渐增(~1MB 冗余追加)直到压缩。压缩(readAndCompact:213-239)只在读时触发,长时间未被读回的流式会话会一直增长(上限 DEFAULT_MAX_MESSAGES=10000)。\n\n定位:\n- src/session/session-message-journal.ts:107-150(合并逻辑),readAndCompact :213-239\n\n修法:在 flush()/dispose() 时或超过某追加计数阈值时也触发机会性压缩;可选降低持久化频率(提高 debounce / 在 id-change 时持久化最终内容),以 crash-recovery 粒度换取更少写入(说明取舍)。\n\n注意:别破坏现有合并/去重/崩溃容错语义。验证 journal 读回内容正确、压缩后无丢失;现有 journal 单测通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782106653836,
+  "updatedAt": 1782106653836,
+  "column": "backlog",
+  "rank": "Zl",
+  "dependsOn": []
+}
