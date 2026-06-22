@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 
 import type {
 	RuntimeVaultDocument,
@@ -11,6 +11,7 @@ import { createUniqueTaskId } from "../core/task-id";
 import { mapFilesConcurrent } from "../fs/concurrent-files";
 import { lockedFileSystem } from "../fs/locked-file-system";
 import { parseVaultDocument, serializeVaultDocument, slugify, type VaultDocument } from "./vault-document";
+import type { VaultExportEntry } from "./vault-export";
 import { buildVaultLinkIndex, type VaultLinkIndex } from "./vault-link-index";
 import { getVaultDocsDir, getVaultFilesDir } from "./vault-paths";
 import { getVaultReadCache, type VaultReadCache, type VaultReadResult, type VaultScanResult } from "./vault-read-cache";
@@ -112,6 +113,57 @@ export class VaultDocumentStore {
 	async get(id: string): Promise<RuntimeVaultDocument | null> {
 		const entry = await this.findById(id);
 		return entry ? toRuntimeDocument(entry.doc, entry.relativePath) : null;
+	}
+
+	/**
+	 * The raw on-disk markdown for one document, for download. Reads the file bytes
+	 * directly rather than re-serializing the parsed model, so the export is
+	 * byte-identical to what git tracks (including any hand edits the canonical
+	 * serializer would normalize away). Returns null when the id is unknown.
+	 */
+	async exportDocument(id: string): Promise<{ fileName: string; content: string } | null> {
+		const located = await this.findById(id);
+		if (!located) {
+			return null;
+		}
+		const content = await readFile(located.absolutePath, "utf8");
+		return { fileName: basename(located.absolutePath), content };
+	}
+
+	/**
+	 * Raw on-disk markdown for many documents, each tagged with its archive-relative
+	 * path (`docs/<type>/<file>`) so a zip reproduces the vault tree. The vault is
+	 * scanned once and read byte-exact; entries are returned in the caller's id order
+	 * and unknown ids are silently dropped (a torn file is skipped, like every scan).
+	 */
+	async exportDocuments(ids: string[]): Promise<VaultExportEntry[]> {
+		if (ids.length === 0) {
+			return [];
+		}
+		const wanted = new Set(ids);
+		const files = await this.collectDocumentFiles();
+		const byId = new Map<string, VaultExportEntry>();
+		await Promise.all(
+			files.map(async (file) => {
+				let content: string;
+				try {
+					content = await readFile(file.absolutePath, "utf8");
+				} catch {
+					return;
+				}
+				let id: string;
+				try {
+					id = parseVaultDocument(content).id;
+				} catch {
+					return;
+				}
+				if (!wanted.has(id)) {
+					return;
+				}
+				byId.set(id, { entryPath: relative(this.filesDir, file.absolutePath), content });
+			}),
+		);
+		return ids.map((id) => byId.get(id)).filter((entry): entry is VaultExportEntry => entry !== undefined);
 	}
 
 	async create(input: CreateVaultDocumentInput): Promise<RuntimeVaultDocument> {

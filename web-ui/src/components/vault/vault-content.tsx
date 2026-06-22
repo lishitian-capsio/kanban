@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { Download, Plus } from "lucide-react";
 import type React from "react";
 import { useMemo, useState } from "react";
 
@@ -7,6 +7,7 @@ import { VaultBoard } from "./board/vault-board";
 import { groupDocsByStatus } from "./board/vault-status-columns";
 import { NewDocDialog } from "./create/new-doc-dialog";
 import type { VaultDocPatch } from "./data/use-vault-docs";
+import { useVaultExport } from "./data/use-vault-export";
 import { frontmatterString, type VaultDoc } from "./data/vault-doc-model";
 import { applyVaultView } from "./data/vault-filter";
 import type { VaultTypeView } from "./data/vault-type-registry";
@@ -71,6 +72,7 @@ export function VaultContent({
 	// Only status-bearing types get a board; flat types (Customer, Note) are table-only.
 	const supportsBoard = view.statuses.length > 0;
 	const viewState = useVaultViewState(workspaceId, view.type);
+	const { isExporting, exportDoc, exportDocs } = useVaultExport(workspaceId);
 	const [isNewOpen, setIsNewOpen] = useState(false);
 	const [isCreating, setIsCreating] = useState(false);
 
@@ -110,6 +112,8 @@ export function VaultContent({
 				onPatch={onPatch}
 				onDelete={onDelete}
 				onBack={() => onSelectDoc(null)}
+				onDownload={(doc) => void exportDoc(doc)}
+				isDownloading={isExporting}
 			/>
 		);
 	}
@@ -126,6 +130,20 @@ export function VaultContent({
 				</div>
 				<div className="ml-auto flex items-center gap-2">
 					{isMutating || viewState.isMutating ? <Spinner size={14} /> : null}
+					<button
+						type="button"
+						onClick={() => void exportDocs(displayDocs, view.pluralLabel)}
+						disabled={isExporting || displayDocs.length === 0}
+						title={
+							isFiltered
+								? `Export the ${displayDocs.length} filtered ${view.pluralLabel.toLowerCase()} as a zip`
+								: `Export all ${view.pluralLabel.toLowerCase()} as a zip`
+						}
+						className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface-2 px-2.5 text-[13px] font-medium text-text-primary hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-50"
+					>
+						<Download size={14} />
+						Export
+					</button>
 					<button
 						type="button"
 						onClick={() => setIsNewOpen(true)}

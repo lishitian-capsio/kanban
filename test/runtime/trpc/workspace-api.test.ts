@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import JSZip from "jszip";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RuntimeTaskSessionSummary, RuntimeWorkspaceChangesResponse } from "../../../src/core/api-contract";
@@ -532,6 +533,30 @@ describe("createWorkspaceApi vault documents", () => {
 
 		const none = await api.searchDocuments(scope(), { query: "   " });
 		expect(none.results).toEqual([]);
+	});
+
+	it("exports one document's raw markdown and packs many into a zip mirroring the on-disk tree", async () => {
+		const api = createApi();
+		const req = await api.createDocument(scope(), { type: "requirement", title: "Export me", body: "the body" });
+		const note = await api.createDocument(scope(), { type: "note", title: "Second" });
+
+		const single = await api.exportDocument(scope(), { id: req.document.id });
+		expect(single.document?.fileName).toBe(`export-me-${req.document.id}.md`);
+		expect(single.document?.content).toContain("_id:");
+		expect(single.document?.content).toContain("the body");
+		expect((await api.exportDocument(scope(), { id: "nope" })).document).toBeNull();
+
+		const archive = await api.exportArchive(scope(), { ids: [req.document.id, note.document.id] });
+		expect(archive.documentCount).toBe(2);
+		const zip = await JSZip.loadAsync(archive.data, { base64: true });
+		const files = Object.values(zip.files)
+			.filter((file) => !file.dir)
+			.map((file) => file.name)
+			.sort();
+		expect(files).toEqual([
+			`docs/note/second-${note.document.id}.md`,
+			`docs/requirement/export-me-${req.document.id}.md`,
+		]);
 	});
 });
 

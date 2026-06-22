@@ -26,6 +26,7 @@ import { saveWorkspaceState, WorkspaceStateConflictError } from "../state/worksp
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { SavedViewStore } from "../vault/saved-view-store";
 import { VaultDocumentStore } from "../vault/vault-document-store";
+import { buildVaultZipBase64 } from "../vault/vault-export";
 import { VaultSettingsStore } from "../vault/vault-settings-store";
 import { readArtifactContent } from "../workspace/artifact-content";
 import { detectArtifacts } from "../workspace/artifact-detection";
@@ -515,6 +516,15 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 				void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
 			}
 			return { deleted };
+		},
+		exportDocument: async (workspaceScope, input) => {
+			const document = await new VaultDocumentStore(workspaceScope.workspacePath).exportDocument(input.id);
+			return { document };
+		},
+		exportArchive: async (workspaceScope, input) => {
+			const entries = await new VaultDocumentStore(workspaceScope.workspacePath).exportDocuments(input.ids);
+			const data = await buildVaultZipBase64(entries);
+			return { data, documentCount: entries.length };
 		},
 		listViews: async (workspaceScope, input) => {
 			const type = input.type?.trim() ? input.type.trim() : undefined;

@@ -1,4 +1,4 @@
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Download, Trash2 } from "lucide-react";
 import type React from "react";
 import { useEffect, useState } from "react";
 
@@ -33,6 +33,10 @@ interface VaultDocDetailProps {
 	onPatch: (id: string, patch: VaultDocPatch) => void;
 	onDelete: (id: string) => void;
 	onBack: () => void;
+	/** Download this document as a raw `.md` file. */
+	onDownload: (doc: VaultDoc) => void;
+	/** True while a download request is in flight. */
+	isDownloading?: boolean;
 }
 
 /**
@@ -50,6 +54,8 @@ export function VaultDocDetail({
 	onPatch,
 	onDelete,
 	onBack,
+	onDownload,
+	isDownloading,
 }: VaultDocDetailProps): React.ReactElement {
 	const [title, setTitle] = useState(doc.name);
 	const [body, setBody] = useState(doc.body);
@@ -97,6 +103,14 @@ export function VaultDocDetail({
 						}
 					}}
 					className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-base font-semibold text-text-primary outline-none hover:border-border focus:border-border-focus focus:bg-surface-2"
+				/>
+				<Button
+					variant="ghost"
+					size="sm"
+					icon={<Download size={14} />}
+					disabled={isDownloading}
+					aria-label={`Download ${view.label.toLowerCase()} as markdown`}
+					onClick={() => onDownload(doc)}
 				/>
 				<Button
 					variant="danger"

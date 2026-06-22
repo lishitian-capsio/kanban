@@ -117,10 +117,14 @@ import type {
 	RuntimeTaskWorkspaceInfoRequest,
 	RuntimeTaskWorkspaceInfoResponse,
 	RuntimeUpdateStatusResponse,
+	RuntimeVaultArchiveExportRequest,
+	RuntimeVaultArchiveExportResponse,
 	RuntimeVaultDocumentCreateRequest,
 	RuntimeVaultDocumentCreateResponse,
 	RuntimeVaultDocumentDeleteRequest,
 	RuntimeVaultDocumentDeleteResponse,
+	RuntimeVaultDocumentExportRequest,
+	RuntimeVaultDocumentExportResponse,
 	RuntimeVaultDocumentGetRequest,
 	RuntimeVaultDocumentGetResponse,
 	RuntimeVaultDocumentLinksGetRequest,
@@ -266,10 +270,14 @@ import {
 	runtimeTaskWorkspaceInfoRequestSchema,
 	runtimeTaskWorkspaceInfoResponseSchema,
 	runtimeUpdateStatusResponseSchema,
+	runtimeVaultArchiveExportRequestSchema,
+	runtimeVaultArchiveExportResponseSchema,
 	runtimeVaultDocumentCreateRequestSchema,
 	runtimeVaultDocumentCreateResponseSchema,
 	runtimeVaultDocumentDeleteRequestSchema,
 	runtimeVaultDocumentDeleteResponseSchema,
+	runtimeVaultDocumentExportRequestSchema,
+	runtimeVaultDocumentExportResponseSchema,
 	runtimeVaultDocumentGetRequestSchema,
 	runtimeVaultDocumentGetResponseSchema,
 	runtimeVaultDocumentLinksGetRequestSchema,
@@ -529,6 +537,14 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeVaultDocumentDeleteRequest,
 		) => Promise<RuntimeVaultDocumentDeleteResponse>;
+		exportDocument: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultDocumentExportRequest,
+		) => Promise<RuntimeVaultDocumentExportResponse>;
+		exportArchive: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeVaultArchiveExportRequest,
+		) => Promise<RuntimeVaultArchiveExportResponse>;
 		listViews: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeVaultViewsListRequest,
@@ -1027,6 +1043,18 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeVaultDocumentDeleteResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.deleteDocument(ctx.workspaceScope, input);
+			}),
+		exportDocument: workspaceProcedure
+			.input(runtimeVaultDocumentExportRequestSchema)
+			.output(runtimeVaultDocumentExportResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.exportDocument(ctx.workspaceScope, input);
+			}),
+		exportArchive: workspaceProcedure
+			.input(runtimeVaultArchiveExportRequestSchema)
+			.output(runtimeVaultArchiveExportResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.exportArchive(ctx.workspaceScope, input);
 			}),
 		listViews: workspaceProcedure
 			.input(runtimeVaultViewsListRequestSchema)

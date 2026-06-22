@@ -514,6 +514,40 @@ export const runtimeVaultDocumentDeleteResponseSchema = z.object({
 });
 export type RuntimeVaultDocumentDeleteResponse = z.infer<typeof runtimeVaultDocumentDeleteResponseSchema>;
 
+// Single-document export: the raw on-disk markdown for download. `document` is
+// null when the id is unknown (e.g. deleted between list and click).
+export const runtimeVaultDocumentExportRequestSchema = z.object({
+	id: z.string(),
+});
+export type RuntimeVaultDocumentExportRequest = z.infer<typeof runtimeVaultDocumentExportRequestSchema>;
+
+export const runtimeVaultDocumentExportResponseSchema = z.object({
+	document: z
+		.object({
+			// Suggested download filename, the on-disk `<slug>-<id>.md`.
+			fileName: z.string(),
+			// Byte-exact markdown content (YAML frontmatter + body), as git tracks it.
+			content: z.string(),
+		})
+		.nullable(),
+});
+export type RuntimeVaultDocumentExportResponse = z.infer<typeof runtimeVaultDocumentExportResponseSchema>;
+
+// Multi-document export: a base64-encoded zip whose entries mirror the on-disk
+// tree (`docs/<type>/<slug>-<id>.md`). Unknown ids are dropped, so `documentCount`
+// reports how many were actually packed.
+export const runtimeVaultArchiveExportRequestSchema = z.object({
+	ids: z.array(z.string()),
+});
+export type RuntimeVaultArchiveExportRequest = z.infer<typeof runtimeVaultArchiveExportRequestSchema>;
+
+export const runtimeVaultArchiveExportResponseSchema = z.object({
+	// Base64-encoded zip archive, ridden over the same byte channel as file blobs.
+	data: z.string(),
+	documentCount: z.number(),
+});
+export type RuntimeVaultArchiveExportResponse = z.infer<typeof runtimeVaultArchiveExportResponseSchema>;
+
 // Where a `[[wikilink]]` was found in a document: in a named frontmatter field
 // (the field is the relationship type, e.g. `customer`) or in the markdown body.
 export const runtimeVaultLinkSourceSchema = z.discriminatedUnion("kind", [
