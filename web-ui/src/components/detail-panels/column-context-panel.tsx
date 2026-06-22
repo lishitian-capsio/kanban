@@ -60,6 +60,18 @@ function ColumnSection({
 	defaultKanbanModelId?: string | null;
 }): React.ReactElement {
 	const [open, setOpen] = useState(defaultOpen);
+	// One stable handler for the whole column so React.memo on BoardCard isn't
+	// defeated by a per-card closure recreated on every render.
+	const handleCardActivate = useCallback(
+		(card: BoardCardModel) => {
+			if (column.id === "backlog") {
+				onEditTask?.(card);
+				return;
+			}
+			onCardClick(card);
+		},
+		[column.id, onEditTask, onCardClick],
+	);
 	const canCreate = column.id === "backlog" && onCreateTask;
 	const canStartAllTasks = column.id === "backlog" && onStartAllTasks;
 	const canClearTrash = column.id === "trash" && onClearTrash;
@@ -201,13 +213,7 @@ function ColumnSection({
 												workspacePath={workspacePath}
 												defaultKanbanModelId={defaultKanbanModelId}
 												onSaveTitle={onSaveTitle}
-												onClick={() => {
-													if (column.id === "backlog") {
-														onEditTask?.(card);
-														return;
-													}
-													onCardClick(card);
-												}}
+												onActivate={handleCardActivate}
 											/>,
 										);
 										draggableIndex += 1;
@@ -292,6 +298,8 @@ export function ColumnContextPanel({
 		[onTaskDragEnd],
 	);
 
+	const handleCardSelect = useCallback((card: BoardCardModel) => onCardSelect(card.id), [onCardSelect]);
+
 	useEffect(() => {
 		const scrollContainer = scrollContainerRef.current;
 		if (!scrollContainer) {
@@ -343,7 +351,7 @@ export function ColumnContextPanel({
 							column={column}
 							selectedCardId={selection.card.id}
 							defaultOpen={column.id !== "trash"}
-							onCardClick={(card) => onCardSelect(card.id)}
+							onCardClick={handleCardSelect}
 							taskSessions={taskSessions}
 							onCreateTask={column.id === "backlog" ? onCreateTask : undefined}
 							onStartTask={column.id === "backlog" ? onStartTask : undefined}

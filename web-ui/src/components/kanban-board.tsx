@@ -349,6 +349,17 @@ export function KanbanBoard({
 		dragOccurredRef.current = true;
 	}, []);
 
+	// Stable card-activation handler so BoardColumn/BoardCard memoization holds.
+	// A drag that just ended sets dragOccurredRef; suppress the click it would emit.
+	const handleCardSelect = useCallback(
+		(card: BoardCard) => {
+			if (!dragOccurredRef.current) {
+				onCardSelect(card.id);
+			}
+		},
+		[onCardSelect],
+	);
+
 	const handleDragEnd = useCallback(
 		(result: DropResult) => {
 			setActiveDragTaskId(null);
@@ -413,11 +424,7 @@ export function KanbanBoard({
 							isDependencyLinking={dependencyLinking.draft !== null}
 							workspacePath={workspacePath}
 							defaultKanbanModelId={defaultKanbanModelId}
-							onCardClick={(card) => {
-								if (!dragOccurredRef.current) {
-									onCardSelect(card.id);
-								}
-							}}
+							onCardClick={handleCardSelect}
 						/>
 					))}
 					<DependencyOverlay

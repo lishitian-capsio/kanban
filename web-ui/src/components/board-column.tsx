@@ -1,6 +1,7 @@
 import { Droppable } from "@hello-pangea/dnd";
 import { Play, Plus, Trash2 } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import { useCallback } from "react";
 
 import { BoardCard } from "@/components/board-card";
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,20 @@ export function BoardColumn({
 	workspacePath?: string | null;
 	defaultKanbanModelId?: string | null;
 }): React.ReactElement {
+	// A single stable handler shared by every card in this column. Passing a fresh
+	// `() => …` closure per card (in the render loop below) would defeat React.memo
+	// on BoardCard, since the onActivate prop identity would change on every render.
+	const handleCardActivate = useCallback(
+		(card: BoardCardModel) => {
+			if (column.id === "backlog") {
+				onEditTask?.(card);
+				return;
+			}
+			onCardClick?.(card);
+		},
+		[column.id, onEditTask, onCardClick],
+	);
+
 	const canCreate = column.id === "backlog" && onCreateTask;
 	const canStartAllTasks = column.id === "backlog" && onStartAllTasks;
 	const canClearTrash = column.id === "trash" && onClearTrash;
@@ -189,13 +204,7 @@ export function BoardColumn({
 											workspacePath={workspacePath}
 											defaultKanbanModelId={defaultKanbanModelId}
 											onSaveTitle={onSaveTitle}
-											onClick={() => {
-												if (column.id === "backlog") {
-													onEditTask?.(card);
-													return;
-												}
-												onCardClick?.(card);
-											}}
+											onActivate={handleCardActivate}
 										/>,
 									);
 									draggableIndex += 1;

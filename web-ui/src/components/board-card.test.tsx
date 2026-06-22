@@ -213,9 +213,11 @@ describe("BoardCard", () => {
 	});
 
 	it("copies the full task id and toasts when the id chip is clicked", async () => {
-		const onClick = vi.fn();
+		const onActivate = vi.fn();
 		await act(async () => {
-			root.render(<BoardCard card={createCard({ id: "0a42e" })} index={0} columnId="backlog" onClick={onClick} />);
+			root.render(
+				<BoardCard card={createCard({ id: "0a42e" })} index={0} columnId="backlog" onActivate={onActivate} />,
+			);
 		});
 
 		const chip = container.querySelector('button[aria-label="Copy task ID 0a42e"]');
@@ -233,7 +235,7 @@ describe("BoardCard", () => {
 			"copy-task-id:0a42e",
 		);
 		// Copying the id must not select/open the card.
-		expect(onClick).not.toHaveBeenCalled();
+		expect(onActivate).not.toHaveBeenCalled();
 	});
 
 	it("renders the id chip on trash cards too", async () => {

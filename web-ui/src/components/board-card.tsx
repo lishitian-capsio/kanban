@@ -15,7 +15,7 @@ import {
 	User,
 } from "lucide-react";
 import type { KeyboardEvent, MouseEvent } from "react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { showAppToast } from "@/components/app-toaster";
 import {
@@ -224,13 +224,13 @@ function getCardSessionActivity(summary: RuntimeTaskSessionSummary | undefined):
 	return null;
 }
 
-export function BoardCard({
+function BoardCardComponent({
 	card,
 	index,
 	columnId,
 	sessionSummary,
 	selected = false,
-	onClick,
+	onActivate,
 	onStart,
 	onMoveToTrash,
 	onRestoreFromTrash,
@@ -254,7 +254,7 @@ export function BoardCard({
 	columnId: BoardColumnId;
 	sessionSummary?: RuntimeTaskSessionSummary;
 	selected?: boolean;
-	onClick?: () => void;
+	onActivate?: (card: BoardCardModel) => void;
 	onStart?: (taskId: string) => void;
 	onMoveToTrash?: (taskId: string) => void;
 	onRestoreFromTrash?: (taskId: string) => void;
@@ -419,7 +419,7 @@ export function BoardCard({
 	}, [descriptionFont, descriptionWidth, displayDescription]);
 
 	const isCreditLimit = isCardCreditLimitError(sessionSummary);
-	const renderStatusMarker = () => {
+	const statusMarker = useMemo(() => {
 		if (isCreditLimit) {
 			return <AlertTriangle size={12} className="text-status-orange" />;
 		}
@@ -430,8 +430,7 @@ export function BoardCard({
 			return <Spinner size={12} />;
 		}
 		return null;
-	};
-	const statusMarker = renderStatusMarker();
+	}, [isCreditLimit, columnId, sessionSummary?.state]);
 	const showWorkspaceStatus = columnId === "in_progress" || columnId === "review" || isTrashCard;
 	const reviewWorkspacePath = reviewWorkspaceSnapshot
 		? formatPathForDisplay(reviewWorkspaceSnapshot.path)
@@ -546,8 +545,8 @@ export function BoardCard({
 							if (target?.closest("button, a, input, textarea, [contenteditable='true']")) {
 								return;
 							}
-							if (!snapshot.isDragging && onClick) {
-								onClick();
+							if (!snapshot.isDragging) {
+								onActivate?.(card);
 							}
 						}}
 						style={{
@@ -919,3 +918,5 @@ export function BoardCard({
 		</Draggable>
 	);
 }
+
+export const BoardCard = memo(BoardCardComponent);
