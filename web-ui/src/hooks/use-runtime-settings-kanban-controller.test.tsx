@@ -987,7 +987,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 					models: ["qwen2.5-coder:32b"],
 					defaultModelId: "qwen2.5-coder:32b",
 					modelsSourceUrl: null,
-					capabilities: ["tools", "streaming"],
 				}),
 			).toEqual({ ok: true });
 		});

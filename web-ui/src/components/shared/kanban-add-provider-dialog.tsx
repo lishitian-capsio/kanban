@@ -8,7 +8,7 @@ import {
 	PROVIDER_PROTOCOLS,
 	type ProviderProtocol,
 } from "@runtime-provider-protocol";
-import { Check, Eye, EyeOff, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { Eye, EyeOff, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { type KeyboardEvent, type ReactElement, useEffect, useMemo, useState } from "react";
 import { MAX_TIMEOUT_MS, MIN_TIMEOUT_MS, validateProviderForm } from "@/components/shared/provider-form-validation";
 import { Button } from "@/components/ui/button";
@@ -20,8 +20,8 @@ import type {
 	AnthropicProviderSettingsInput,
 	UpdateKanbanProviderInput,
 } from "@/hooks/use-runtime-settings-kanban-controller";
-import { fetchRemoteProviderModels } from "@/runtime/runtime-config-query";
-import type { RuntimeKanbanProviderCapability } from "@/runtime/types";
+import { fetchKanbanProviderModels, fetchRemoteProviderModels } from "@/runtime/runtime-config-query";
+import type { RuntimeKanbanProviderModel } from "@/runtime/types";
 
 const PROTOCOL_OPTIONS: readonly { value: ProviderProtocol; label: string; description: string }[] = [
 	{ value: "openai", label: "OpenAI-compatible", description: "OpenAI, Ollama, OpenRouter, most providers" },
@@ -61,12 +61,16 @@ function pickDefaultProtocol(allowedProtocols: ProviderProtocol[]): ProviderProt
 	return ordered?.value ?? allowedProtocols[0] ?? "openai";
 }
 
-const CAPABILITY_OPTIONS: readonly RuntimeKanbanProviderCapability[] = [
-	"streaming",
-	"tools",
-	"reasoning",
-	"vision",
-	"prompt-cache",
+/**
+ * Read-only capability badges shown per model. Capabilities are a property of the
+ * individual *model* (a single endpoint+key can serve many models with different
+ * capabilities), derived from each model's metadata — never configured at the
+ * provider level. Attachments mirror vision (image input) today, so we surface the
+ * two distinct, user-meaningful signals only.
+ */
+const MODEL_CAPABILITY_BADGES: readonly { key: keyof RuntimeKanbanProviderModel; label: string }[] = [
+	{ key: "supportsVision", label: "Vision" },
+	{ key: "supportsReasoningEffort", label: "Reasoning" },
 ];
 
 /**
@@ -115,7 +119,6 @@ interface FormState {
 	defaultModelId: string;
 	timeoutMs: string;
 	headers: HeaderEntry[];
-	capabilities: RuntimeKanbanProviderCapability[];
 	/** Anthropic-only: which header the key is sent under. */
 	apiKeyField: ApiKeyField;
 	/** Anthropic-only: per-tier model overrides (ANTHROPIC_DEFAULT_*_MODEL). */
@@ -148,7 +151,6 @@ export interface KanbanProviderDialogInitialValues {
 	defaultModelId?: string;
 	timeoutMs?: number | null;
 	headers?: Record<string, string>;
-	capabilities?: RuntimeKanbanProviderCapability[];
 	anthropic?: {
 		apiKeyField?: ApiKeyField;
 		defaultModels?: { haiku?: string; sonnet?: string; opus?: string };
@@ -199,7 +201,6 @@ function createInitialFormState(
 		defaultModelId: initialValues?.defaultModelId?.trim() || initialModels[0] || "",
 		timeoutMs: initialValues?.timeoutMs ? String(initialValues.timeoutMs) : "",
 		headers: initialHeaders,
-		capabilities: initialValues?.capabilities?.length ? initialValues.capabilities : ["streaming", "tools"],
 		apiKeyField: initialValues?.anthropic?.apiKeyField ?? DEFAULT_API_KEY_FIELD,
 		anthropicDefaultModels: {
 			haiku: initialValues?.anthropic?.defaultModels?.haiku ?? "",
@@ -296,6 +297,9 @@ export function KanbanAddProviderDialog({
 	const [showApiKey, setShowApiKey] = useState(false);
 	const [apiKeyFocused, setApiKeyFocused] = useState(false);
 	const [isFetchingModels, setIsFetchingModels] = useState(false);
+	// Read-only per-model capabilities, derived server-side from model metadata
+	// (bundled registry / remote discovery). Keyed by model id. Absent = unknown.
+	const [modelCapabilities, setModelCapabilities] = useState<Record<string, RuntimeKanbanProviderModel>>({});
 
 	useEffect(() => {
 		if (open) {
@@ -321,6 +325,37 @@ export function KanbanAddProviderDialog({
 		() => form.providerId.trim().toLowerCase().replace(/\s+/g, "-"),
 		[form.providerId],
 	);
+
+	// Load per-model capability metadata for the provider so each model can show
+	// read-only capability badges. The server derives these from the bundled model
+	// registry / remote discovery, so they light up for known providers and stay
+	// empty (no badges) for custom endpoints whose models carry no metadata.
+	// Debounced so typing a provider id doesn't spam the endpoint.
+	useEffect(() => {
+		if (!open || normalizedProviderId.length === 0) {
+			setModelCapabilities({});
+			return;
+		}
+		let cancelled = false;
+		const timer = setTimeout(() => {
+			void fetchKanbanProviderModels(workspaceId, normalizedProviderId)
+				.then((models) => {
+					if (cancelled) {
+						return;
+					}
+					setModelCapabilities(Object.fromEntries(models.map((model) => [model.id, model])));
+				})
+				.catch(() => {
+					if (!cancelled) {
+						setModelCapabilities({});
+					}
+				});
+		}, 400);
+		return () => {
+			cancelled = true;
+			clearTimeout(timer);
+		};
+	}, [open, normalizedProviderId, workspaceId]);
 	const duplicateProviderId = useMemo(() => {
 		if (mode === "edit" && initialForm.providerId.trim().toLowerCase() === normalizedProviderId) {
 			return false;
@@ -360,7 +395,6 @@ export function KanbanAddProviderDialog({
 			form.defaultModelId.trim() !== initialForm.defaultModelId.trim() ||
 			form.timeoutMs.trim() !== initialForm.timeoutMs.trim() ||
 			JSON.stringify(draftModels) !== JSON.stringify(initialForm.models) ||
-			JSON.stringify(form.capabilities) !== JSON.stringify(initialForm.capabilities) ||
 			JSON.stringify(normalizedHeaders) !== JSON.stringify(initialHeaders) ||
 			JSON.stringify(anthropicPayload) !== JSON.stringify(buildAnthropicPayload(initialForm)) ||
 			form.apiKey.trim().length > 0
@@ -370,7 +404,6 @@ export function KanbanAddProviderDialog({
 		draftModels,
 		form.apiKey,
 		form.baseUrl,
-		form.capabilities,
 		form.defaultModelId,
 		form.headers,
 		form.modelsSourceUrl,
@@ -467,15 +500,6 @@ export function KanbanAddProviderDialog({
 		});
 	};
 
-	const toggleCapability = (capability: RuntimeKanbanProviderCapability) => {
-		setForm((current) => ({
-			...current,
-			capabilities: current.capabilities.includes(capability)
-				? current.capabilities.filter((entry) => entry !== capability)
-				: [...current.capabilities, capability],
-		}));
-	};
-
 	const selectProtocol = (protocol: ProviderProtocol) => {
 		setForm((current) => (current.protocol === protocol ? current : { ...current, protocol }));
 	};
@@ -561,9 +585,6 @@ export function KanbanAddProviderDialog({
 						...(nextModelsSourceUrl !== (initialForm.modelsSourceUrl.trim() || null)
 							? { modelsSourceUrl: nextModelsSourceUrl }
 							: {}),
-						...(JSON.stringify(form.capabilities) !== JSON.stringify(initialForm.capabilities)
-							? { capabilities: form.capabilities.length > 0 ? form.capabilities : [] }
-							: {}),
 						...(customEndpoint &&
 						JSON.stringify(protocolConfigsPayload) !== JSON.stringify(initialProtocolPayload)
 							? { protocols: protocolConfigsPayload }
@@ -581,7 +602,6 @@ export function KanbanAddProviderDialog({
 						models: draftModels,
 						defaultModelId: nextDefaultModelId,
 						modelsSourceUrl: nextModelsSourceUrl,
-						capabilities: form.capabilities.length > 0 ? form.capabilities : undefined,
 						protocols: customEndpoint ? protocolConfigsPayload : undefined,
 						anthropic: anthropicPayload,
 					} satisfies AddKanbanProviderInput);
@@ -849,6 +869,17 @@ export function KanbanAddProviderDialog({
 								className="inline-flex items-center gap-1 rounded-md bg-surface-3 px-2 py-1 text-[12px] text-text-primary"
 							>
 								<span className="font-mono">{model}</span>
+								{MODEL_CAPABILITY_BADGES.filter(
+									(badge) => modelCapabilities[model]?.[badge.key],
+								).map((badge) => (
+									<span
+										key={badge.key}
+										className="rounded bg-surface-1 px-1 text-[10px] font-medium uppercase tracking-wide text-text-secondary"
+										title={`This model supports ${badge.label.toLowerCase()} (from model metadata)`}
+									>
+										{badge.label}
+									</span>
+								))}
 								<button
 									type="button"
 									className="text-text-secondary hover:text-text-primary"
@@ -873,7 +904,11 @@ export function KanbanAddProviderDialog({
 							className="min-w-40 flex-1 bg-transparent text-[13px] text-text-primary placeholder:text-text-tertiary focus:outline-none"
 						/>
 					</div>
-					<p className="mt-1 text-[12px] text-text-tertiary">Add at least one model or set a model source URL.</p>
+					<p className="mt-1 text-[12px] text-text-tertiary">
+						Add at least one model or set a model source URL. Capabilities (vision, reasoning) are detected
+						per model from its metadata and shown as badges above — they are not configured at the provider
+						level.
+					</p>
 				</section>
 
 				{draftModels.length > 1 ? (
@@ -893,28 +928,6 @@ export function KanbanAddProviderDialog({
 						<FieldError message={fieldErrors.defaultModelId} />
 					</section>
 				) : null}
-
-				<section className="rounded-lg border border-border bg-surface-1 p-3">
-					<p className="mb-2 text-[12px] text-text-secondary">Capabilities</p>
-					<div className="flex flex-wrap gap-2">
-						{CAPABILITY_OPTIONS.map((capability) => {
-							const selected = form.capabilities.includes(capability);
-							return (
-								<Button
-									key={capability}
-									variant={selected ? "primary" : "default"}
-									size="sm"
-									icon={selected ? <Check size={12} /> : undefined}
-									aria-pressed={selected}
-									className={cn("px-2.5", !selected && "text-text-secondary")}
-									onClick={() => toggleCapability(capability)}
-								>
-									{capability}
-								</Button>
-							);
-						})}
-					</div>
-				</section>
 
 				<section className="rounded-lg border border-border bg-surface-1 p-3">
 					<h3 className="mb-3 text-[12px] font-medium text-text-primary">Advanced settings</h3>

@@ -3,6 +3,17 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { KanbanAddProviderDialog } from "@/components/shared/kanban-add-provider-dialog";
+import type { RuntimeKanbanProviderModel } from "@/runtime/types";
+
+const { fetchKanbanProviderModelsMock, fetchRemoteProviderModelsMock } = vi.hoisted(() => ({
+	fetchKanbanProviderModelsMock: vi.fn(),
+	fetchRemoteProviderModelsMock: vi.fn(),
+}));
+
+vi.mock("@/runtime/runtime-config-query", () => ({
+	fetchKanbanProviderModels: fetchKanbanProviderModelsMock,
+	fetchRemoteProviderModels: fetchRemoteProviderModelsMock,
+}));
 
 function findButtonByText(container: ParentNode, text: string): HTMLButtonElement | null {
 	return (Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.trim() === text) ??
@@ -33,6 +44,10 @@ describe("KanbanAddProviderDialog", () => {
 		container = document.createElement("div");
 		document.body.appendChild(container);
 		root = createRoot(container);
+		fetchKanbanProviderModelsMock.mockReset();
+		fetchKanbanProviderModelsMock.mockResolvedValue([] as RuntimeKanbanProviderModel[]);
+		fetchRemoteProviderModelsMock.mockReset();
+		fetchRemoteProviderModelsMock.mockResolvedValue({ models: [] });
 	});
 
 	afterEach(() => {
@@ -516,7 +531,7 @@ describe("KanbanAddProviderDialog", () => {
 		expect(payload?.protocols).toBeUndefined();
 	});
 
-	it("updates capability toggle state and submits the selected capabilities", async () => {
+	it("no longer renders the provider-level Capabilities multiselect and omits it from the submit payload", async () => {
 		const onSubmit = vi.fn(async () => ({ ok: true }));
 
 		await act(async () => {
@@ -530,55 +545,68 @@ describe("KanbanAddProviderDialog", () => {
 			);
 		});
 
-		const visionButton = findButtonByText(document.body, "vision");
-		const streamingButton = findButtonByText(document.body, "streaming");
-		expect(visionButton?.getAttribute("aria-pressed")).toBe("false");
-		expect(streamingButton?.getAttribute("aria-pressed")).toBe("true");
+		// The misleading provider-level capability toggles ("streaming", "tools",
+		// "prompt-cache", …) must be gone — capabilities are a per-model property now.
+		expect(findButtonByText(document.body, "streaming")).toBeNull();
+		expect(findButtonByText(document.body, "prompt-cache")).toBeNull();
 
-		await act(async () => {
-			visionButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-			visionButton?.click();
-			streamingButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-			streamingButton?.click();
-		});
-
-		expect(visionButton?.getAttribute("aria-pressed")).toBe("true");
-		expect(streamingButton?.getAttribute("aria-pressed")).toBe("false");
-
-		const inputs = Array.from(document.body.querySelectorAll("input"));
-		const providerIdInput = inputs.find((input) => input.placeholder === "my-provider") as
-			| HTMLInputElement
-			| undefined;
-		const providerNameInput = inputs.find((input) => input.placeholder === "My Provider") as
-			| HTMLInputElement
-			| undefined;
-		const baseUrlInput = inputs.find((input) => input.placeholder === "https://api.openai.com/v1") as
-			| HTMLInputElement
-			| undefined;
-		const modelInput = inputs.find((input) => input.placeholder === "Type a model ID and press Enter") as
-			| HTMLInputElement
-			| undefined;
+		await fillRequiredFields();
 		const saveButton = findButtonByText(document.body, "Add provider");
-
-		await act(async () => {
-			if (!providerIdInput || !providerNameInput || !baseUrlInput || !modelInput) {
-				return;
-			}
-			setInputValue(providerIdInput, "my-provider");
-			setInputValue(providerNameInput, "My Provider");
-			setInputValue(baseUrlInput, "http://localhost:8000/v1");
-			setInputValue(modelInput, "qwen2.5-coder:32b");
-		});
-
 		await act(async () => {
 			saveButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
 			saveButton?.click();
 		});
 
-		expect(onSubmit).toHaveBeenCalledWith(
-			expect.objectContaining({
-				capabilities: ["tools", "vision"],
-			}),
+		expect(onSubmit).toHaveBeenCalledTimes(1);
+		const submitCalls = onSubmit.mock.calls as unknown as Array<[Record<string, unknown>]>;
+		const payload = submitCalls[0]?.[0];
+		expect(payload).not.toHaveProperty("capabilities");
+	});
+
+	it("renders read-only per-model capability badges derived from model metadata", async () => {
+		fetchKanbanProviderModelsMock.mockResolvedValue([
+			{ id: "vision-model", name: "Vision Model", supportsVision: true, supportsAttachments: true },
+			{ id: "reasoning-model", name: "Reasoning Model", supportsReasoningEffort: true },
+			{ id: "plain-model", name: "Plain Model" },
+		] as RuntimeKanbanProviderModel[]);
+
+		await act(async () => {
+			root.render(
+				<KanbanAddProviderDialog
+					open={true}
+					onOpenChange={() => {}}
+					existingProviderIds={["anthropic"]}
+					mode="edit"
+					initialValues={{
+						providerId: "anthropic",
+						name: "Anthropic",
+						models: ["vision-model", "reasoning-model", "plain-model"],
+					}}
+					onSubmit={vi.fn(async () => ({ ok: true }))}
+				/>,
+			);
+		});
+
+		// The fetch is debounced (~400ms). Flush real time + the resulting microtasks.
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 450));
+		});
+
+		expect(fetchKanbanProviderModelsMock).toHaveBeenCalledWith(null, "anthropic");
+
+		const chips = Array.from(document.body.querySelectorAll("span")).filter((span) =>
+			span.className.includes("rounded-md") && span.className.includes("bg-surface-3"),
 		);
+		const chipFor = (modelId: string) =>
+			chips.find((chip) => chip.querySelector(".font-mono")?.textContent === modelId);
+
+		expect(chipFor("vision-model")?.textContent).toContain("Vision");
+		expect(chipFor("vision-model")?.textContent).not.toContain("Reasoning");
+		expect(chipFor("reasoning-model")?.textContent).toContain("Reasoning");
+		expect(chipFor("reasoning-model")?.textContent).not.toContain("Vision");
+		// A model with no capability metadata shows just its id, no badges.
+		expect(chipFor("plain-model")?.textContent).toContain("plain-model");
+		expect(chipFor("plain-model")?.textContent).not.toContain("Vision");
+		expect(chipFor("plain-model")?.textContent).not.toContain("Reasoning");
 	});
 });

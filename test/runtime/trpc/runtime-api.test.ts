@@ -2195,6 +2195,13 @@ describe("createRuntimeApi startTaskSession", () => {
 		}
 		const names = response.models.map((model) => model.name);
 		expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+
+		// Per-model capabilities are derived from the bundled metadata (vision from
+		// image input, reasoning-effort from reasoning models that accept the param).
+		// These belong to the model, not the provider, so they ride on each entry.
+		expect(response.models.some((model) => model.supportsVision === true)).toBe(true);
+		expect(response.models.some((model) => model.supportsAttachments === true)).toBe(true);
+		expect(response.models.some((model) => model.supportsReasoningEffort === true)).toBe(true);
 	});
 
 	it("discovers provider models from the configured /models endpoint", async () => {

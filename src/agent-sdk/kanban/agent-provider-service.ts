@@ -23,6 +23,7 @@ import type {
 import { maskApiKey } from "../../core/api-key-mask";
 import { createLogger } from "../../logging";
 import { type GeneratedProvider, getBundledModels } from "../ai/models";
+import type { Api, Model } from "../ai/types";
 import {
 	type AgentProviderConfig,
 	deleteAgentProvider,
@@ -86,6 +87,43 @@ function toRuntimeProviderModel(model: { id: string; name: string }): RuntimeKan
 	return {
 		id: model.id,
 		name: model.name?.trim() || model.id,
+	};
+}
+
+/**
+ * Derive a model's capabilities from its bundled `models.json` metadata. These
+ * are properties of the *individual model* (a single endpoint+key can serve many
+ * models with different capabilities), so they belong here — not on the provider.
+ *
+ * - `supportsVision` / `supportsAttachments`: the model accepts image input
+ *   (`input` includes `"image"`). Only text/image modalities exist today, so
+ *   attachments tracks vision.
+ * - `supportsReasoningEffort`: the model reasons (`reasoning`) and its API accepts
+ *   the `reasoning_effort` param. A model that reasons natively but rejects the
+ *   param (`compat.supportsReasoningEffort === false`) is excluded.
+ *
+ * Returns only the flags that are true so the wire payload stays lean and absent
+ * = "unknown/false" for models discovered without metadata (remote `/models`).
+ */
+export function deriveBundledModelCapabilities(
+	model: Pick<Model<Api>, "input" | "reasoning" | "compat">,
+): Pick<RuntimeKanbanProviderModel, "supportsVision" | "supportsAttachments" | "supportsReasoningEffort"> {
+	const supportsImageInput = Array.isArray(model.input) && model.input.includes("image");
+	const reasons = model.reasoning === true;
+	// `compat` is API-specific; only OpenAI-compat carries `supportsReasoningEffort`.
+	// Read it through a narrow shape so an Anthropic model's `compat` doesn't error.
+	const compat = model.compat as { supportsReasoningEffort?: boolean } | undefined;
+	const supportsReasoningEffort = reasons && compat?.supportsReasoningEffort !== false;
+	return {
+		...(supportsImageInput ? { supportsVision: true, supportsAttachments: true } : {}),
+		...(reasons ? { supportsReasoningEffort } : {}),
+	};
+}
+
+function bundledModelToRuntimeProviderModel(model: Model<Api>): RuntimeKanbanProviderModel {
+	return {
+		...toRuntimeProviderModel({ id: model.id, name: model.name ?? model.id }),
+		...deriveBundledModelCapabilities(model),
 	};
 }
 
@@ -298,7 +336,7 @@ export function createAgentProviderService() {
 				try {
 					const models = getBundledModels(normalizedProviderId as GeneratedProvider);
 					providerModels = models
-						.map((m) => toRuntimeProviderModel({ id: m.id, name: m.name ?? m.id }))
+						.map((m) => bundledModelToRuntimeProviderModel(m))
 						.sort((a, b) => a.name.localeCompare(b.name));
 				} catch {
 					// Provider not found in bundled registry

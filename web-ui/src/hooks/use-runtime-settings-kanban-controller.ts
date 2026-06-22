@@ -19,7 +19,6 @@ import type {
 	RuntimeConfigResponse,
 	RuntimeKanbanOauthLoginResponse,
 	RuntimeKanbanOauthProvider,
-	RuntimeKanbanProviderCapability,
 	RuntimeKanbanProviderCatalogItem,
 	RuntimeKanbanProviderModel,
 	RuntimeKanbanProviderSettings,
@@ -87,7 +86,6 @@ export interface AddKanbanProviderInput {
 	models: string[];
 	defaultModelId?: string | null;
 	modelsSourceUrl?: string | null;
-	capabilities?: RuntimeKanbanProviderCapability[];
 	protocols?: ProtocolConfigInput[];
 	anthropic?: AnthropicProviderSettingsInput;
 }
@@ -102,7 +100,6 @@ export interface UpdateKanbanProviderInput {
 	models?: string[];
 	defaultModelId?: string | null;
 	modelsSourceUrl?: string | null;
-	capabilities?: RuntimeKanbanProviderCapability[];
 	protocols?: ProtocolConfigInput[];
 	anthropic?: AnthropicProviderSettingsInput;
 }
