@@ -1,0 +1,19 @@
+{
+  "id": "4c1ac",
+  "title": "perf #6: vault store findById 直查路径 + 并行 scan + 缓存",
+  "prompt": "性能优化 #6(全审计中最差的扩展模式,趁 vault 还小先改)。\n\n问题:vault store 的 scan 用完全串行的嵌套 for 循环 + 逐个 await readDocument;findById 为定位单个文档竟调用 scan() 扫整个 vault;get/create/update/remove 全走它。即 O(总文档数) 解析/单文档操作。现在 3 个文档无感,但路线图做成 Notion/Obsidian 式知识库后,每次 get/update/链接解析/反链/搜索都变成全树 gray-matter 解析。\n\n定位:\n- src/vault/vault-document-store.ts:182-201 (scan,串行)\n- findById :176-179 (为单文档扫全 vault)\n- get :85-88, create :92, update :133, remove :167 都经由它\n\n修法:\n1) findById 走直查路径 —— 文件名是 <slug>-<id>.md 位于 docs/<type>/,用定向 readdir 或建 id→path 索引,避免解析每个文档\n2) scan 用 Promise.all 并行\n3) 进程内 scan 缓存,写时失效\n\n注意:留意 slug/id 边缘情况与缓存失效正确性。验证文档 CRUD、链接解析、反链、搜索结果不变;现有测试通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782106571562,
+  "updatedAt": 1782106571562,
+  "column": "backlog",
+  "rank": "Zt",
+  "dependsOn": []
+}
