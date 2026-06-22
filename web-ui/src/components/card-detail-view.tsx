@@ -4,15 +4,19 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
-import { KanbanAgentChatPanel, type KanbanAgentChatPanelHandle } from "@/components/detail-panels/kanban-agent-chat-panel";
+import { ArtifactsPanel } from "@/components/detail-panels/artifacts-panel";
 import { ColumnContextPanel } from "@/components/detail-panels/column-context-panel";
 import { type DiffLineComment, DiffViewerPanel } from "@/components/detail-panels/diff-viewer-panel";
 import { FileTreePanel } from "@/components/detail-panels/file-tree-panel";
+import {
+	KanbanAgentChatPanel,
+	type KanbanAgentChatPanelHandle,
+} from "@/components/detail-panels/kanban-agent-chat-panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import type { KanbanChatActionResult } from "@/hooks/use-kanban-chat-runtime-actions";
 import type { KanbanChatMessage } from "@/hooks/use-kanban-chat-session";
-import { useIsMobile } from "@/hooks/use-is-mobile";
 import { ResizableBottomPane } from "@/resize/resizable-bottom-pane";
 import { ResizeHandle } from "@/resize/resize-handle";
 import { useCardDetailLayout } from "@/resize/use-card-detail-layout";
@@ -20,12 +24,13 @@ import { useResizeDrag } from "@/resize/use-resize-drag";
 import { isNativeAgentSelected, resolveEffectiveTaskAgentId } from "@/runtime/native-agent";
 import type {
 	RuntimeAgentId,
-	RuntimeReasoningEffort,
 	RuntimeConfigResponse,
+	RuntimeReasoningEffort,
 	RuntimeTaskSessionMode,
 	RuntimeTaskSessionSummary,
 	RuntimeWorkspaceChangesMode,
 } from "@/runtime/types";
+import { useRuntimeWorkspaceArtifacts } from "@/runtime/use-runtime-workspace-artifacts";
 import { useRuntimeWorkspaceChanges } from "@/runtime/use-runtime-workspace-changes";
 import { useTaskWorkspaceStateVersionValue } from "@/stores/workspace-metadata-store";
 import { useTerminalThemeColors } from "@/terminal/theme-colors";
@@ -264,12 +269,16 @@ function DiffModeButton({
 function DiffToolbar({
 	mode,
 	onModeChange,
+	isArtifactsView,
+	onSelectArtifacts,
 	isExpanded,
 	onToggleExpand,
 	hideExpand,
 }: {
 	mode: RuntimeWorkspaceChangesMode;
 	onModeChange: (mode: RuntimeWorkspaceChangesMode) => void;
+	isArtifactsView: boolean;
+	onSelectArtifacts: () => void;
 	isExpanded: boolean;
 	onToggleExpand: () => void;
 	hideExpand?: boolean;
@@ -287,11 +296,17 @@ function DiffToolbar({
 				/>
 			) : null}
 			<div className="inline-flex items-center gap-0.5 rounded-md p-0.5">
-				<DiffModeButton active={mode === "working_copy"} onClick={() => onModeChange("working_copy")}>
+				<DiffModeButton
+					active={!isArtifactsView && mode === "working_copy"}
+					onClick={() => onModeChange("working_copy")}
+				>
 					All Changes
 				</DiffModeButton>
-				<DiffModeButton active={mode === "last_turn"} onClick={() => onModeChange("last_turn")}>
+				<DiffModeButton active={!isArtifactsView && mode === "last_turn"} onClick={() => onModeChange("last_turn")}>
 					Last Turn
+				</DiffModeButton>
+				<DiffModeButton active={isArtifactsView} onClick={onSelectArtifacts}>
+					Artifacts
 				</DiffModeButton>
 			</div>
 			{!hideExpand ? (
@@ -439,6 +454,7 @@ export function CardDetailView({
 	const [selectedPath, setSelectedPath] = useState<string | null>(null);
 	const [diffComments, setDiffComments] = useState<Map<string, DiffLineComment>>(new Map());
 	const [diffMode, setDiffMode] = useState<RuntimeWorkspaceChangesMode>("working_copy");
+	const [isArtifactsView, setIsArtifactsView] = useState(false);
 	const [isDiffExpanded, setIsDiffExpanded] = useState(false);
 	const {
 		taskCardsPanelRatio,
@@ -454,8 +470,7 @@ export function CardDetailView({
 	const { startDrag: startAgentPanelResize } = useResizeDrag();
 	const { startDrag: startDetailDiffResize } = useResizeDrag();
 	const detailLayoutRef = useRef<HTMLDivElement | null>(null);
-	const hasExplicitTaskKanbanSettings =
-		selection.card.agentId === "pi" || selection.card.agentSettings !== undefined;
+	const hasExplicitTaskKanbanSettings = selection.card.agentId === "pi" || selection.card.agentSettings !== undefined;
 	const mainRowRef = useRef<HTMLDivElement | null>(null);
 	const detailDiffRowRef = useRef<HTMLDivElement | null>(null);
 	const kanbanAgentChatPanelRef = useRef<KanbanAgentChatPanelHandle | null>(null);
@@ -498,6 +513,15 @@ export function CardDetailView({
 		lastTurnViewKey,
 		true,
 	);
+	const { artifacts: workspaceArtifacts, isLoading: isArtifactsLoading } = useRuntimeWorkspaceArtifacts(
+		selection.card.id,
+		currentProjectId,
+		selection.card.baseRef,
+		taskWorkspaceStateVersion,
+		isDocumentVisible && !gitHistoryPanel && selection.column.id !== "trash" ? DETAIL_DIFF_POLL_INTERVAL_MS : null,
+		isArtifactsView,
+	);
+	const artifactItems = workspaceArtifacts?.artifacts ?? null;
 	const runtimeFiles = workspaceChanges?.files ?? null;
 	const isWorkspaceChangesPending = isRuntimeAvailable && workspaceChanges === null;
 	const hasNoWorkspaceFileChanges =
@@ -599,7 +623,17 @@ export function CardDetailView({
 	useEffect(() => {
 		setDiffComments(new Map());
 		setDiffMode("working_copy");
+		setIsArtifactsView(false);
 	}, [selection.card.id]);
+
+	const handleDiffModeChange = useCallback((nextMode: RuntimeWorkspaceChangesMode) => {
+		setIsArtifactsView(false);
+		setDiffMode(nextMode);
+	}, []);
+
+	const handleSelectArtifacts = useCallback(() => {
+		setIsArtifactsView(true);
+	}, []);
 
 	const handleToggleDiffExpand = useCallback(() => {
 		if (!isDiffExpanded && bottomTerminalOpen) {
@@ -726,14 +760,24 @@ export function CardDetailView({
 							{isRuntimeAvailable ? (
 								<DiffToolbar
 									mode={diffMode}
-									onModeChange={setDiffMode}
+									onModeChange={handleDiffModeChange}
+									isArtifactsView={isArtifactsView}
+									onSelectArtifacts={handleSelectArtifacts}
 									isExpanded={false}
 									onToggleExpand={handleToggleDiffExpand}
 									hideExpand
 								/>
 							) : null}
 							<div className="flex min-h-0 flex-1">
-								{isWorkspaceChangesPending ? (
+								{isArtifactsView ? (
+									<ArtifactsPanel
+										taskId={selection.card.id}
+										workspaceId={currentProjectId}
+										baseRef={selection.card.baseRef}
+										artifacts={artifactItems}
+										isLoading={isArtifactsLoading}
+									/>
+								) : isWorkspaceChangesPending ? (
 									<WorkspaceChangesLoadingPanel panelFlex="1 1 0" />
 								) : hasNoWorkspaceFileChanges ? (
 									<WorkspaceChangesEmptyPanel title={emptyDiffTitle} />
@@ -866,13 +910,23 @@ export function CardDetailView({
 								{isRuntimeAvailable ? (
 									<DiffToolbar
 										mode={diffMode}
-										onModeChange={setDiffMode}
+										onModeChange={handleDiffModeChange}
+										isArtifactsView={isArtifactsView}
+										onSelectArtifacts={handleSelectArtifacts}
 										isExpanded={isDiffExpanded}
 										onToggleExpand={handleToggleDiffExpand}
 									/>
 								) : null}
 								<div className="flex min-h-0 flex-1">
-									{isWorkspaceChangesPending ? (
+									{isArtifactsView ? (
+										<ArtifactsPanel
+											taskId={selection.card.id}
+											workspaceId={currentProjectId}
+											baseRef={selection.card.baseRef}
+											artifacts={artifactItems}
+											isLoading={isArtifactsLoading}
+										/>
+									) : isWorkspaceChangesPending ? (
 										<WorkspaceChangesLoadingPanel panelFlex={detailDiffFileTreePanelFlex} />
 									) : hasNoWorkspaceFileChanges ? (
 										<WorkspaceChangesEmptyPanel title={emptyDiffTitle} />

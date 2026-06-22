@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
 import type {
+	RuntimeArtifactsResponse,
 	RuntimeBoardBranchUpdateResponse,
 	RuntimeBoardSyncAction,
 	RuntimeBoardSyncActionResponse,
@@ -28,8 +29,11 @@ import { VaultDocumentStore } from "../vault/vault-document-store";
 import { buildVaultLinkIndex } from "../vault/vault-link-index";
 import { searchVaultDocuments } from "../vault/vault-search";
 import { VaultSettingsStore } from "../vault/vault-settings-store";
+import { readArtifactContent } from "../workspace/artifact-content";
+import { detectArtifacts } from "../workspace/artifact-detection";
 import {
 	createEmptyWorkspaceChangesResponse,
+	getWorkspaceChangedPathsFromRef,
 	getWorkspaceChanges,
 	getWorkspaceChangesBetweenRefs,
 	getWorkspaceChangesFromRef,
@@ -344,6 +348,43 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 				});
 			}
 			return await getWorkspaceChanges(taskCwd);
+		},
+		loadArtifacts: async (workspaceScope, input) => {
+			const generatedAt = Date.now();
+			let taskCwd: string;
+			try {
+				taskCwd = await resolveTaskCwd({
+					cwd: workspaceScope.workspacePath,
+					taskId: input.taskId,
+					baseRef: input.baseRef,
+					ensure: false,
+				});
+			} catch (error) {
+				if (!isMissingTaskWorktreeError(error)) {
+					throw error;
+				}
+				// No worktree → no artifacts (weak references vanish with the worktree).
+				return { artifacts: [], generatedAt };
+			}
+			let changedPaths: Awaited<ReturnType<typeof getWorkspaceChangedPathsFromRef>>;
+			try {
+				changedPaths = await getWorkspaceChangedPathsFromRef({ cwd: taskCwd, fromRef: input.baseRef });
+			} catch {
+				return { artifacts: [], generatedAt };
+			}
+			return {
+				artifacts: detectArtifacts(changedPaths),
+				generatedAt,
+			} satisfies RuntimeArtifactsResponse;
+		},
+		loadArtifactContent: async (workspaceScope, input) => {
+			const taskCwd = await resolveTaskCwd({
+				cwd: workspaceScope.workspacePath,
+				taskId: input.taskId,
+				baseRef: input.baseRef,
+				ensure: false,
+			});
+			return await readArtifactContent(taskCwd, input.path);
 		},
 		ensureWorktree: async (workspaceScope, input) => {
 			const body = parseWorktreeEnsureRequest(input);

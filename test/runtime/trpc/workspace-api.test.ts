@@ -15,6 +15,7 @@ const workspaceChangesMocks = vi.hoisted(() => ({
 	getWorkspaceChanges: vi.fn(),
 	getWorkspaceChangesBetweenRefs: vi.fn(),
 	getWorkspaceChangesFromRef: vi.fn(),
+	getWorkspaceChangedPathsFromRef: vi.fn(),
 }));
 
 vi.mock("../../../src/workspace/task-worktree.js", () => ({
@@ -29,6 +30,7 @@ vi.mock("../../../src/workspace/get-workspace-changes.js", () => ({
 	getWorkspaceChanges: workspaceChangesMocks.getWorkspaceChanges,
 	getWorkspaceChangesBetweenRefs: workspaceChangesMocks.getWorkspaceChangesBetweenRefs,
 	getWorkspaceChangesFromRef: workspaceChangesMocks.getWorkspaceChangesFromRef,
+	getWorkspaceChangedPathsFromRef: workspaceChangesMocks.getWorkspaceChangedPathsFromRef,
 }));
 
 import { createWorkspaceApi } from "../../../src/trpc/workspace-api";
@@ -583,5 +585,68 @@ describe("createWorkspaceApi vault settings", () => {
 		const reverted = await api.updateVaultSettings(scope(), { vaultMode: "off" });
 		expect(reverted.settings).toEqual({ vaultMode: "off" });
 		expect((await api.getVaultSettings(scope())).settings).toEqual({ vaultMode: "off" });
+	});
+});
+
+describe("createWorkspaceApi loadArtifacts", () => {
+	function createApi() {
+		return createWorkspaceApi({
+			ensureTerminalManagerForWorkspace: vi.fn(async () => ({ getSummary: vi.fn(() => null) }) as never),
+			getScopedPiTaskSessionService: vi.fn(async () => ({ getSummary: vi.fn(() => null) }) as never),
+			broadcastRuntimeWorkspaceStateUpdated: vi.fn(),
+			broadcastRuntimeProjectsUpdated: vi.fn(),
+			buildWorkspaceStateSnapshot: vi.fn(),
+			boardSync: {
+				getStatus: vi.fn(),
+				runAction: vi.fn(),
+				setAutoSyncPaused: vi.fn(),
+				renameBranch: vi.fn(),
+			},
+		});
+	}
+
+	beforeEach(() => {
+		workspaceTaskWorktreeMocks.resolveTaskCwd.mockReset();
+		workspaceChangesMocks.getWorkspaceChangedPathsFromRef.mockReset();
+		workspaceTaskWorktreeMocks.resolveTaskCwd.mockResolvedValue("/tmp/worktree");
+		workspaceChangesMocks.getWorkspaceChangedPathsFromRef.mockResolvedValue([]);
+	});
+
+	it("detects artifacts from changes between the base ref and the worktree", async () => {
+		workspaceChangesMocks.getWorkspaceChangedPathsFromRef.mockResolvedValue([
+			{ path: "docs/plan/feature.md", status: "added" },
+			{ path: "src/index.ts", status: "modified" },
+			{ path: "out/report.json", status: "modified" },
+		]);
+
+		const result = await createApi().loadArtifacts(
+			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
+			{ taskId: "task-1", baseRef: "main" },
+		);
+
+		expect(workspaceChangesMocks.getWorkspaceChangedPathsFromRef).toHaveBeenCalledWith({
+			cwd: "/tmp/worktree",
+			fromRef: "main",
+		});
+		expect(result.artifacts.map((a) => a.path)).toEqual(["out/report.json", "docs/plan/feature.md"]);
+		expect(result.artifacts.find((a) => a.path === "docs/plan/feature.md")).toMatchObject({
+			type: "plan",
+			status: "new",
+			previewKind: "markdown",
+		});
+	});
+
+	it("returns an empty list when the task worktree is missing", async () => {
+		workspaceTaskWorktreeMocks.resolveTaskCwd.mockRejectedValue(
+			new Error('Task worktree not found for task "task-1".'),
+		);
+
+		const result = await createApi().loadArtifacts(
+			{ workspaceId: "workspace-1", workspacePath: "/tmp/repo" },
+			{ taskId: "task-1", baseRef: "main" },
+		);
+
+		expect(result.artifacts).toEqual([]);
+		expect(workspaceChangesMocks.getWorkspaceChangedPathsFromRef).not.toHaveBeenCalled();
 	});
 });

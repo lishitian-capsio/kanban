@@ -40,6 +40,59 @@ export const runtimeWorkspaceChangesResponseSchema = z.object({
 });
 export type RuntimeWorkspaceChangesResponse = z.infer<typeof runtimeWorkspaceChangesResponseSchema>;
 
+// --- Task artifacts (read-only, weak-reference) ---------------------------------
+// Artifacts are "成果类" files (markdown, images, pdf, json, csv, …) a task wrote
+// into its worktree, surfaced as a read-only third diff tab. There is NO registry,
+// no id, no snapshot: the list is recomputed from the worktree on every read and
+// holds only a relative path + a path-derived type label. When a file is renamed,
+// deleted, or the worktree is cleaned up, the reference simply disappears.
+export const runtimeArtifactPreviewKindSchema = z.enum(["markdown", "image", "text", "json", "binary"]);
+export type RuntimeArtifactPreviewKind = z.infer<typeof runtimeArtifactPreviewKindSchema>;
+
+export const runtimeArtifactStatusSchema = z.enum(["new", "modified"]);
+export type RuntimeArtifactStatus = z.infer<typeof runtimeArtifactStatusSchema>;
+
+export const runtimeArtifactSchema = z.object({
+	path: z.string(),
+	type: z.string(),
+	label: z.string(),
+	status: runtimeArtifactStatusSchema,
+	previewKind: runtimeArtifactPreviewKindSchema,
+});
+export type RuntimeArtifact = z.infer<typeof runtimeArtifactSchema>;
+
+export const runtimeArtifactsRequestSchema = z.object({
+	taskId: z.string(),
+	baseRef: z.string(),
+});
+export type RuntimeArtifactsRequest = z.infer<typeof runtimeArtifactsRequestSchema>;
+
+export const runtimeArtifactsResponseSchema = z.object({
+	artifacts: z.array(runtimeArtifactSchema),
+	generatedAt: z.number(),
+});
+export type RuntimeArtifactsResponse = z.infer<typeof runtimeArtifactsResponseSchema>;
+
+export const runtimeArtifactContentRequestSchema = z.object({
+	taskId: z.string(),
+	baseRef: z.string(),
+	path: z.string(),
+});
+export type RuntimeArtifactContentRequest = z.infer<typeof runtimeArtifactContentRequestSchema>;
+
+export const runtimeArtifactContentResponseSchema = z.object({
+	path: z.string(),
+	previewKind: runtimeArtifactPreviewKindSchema,
+	// Exactly one of `text` / `data` is populated for previewable content; binary
+	// payloads over the size cap return both null with `truncated: true`.
+	text: z.string().nullable(),
+	data: z.string().nullable(),
+	mimeType: z.string().nullable(),
+	size: z.number(),
+	truncated: z.boolean(),
+});
+export type RuntimeArtifactContentResponse = z.infer<typeof runtimeArtifactContentResponseSchema>;
+
 export const runtimeWorkspaceFileSearchRequestSchema = z.object({
 	query: z.string(),
 	limit: z.number().int().positive().optional(),

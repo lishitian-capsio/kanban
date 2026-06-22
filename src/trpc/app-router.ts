@@ -11,6 +11,10 @@ import type {
 	RuntimeAgentProviderMutationRequest,
 	RuntimeAgentProviderMutationResponse,
 	RuntimeAgentProviderSetListResponse,
+	RuntimeArtifactContentRequest,
+	RuntimeArtifactContentResponse,
+	RuntimeArtifactsRequest,
+	RuntimeArtifactsResponse,
 	RuntimeBoardAutoSyncRequest,
 	RuntimeBoardAutoSyncResponse,
 	RuntimeBoardBranchUpdateRequest,
@@ -156,6 +160,10 @@ import {
 	runtimeAgentProviderMutationRequestSchema,
 	runtimeAgentProviderMutationResponseSchema,
 	runtimeAgentProviderSetListResponseSchema,
+	runtimeArtifactContentRequestSchema,
+	runtimeArtifactContentResponseSchema,
+	runtimeArtifactsRequestSchema,
+	runtimeArtifactsResponseSchema,
 	runtimeBoardAutoSyncRequestSchema,
 	runtimeBoardAutoSyncResponseSchema,
 	runtimeBoardBranchUpdateRequestSchema,
@@ -449,6 +457,14 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeWorkspaceChangesRequest,
 		) => Promise<RuntimeWorkspaceChangesResponse>;
+		loadArtifacts: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeArtifactsRequest,
+		) => Promise<RuntimeArtifactsResponse>;
+		loadArtifactContent: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeArtifactContentRequest,
+		) => Promise<RuntimeArtifactContentResponse>;
 		ensureWorktree: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeWorktreeEnsureRequest,
@@ -891,6 +907,18 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeWorkspaceChangesResponseSchema)
 			.query(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.loadChanges(ctx.workspaceScope, input);
+			}),
+		getArtifacts: workspaceProcedure
+			.input(runtimeArtifactsRequestSchema)
+			.output(runtimeArtifactsResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.loadArtifacts(ctx.workspaceScope, input);
+			}),
+		getArtifactContent: workspaceProcedure
+			.input(runtimeArtifactContentRequestSchema)
+			.output(runtimeArtifactContentResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.loadArtifactContent(ctx.workspaceScope, input);
 			}),
 		ensureWorktree: workspaceProcedure
 			.input(runtimeWorktreeEnsureRequestSchema)

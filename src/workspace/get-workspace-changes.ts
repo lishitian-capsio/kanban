@@ -454,14 +454,9 @@ export async function getWorkspaceChangesBetweenRefs(
 	};
 }
 
-export async function getWorkspaceChangesFromRef(input: ChangesFromRefInput): Promise<RuntimeWorkspaceChangesResponse> {
-	const repoRoot = (await getGitStdout(["rev-parse", "--show-toplevel"], input.cwd)).trim();
-	if (!repoRoot) {
-		throw new Error("Could not resolve git repository root.");
-	}
-
+async function collectChangesFromRef(repoRoot: string, fromRef: string): Promise<NameStatusEntry[]> {
 	const [trackedChangesOutput, untrackedOutput] = await Promise.all([
-		getGitStdout(["diff", "--name-status", "--find-renames", input.fromRef, "--"], repoRoot),
+		getGitStdout(["diff", "--name-status", "--find-renames", fromRef, "--"], repoRoot),
 		getGitStdout(["ls-files", "--others", "--exclude-standard"], repoRoot),
 	]);
 	const trackedChanges = parseTrackedChanges(trackedChangesOutput);
@@ -470,7 +465,7 @@ export async function getWorkspaceChangesFromRef(input: ChangesFromRefInput): Pr
 		.map((line) => line.trim())
 		.filter(Boolean);
 	const trackedPaths = new Set(trackedChanges.map((entry) => entry.path));
-	const allChanges: NameStatusEntry[] = [
+	return [
 		...trackedChanges,
 		...untrackedPaths
 			.filter((path) => !trackedPaths.has(path))
@@ -479,6 +474,43 @@ export async function getWorkspaceChangesFromRef(input: ChangesFromRefInput): Pr
 				status: "untracked" as const,
 			})),
 	];
+}
+
+/**
+ * A changed path between a ref and the working tree, without reading file
+ * content. Used by lightweight consumers (e.g. artifact detection) that only
+ * need the path + status, not the (expensive) old/new text diff.
+ */
+export interface WorkspaceChangedPath {
+	path: string;
+	previousPath?: string;
+	status: RuntimeWorkspaceFileStatus;
+}
+
+/**
+ * List the paths that differ between `fromRef` and the working tree (committed
+ * + uncommitted + untracked), without computing diffs or reading content.
+ */
+export async function getWorkspaceChangedPathsFromRef(input: ChangesFromRefInput): Promise<WorkspaceChangedPath[]> {
+	const repoRoot = (await getGitStdout(["rev-parse", "--show-toplevel"], input.cwd)).trim();
+	if (!repoRoot) {
+		throw new Error("Could not resolve git repository root.");
+	}
+	const entries = await collectChangesFromRef(repoRoot, input.fromRef);
+	return entries.map((entry) => ({
+		path: entry.path,
+		previousPath: entry.previousPath,
+		status: entry.status,
+	}));
+}
+
+export async function getWorkspaceChangesFromRef(input: ChangesFromRefInput): Promise<RuntimeWorkspaceChangesResponse> {
+	const repoRoot = (await getGitStdout(["rev-parse", "--show-toplevel"], input.cwd)).trim();
+	if (!repoRoot) {
+		throw new Error("Could not resolve git repository root.");
+	}
+
+	const allChanges = await collectChangesFromRef(repoRoot, input.fromRef);
 
 	if (allChanges.length === 0) {
 		return {

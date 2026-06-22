@@ -8,16 +8,19 @@ import { TERMINAL_THEME_COLORS } from "@/terminal/theme-colors";
 import type { BoardCard, BoardColumn, CardSelection } from "@/types";
 
 const mockUseRuntimeWorkspaceChanges = vi.fn();
+const mockUseRuntimeWorkspaceArtifacts = vi.fn();
 const {
 	mockAgentTerminalPanel,
 	mockKanbanAgentChatPanel,
 	mockDiffViewerPanel,
+	mockArtifactsPanel,
 	mockKanbanAppendToDraft,
 	mockKanbanSendText,
 } = vi.hoisted(() => ({
 	mockAgentTerminalPanel: vi.fn((_props: { panelBackgroundColor?: string; terminalBackgroundColor?: string }) => null),
 	mockKanbanAgentChatPanel: vi.fn((..._args: unknown[]) => null),
 	mockDiffViewerPanel: vi.fn((..._args: unknown[]) => null),
+	mockArtifactsPanel: vi.fn((..._args: unknown[]) => null),
 	mockKanbanAppendToDraft: vi.fn(),
 	mockKanbanSendText: vi.fn(async () => {}),
 }));
@@ -60,12 +63,23 @@ vi.mock("@/components/detail-panels/file-tree-panel", () => ({
 	FileTreePanel: () => <div data-testid="file-tree-panel" />,
 }));
 
+vi.mock("@/components/detail-panels/artifacts-panel", () => ({
+	ArtifactsPanel: (props: unknown) => {
+		mockArtifactsPanel(props);
+		return <div data-testid="artifacts-panel" />;
+	},
+}));
+
 vi.mock("@/resize/resizable-bottom-pane", () => ({
 	ResizableBottomPane: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock("@/runtime/use-runtime-workspace-changes", () => ({
 	useRuntimeWorkspaceChanges: (...args: unknown[]) => mockUseRuntimeWorkspaceChanges(...args),
+}));
+
+vi.mock("@/runtime/use-runtime-workspace-artifacts", () => ({
+	useRuntimeWorkspaceArtifacts: (...args: unknown[]) => mockUseRuntimeWorkspaceArtifacts(...args),
 }));
 
 vi.mock("@/stores/workspace-metadata-store", () => ({
@@ -184,6 +198,7 @@ describe("CardDetailView", () => {
 		mockDiffViewerPanel.mockClear();
 		mockKanbanAppendToDraft.mockClear();
 		mockKanbanSendText.mockClear();
+		mockArtifactsPanel.mockClear();
 		mockUseRuntimeWorkspaceChanges.mockReturnValue({
 			changes: {
 				files: [
@@ -199,6 +214,12 @@ describe("CardDetailView", () => {
 			},
 			isRuntimeAvailable: true,
 		});
+		mockUseRuntimeWorkspaceArtifacts.mockReturnValue({
+			artifacts: { artifacts: [], generatedAt: 0 },
+			isLoading: false,
+			isRuntimeAvailable: true,
+			refresh: vi.fn(),
+		});
 	});
 
 	afterEach(() => {
@@ -206,9 +227,11 @@ describe("CardDetailView", () => {
 			root.unmount();
 		});
 		mockUseRuntimeWorkspaceChanges.mockReset();
+		mockUseRuntimeWorkspaceArtifacts.mockReset();
 		mockAgentTerminalPanel.mockClear();
 		mockKanbanAgentChatPanel.mockClear();
 		mockDiffViewerPanel.mockClear();
+		mockArtifactsPanel.mockClear();
 		mockKanbanAppendToDraft.mockClear();
 		mockKanbanSendText.mockClear();
 		vi.restoreAllMocks();
@@ -355,6 +378,58 @@ describe("CardDetailView", () => {
 		expect(getDiffModeButton("Last Turn").getAttribute("style")).toContain(
 			"background-color: color-mix(in srgb, var(--color-surface-3) 80%, var(--color-text-primary))",
 		);
+	});
+
+	it("switches to the Artifacts panel and back to the diff", async () => {
+		await act(async () => {
+			root.render(
+				<CardDetailView
+					selection={createSelection()}
+					currentProjectId="workspace-1"
+					sessionSummary={null}
+					taskSessions={{}}
+					onSessionSummary={() => {}}
+					onCardSelect={() => {}}
+					onTaskDragEnd={() => {}}
+					onMoveToTrash={() => {}}
+					bottomTerminalOpen={false}
+					bottomTerminalTaskId={null}
+					bottomTerminalSummary={null}
+					onBottomTerminalClose={() => {}}
+				/>,
+			);
+		});
+
+		const getButton = (label: string): HTMLButtonElement => {
+			const button = Array.from(container.querySelectorAll("button")).find(
+				(candidate) => candidate.textContent?.trim() === label,
+			);
+			if (!(button instanceof HTMLButtonElement)) {
+				throw new Error(`Expected a ${label} button.`);
+			}
+			return button;
+		};
+
+		// Diff is shown initially; Artifacts tab is present but inactive.
+		expect(container.querySelector('[data-testid="diff-viewer-panel"]')).not.toBeNull();
+		expect(container.querySelector('[data-testid="artifacts-panel"]')).toBeNull();
+		expect(getButton("Artifacts").getAttribute("aria-pressed")).toBe("false");
+
+		await act(async () => {
+			getButton("Artifacts").click();
+		});
+
+		expect(container.querySelector('[data-testid="artifacts-panel"]')).not.toBeNull();
+		expect(container.querySelector('[data-testid="diff-viewer-panel"]')).toBeNull();
+		expect(getButton("Artifacts").getAttribute("aria-pressed")).toBe("true");
+		expect(getButton("All Changes").getAttribute("aria-pressed")).toBe("false");
+
+		await act(async () => {
+			getButton("All Changes").click();
+		});
+
+		expect(container.querySelector('[data-testid="diff-viewer-panel"]')).not.toBeNull();
+		expect(container.querySelector('[data-testid="artifacts-panel"]')).toBeNull();
 	});
 
 	it("closes git history before handling other Escape behavior", async () => {
