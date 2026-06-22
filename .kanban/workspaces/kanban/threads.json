@@ -6,6 +6,13 @@
       "name": "provider",
       "createdAt": 1782140592143,
       "updatedAt": 1782140592143
+    },
+    {
+      "id": "1948950c-9fcf-43ae-bdd8-b88bf51fa3ae",
+      "agentId": "claude",
+      "name": "database",
+      "createdAt": 1782140859904,
+      "updatedAt": 1782140859904
     }
   ]
 }
