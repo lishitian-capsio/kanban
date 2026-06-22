@@ -21,31 +21,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.14"
-
-      - name: Setup Node.js (for node-gyp / Electron)
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Cache Bun install cache
+      - name: Cache node_modules
         uses: actions/cache@v4
         with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-cache-${{ hashFiles('**/bun.lock') }}
+          path: |
+            node_modules
+            web-ui/node_modules
+            packages/desktop/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-bun-cache-
-
-      - name: Configure registry
-        run: |
-          # Create .npmrc for better registry resolution
-          echo "registry=https://registry.npmjs.org/" > .npmrc
-          echo "Created .npmrc with npmjs registry"
-          cat .npmrc
+            ${{ runner.os }}-node-modules-
 
       # macOS node-gyp/electron rebuilds can fail with Python 3.12/distutils; pin 3.11.
       - name: Setup Python (for node-gyp on macOS)
@@ -55,41 +46,31 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          echo "Installing dependencies with retry..."
-          for i in 1 2 3; do
-            if bun install --frozen-lockfile; then
-              echo "Success on attempt $i"
-              exit 0
-            fi
-            echo "Attempt $i failed, waiting 5s..."
-            sleep 5
-          done
-          echo "Falling back to non-frozen install..."
-          bun install
+        run: npm ci || npm install
 
       - name: Install web-ui dependencies
         run: |
-          echo "Installing web-ui dependencies..."
-          bun install --cwd web-ui --frozen-lockfile || bun install --cwd web-ui
+          cd web-ui && (npm ci || npm install)
 
       - name: Install packages/desktop dependencies
-        run: bun install --cwd packages/desktop || npm ci --prefix packages/desktop
+        run: |
+          cd packages/desktop && (npm ci || npm install)
 
       - name: Build
-        run: bun run build
+        run: npm run build
 
       - name: Lint
-        run: bun run lint
+        run: npm run lint
 
       - name: Typecheck
-        run: bun run typecheck
+        run: npm run typecheck
 
       - name: Root tests
-        run: bun run test
+        run: npm run test
 
       - name: Web UI tests
-        run: bun --cwd web-ui run test
+        run: |
+          cd web-ui && npm run test
 
       - name: packages/desktop typecheck
         run: npm --prefix packages/desktop run typecheck
