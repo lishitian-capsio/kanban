@@ -100,7 +100,7 @@ jobs:
           echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build and validate package
-        run: bun run prepublishOnly
+        run: npm run prepublishOnly
         env:
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}

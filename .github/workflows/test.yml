@@ -16,17 +16,10 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            bun-version: "1.3.14"
           - os: macos-latest
-            bun-version: "1.3.14"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ matrix.bun-version }}
 
       - name: Setup Node.js (for node-gyp / Electron)
         uses: actions/setup-node@v4
