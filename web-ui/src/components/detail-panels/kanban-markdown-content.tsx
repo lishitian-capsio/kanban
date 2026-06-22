@@ -23,7 +23,7 @@ import "prismjs/components/prism-swift";
 import "prismjs/components/prism-tsx";
 import "prismjs/components/prism-typescript";
 import "prismjs/components/prism-yaml";
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -81,6 +81,41 @@ function toCodeString(children: ReactNode): string {
 	return value.endsWith("\n") ? value.slice(0, -1) : value;
 }
 
+// Fenced code blocks are extracted into a memoized component so Prism only
+// re-highlights when the block's own source changes. During streaming, react-
+// markdown rebuilds the whole element tree on every token; without this, every
+// earlier (already-complete) code block would re-run Prism.highlight each token.
+const CodeBlock = memo(function CodeBlock({
+	code,
+	className,
+}: {
+	code: string;
+	className: string | undefined;
+}): ReactElement {
+	const prismLanguage = useMemo(() => normalizeLanguageTag(className), [className]);
+	const highlighted = useMemo(() => {
+		if (!prismLanguage) {
+			return null;
+		}
+		const prismGrammar = Prism.languages[prismLanguage] ?? null;
+		return prismGrammar ? Prism.highlight(code, prismGrammar, prismLanguage) : null;
+	}, [code, prismLanguage]);
+
+	if (highlighted && prismLanguage) {
+		return (
+			<pre className="my-0.5 overflow-x-auto rounded-md border border-border bg-surface-1 px-2 py-1.5 text-xs leading-5 text-text-primary">
+				<code className={`language-${prismLanguage}`} dangerouslySetInnerHTML={{ __html: highlighted }} />
+			</pre>
+		);
+	}
+
+	return (
+		<pre className="my-0.5 overflow-x-auto rounded-md border border-border bg-surface-1 px-2 py-1.5 text-xs leading-5 text-text-primary">
+			<code className={cn("font-mono", className)}>{code}</code>
+		</pre>
+	);
+});
+
 const baseMarkdownComponents: Components = {
 	h1: ({ className, ...props }) => (
 		<h1 className={cn("mt-3 text-base font-semibold text-text-primary", className)} {...props} />
@@ -130,23 +165,7 @@ const baseMarkdownComponents: Components = {
 			);
 		}
 
-		const prismLanguage = normalizeLanguageTag(className);
-		const prismGrammar = prismLanguage ? (Prism.languages[prismLanguage] ?? null) : null;
-		const highlighted = prismGrammar && prismLanguage ? Prism.highlight(code, prismGrammar, prismLanguage) : null;
-
-		if (highlighted) {
-			return (
-				<pre className="my-0.5 overflow-x-auto rounded-md border border-border bg-surface-1 px-2 py-1.5 text-xs leading-5 text-text-primary">
-					<code className={`language-${prismLanguage}`} dangerouslySetInnerHTML={{ __html: highlighted }} />
-				</pre>
-			);
-		}
-
-		return (
-			<pre className="my-0.5 overflow-x-auto rounded-md border border-border bg-surface-1 px-2 py-1.5 text-xs leading-5 text-text-primary">
-				<code className={cn("font-mono", className)}>{code}</code>
-			</pre>
-		);
+		return <CodeBlock code={code} className={className} />;
 	},
 };
 
@@ -195,7 +214,11 @@ function buildMarkdownComponents(wikilinks: KanbanMarkdownWikilinks | undefined)
 	};
 }
 
-export function KanbanMarkdownContent({
+// Memoized so a render of the surrounding message that doesn't change `content`
+// (or the `wikilinks` reference) skips the full remark/rehype parse entirely.
+// Combined with the per-block CodeBlock memo, only the actively streaming
+// message pays the parse cost, and only for the text that actually grew.
+export const KanbanMarkdownContent = memo(function KanbanMarkdownContent({
 	content,
 	wikilinks,
 }: {
@@ -214,4 +237,4 @@ export function KanbanMarkdownContent({
 			</ReactMarkdown>
 		</div>
 	);
-}
+});

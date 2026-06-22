@@ -8,11 +8,11 @@ import React, {
 	useCallback,
 	useEffect,
 	useImperativeHandle,
-	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
 } from "react";
+import { type Components as VirtuosoComponents, Virtuoso } from "react-virtuoso";
 
 import { KanbanChatComposer } from "@/components/detail-panels/kanban-chat-composer";
 import { KanbanChatMessageItem } from "@/components/detail-panels/kanban-chat-message-item";
@@ -23,6 +23,7 @@ import {
 } from "@/components/detail-panels/kanban-model-picker-options";
 import { KanbanThinkingIndicator } from "@/components/detail-panels/kanban-thinking-indicator";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/components/ui/cn";
 import { Link } from "@/components/ui/link";
 import { Spinner } from "@/components/ui/spinner";
 import { useKanbanChatPanelController } from "@/hooks/use-kanban-chat-panel-controller";
@@ -38,6 +39,9 @@ import type {
 } from "@/runtime/types";
 import type { TaskImage } from "@/types";
 
+// Treat the viewport as "at the bottom" within this many pixels, so Virtuoso
+// keeps following streamed output even when a freshly grown last message leaves
+// a sub-pixel gap.
 const BOTTOM_LOCK_THRESHOLD_PX = 24;
 const KANBAN_BUY_CREDITS_URL = "https://app.cline.bot/";
 
@@ -55,6 +59,37 @@ const KanbanCreditLimitNotice = React.memo(function KanbanCreditLimitNotice() {
 		</div>
 	);
 });
+
+// Dynamic trailing content (thinking indicator, credit notice) and the list's
+// bottom padding live in the virtualized footer so they grow/shrink in place
+// and `followOutput` keeps them in view while pinned to the bottom.
+interface KanbanChatListContext {
+	showAgentProgressIndicator: boolean;
+	isCreditLimitNoticeVisible: boolean;
+}
+
+const KanbanChatListFooter: VirtuosoComponents<KanbanChatMessage, KanbanChatListContext>["Footer"] = ({ context }) => (
+	<div className="flex flex-col gap-2 px-2 pt-2 pb-3">
+		{context?.showAgentProgressIndicator ? <KanbanThinkingIndicator /> : null}
+		{context?.isCreditLimitNoticeVisible ? <KanbanCreditLimitNotice /> : null}
+	</div>
+);
+
+const KANBAN_CHAT_LIST_COMPONENTS: VirtuosoComponents<KanbanChatMessage, KanbanChatListContext> = {
+	Footer: KanbanChatListFooter,
+};
+
+function renderKanbanChatMessageItem(index: number, message: KanbanChatMessage): ReactElement {
+	return (
+		<div className={cn("px-2", index === 0 ? "pt-3" : "pt-2")}>
+			<KanbanChatMessageItem message={message} />
+		</div>
+	);
+}
+
+function computeKanbanChatMessageKey(_index: number, message: KanbanChatMessage): string {
+	return message.id;
+}
 
 export interface KanbanAgentChatPanelHandle {
 	appendToDraft: (text: string) => void;
@@ -146,7 +181,6 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 			showReviewActions,
 			showAgentProgressIndicator,
 			showActionFooter,
-			showCancelAutomaticAction,
 			handleSendText,
 			handleSendDraft,
 			handleCancelTurn,
@@ -166,11 +200,9 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 			cancelAutomaticActionLabel,
 			showMoveToTrash,
 		});
-		const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 		// TODO: Persist per-task mode immediately when toggled so page refresh restores unsent mode changes.
 		const modeByTaskIdRef = useRef<Map<string, RuntimeTaskSessionMode>>(new Map());
 		const [composerError, setComposerError] = useState<string | null>(null);
-		const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
 		const [isSavingModel, setIsSavingModel] = useState(false);
 		const isCreditLimitNoticeVisible = summary?.latestHookActivity?.notificationType === "credit_limit";
 		const [mode, setMode] = useState<RuntimeTaskSessionMode>(() => {
@@ -226,44 +258,14 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 				? "The selected Kanban model may not accept image input. Choose a vision-capable model to use these images."
 				: null;
 
-		const isPinnedToBottom = useCallback((container: HTMLDivElement): boolean => {
-			const remainingDistance = container.scrollHeight - container.scrollTop - container.clientHeight;
-			return remainingDistance <= BOTTOM_LOCK_THRESHOLD_PX;
-		}, []);
-
-		const handleMessageListScroll = useCallback(() => {
-			const container = scrollContainerRef.current;
-			if (!container) {
-				return;
-			}
-			const nextIsAutoScrollEnabled = isPinnedToBottom(container);
-			setIsAutoScrollEnabled((currentValue) =>
-				currentValue === nextIsAutoScrollEnabled ? currentValue : nextIsAutoScrollEnabled,
-			);
-		}, [isPinnedToBottom]);
-
-		useLayoutEffect(() => {
-			const container = scrollContainerRef.current;
-			if (!container || !isAutoScrollEnabled) {
-				return;
-			}
-			container.scrollTop = container.scrollHeight;
-		}, [
-			isAutoScrollEnabled,
-			messages,
-			showAgentProgressIndicator,
-			showActionFooter,
-			showReviewActions,
-			showCancelAutomaticAction,
-		]);
-
 		useEffect(() => {
 			setComposerError(null);
 		}, [taskId]);
 
-		useEffect(() => {
-			setIsAutoScrollEnabled(true);
-		}, [taskId]);
+		const chatListContext = useMemo<KanbanChatListContext>(
+			() => ({ showAgentProgressIndicator, isCreditLimitNoticeVisible }),
+			[showAgentProgressIndicator, isCreditLimitNoticeVisible],
+		);
 
 		useEffect(() => {
 			const persistedMode = modeByTaskIdRef.current.get(taskId);
@@ -422,17 +424,19 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 
 		return (
 			<div className="flex min-h-0 min-w-0 flex-1 flex-col">
-				<div
-					ref={scrollContainerRef}
-					className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto px-2 py-3"
-					onScroll={handleMessageListScroll}
-				>
-					{messages.map((message) => (
-						<KanbanChatMessageItem key={message.id} message={message} />
-					))}
-					{showAgentProgressIndicator ? <KanbanThinkingIndicator /> : null}
-					{isCreditLimitNoticeVisible ? <KanbanCreditLimitNotice /> : null}
-				</div>
+				<Virtuoso
+					key={taskId}
+					data={messages}
+					className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto"
+					followOutput="auto"
+					alignToBottom
+					atBottomThreshold={BOTTOM_LOCK_THRESHOLD_PX}
+					initialTopMostItemIndex={Math.max(0, messages.length - 1)}
+					computeItemKey={computeKanbanChatMessageKey}
+					itemContent={renderKanbanChatMessageItem}
+					context={chatListContext}
+					components={KANBAN_CHAT_LIST_COMPONENTS}
+				/>
 				{panelError ? (
 					<div className="border-t border-status-red/30 bg-status-red/10 px-2 py-2 text-xs text-status-red">
 						{panelError}

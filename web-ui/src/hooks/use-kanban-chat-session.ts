@@ -55,8 +55,43 @@ function upsertMessage(currentMessages: KanbanChatMessage[], nextMessage: Kanban
 	return nextMessages;
 }
 
+// Merges `additionalMessages` into `baseMessages` by id in O(N + M) using a
+// single id→index map, instead of an O(N·M) findIndex-per-message scan. This
+// matters because streaming feeds the whole task array in every token, so a
+// naive merge degrades to O(N²) per token on long conversations. Returns the
+// same array reference when nothing changed so React can bail out of renders.
 function mergeMessages(baseMessages: KanbanChatMessage[], additionalMessages: KanbanChatMessage[]): KanbanChatMessage[] {
-	return additionalMessages.reduce((nextMessages, message) => upsertMessage(nextMessages, message), [...baseMessages]);
+	if (additionalMessages.length === 0) {
+		return baseMessages;
+	}
+	const indexById = new Map<string, number>();
+	for (let index = 0; index < baseMessages.length; index += 1) {
+		const message = baseMessages[index];
+		if (message) {
+			indexById.set(message.id, index);
+		}
+	}
+	let nextMessages = baseMessages;
+	const ensureMutable = (): void => {
+		if (nextMessages === baseMessages) {
+			nextMessages = [...baseMessages];
+		}
+	};
+	for (const message of additionalMessages) {
+		const existingIndex = indexById.get(message.id);
+		if (existingIndex === undefined) {
+			ensureMutable();
+			indexById.set(message.id, nextMessages.length);
+			nextMessages.push(message);
+			continue;
+		}
+		const existingMessage = nextMessages[existingIndex];
+		if (existingMessage && !areMessagesEqual(existingMessage, message)) {
+			ensureMutable();
+			nextMessages[existingIndex] = message;
+		}
+	}
+	return nextMessages;
 }
 
 export function useKanbanChatSession({

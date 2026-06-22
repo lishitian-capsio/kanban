@@ -1,4 +1,4 @@
-import { act, createRef, type ReactElement } from "react";
+import { act, type ComponentType, createRef, type ReactElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,6 +7,41 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import type { KanbanChatMessage } from "@/hooks/use-kanban-chat-session";
 import type { RuntimeTaskHookActivity, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { resetWorkspaceMetadataStore, setTaskWorkspaceSnapshot } from "@/stores/workspace-metadata-store";
+
+// Virtuoso measures real layout and renders nothing in jsdom, so stub it with a
+// passthrough that eagerly renders the header, every item, and the footer. This
+// keeps the panel's content/footer behavior assertable; scroll-pinning is owned
+// by Virtuoso's `followOutput` and verified manually, not in jsdom. (vitest
+// hoists this above the imports above.)
+vi.mock("react-virtuoso", () => {
+	function MockVirtuoso(props: {
+		data?: unknown[];
+		itemContent: (index: number, item: unknown) => ReactNode;
+		computeItemKey?: (index: number, item: unknown) => string | number;
+		components?: {
+			Header?: ComponentType<{ context?: unknown }>;
+			Footer?: ComponentType<{ context?: unknown }>;
+		};
+		context?: unknown;
+		className?: string;
+	}): ReactElement {
+		const items = props.data ?? [];
+		const Header = props.components?.Header;
+		const Footer = props.components?.Footer;
+		return (
+			<div className={props.className}>
+				{Header ? <Header context={props.context} /> : null}
+				{items.map((item, index) => (
+					<div key={props.computeItemKey ? props.computeItemKey(index, item) : index}>
+						{props.itemContent(index, item)}
+					</div>
+				))}
+				{Footer ? <Footer context={props.context} /> : null}
+			</div>
+		);
+	}
+	return { Virtuoso: MockVirtuoso };
+});
 
 function createSummary(
 	state: RuntimeTaskSessionSummary["state"],
@@ -34,54 +69,6 @@ function createSummary(
 
 function renderPanel(root: Root, panel: ReactElement): void {
 	root.render(<TooltipProvider>{panel}</TooltipProvider>);
-}
-
-function getMessageList(container: HTMLElement): HTMLDivElement {
-	const messageList = container.querySelector("div.overflow-y-auto");
-	expect(messageList).toBeInstanceOf(HTMLDivElement);
-	if (!(messageList instanceof HTMLDivElement)) {
-		throw new Error("Expected chat message list.");
-	}
-	return messageList;
-}
-
-function mockScrollMetrics(
-	element: HTMLDivElement,
-	initialValues: { scrollHeight: number; clientHeight: number; scrollTop: number },
-): {
-	getScrollTop: () => number;
-	setScrollHeight: (value: number) => void;
-	setScrollTop: (value: number) => void;
-} {
-	let currentScrollHeight = initialValues.scrollHeight;
-	const currentClientHeight = initialValues.clientHeight;
-	let currentScrollTop = initialValues.scrollTop;
-
-	Object.defineProperty(element, "scrollHeight", {
-		configurable: true,
-		get: () => currentScrollHeight,
-	});
-	Object.defineProperty(element, "clientHeight", {
-		configurable: true,
-		get: () => currentClientHeight,
-	});
-	Object.defineProperty(element, "scrollTop", {
-		configurable: true,
-		get: () => currentScrollTop,
-		set: (value: number) => {
-			currentScrollTop = value;
-		},
-	});
-
-	return {
-		getScrollTop: () => currentScrollTop,
-		setScrollHeight: (value: number) => {
-			currentScrollHeight = value;
-		},
-		setScrollTop: (value: number) => {
-			currentScrollTop = value;
-		},
-	};
 }
 
 describe("KanbanAgentChatPanel", () => {
@@ -385,7 +372,7 @@ describe("KanbanAgentChatPanel", () => {
 		expect(image).toBeInstanceOf(HTMLImageElement);
 	});
 
-	it("keeps the message list pinned to the bottom while new content streams in", async () => {
+	it("renders newly streamed assistant messages as they arrive", async () => {
 		const initialMessages: KanbanChatMessage[] = [
 			{
 				id: "assistant-1",
@@ -409,13 +396,8 @@ describe("KanbanAgentChatPanel", () => {
 			await Promise.resolve();
 		});
 
-		const messageList = getMessageList(container);
-		const scroll = mockScrollMetrics(messageList, {
-			scrollHeight: 200,
-			clientHeight: 100,
-			scrollTop: 100,
-		});
-		scroll.setScrollHeight(260);
+		expect(container.textContent).toContain("First reply");
+		expect(container.textContent).not.toContain("Second reply");
 
 		await act(async () => {
 			renderPanel(
@@ -430,10 +412,11 @@ describe("KanbanAgentChatPanel", () => {
 			await Promise.resolve();
 		});
 
-		expect(scroll.getScrollTop()).toBe(260);
+		expect(container.textContent).toContain("First reply");
+		expect(container.textContent).toContain("Second reply");
 	});
 
-	it("stops auto-scroll while the user is reading older messages and re-enables it at the bottom", async () => {
+	it("merges a sequence of streamed messages into the list in order", async () => {
 		const initialMessages: KanbanChatMessage[] = [
 			{
 				id: "assistant-1",
@@ -463,20 +446,6 @@ describe("KanbanAgentChatPanel", () => {
 			await Promise.resolve();
 		});
 
-		const messageList = getMessageList(container);
-		const scroll = mockScrollMetrics(messageList, {
-			scrollHeight: 200,
-			clientHeight: 100,
-			scrollTop: 100,
-		});
-
-		scroll.setScrollTop(20);
-		await act(async () => {
-			messageList.dispatchEvent(new Event("scroll", { bubbles: true }));
-			await Promise.resolve();
-		});
-
-		scroll.setScrollHeight(260);
 		await act(async () => {
 			renderPanel(
 				root,
@@ -490,15 +459,6 @@ describe("KanbanAgentChatPanel", () => {
 			await Promise.resolve();
 		});
 
-		expect(scroll.getScrollTop()).toBe(20);
-
-		scroll.setScrollTop(160);
-		await act(async () => {
-			messageList.dispatchEvent(new Event("scroll", { bubbles: true }));
-			await Promise.resolve();
-		});
-
-		scroll.setScrollHeight(320);
 		await act(async () => {
 			renderPanel(
 				root,
@@ -512,7 +472,12 @@ describe("KanbanAgentChatPanel", () => {
 			await Promise.resolve();
 		});
 
-		expect(scroll.getScrollTop()).toBe(320);
+		const renderedText = container.textContent ?? "";
+		expect(renderedText).toContain("First reply");
+		expect(renderedText).toContain("Second reply");
+		expect(renderedText).toContain("Third reply");
+		expect(renderedText.indexOf("First reply")).toBeLessThan(renderedText.indexOf("Second reply"));
+		expect(renderedText.indexOf("Second reply")).toBeLessThan(renderedText.indexOf("Third reply"));
 	});
 
 	it("shows the thinking indicator while assistant text is streaming", async () => {
@@ -1069,7 +1034,7 @@ describe("KanbanAgentChatPanel", () => {
 		expect(onSendMessage).toHaveBeenCalledWith("task-1", "Keep acting", { mode: "act" });
 	});
 
-	it("keeps chat pinned to bottom when action footer appears", async () => {
+	it("shows the review action footer alongside the message content", async () => {
 		const messages: KanbanChatMessage[] = [
 			{
 				id: "assistant-1",
@@ -1096,27 +1061,6 @@ describe("KanbanAgentChatPanel", () => {
 					taskId="task-1"
 					summary={createSummary("awaiting_review")}
 					onLoadMessages={async () => messages}
-					showMoveToTrash={false}
-				/>,
-			);
-			await Promise.resolve();
-		});
-
-		const messageList = getMessageList(container);
-		const scroll = mockScrollMetrics(messageList, {
-			scrollHeight: 200,
-			clientHeight: 100,
-			scrollTop: 100,
-		});
-		scroll.setScrollHeight(240);
-
-		await act(async () => {
-			renderPanel(
-				root,
-				<KanbanAgentChatPanel
-					taskId="task-1"
-					summary={createSummary("awaiting_review")}
-					onLoadMessages={async () => messages}
 					taskColumnId="review"
 					onCommit={() => {}}
 					onOpenPr={() => {}}
@@ -1127,7 +1071,10 @@ describe("KanbanAgentChatPanel", () => {
 			await Promise.resolve();
 		});
 
-		expect(scroll.getScrollTop()).toBe(240);
+		expect(container.textContent).toContain("Done and ready for review.");
+		expect(container.textContent).toContain("Commit");
+		expect(container.textContent).toContain("Open PR");
+		expect(container.textContent).toContain("Move Card To Done");
 	});
 
 	it("does not show commit actions when the review workspace is clean", async () => {

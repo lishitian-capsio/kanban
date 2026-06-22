@@ -1,6 +1,6 @@
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { Brain, ChevronDown, ChevronRight, XCircle } from "lucide-react";
-import { type ReactElement, useEffect, useMemo, useRef, useState } from "react";
+import { memo, type ReactElement, useEffect, useMemo, useRef, useState } from "react";
 import {
 	formatToolInputForDisplay,
 	getToolDisplay,
@@ -175,7 +175,15 @@ function ReasoningMessageBlock({ message }: { message: KanbanChatMessage }): Rea
 	);
 }
 
-export function KanbanChatMessageItem({ message }: { message: KanbanChatMessage }): ReactElement {
+// Memoized so a streaming turn only re-renders the one message whose object
+// reference actually changed. The upsert/merge paths preserve references for
+// untouched messages, so the default shallow `message` comparison is exact —
+// every other item (and its markdown/Prism work) is skipped per token.
+export const KanbanChatMessageItem = memo(function KanbanChatMessageItem({
+	message,
+}: {
+	message: KanbanChatMessage;
+}): ReactElement {
 	if (message.role === "tool") {
 		return <ToolMessageBlock message={message} />;
 	}
@@ -209,4 +217,4 @@ export function KanbanChatMessageItem({ message }: { message: KanbanChatMessage 
 			{message.content}
 		</div>
 	);
-}
+});
