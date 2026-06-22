@@ -1,43 +1,10 @@
-import { useEffect, useReducer } from "react";
+import { useEffect, useRef } from "react";
 
-import type {
-	RuntimeBoardSyncStatus,
-	RuntimeKanbanMcpServerAuthStatus,
-	RuntimeProjectSummary,
-	RuntimeStateStreamBoardSyncStatusMessage,
-	RuntimeStateStreamKanbanSessionContextUpdatedMessage,
-	RuntimeStateStreamMcpAuthUpdatedMessage,
-	RuntimeStateStreamMessage,
-	RuntimeStateStreamProjectsMessage,
-	RuntimeStateStreamSnapshotMessage,
-	RuntimeStateStreamTaskChatClearedMessage,
-	RuntimeStateStreamTaskChatMessage,
-	RuntimeStateStreamTaskReadyForReviewMessage,
-	RuntimeTaskChatMessage,
-	RuntimeTaskSessionSummary,
-	RuntimeWorkspaceMetadata,
-	RuntimeWorkspaceStateResponse,
-} from "@/runtime/types";
+import { dispatchRuntimeStreamAction, resolveProjectIdAfterProjectsUpdate } from "@/runtime/runtime-stream-store";
+import type { RuntimeStateStreamMessage } from "@/runtime/types";
 
 const STREAM_RECONNECT_BASE_DELAY_MS = 500;
 const STREAM_RECONNECT_MAX_DELAY_MS = 5_000;
-
-function mergeTaskSessionSummaries(
-	currentSessions: Record<string, RuntimeTaskSessionSummary>,
-	summaries: RuntimeTaskSessionSummary[],
-): Record<string, RuntimeTaskSessionSummary> {
-	if (summaries.length === 0) {
-		return currentSessions;
-	}
-	const nextSessions = { ...currentSessions };
-	for (const summary of summaries) {
-		const existing = nextSessions[summary.taskId];
-		if (!existing || existing.updatedAt <= summary.updatedAt) {
-			nextSessions[summary.taskId] = summary;
-		}
-	}
-	return nextSessions;
-}
 
 function getRuntimeStreamUrl(workspaceId: string | null): string {
 	const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -48,276 +15,18 @@ function getRuntimeStreamUrl(workspaceId: string | null): string {
 	return url.toString();
 }
 
-export interface UseRuntimeStateStreamResult {
-	currentProjectId: string | null;
-	projects: RuntimeProjectSummary[];
-	workspaceState: RuntimeWorkspaceStateResponse | null;
-	workspaceMetadata: RuntimeWorkspaceMetadata | null;
-	latestTaskChatMessage: RuntimeStateStreamTaskChatMessage | null;
-	taskChatMessagesByTaskId: Record<string, RuntimeTaskChatMessage[]>;
-	latestTaskReadyForReview: RuntimeStateStreamTaskReadyForReviewMessage | null;
-	latestMcpAuthStatuses: RuntimeKanbanMcpServerAuthStatus[] | null;
-	kanbanSessionContextVersion: number;
-	boardSyncStatus: RuntimeBoardSyncStatus | null;
-	streamError: string | null;
-	isRuntimeDisconnected: boolean;
-	hasReceivedSnapshot: boolean;
-}
-
-interface RuntimeStateStreamStore {
-	currentProjectId: string | null;
-	projects: RuntimeProjectSummary[];
-	workspaceState: RuntimeWorkspaceStateResponse | null;
-	workspaceMetadata: RuntimeWorkspaceMetadata | null;
-	latestTaskChatMessage: RuntimeStateStreamTaskChatMessage | null;
-	taskChatMessagesByTaskId: Record<string, RuntimeTaskChatMessage[]>;
-	latestTaskReadyForReview: RuntimeStateStreamTaskReadyForReviewMessage | null;
-	latestMcpAuthStatuses: RuntimeKanbanMcpServerAuthStatus[] | null;
-	kanbanSessionContextVersion: number;
-	boardSyncStatus: RuntimeBoardSyncStatus | null;
-	streamError: string | null;
-	isRuntimeDisconnected: boolean;
-	hasReceivedSnapshot: boolean;
-}
-
-type RuntimeStateStreamAction =
-	| { type: "requested_workspace_changed" }
-	| { type: "stream_connected" }
-	| { type: "snapshot"; payload: RuntimeStateStreamSnapshotMessage }
-	| {
-			type: "projects_updated";
-			payload: RuntimeStateStreamProjectsMessage;
-			nextProjectId: string | null;
-	  }
-	| { type: "task_chat_message"; payload: RuntimeStateStreamTaskChatMessage }
-	| { type: "task_chat_cleared"; payload: RuntimeStateStreamTaskChatClearedMessage }
-	| { type: "workspace_metadata_updated"; workspaceMetadata: RuntimeWorkspaceMetadata }
-	| { type: "task_ready_for_review"; payload: RuntimeStateStreamTaskReadyForReviewMessage }
-	| { type: "mcp_auth_updated"; payload: RuntimeStateStreamMcpAuthUpdatedMessage }
-	| { type: "kanban_session_context_updated"; payload: RuntimeStateStreamKanbanSessionContextUpdatedMessage }
-	| { type: "board_sync_status_updated"; payload: RuntimeStateStreamBoardSyncStatusMessage }
-	| { type: "workspace_state_updated"; workspaceState: RuntimeWorkspaceStateResponse }
-	| { type: "task_sessions_updated"; summaries: RuntimeTaskSessionSummary[] }
-	| { type: "stream_error"; message: string }
-	| { type: "stream_disconnected"; message: string };
-
-function createInitialRuntimeStateStreamStore(requestedWorkspaceId: string | null): RuntimeStateStreamStore {
-	return {
-		currentProjectId: requestedWorkspaceId,
-		projects: [],
-		workspaceState: null,
-		workspaceMetadata: null,
-		latestTaskChatMessage: null,
-		taskChatMessagesByTaskId: {},
-		latestTaskReadyForReview: null,
-		latestMcpAuthStatuses: null,
-		kanbanSessionContextVersion: 0,
-		boardSyncStatus: null,
-		streamError: null,
-		isRuntimeDisconnected: false,
-		hasReceivedSnapshot: false,
-	};
-}
-
-function upsertTaskChatMessage(
-	currentMessages: RuntimeTaskChatMessage[],
-	nextMessage: RuntimeTaskChatMessage,
-): RuntimeTaskChatMessage[] {
-	const existingIndex = currentMessages.findIndex((message) => message.id === nextMessage.id);
-	if (existingIndex < 0) {
-		return [...currentMessages, nextMessage];
-	}
-	const existingMessage = currentMessages[existingIndex];
-	if (
-		existingMessage &&
-		existingMessage.content === nextMessage.content &&
-		existingMessage.role === nextMessage.role &&
-		existingMessage.createdAt === nextMessage.createdAt &&
-		JSON.stringify(existingMessage.meta ?? null) === JSON.stringify(nextMessage.meta ?? null)
-	) {
-		return currentMessages;
-	}
-	const nextMessages = [...currentMessages];
-	nextMessages[existingIndex] = nextMessage;
-	return nextMessages;
-}
-
-function resolveProjectIdAfterProjectsUpdate(
-	currentProjectId: string | null,
-	payload: RuntimeStateStreamProjectsMessage,
-): string | null {
-	if (currentProjectId && payload.projects.some((project) => project.id === currentProjectId)) {
-		return currentProjectId;
-	}
-	return payload.currentProjectId;
-}
-
-function runtimeStateStreamReducer(
-	state: RuntimeStateStreamStore,
-	action: RuntimeStateStreamAction,
-): RuntimeStateStreamStore {
-	if (action.type === "requested_workspace_changed") {
-		return {
-			...state,
-			workspaceState: null,
-			workspaceMetadata: null,
-			latestTaskChatMessage: null,
-			taskChatMessagesByTaskId: {},
-			streamError: null,
-			isRuntimeDisconnected: false,
-			hasReceivedSnapshot: false,
-			latestMcpAuthStatuses: state.latestMcpAuthStatuses,
-			kanbanSessionContextVersion: state.kanbanSessionContextVersion,
-			boardSyncStatus: null,
-		};
-	}
-	if (action.type === "stream_connected") {
-		return {
-			...state,
-			streamError: null,
-			isRuntimeDisconnected: false,
-		};
-	}
-	if (action.type === "snapshot") {
-		const nextWorkspaceState = action.payload.workspaceState
-			? {
-					...action.payload.workspaceState,
-					sessions: mergeTaskSessionSummaries(
-						state.workspaceState?.sessions ?? {},
-						Object.values(action.payload.workspaceState.sessions ?? {}),
-					),
-				}
-			: null;
-		return {
-			currentProjectId: action.payload.currentProjectId,
-			projects: action.payload.projects,
-			workspaceState: nextWorkspaceState,
-			workspaceMetadata: action.payload.workspaceMetadata,
-			latestTaskChatMessage: null,
-			taskChatMessagesByTaskId: {},
-			latestTaskReadyForReview: state.latestTaskReadyForReview,
-			latestMcpAuthStatuses: state.latestMcpAuthStatuses,
-			kanbanSessionContextVersion: action.payload.kanbanSessionContextVersion,
-			boardSyncStatus: null,
-			streamError: null,
-			isRuntimeDisconnected: false,
-			hasReceivedSnapshot: true,
-		};
-	}
-	if (action.type === "projects_updated") {
-		const didProjectChange = action.nextProjectId !== state.currentProjectId;
-		return {
-			...state,
-			currentProjectId: action.nextProjectId,
-			projects: action.payload.projects,
-			workspaceState: didProjectChange ? null : state.workspaceState,
-			workspaceMetadata: didProjectChange ? null : state.workspaceMetadata,
-			latestTaskChatMessage: didProjectChange ? null : state.latestTaskChatMessage,
-			taskChatMessagesByTaskId: didProjectChange ? {} : state.taskChatMessagesByTaskId,
-			latestTaskReadyForReview: didProjectChange ? null : state.latestTaskReadyForReview,
-			boardSyncStatus: didProjectChange ? null : state.boardSyncStatus,
-			hasReceivedSnapshot: true,
-		};
-	}
-	if (action.type === "task_chat_message") {
-		const currentTaskMessages = state.taskChatMessagesByTaskId[action.payload.taskId] ?? [];
-		return {
-			...state,
-			latestTaskChatMessage: action.payload,
-			taskChatMessagesByTaskId: {
-				...state.taskChatMessagesByTaskId,
-				[action.payload.taskId]: upsertTaskChatMessage(currentTaskMessages, action.payload.message),
-			},
-		};
-	}
-	if (action.type === "task_chat_cleared") {
-		return {
-			...state,
-			latestTaskChatMessage: null,
-			taskChatMessagesByTaskId: {
-				...state.taskChatMessagesByTaskId,
-				[action.payload.taskId]: [],
-			},
-		};
-	}
-	if (action.type === "workspace_metadata_updated") {
-		return {
-			...state,
-			workspaceMetadata: action.workspaceMetadata,
-		};
-	}
-	if (action.type === "task_ready_for_review") {
-		return {
-			...state,
-			latestTaskReadyForReview: action.payload,
-		};
-	}
-	if (action.type === "mcp_auth_updated") {
-		return {
-			...state,
-			latestMcpAuthStatuses: action.payload.statuses,
-		};
-	}
-	if (action.type === "kanban_session_context_updated") {
-		return {
-			...state,
-			kanbanSessionContextVersion: action.payload.version,
-		};
-	}
-	if (action.type === "board_sync_status_updated") {
-		return {
-			...state,
-			boardSyncStatus: action.payload.status,
-		};
-	}
-	if (action.type === "workspace_state_updated") {
-		const mergedWorkspaceState = {
-			...action.workspaceState,
-			sessions: mergeTaskSessionSummaries(
-				state.workspaceState?.sessions ?? {},
-				Object.values(action.workspaceState.sessions ?? {}),
-			),
-		};
-		return {
-			...state,
-			workspaceState: mergedWorkspaceState,
-		};
-	}
-	if (action.type === "task_sessions_updated") {
-		if (!state.workspaceState) {
-			return state;
-		}
-		return {
-			...state,
-			workspaceState: {
-				...state.workspaceState,
-				sessions: mergeTaskSessionSummaries(state.workspaceState.sessions, action.summaries),
-			},
-		};
-	}
-	if (action.type === "stream_error") {
-		return {
-			...state,
-			streamError: action.message,
-			isRuntimeDisconnected: false,
-		};
-	}
-	if (action.type === "stream_disconnected") {
-		return {
-			...state,
-			streamError: action.message,
-			isRuntimeDisconnected: true,
-		};
-	}
-	return state;
-}
-
-export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseRuntimeStateStreamResult {
-	const [state, dispatch] = useReducer(
-		runtimeStateStreamReducer,
-		requestedWorkspaceId,
-		createInitialRuntimeStateStreamStore,
-	);
+/**
+ * Drives the runtime state-stream WebSocket connection (open / reconnect /
+ * route messages) and folds every message into the shared
+ * {@link dispatchRuntimeStreamAction} store. It returns nothing: consumers read
+ * the state through the granular selector hooks in `runtime-stream-store.ts`
+ * (`useRuntimeProjects`, `useTaskChatMessages`, …) so a single channel's update
+ * only wakes the components subscribed to that slice — not the whole tree.
+ *
+ * This hook must be mounted exactly once (it owns the singleton connection).
+ */
+export function useRuntimeStreamConnection(requestedWorkspaceId: string | null): void {
+	const isFirstRunRef = useRef(true);
 	useEffect(() => {
 		let cancelled = false;
 		let socket: WebSocket | null = null;
@@ -326,7 +35,15 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 		let activeWorkspaceId = requestedWorkspaceId;
 		let requestedWorkspaceForConnection = requestedWorkspaceId;
 
-		dispatch({ type: "requested_workspace_changed" });
+		if (isFirstRunRef.current) {
+			// Seed `currentProjectId` from the URL-derived workspace on first mount
+			// (matches the old useReducer init) so we don't flash a "switching"
+			// state before the first snapshot arrives.
+			isFirstRunRef.current = false;
+			dispatchRuntimeStreamAction({ type: "initialize", requestedWorkspaceId });
+		} else {
+			dispatchRuntimeStreamAction({ type: "requested_workspace_changed" });
+		}
 
 		const cleanupSocket = () => {
 			if (socket) {
@@ -365,7 +82,7 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 			try {
 				socket = new WebSocket(getRuntimeStreamUrl(requestedWorkspaceForConnection));
 			} catch (error) {
-				dispatch({
+				dispatchRuntimeStreamAction({
 					type: "stream_disconnected",
 					message: error instanceof Error ? error.message : String(error),
 				});
@@ -374,28 +91,28 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 			}
 			socket.onopen = () => {
 				reconnectAttempt = 0;
-				dispatch({ type: "stream_connected" });
+				dispatchRuntimeStreamAction({ type: "stream_connected" });
 			};
 			socket.onmessage = (event) => {
 				try {
 					const payload = JSON.parse(String(event.data)) as RuntimeStateStreamMessage;
 					if (payload.type === "snapshot") {
 						activeWorkspaceId = payload.currentProjectId;
-						dispatch({ type: "snapshot", payload });
+						dispatchRuntimeStreamAction({ type: "snapshot", payload });
 						return;
 					}
 					if (payload.type === "projects_updated") {
 						const previousWorkspaceId = activeWorkspaceId;
 						const nextProjectId = resolveProjectIdAfterProjectsUpdate(activeWorkspaceId, payload);
 						activeWorkspaceId = nextProjectId;
-						dispatch({
+						dispatchRuntimeStreamAction({
 							type: "projects_updated",
 							payload,
 							nextProjectId,
 						});
 						if (nextProjectId && nextProjectId !== previousWorkspaceId) {
 							requestedWorkspaceForConnection = nextProjectId;
-							dispatch({ type: "requested_workspace_changed" });
+							dispatchRuntimeStreamAction({ type: "requested_workspace_changed" });
 							connect();
 						}
 						return;
@@ -404,7 +121,7 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 						if (payload.workspaceId !== activeWorkspaceId) {
 							return;
 						}
-						dispatch({
+						dispatchRuntimeStreamAction({
 							type: "workspace_state_updated",
 							workspaceState: payload.workspaceState,
 						});
@@ -414,7 +131,7 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 						if (payload.workspaceId !== activeWorkspaceId) {
 							return;
 						}
-						dispatch({
+						dispatchRuntimeStreamAction({
 							type: "workspace_metadata_updated",
 							workspaceMetadata: payload.workspaceMetadata,
 						});
@@ -424,7 +141,7 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 						if (payload.workspaceId !== activeWorkspaceId) {
 							return;
 						}
-						dispatch({
+						dispatchRuntimeStreamAction({
 							type: "task_chat_message",
 							payload,
 						});
@@ -434,7 +151,7 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 						if (payload.workspaceId !== activeWorkspaceId) {
 							return;
 						}
-						dispatch({
+						dispatchRuntimeStreamAction({
 							type: "task_chat_cleared",
 							payload,
 						});
@@ -444,7 +161,7 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 						if (payload.workspaceId !== activeWorkspaceId) {
 							return;
 						}
-						dispatch({
+						dispatchRuntimeStreamAction({
 							type: "task_sessions_updated",
 							summaries: payload.summaries,
 						});
@@ -454,14 +171,14 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 						if (payload.workspaceId !== activeWorkspaceId) {
 							return;
 						}
-						dispatch({
+						dispatchRuntimeStreamAction({
 							type: "task_ready_for_review",
 							payload,
 						});
 						return;
 					}
 					if (payload.type === "mcp_auth_updated") {
-						dispatch({
+						dispatchRuntimeStreamAction({
 							type: "mcp_auth_updated",
 							payload,
 						});
@@ -471,21 +188,21 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 						if (payload.workspaceId !== activeWorkspaceId) {
 							return;
 						}
-						dispatch({
+						dispatchRuntimeStreamAction({
 							type: "board_sync_status_updated",
 							payload,
 						});
 						return;
 					}
 					if (payload.type === "kanban_session_context_updated") {
-						dispatch({
+						dispatchRuntimeStreamAction({
 							type: "kanban_session_context_updated",
 							payload,
 						});
 						return;
 					}
 					if (payload.type === "error") {
-						dispatch({
+						dispatchRuntimeStreamAction({
 							type: "stream_error",
 							message: payload.message,
 						});
@@ -498,7 +215,7 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 				if (cancelled) {
 					return;
 				}
-				dispatch({
+				dispatchRuntimeStreamAction({
 					type: "stream_disconnected",
 					message: "Runtime stream disconnected.",
 				});
@@ -508,7 +225,7 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 				if (cancelled) {
 					return;
 				}
-				dispatch({
+				dispatchRuntimeStreamAction({
 					type: "stream_disconnected",
 					message: "Runtime stream connection failed.",
 				});
@@ -525,20 +242,4 @@ export function useRuntimeStateStream(requestedWorkspaceId: string | null): UseR
 			cleanupSocket();
 		};
 	}, [requestedWorkspaceId]);
-
-	return {
-		currentProjectId: state.currentProjectId,
-		projects: state.projects,
-		workspaceState: state.workspaceState,
-		workspaceMetadata: state.workspaceMetadata,
-		latestTaskChatMessage: state.latestTaskChatMessage,
-		taskChatMessagesByTaskId: state.taskChatMessagesByTaskId,
-		latestTaskReadyForReview: state.latestTaskReadyForReview,
-		latestMcpAuthStatuses: state.latestMcpAuthStatuses,
-		kanbanSessionContextVersion: state.kanbanSessionContextVersion,
-		boardSyncStatus: state.boardSyncStatus,
-		streamError: state.streamError,
-		isRuntimeDisconnected: state.isRuntimeDisconnected,
-		hasReceivedSnapshot: state.hasReceivedSnapshot,
-	};
 }

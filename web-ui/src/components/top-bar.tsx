@@ -19,7 +19,7 @@ import {
 	User,
 } from "lucide-react";
 import { useState } from "react";
-import { BoardSyncStatusControl } from "@/components/board-sync-status-control";
+import { HomeBoardSyncControl } from "@/components/home-board-sync-control";
 import { OpenWorkspaceButton } from "@/components/open-workspace-button";
 import {
 	getRuntimeShortcutIconComponent,
@@ -32,9 +32,8 @@ import { cn } from "@/components/ui/cn";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import type { BoardSyncRunningAction } from "@/hooks/use-board-sync";
 import { useIsMobile } from "@/hooks/use-is-mobile";
-import type { RuntimeBoardSyncStatus, RuntimeGitSyncAction, RuntimeProjectShortcut } from "@/runtime/types";
+import type { RuntimeGitSyncAction, RuntimeProjectShortcut } from "@/runtime/types";
 import {
 	useHomeGitSummaryValue,
 	useTaskWorkspaceInfoValue,
@@ -313,7 +312,7 @@ export function TopBar({
 	onGitFetch,
 	onGitPull,
 	onGitPush,
-	boardSync,
+	boardSyncWorkspaceId,
 	onToggleTerminal,
 	isTerminalOpen,
 	isTerminalLoading,
@@ -354,14 +353,12 @@ export function TopBar({
 	onGitFetch?: () => void;
 	onGitPull?: () => void;
 	onGitPush?: () => void;
-	boardSync?: {
-		status: RuntimeBoardSyncStatus | null;
-		runningAction: BoardSyncRunningAction;
-		isTogglingPause: boolean;
-		onPush: () => void;
-		onPull: () => void;
-		onTogglePause: () => void;
-	} | null;
+	/**
+	 * Workspace whose board-sync badge to show, or null to hide it (e.g. inside a
+	 * task detail). The badge owns its own status subscription so a sync update
+	 * never re-renders the top bar's other surfaces.
+	 */
+	boardSyncWorkspaceId?: string | null;
 	onToggleTerminal?: () => void;
 	isTerminalOpen?: boolean;
 	isTerminalLoading?: boolean;
@@ -553,19 +550,8 @@ export function TopBar({
 									onGitPush={onGitPush}
 								/>
 							) : null}
-							{!hideProjectDependentActions &&
-							showHomeGitSummary &&
-							boardSync &&
-							boardSync.status &&
-							boardSync.status.decoupled ? (
-								<BoardSyncStatusControl
-									status={boardSync.status}
-									runningAction={boardSync.runningAction}
-									isTogglingPause={boardSync.isTogglingPause}
-									onPush={boardSync.onPush}
-									onPull={boardSync.onPull}
-									onTogglePause={boardSync.onTogglePause}
-								/>
+							{!hideProjectDependentActions && showHomeGitSummary && boardSyncWorkspaceId ? (
+								<HomeBoardSyncControl workspaceId={boardSyncWorkspaceId} />
 							) : null}
 							{!hideProjectDependentActions && onToggleVault ? (
 								<Button

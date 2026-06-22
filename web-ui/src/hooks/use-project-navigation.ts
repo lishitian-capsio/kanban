@@ -2,8 +2,24 @@ import { useCallback, useEffect, useState } from "react";
 
 import { notifyError, showAppToast } from "@/components/app-toaster";
 import { buildProjectPathname, parseProjectIdFromPathname } from "@/hooks/app-utils";
+import {
+	useRuntimeCurrentProjectId,
+	useRuntimeHasReceivedSnapshot,
+	useRuntimeIsDisconnected,
+	useRuntimeLatestTaskReadyForReview,
+	useRuntimeProjects,
+	useRuntimeStreamError,
+	useRuntimeWorkspaceMetadata,
+	useRuntimeWorkspaceState,
+} from "@/runtime/runtime-stream-store";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
-import { useRuntimeStateStream } from "@/runtime/use-runtime-state-stream";
+import type {
+	RuntimeProjectSummary,
+	RuntimeStateStreamTaskReadyForReviewMessage,
+	RuntimeWorkspaceMetadata,
+	RuntimeWorkspaceStateResponse,
+} from "@/runtime/types";
+import { useRuntimeStreamConnection } from "@/runtime/use-runtime-state-stream";
 import { isLocalhostAccess } from "@/utils/localhost-detection";
 import { useWindowEvent } from "@/utils/react-use";
 
@@ -46,15 +62,10 @@ export interface UseProjectNavigationResult {
 	setIsAddProjectDialogOpen: (open: boolean) => void;
 	pendingNativeGitInitPath: string | null;
 	currentProjectId: string | null;
-	projects: ReturnType<typeof useRuntimeStateStream>["projects"];
-	workspaceState: ReturnType<typeof useRuntimeStateStream>["workspaceState"];
-	workspaceMetadata: ReturnType<typeof useRuntimeStateStream>["workspaceMetadata"];
-	latestTaskChatMessage: ReturnType<typeof useRuntimeStateStream>["latestTaskChatMessage"];
-	taskChatMessagesByTaskId: ReturnType<typeof useRuntimeStateStream>["taskChatMessagesByTaskId"];
-	latestTaskReadyForReview: ReturnType<typeof useRuntimeStateStream>["latestTaskReadyForReview"];
-	latestMcpAuthStatuses: ReturnType<typeof useRuntimeStateStream>["latestMcpAuthStatuses"];
-	kanbanSessionContextVersion: ReturnType<typeof useRuntimeStateStream>["kanbanSessionContextVersion"];
-	boardSyncStatus: ReturnType<typeof useRuntimeStateStream>["boardSyncStatus"];
+	projects: RuntimeProjectSummary[];
+	workspaceState: RuntimeWorkspaceStateResponse | null;
+	workspaceMetadata: RuntimeWorkspaceMetadata | null;
+	latestTaskReadyForReview: RuntimeStateStreamTaskReadyForReviewMessage | null;
 	streamError: string | null;
 	isRuntimeDisconnected: boolean;
 	hasReceivedSnapshot: boolean;
@@ -79,21 +90,20 @@ export function useProjectNavigation({ onProjectSwitchStart }: UseProjectNavigat
 	const [isAddProjectDialogOpen, setIsAddProjectDialogOpen] = useState(false);
 	const [pendingGitInitPath, setPendingGitInitPath] = useState<string | null>(null);
 
-	const {
-		currentProjectId,
-		projects,
-		workspaceState,
-		workspaceMetadata,
-		latestTaskChatMessage,
-		taskChatMessagesByTaskId,
-		latestTaskReadyForReview,
-		latestMcpAuthStatuses,
-		kanbanSessionContextVersion,
-		boardSyncStatus,
-		streamError,
-		isRuntimeDisconnected,
-		hasReceivedSnapshot,
-	} = useRuntimeStateStream(requestedProjectId);
+	// One hook owns the WebSocket; everything else reads granular slices so a
+	// chat token or sync-badge update doesn't re-render this navigation layer
+	// (and therefore App). High-frequency slices (chat, board sync,
+	// kanbanSessionContextVersion) are intentionally NOT read here — their
+	// consumers subscribe to them directly at the leaf.
+	useRuntimeStreamConnection(requestedProjectId);
+	const currentProjectId = useRuntimeCurrentProjectId();
+	const projects = useRuntimeProjects();
+	const workspaceState = useRuntimeWorkspaceState();
+	const workspaceMetadata = useRuntimeWorkspaceMetadata();
+	const latestTaskReadyForReview = useRuntimeLatestTaskReadyForReview();
+	const streamError = useRuntimeStreamError();
+	const isRuntimeDisconnected = useRuntimeIsDisconnected();
+	const hasReceivedSnapshot = useRuntimeHasReceivedSnapshot();
 
 	const hasNoProjects = hasReceivedSnapshot && projects.length === 0 && currentProjectId === null;
 	const isProjectSwitching = requestedProjectId !== null && requestedProjectId !== currentProjectId && !hasNoProjects;
@@ -274,12 +284,7 @@ export function useProjectNavigation({ onProjectSwitchStart }: UseProjectNavigat
 		projects,
 		workspaceState,
 		workspaceMetadata,
-		latestTaskChatMessage,
-		taskChatMessagesByTaskId,
 		latestTaskReadyForReview,
-		latestMcpAuthStatuses,
-		kanbanSessionContextVersion,
-		boardSyncStatus,
 		streamError,
 		isRuntimeDisconnected,
 		hasReceivedSnapshot,

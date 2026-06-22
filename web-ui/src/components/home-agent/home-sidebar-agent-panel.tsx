@@ -4,6 +4,10 @@
 // thread, decides whether to render the native Kanban chat or a terminal panel
 // and wires that surface to shared runtime actions. Threads run in parallel, so
 // switching never tears down another thread's session.
+//
+// This is a real component (not a hook returning JSX) so its runtime-stream
+// subscriptions — chat tokens and the kanban session-context version — live in
+// its own fiber and don't re-render App.
 import type { ReactElement } from "react";
 import { useCallback, useMemo, useState } from "react";
 
@@ -20,41 +24,34 @@ import { type HomeAgentActiveThread, useHomeAgentSession } from "@/hooks/use-hom
 import type { UseHomeThreadsResult } from "@/hooks/use-home-threads";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { useKanbanChatRuntimeActions } from "@/hooks/use-kanban-chat-runtime-actions";
-import { selectLatestTaskChatMessageForTask } from "@/runtime/native-agent";
-import type {
-	RuntimeConfigResponse,
-	RuntimeGitRepositoryInfo,
-	RuntimeStateStreamTaskChatMessage,
-	RuntimeTaskChatMessage,
-	RuntimeTaskSessionSummary,
-} from "@/runtime/types";
+import {
+	useLatestTaskChatMessageForTask,
+	useRuntimeKanbanSessionContextVersion,
+	useTaskChatMessages,
+} from "@/runtime/runtime-stream-store";
+import type { RuntimeConfigResponse, RuntimeGitRepositoryInfo, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useTerminalThemeColors } from "@/terminal/theme-colors";
 
-interface UseHomeSidebarAgentPanelInput {
+interface HomeSidebarAgentPanelProps {
 	currentProjectId: string | null;
 	hasNoProjects: boolean;
 	runtimeProjectConfig: RuntimeConfigResponse | null;
 	homeThreads: UseHomeThreadsResult;
-	kanbanSessionContextVersion: number;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	workspaceGit: RuntimeGitRepositoryInfo | null;
-	latestTaskChatMessage: RuntimeStateStreamTaskChatMessage | null;
-	taskChatMessagesByTaskId: Record<string, RuntimeTaskChatMessage[]>;
 }
 
-export function useHomeSidebarAgentPanel({
+export function HomeSidebarAgentPanel({
 	currentProjectId,
 	hasNoProjects,
 	runtimeProjectConfig,
 	homeThreads,
-	kanbanSessionContextVersion,
 	taskSessions,
 	workspaceGit,
-	latestTaskChatMessage,
-	taskChatMessagesByTaskId,
-}: UseHomeSidebarAgentPanelInput): ReactElement | null {
+}: HomeSidebarAgentPanelProps): ReactElement | null {
 	const isMobile = useIsMobile();
 	const terminalThemeColors = useTerminalThemeColors();
+	const kanbanSessionContextVersion = useRuntimeKanbanSessionContextVersion();
 	const [sessionSummaries, setSessionSummaries] = useState<Record<string, RuntimeTaskSessionSummary>>({});
 	// Per-thread session provider override (keyed by the thread's task id). Picking a
 	// provider in the composer pins it for that one thread's next session launch; it
@@ -116,8 +113,10 @@ export function useHomeSidebarAgentPanel({
 	}, [runtimeProjectConfig, activeAgentId]);
 
 	const homeAgentPanelSummary = taskId ? (effectiveSessionSummaries[taskId] ?? null) : null;
-	const homeTaskChatMessages = taskId ? (taskChatMessagesByTaskId[taskId] ?? null) : null;
-	const latestHomeTaskChatMessage = selectLatestTaskChatMessageForTask(taskId, latestTaskChatMessage);
+	// Subscribe to the active thread's chat channel directly so streaming tokens
+	// only re-render this sidebar panel, not App.
+	const homeTaskChatMessages = useTaskChatMessages(taskId);
+	const latestHomeTaskChatMessage = useLatestTaskChatMessageForTask(taskId);
 
 	const handleSendHomeKanbanChatMessage = useCallback(
 		async (messageTaskId: string, text: string, options?: { mode?: "act" | "plan" }) => {

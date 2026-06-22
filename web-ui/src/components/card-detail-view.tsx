@@ -22,6 +22,7 @@ import { ResizeHandle } from "@/resize/resize-handle";
 import { useCardDetailLayout } from "@/resize/use-card-detail-layout";
 import { useResizeDrag } from "@/resize/use-resize-drag";
 import { isNativeAgentSelected, resolveEffectiveTaskAgentId } from "@/runtime/native-agent";
+import { useLatestTaskChatMessageForTask, useTaskChatMessages } from "@/runtime/runtime-stream-store";
 import type {
 	RuntimeAgentId,
 	RuntimeConfigResponse,
@@ -359,8 +360,6 @@ export function CardDetailView({
 	onSendKanbanChatMessage,
 	onCancelKanbanChatTurn,
 	onLoadKanbanChatMessages,
-	latestKanbanChatMessage,
-	streamedKanbanChatMessages,
 	onMoveToTrash,
 	isMoveToTrashLoading,
 	gitHistoryPanel,
@@ -421,8 +420,6 @@ export function CardDetailView({
 	) => Promise<KanbanChatActionResult>;
 	onCancelKanbanChatTurn?: (taskId: string) => Promise<{ ok: boolean; message?: string }>;
 	onLoadKanbanChatMessages?: (taskId: string) => Promise<KanbanChatMessage[] | null>;
-	latestKanbanChatMessage?: KanbanChatMessage | null;
-	streamedKanbanChatMessages?: KanbanChatMessage[] | null;
 	onMoveToTrash: () => void;
 	isMoveToTrashLoading?: boolean;
 	gitHistoryPanel?: ReactNode;
@@ -474,6 +471,11 @@ export function CardDetailView({
 	const mainRowRef = useRef<HTMLDivElement | null>(null);
 	const detailDiffRowRef = useRef<HTMLDivElement | null>(null);
 	const kanbanAgentChatPanelRef = useRef<KanbanAgentChatPanelHandle | null>(null);
+	// Subscribe to this task's chat channel directly. Keeping the subscription
+	// here (rather than threading it from App) means a streaming token only
+	// re-renders this detail view, never the whole App tree.
+	const streamedKanbanChatMessages = useTaskChatMessages(selection.card.id);
+	const latestKanbanChatMessage = useLatestTaskChatMessageForTask(selection.card.id);
 
 	const handleSeparatorMouseDown = useResizeHandler(
 		detailLayoutRef,

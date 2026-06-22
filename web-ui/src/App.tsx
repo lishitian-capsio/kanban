@@ -13,6 +13,7 @@ import { DebugDialog } from "@/components/debug-dialog";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
 import { GitHistoryView } from "@/components/git-history-view";
 import { DockableChatPanel } from "@/components/home-agent/dockable-chat-panel";
+import { HomeSidebarAgentPanel } from "@/components/home-agent/home-sidebar-agent-panel";
 import { KanbanBoard } from "@/components/kanban-board";
 import { ProjectNavigationPanel } from "@/components/project-navigation-panel";
 import { RuntimeSettingsDialog, type RuntimeSettingsSection } from "@/components/runtime-settings-dialog";
@@ -38,14 +39,12 @@ import { KanbanAccessBlockedFallback } from "@/hooks/kanban-access-blocked-fallb
 import { RuntimeDisconnectedFallback } from "@/hooks/runtime-disconnected-fallback";
 import { useAppHotkeys } from "@/hooks/use-app-hotkeys";
 import { useBoardInteractions } from "@/hooks/use-board-interactions";
-import { useBoardSync } from "@/hooks/use-board-sync";
 import { useChatDock } from "@/hooks/use-chat-dock";
 import { useDebugTools } from "@/hooks/use-debug-tools";
 import { useDetailTaskNavigation } from "@/hooks/use-detail-task-navigation";
 import { useDocumentVisibility } from "@/hooks/use-document-visibility";
 import { useGitActions } from "@/hooks/use-git-actions";
 import { useGitUserIdentity } from "@/hooks/use-git-user-identity";
-import { useHomeSidebarAgentPanel } from "@/hooks/use-home-sidebar-agent-panel";
 import { useHomeThreads } from "@/hooks/use-home-threads";
 import { useKanbanAccessGate } from "@/hooks/use-kanban-access-gate";
 import { useOpenWorkspace } from "@/hooks/use-open-workspace";
@@ -63,12 +62,7 @@ import { useWorkspaceSync } from "@/hooks/use-workspace-sync";
 import { LayoutCustomizationsProvider } from "@/resize/layout-customizations";
 import { ResizableBottomPane } from "@/resize/resizable-bottom-pane";
 import { useProjectNavigationLayout } from "@/resize/use-project-navigation-layout";
-import {
-	getTaskAgentNavbarHint,
-	isTaskAgentSetupSatisfied,
-	selectLatestTaskChatMessageForTask,
-	selectTaskChatMessagesForTask,
-} from "@/runtime/native-agent";
+import { getTaskAgentNavbarHint, isTaskAgentSetupSatisfied } from "@/runtime/native-agent";
 import type { RuntimeReasoningEffort, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useRuntimeProjectConfig } from "@/runtime/use-runtime-project-config";
 import { useTerminalConnectionReady } from "@/runtime/use-terminal-connection-ready";
@@ -110,11 +104,7 @@ export default function App(): ReactElement {
 		projects,
 		workspaceState: streamedWorkspaceState,
 		workspaceMetadata,
-		latestTaskChatMessage,
-		taskChatMessagesByTaskId,
 		latestTaskReadyForReview,
-		kanbanSessionContextVersion,
-		boardSyncStatus,
 		streamError,
 		isRuntimeDisconnected,
 		hasReceivedSnapshot,
@@ -296,7 +286,6 @@ export default function App(): ReactElement {
 		setPendingTaskStartAfterEditId(taskId);
 	}, []);
 	const { identity: gitUserIdentity } = useGitUserIdentity(currentProjectId);
-	const boardSync = useBoardSync(currentProjectId, boardSyncStatus);
 
 	const {
 		isInlineTaskCreateOpen,
@@ -448,18 +437,9 @@ export default function App(): ReactElement {
 		currentProjectId,
 		runtimeProjectConfig,
 	});
-	const homeSidebarAgentPanel = useHomeSidebarAgentPanel({
-		currentProjectId,
-		hasNoProjects,
-		runtimeProjectConfig,
-		homeThreads,
-		kanbanSessionContextVersion,
-		taskSessions: sessions,
-		workspaceGit,
-		latestTaskChatMessage,
-		taskChatMessagesByTaskId,
-	});
-	const isHomeChatAvailable = !selectedCard && homeSidebarAgentPanel !== null;
+	// HomeSidebarAgentPanel renders null exactly when hasNoProjects || !currentProjectId,
+	// so mirror that gate here rather than instantiating the panel to test for null.
+	const isHomeChatAvailable = !selectedCard && !hasNoProjects && !!currentProjectId;
 	const handleToggleHomeChat = useCallback(() => {
 		if (chatDock.open) {
 			chatDock.hide();
@@ -745,11 +725,6 @@ export default function App(): ReactElement {
 		currentProjectId,
 		workspacePath: activeWorkspacePath,
 	});
-	const selectedTaskChatMessages = selectTaskChatMessagesForTask(selectedCard?.card.id, taskChatMessagesByTaskId);
-	const latestSelectedTaskChatMessage = selectLatestTaskChatMessageForTask(
-		selectedCard?.card.id,
-		latestTaskChatMessage,
-	);
 	const defaultTaskKanbanProviderId =
 		runtimeProjectConfig?.kanbanProviderSettings?.providerId ??
 		runtimeProjectConfig?.kanbanProviderSettings?.oauthProvider ??
@@ -859,7 +834,16 @@ export default function App(): ReactElement {
 					/>
 				) : null}
 				{isHomeChatAvailable && chatDock.open ? (
-					<DockableChatPanel dock={chatDock}>{homeSidebarAgentPanel}</DockableChatPanel>
+					<DockableChatPanel dock={chatDock}>
+						<HomeSidebarAgentPanel
+							currentProjectId={currentProjectId}
+							hasNoProjects={hasNoProjects}
+							runtimeProjectConfig={runtimeProjectConfig}
+							homeThreads={homeThreads}
+							taskSessions={sessions}
+							workspaceGit={workspaceGit}
+						/>
+					</DockableChatPanel>
 				) : null}
 				<div className="order-2 flex flex-col flex-1 min-w-0 overflow-hidden">
 					<TopBar
@@ -895,24 +879,7 @@ export default function App(): ReactElement {
 										void runGitAction("push");
 									}
 						}
-						boardSync={
-							selectedCard
-								? null
-								: {
-										status: boardSync.status,
-										runningAction: boardSync.runningAction,
-										isTogglingPause: boardSync.isTogglingPause,
-										onPush: () => {
-											void boardSync.push();
-										},
-										onPull: () => {
-											void boardSync.pull();
-										},
-										onTogglePause: () => {
-											void boardSync.setPaused(!(boardSync.status?.autoSyncPaused ?? false));
-										},
-									}
-						}
+						boardSyncWorkspaceId={selectedCard ? null : currentProjectId}
 						onToggleTerminal={
 							hasNoProjects ? undefined : selectedCard ? handleToggleDetailTerminal : handleToggleHomeTerminal
 						}
@@ -1106,8 +1073,6 @@ export default function App(): ReactElement {
 									onSendKanbanChatMessage={sendTaskChatMessage}
 									onCancelKanbanChatTurn={cancelTaskChatTurn}
 									onLoadKanbanChatMessages={fetchTaskChatMessages}
-									latestKanbanChatMessage={latestSelectedTaskChatMessage}
-									streamedKanbanChatMessages={selectedTaskChatMessages}
 									onMoveToTrash={handleMoveToTrash}
 									isMoveToTrashLoading={moveToTrashLoadingById[selectedCard.card.id] ?? false}
 									gitHistoryPanel={
