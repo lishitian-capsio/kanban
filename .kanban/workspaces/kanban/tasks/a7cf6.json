@@ -1,0 +1,19 @@
+{
+  "id": "a7cf6",
+  "title": "调研：CLI agent 会话创建时的命名机制",
+  "prompt": "调研任务（只读调查，先不要改代码）：弄清楚 Kanban 中每个 CLI agent（claude/codex/droid/kiro/gemini/opencode 等）会话在创建时是如何命名/标识的。\n\n需要回答的问题：\n1. CLI agent 会话在创建时，名称/标识是怎么来的？是固定的、自动派生的，还是用户可以自定义的？相关代码在哪里（例如 src/terminal/、session-manager、startTaskSession、home-agent-session 等）？\n2. 'home (sidebar) chat 多线程' 里每个 thread 的命名是怎么处理的（参考 home-thread-registry / home-thread-store / RuntimeHomeChatThread）？是否已经支持自定义名称？\n3. 普通任务（board task）创建会话时与 home thread 创建会话时，命名路径有何不同？\n4. 如果要让'每个 CLI agent 会话在创建时支持自定义名称'，目前缺什么？需要改哪些文件？给出一个简要的改动清单和评估，不要实际改代码。\n\n产出：一份现状说明 + 改动建议清单。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782106310258,
+  "updatedAt": 1782106310258,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
