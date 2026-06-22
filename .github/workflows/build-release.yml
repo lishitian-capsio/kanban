@@ -28,54 +28,55 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22.x"
           registry-url: "https://registry.npmjs.org"
-          cache: npm
 
-      - name: Configure npm mirror
+      - name: Configure Bun registry
         run: |
-          # Use npm mirror for better connectivity from GitHub Actions
-          npm config set registry https://registry.npmjs.org/
-          echo "Using npm registry: $(npm config get registry)"
+          bun config set registry https://registry.npmjs.org/
+          echo "Bun registry: $(bun config get registry)"
 
-      - name: Cache node_modules
+      - name: Cache Bun install cache
         uses: actions/cache@v4
         with:
-          path: |
-            node_modules
-            web-ui/node_modules
-          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json', '**/bun.lock') }}
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-cache-${{ hashFiles('**/bun.lock') }}
           restore-keys: |
-            ${{ runner.os }}-node-modules-
+            ${{ runner.os }}-bun-cache-
 
       - name: Install dependencies
         run: |
-          echo "Installing root dependencies..."
-          npm ci || npm install
-        env:
-          NODE_OPTIONS: "--max-old-space-size=4096"
+          echo "Installing dependencies with retry..."
+          for i in 1 2 3; do
+            if bun install --frozen-lockfile; then
+              echo "Success on attempt $i"
+              exit 0
+            fi
+            echo "Attempt $i failed, waiting 5s..."
+            sleep 5
+          done
+          echo "Falling back to non-frozen install..."
+          bun install
 
       - name: Install web-ui dependencies
-        run: |
-          echo "Installing web-ui dependencies..."
-          cd web-ui && (npm ci || npm install)
-        env:
-          NODE_OPTIONS: "--max-old-space-size=4096"
+        run: bun install --cwd web-ui --frozen-lockfile || bun install --cwd web-ui
 
       - name: Install desktop dependencies (if exists)
         run: |
           if [ -d "packages/desktop" ]; then
-            echo "Installing desktop dependencies..."
-            cd packages/desktop && (npm ci || npm install)
+            bun install --cwd packages/desktop || npm ci --prefix packages/desktop
           fi
-        env:
-          NODE_OPTIONS: "--max-old-space-size=4096"
 
       - name: Build package
-        run: npm run build
+        run: bun run build
         env:
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
@@ -87,7 +88,7 @@ jobs:
           OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
 
       - name: Pack tgz
-        run: npm pack
+        run: bun run npm pack
 
       - name: List generated package
         run: ls -lh kanban-*.tgz
