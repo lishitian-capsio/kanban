@@ -1,0 +1,19 @@
+{
+  "id": "95626",
+  "title": "perf #9: mirror buffer 所有权移交 filter,flush 时一次拷贝",
+  "prompt": "性能优化 #9(承接 #7,改同一文件 terminal-state-mirror.ts,务必在 #7 之后)。\n\n问题:micro-batch 已解决 xterm-write/per-chunk Promise 的开销,但 applyOutput 仍对每个 PTY chunk 做一次 Buffer.from(chunk) 拷贝。该拷贝是必要的(:67-68:过滤后的 chunk 可能是复用 PTY 读缓冲的 subarray 视图),所以 token 洪峰下仍是每 chunk 一次堆分配,喂 GC。per-batch 的 new Promise + enqueueOperation 现在约每 16ms 一次,已非主导。\n\n定位:\n- src/terminal/terminal-state-mirror.ts:63-130,具体 :69 this.pendingChunks.push(Buffer.from(chunk))\n- flush 处已有 Buffer.concat 产出单一 owned buffer :119\n- per-batch Promise :122-129\n\n修法:把 buffer 所有权移到 protocol-filter 交接处,让 mirror 存视图、在 flush 时一次性拷贝(:119 已有 concat),而非每 chunk 拷贝。必须同时修改 filter→mirror 的所有权契约 —— 别在没改契约前删拷贝(:67 的 aliasing bug 是真的)。\n\n注意:别回退 92f07 的 micro-batch/scrollback。验证流式输出 mirror 内容正确无错位;mirror 单测通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "Shitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782106604617,
+  "updatedAt": 1782106604617,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
