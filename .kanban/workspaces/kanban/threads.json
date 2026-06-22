@@ -15,13 +15,6 @@
       "updatedAt": 1781682755696
     },
     {
-      "id": "0c1ef117-558d-423f-a9e7-c1f7c0d5b058",
-      "agentId": "claude",
-      "name": "Provider",
-      "createdAt": 1781684989682,
-      "updatedAt": 1781684989682
-    },
-    {
       "id": "d7e7f524-2f5e-47a1-a492-f6d534fccd43",
       "agentId": "claude",
       "name": "Vault",
