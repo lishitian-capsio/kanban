@@ -1,0 +1,19 @@
+{
+  "id": "c9967",
+  "title": "修复：添加大型项目目录时加载卡死并导致 Kanban 崩溃",
+  "prompt": "Bug：当用户添加/打开一个内容很多、体积很大的项目目录作为 workspace 时，界面一直加载不出来（无限 loading），最终整个 Kanban 程序崩溃。\n\n请先做只读排查，定位卡死/崩溃的真正瓶颈，再动手修复。重点怀疑方向（先验证再下结论，别预设）：\n\n1. workspace 加载链路：loadWorkspaceContext / prepareRepoRuntimeHome（src/state/workspace-state.ts 及其调用的迁移链）。大目录下是否对整棵 .kanban / 仓库树做了同步、全量、阻塞式的扫描或迁移？是否在主事件循环上同步读了海量文件导致卡死？参考 AGENTS.md 里 prepareRepoRuntimeHome 的迁移链与 board-branch decouple 说明。\n\n2. vault / Files 读取：src/vault/ 文档读取、链接索引（vault-link-index）、搜索（vault-search）、文件库（FileLibraryStore）在大量 .md / 大文件下是否做了全量加载+解析。是否有缓存未命中导致每次全量重算（参考 memory: perf15 vault-read-cache）。\n\n3. board / requirement 分片读取：task-shard-store / requirement-store / sharded-json-store 在成百上千分片文件下的读取是否并发受限或 O(n^2)。\n\n4. 是否真的是 OOM 还是死循环/同步阻塞导致进程无响应被判定崩溃。复现时观察内存与 CPU。\n\n交付：找到根因后给出最小且稳妥的修复（增量/惰性/分批/异步化/缓存 + 大目录上限或后台索引），优先不阻塞主循环、不一次性把整个大目录读进内存。先写能复现该卡死/崩溃的测试或可量化的基准，再实现修复。验证 typecheck + biome + 相关测试零回归。不要为消除 type error 而降级依赖或删功能。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782115600726,
+  "updatedAt": 1782115600726,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
