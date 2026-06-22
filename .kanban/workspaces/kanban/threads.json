@@ -1,3 +1,11 @@
 {
-  "threads": []
+  "threads": [
+    {
+      "id": "ff54eb94-9753-4bff-9845-5a9bd21689eb",
+      "agentId": "claude",
+      "name": "provider",
+      "createdAt": 1782140592143,
+      "updatedAt": 1782140592143
+    }
+  ]
 }

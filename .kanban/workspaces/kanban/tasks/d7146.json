@@ -1,0 +1,19 @@
+{
+  "id": "d7146",
+  "title": "Provider API key preview should reveal first & last chars",
+  "prompt": "In Settings → Providers, the API key field is fully masked so the user cannot tell which key is configured — they want to see the beginning and ending characters of the key (e.g. `sk-ab…wxyz`), like cc-switch / common secret-preview UIs.\n\nContext from prior work (see memory 'provider-edit-dialog-cross-agent-collision-fixed', commit c8e39): the edit dialog now initializes from the per-agent config and `redactAgentProviderSets` emits a masked `apiKeyPreview` (the masked value is never persisted). The current preview appears to fully obscure the key.\n\nGoal: change the masking so the preview shows a partial reveal — first N and last N characters with the middle replaced by a mask (e.g. `sk-pr…・・・…aB12`), choosing N safely for short keys (don't reveal too much of a short key). \n\nWhere to look:\n- `redactAgentProviderSets` / the `apiKeyPreview` masking logic (backend redaction).\n- The Settings → Providers edit dialog field that renders `apiKeyPreview`.\n- Ensure the raw key is still NEVER sent to the client or persisted — only the partial-reveal preview string.\n\nAcceptance:\n- Existing/saved provider shows a masked preview with visible head + tail and a masked middle.\n- Very short keys are masked conservatively (no near-full reveal).\n- Editing/saving still works and never round-trips a masked value back as the real key.\n- web:typecheck + biome clean.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782140734834,
+  "updatedAt": 1782140734834,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
