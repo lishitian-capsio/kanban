@@ -319,22 +319,28 @@ export function replaceWorkspaceMetadata(metadata: RuntimeWorkspaceMetadata | nu
 		nextTaskWorkspaceStateVersionByTaskId[taskMetadata.taskId] = taskMetadata.stateVersion;
 	}
 
-	const taskIds = new Set([
-		...Object.keys(workspaceMetadataState.taskWorkspaceInfoByTaskId),
-		...Object.keys(workspaceMetadataState.taskWorkspaceSnapshotByTaskId),
-		...Object.keys(workspaceMetadataState.taskWorkspaceStateVersionByTaskId),
-		...Object.keys(nextTaskWorkspaceInfoByTaskId),
-		...Object.keys(nextTaskWorkspaceSnapshotByTaskId),
-		...Object.keys(nextTaskWorkspaceStateVersionByTaskId),
-	]);
+	// Detecting changes only requires visiting each task id once. Rather than allocating a
+	// six-way union Set across every prev/next dictionary, walk the incoming tasks (all three
+	// next dictionaries are built from the same `taskWorkspaces` loop, so they share an identical
+	// key set) and then the previous dictionaries for removals not already seen. This keeps the
+	// pass O(n) without the union/spread allocation, and still emits only for ids that changed —
+	// preserving the perf10 per-taskId listener isolation.
+	const previousInfoByTaskId = workspaceMetadataState.taskWorkspaceInfoByTaskId;
+	const previousSnapshotByTaskId = workspaceMetadataState.taskWorkspaceSnapshotByTaskId;
+	const previousStateVersionByTaskId = workspaceMetadataState.taskWorkspaceStateVersionByTaskId;
 
 	const changedTaskIds: string[] = [];
-	for (const taskId of taskIds) {
-		const previousInfo = workspaceMetadataState.taskWorkspaceInfoByTaskId[taskId] ?? null;
+	const visitedTaskIds = new Set<string>();
+	const collectIfChanged = (taskId: string): void => {
+		if (visitedTaskIds.has(taskId)) {
+			return;
+		}
+		visitedTaskIds.add(taskId);
+		const previousInfo = previousInfoByTaskId[taskId] ?? null;
 		const nextInfo = nextTaskWorkspaceInfoByTaskId[taskId] ?? null;
-		const previousSnapshot = workspaceMetadataState.taskWorkspaceSnapshotByTaskId[taskId] ?? null;
+		const previousSnapshot = previousSnapshotByTaskId[taskId] ?? null;
 		const nextSnapshot = nextTaskWorkspaceSnapshotByTaskId[taskId] ?? null;
-		const previousStateVersion = workspaceMetadataState.taskWorkspaceStateVersionByTaskId[taskId] ?? 0;
+		const previousStateVersion = previousStateVersionByTaskId[taskId] ?? 0;
 		const nextStateVersion = nextTaskWorkspaceStateVersionByTaskId[taskId] ?? 0;
 		if (
 			!areTaskWorkspaceInfosEqual(previousInfo, nextInfo) ||
@@ -343,6 +349,19 @@ export function replaceWorkspaceMetadata(metadata: RuntimeWorkspaceMetadata | nu
 		) {
 			changedTaskIds.push(taskId);
 		}
+	};
+
+	for (const taskId of Object.keys(nextTaskWorkspaceInfoByTaskId)) {
+		collectIfChanged(taskId);
+	}
+	for (const taskId of Object.keys(previousInfoByTaskId)) {
+		collectIfChanged(taskId);
+	}
+	for (const taskId of Object.keys(previousSnapshotByTaskId)) {
+		collectIfChanged(taskId);
+	}
+	for (const taskId of Object.keys(previousStateVersionByTaskId)) {
+		collectIfChanged(taskId);
 	}
 
 	workspaceMetadataState.taskWorkspaceInfoByTaskId = nextTaskWorkspaceInfoByTaskId;

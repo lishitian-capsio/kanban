@@ -25,6 +25,10 @@ export const CLINE_REASONING_EFFORT_OPTIONS: SearchSelectOption[] = [
 	{ value: "xhigh", label: "Extra high" },
 ];
 
+const CLINE_REASONING_EFFORT_LABEL_BY_VALUE = new Map(
+	CLINE_REASONING_EFFORT_OPTIONS.map((option) => [option.value, option.label] as const),
+);
+
 export interface BuildKanbanAgentModelPickerOptionsResult {
 	options: SearchSelectOption[];
 	recommendedModelIds: string[];
@@ -63,7 +67,7 @@ export function buildKanbanAgentModelPickerOptions(
 }
 
 export function formatKanbanReasoningEffortLabel(value: RuntimeReasoningEffort | "" | null | undefined): string {
-	return CLINE_REASONING_EFFORT_OPTIONS.find((option) => option.value === (value ?? ""))?.label ?? "Default";
+	return CLINE_REASONING_EFFORT_LABEL_BY_VALUE.get(value ?? "") ?? "Default";
 }
 
 export function formatKanbanSelectedModelButtonText({

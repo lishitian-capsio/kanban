@@ -415,6 +415,56 @@ function createEmptyLayout(): DependencyLayout {
 	};
 }
 
+function areAnchorsEqual(a: TaskAnchor, b: TaskAnchor): boolean {
+	// centerX/centerY are derived from the edges, so comparing edges + columnId is sufficient.
+	return (
+		a.left === b.left && a.right === b.right && a.top === b.top && a.bottom === b.bottom && a.columnId === b.columnId
+	);
+}
+
+type DependencyComputedPath = ReturnType<typeof computePath>;
+
+export interface DependencyGeometryInputs {
+	sourceAnchor: TaskAnchor;
+	targetAnchor: TaskAnchor;
+	sourceLaneOffset: number;
+	targetLaneOffset: number;
+	width: number;
+	height: number;
+}
+
+export interface DependencyGeometryCacheEntry extends DependencyGeometryInputs {
+	result: DependencyComputedPath;
+}
+
+/**
+ * Reuse a previously computed cubic-Bezier path for an edge when its endpoints, lane offset, and
+ * the overlay bounds are all unchanged; otherwise recompute via `compute`. The freshly resolved
+ * entry is always written into `nextCache` so the next render can reuse it. Pure and side-effect
+ * free apart from the supplied `nextCache` mutation — unit-tested in dependency-overlay.test.ts.
+ */
+export function resolveCachedDependencyGeometry(
+	previousCache: ReadonlyMap<string, DependencyGeometryCacheEntry>,
+	nextCache: Map<string, DependencyGeometryCacheEntry>,
+	dependencyId: string,
+	inputs: DependencyGeometryInputs,
+	compute: (inputs: DependencyGeometryInputs) => DependencyComputedPath,
+): DependencyComputedPath {
+	const cached = previousCache.get(dependencyId);
+	const result =
+		cached &&
+		areAnchorsEqual(cached.sourceAnchor, inputs.sourceAnchor) &&
+		areAnchorsEqual(cached.targetAnchor, inputs.targetAnchor) &&
+		cached.sourceLaneOffset === inputs.sourceLaneOffset &&
+		cached.targetLaneOffset === inputs.targetLaneOffset &&
+		cached.width === inputs.width &&
+		cached.height === inputs.height
+			? cached.result
+			: compute(inputs);
+	nextCache.set(dependencyId, { ...inputs, result });
+	return result;
+}
+
 export function DependencyOverlay({
 	containerRef,
 	dependencies,
@@ -455,6 +505,11 @@ export function DependencyOverlay({
 	>({});
 	const animationFrameIdRef = useRef<number | null>(null);
 	const [, setAnimationFrameTick] = useState(0);
+	// Per-edge geometry cache keyed by dependency id: reuse the previously computed cubic-Bezier
+	// path when an edge's endpoints, lane offset, and the overlay bounds are all unchanged. A new
+	// `layout` object reference (produced on any scroll/resize/mutation frame) would otherwise
+	// re-run `computePath` for every dependency even when only one card actually moved.
+	const geometryCacheRef = useRef<Map<string, DependencyGeometryCacheEntry>>(new Map());
 
 	const refreshLayout = useCallback(() => {
 		const container = containerRef.current;
@@ -716,7 +771,9 @@ export function DependencyOverlay({
 			lanes.sort((first, second) => first.oppositeCenterY - second.oppositeCenterY);
 		}
 
-		return candidates.map((candidate) => {
+		const previousGeometryCache = geometryCacheRef.current;
+		const nextGeometryCache = new Map<string, DependencyGeometryCacheEntry>();
+		const rendered = candidates.map((candidate) => {
 			const sourceLanes = laneOrderByTaskId.get(candidate.dependency.fromTaskId) ?? [
 				{ dependencyId: candidate.dependency.id, oppositeCenterY: candidate.targetAnchor.centerY },
 			];
@@ -727,12 +784,23 @@ export function DependencyOverlay({
 			const targetLaneIndex = targetLanes.findIndex((lane) => lane.dependencyId === candidate.dependency.id);
 			const sourceLaneOffset = ((sourceLaneIndex === -1 ? 0 : sourceLaneIndex) - (sourceLanes.length - 1) / 2) * 9;
 			const targetLaneOffset = ((targetLaneIndex === -1 ? 0 : targetLaneIndex) - (targetLanes.length - 1) / 2) * 9;
-			const geometry = computePath(
-				candidate.sourceAnchor,
-				candidate.targetAnchor,
-				sourceLaneOffset,
-				targetLaneOffset,
-				{ width: layout.width, height: layout.height },
+			const geometry = resolveCachedDependencyGeometry(
+				previousGeometryCache,
+				nextGeometryCache,
+				candidate.dependency.id,
+				{
+					sourceAnchor: candidate.sourceAnchor,
+					targetAnchor: candidate.targetAnchor,
+					sourceLaneOffset,
+					targetLaneOffset,
+					width: layout.width,
+					height: layout.height,
+				},
+				(inputs) =>
+					computePath(inputs.sourceAnchor, inputs.targetAnchor, inputs.sourceLaneOffset, inputs.targetLaneOffset, {
+						width: inputs.width,
+						height: inputs.height,
+					}),
 			);
 			return {
 				dependency: candidate.dependency,
@@ -745,6 +813,8 @@ export function DependencyOverlay({
 				isTransient: candidate.isTransient,
 			};
 		});
+		geometryCacheRef.current = nextGeometryCache;
+		return rendered;
 	}, [activeTaskId, dependencies, layout.anchors, layout.height, layout.width]);
 
 	useLayoutEffect(() => {
