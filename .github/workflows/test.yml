@@ -32,12 +32,6 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Configure Bun registry
-        run: |
-          # Use explicit registry to avoid connection issues
-          bun config set registry https://registry.npmjs.org/
-          echo "Bun registry: $(bun config get registry)"
-
       - name: Cache Bun install cache
         uses: actions/cache@v4
         with:
@@ -55,16 +49,16 @@ jobs:
 
       - name: Install dependencies
         run: |
-          echo "Installing root dependencies with retry..."
+          echo "Installing dependencies with retry..."
           for i in 1 2 3; do
-            if bun install --frozen-lockfile; then
+            if BUN_INSTALL_REGISTRY=https://registry.npmjs.org bun install --frozen-lockfile; then
               echo "Success on attempt $i"
               exit 0
             fi
             echo "Attempt $i failed, waiting 5s..."
             sleep 5
           done
-          echo "All attempts failed, trying without frozen-lockfile..."
+          echo "Falling back to non-frozen install..."
           bun install
 
       - name: Install web-ui dependencies
