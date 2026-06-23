@@ -34,13 +34,6 @@
       "name": "install",
       "createdAt": 1782197360113,
       "updatedAt": 1782197360113
-    },
-    {
-      "id": "0ec6008e-98a9-466d-881a-ca728ba46182",
-      "agentId": "pi",
-      "name": "Ask: 测试任务（试用 Ask）",
-      "createdAt": 1782201332806,
-      "updatedAt": 1782201332806
     }
   ]
 }
