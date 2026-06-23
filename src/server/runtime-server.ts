@@ -42,6 +42,7 @@ import { getWorkspaceSessionMessagesDirPath, loadWorkspaceContextById } from "..
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { createTerminalWebSocketBridge } from "../terminal/ws-server";
 import { type RuntimeTrpcContext, type RuntimeTrpcWorkspaceScope, runtimeAppRouter } from "../trpc/app-router";
+import { createDbApi } from "../trpc/db-api";
 import { createHooksApi } from "../trpc/hooks-api";
 import { createProjectsApi } from "../trpc/projects-api";
 import { createRuntimeApi } from "../trpc/runtime-api";
@@ -259,6 +260,12 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		return result;
 	};
 
+	// One DB API for the whole server lifetime: it owns a process-wide PoolManager that
+	// reuses one live driver per connection across requests, so it must NOT be rebuilt
+	// per request (createTrpcContext runs per request). Its methods take the workspace
+	// scope explicitly and hold no per-request state, so a single instance is reused.
+	const dbApi = createDbApi();
+
 	const prepareForStateReset = async (): Promise<void> => {
 		const workspaceIds = new Set<string>();
 		for (const { workspaceId } of deps.workspaceRegistry.listManagedWorkspaces()) {
@@ -312,6 +319,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				buildWorkspaceStateSnapshot: deps.workspaceRegistry.buildWorkspaceStateSnapshot,
 				boardSync: boardSyncApi,
 			}),
+			dbApi,
 			projectsApi: createProjectsApi({
 				getActiveWorkspacePath: deps.workspaceRegistry.getActiveWorkspacePath,
 				getActiveWorkspaceId: deps.workspaceRegistry.getActiveWorkspaceId,

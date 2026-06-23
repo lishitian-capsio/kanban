@@ -7,6 +7,7 @@ import { Command, Option } from "commander";
 import ora, { type Ora } from "ora";
 import packageJson from "../package.json" with { type: "json" };
 import { printLine } from "./cli-output";
+import { registerDbCommand } from "./commands/db";
 import { registerFileCommand } from "./commands/file";
 import { registerHooksCommand } from "./commands/hooks";
 import { registerTaskCommand } from "./commands/task";
@@ -19,7 +20,6 @@ import {
 	installGracefulShutdownHandlers,
 	shouldSuppressImmediateDuplicateShutdownSignals,
 } from "./core/graceful-shutdown";
-import { configureLogging, createLogger } from "./logging";
 import {
 	buildKanbanRuntimeUrl,
 	clearKanbanRuntimeTls,
@@ -34,6 +34,7 @@ import {
 	setKanbanRuntimePort,
 	setKanbanRuntimeTls,
 } from "./core/runtime-endpoint";
+import { configureLogging, createLogger } from "./logging";
 import { disablePasscode, generateInternalToken, generatePasscode } from "./security/passcode-manager";
 import { terminateProcessForTimeout } from "./server/process-termination";
 import type { RuntimeStateHub } from "./server/runtime-state-hub";
@@ -729,6 +730,7 @@ function createProgram(invocationArgs: string[]): Command {
 	registerTaskCommand(program);
 	registerFileCommand(program);
 	registerVaultCommand(program);
+	registerDbCommand(program);
 	registerHooksCommand(program);
 
 	program

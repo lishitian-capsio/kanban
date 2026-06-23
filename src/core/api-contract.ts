@@ -2161,6 +2161,186 @@ export const runtimeGitRefsResponseSchema = z.object({
 });
 export type RuntimeGitRefsResponse = z.infer<typeof runtimeGitRefsResponseSchema>;
 
+// --- Database -----------------------------------------------------------------
+// Wire contract for the `kanban db` CLI surface. Mirrors the secret-free shapes the DB
+// core (src/db) exposes; secrets (password/key/cert) only ever travel inbound on `add`
+// and are never returned. Kept self-contained here (api-contract imports only core) so
+// the web-ui bundle never pulls in the driver modules.
+
+export const runtimeDbEngineSchema = z.enum(["postgres", "mysql", "sqlite"]);
+export type RuntimeDbEngine = z.infer<typeof runtimeDbEngineSchema>;
+
+export const runtimeDbSslConfigSchema = z.object({
+	mode: z.enum(["disable", "require", "verify-ca", "verify-full"]),
+	caPath: z.string().optional(),
+});
+export type RuntimeDbSslConfig = z.infer<typeof runtimeDbSslConfigSchema>;
+
+/** A committed, secret-free connection record plus whether a machine-home credential exists. */
+export const runtimeDbConnectionSchema = z.object({
+	connId: z.string(),
+	label: z.string(),
+	engine: runtimeDbEngineSchema,
+	host: z.string().nullable(),
+	port: z.number().int().positive().nullable(),
+	database: z.string().nullable(),
+	user: z.string().nullable(),
+	filePath: z.string().nullable(),
+	ssl: runtimeDbSslConfigSchema.nullable(),
+	allowWrites: z.boolean(),
+	createdAt: z.string(),
+	hasCredential: z.boolean(),
+});
+export type RuntimeDbConnection = z.infer<typeof runtimeDbConnectionSchema>;
+
+export const runtimeDbConnectionListResponseSchema = z.object({
+	connections: z.array(runtimeDbConnectionSchema),
+});
+export type RuntimeDbConnectionListResponse = z.infer<typeof runtimeDbConnectionListResponseSchema>;
+
+export const runtimeDbConnectionAddRequestSchema = z.object({
+	/** Optional explicit id; defaults to a slug of the label. Normalized (trim + lowercase). */
+	connId: z.string().optional(),
+	label: z.string().min(1),
+	engine: runtimeDbEngineSchema,
+	host: z.string().nullable().optional(),
+	port: z.number().int().positive().nullable().optional(),
+	database: z.string().nullable().optional(),
+	user: z.string().nullable().optional(),
+	filePath: z.string().nullable().optional(),
+	ssl: runtimeDbSslConfigSchema.nullable().optional(),
+	allowWrites: z.boolean().optional(),
+	/** Secret material — stored ONLY in machine-home credentials, never committed/returned. */
+	password: z.string().optional(),
+	sslKeyPem: z.string().optional(),
+	sslCertPem: z.string().optional(),
+});
+export type RuntimeDbConnectionAddRequest = z.infer<typeof runtimeDbConnectionAddRequestSchema>;
+
+export const runtimeDbConnectionAddResponseSchema = z.object({
+	connection: runtimeDbConnectionSchema,
+});
+export type RuntimeDbConnectionAddResponse = z.infer<typeof runtimeDbConnectionAddResponseSchema>;
+
+export const runtimeDbConnectionRemoveRequestSchema = z.object({
+	connId: z.string().min(1),
+});
+export type RuntimeDbConnectionRemoveRequest = z.infer<typeof runtimeDbConnectionRemoveRequestSchema>;
+
+export const runtimeDbConnectionRemoveResponseSchema = z.object({
+	connId: z.string(),
+	removed: z.boolean(),
+});
+export type RuntimeDbConnectionRemoveResponse = z.infer<typeof runtimeDbConnectionRemoveResponseSchema>;
+
+export const runtimeDbConnectionTestRequestSchema = z.object({
+	connId: z.string().min(1),
+});
+export type RuntimeDbConnectionTestRequest = z.infer<typeof runtimeDbConnectionTestRequestSchema>;
+
+export const runtimeDbConnectionTestResponseSchema = z.object({
+	connId: z.string(),
+	reachable: z.boolean(),
+	latencyMs: z.number().nullable(),
+	serverVersion: z.string().nullable(),
+	error: z.string().optional(),
+});
+export type RuntimeDbConnectionTestResponse = z.infer<typeof runtimeDbConnectionTestResponseSchema>;
+
+export const runtimeDbColumnSchema = z.object({
+	name: z.string(),
+	dataType: z.string(),
+	nullable: z.boolean(),
+	isPrimaryKey: z.boolean(),
+	defaultValue: z.string().nullable(),
+});
+export type RuntimeDbColumn = z.infer<typeof runtimeDbColumnSchema>;
+
+export const runtimeDbTableSummarySchema = z.object({
+	schema: z.string(),
+	name: z.string(),
+	kind: z.enum(["table", "view"]),
+	columnCount: z.number().int().nonnegative(),
+});
+export type RuntimeDbTableSummary = z.infer<typeof runtimeDbTableSummarySchema>;
+
+export const runtimeDbTableDetailSchema = z.object({
+	schema: z.string(),
+	name: z.string(),
+	kind: z.enum(["table", "view"]),
+	columns: z.array(runtimeDbColumnSchema),
+});
+export type RuntimeDbTableDetail = z.infer<typeof runtimeDbTableDetailSchema>;
+
+export const runtimeDbTablesRequestSchema = z.object({
+	connId: z.string().min(1),
+	/** Optional schema filter (matched case-insensitively). */
+	schema: z.string().optional(),
+});
+export type RuntimeDbTablesRequest = z.infer<typeof runtimeDbTablesRequestSchema>;
+
+export const runtimeDbTablesResponseSchema = z.object({
+	connId: z.string(),
+	engine: runtimeDbEngineSchema,
+	tables: z.array(runtimeDbTableSummarySchema),
+});
+export type RuntimeDbTablesResponse = z.infer<typeof runtimeDbTablesResponseSchema>;
+
+export const runtimeDbDescribeRequestSchema = z.object({
+	connId: z.string().min(1),
+	table: z.string().min(1),
+	/** Optional schema qualifier (matched case-insensitively). */
+	schema: z.string().optional(),
+});
+export type RuntimeDbDescribeRequest = z.infer<typeof runtimeDbDescribeRequestSchema>;
+
+export const runtimeDbDescribeResponseSchema = z.object({
+	connId: z.string(),
+	engine: runtimeDbEngineSchema,
+	table: runtimeDbTableDetailSchema.nullable(),
+});
+export type RuntimeDbDescribeResponse = z.infer<typeof runtimeDbDescribeResponseSchema>;
+
+export const runtimeDbQueryFieldSchema = z.object({
+	name: z.string(),
+	dataTypeId: z.number().optional(),
+	dataType: z.string().optional(),
+});
+export type RuntimeDbQueryField = z.infer<typeof runtimeDbQueryFieldSchema>;
+
+export const runtimeDbQueryRequestSchema = z.object({
+	connId: z.string().min(1),
+	sql: z.string().min(1),
+	/** Page size for reads; clamped by the core's hard row cap. */
+	pageSize: z.number().int().positive().optional(),
+	/** Opaque next-page cursor returned by a prior query. */
+	cursor: z.string().nullable().optional(),
+});
+export type RuntimeDbQueryRequest = z.infer<typeof runtimeDbQueryRequestSchema>;
+
+export const runtimeDbQueryResponseSchema = z.object({
+	connId: z.string(),
+	columns: z.array(runtimeDbQueryFieldSchema),
+	rows: z.array(z.record(z.string(), z.unknown())),
+	rowCount: z.number(),
+	affectedRows: z.number().nullable(),
+	classification: z.enum(["read", "write", "ddl", "unknown"]),
+	readOnly: z.boolean(),
+	durationMs: z.number(),
+	totalDurationMs: z.number(),
+	pagination: z.object({
+		paginated: z.boolean(),
+		pageSize: z.number(),
+		hasMore: z.boolean(),
+		nextCursor: z.string().nullable(),
+	}),
+	truncated: z.object({
+		byRows: z.boolean(),
+		byBytes: z.boolean(),
+	}),
+});
+export type RuntimeDbQueryResponse = z.infer<typeof runtimeDbQueryResponseSchema>;
+
 export const runtimeHookEventSchema = z.enum(["to_review", "to_in_progress", "activity"]);
 export type RuntimeHookEvent = z.infer<typeof runtimeHookEventSchema>;
 

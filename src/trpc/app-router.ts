@@ -26,6 +26,19 @@ import type {
 	RuntimeCommandRunResponse,
 	RuntimeConfigResponse,
 	RuntimeConfigSaveRequest,
+	RuntimeDbConnectionAddRequest,
+	RuntimeDbConnectionAddResponse,
+	RuntimeDbConnectionListResponse,
+	RuntimeDbConnectionRemoveRequest,
+	RuntimeDbConnectionRemoveResponse,
+	RuntimeDbConnectionTestRequest,
+	RuntimeDbConnectionTestResponse,
+	RuntimeDbDescribeRequest,
+	RuntimeDbDescribeResponse,
+	RuntimeDbQueryRequest,
+	RuntimeDbQueryResponse,
+	RuntimeDbTablesRequest,
+	RuntimeDbTablesResponse,
 	RuntimeDebugResetAllStateResponse,
 	RuntimeDirectoryListRequest,
 	RuntimeDirectoryListResponse,
@@ -183,6 +196,19 @@ import {
 	runtimeCommandRunResponseSchema,
 	runtimeConfigResponseSchema,
 	runtimeConfigSaveRequestSchema,
+	runtimeDbConnectionAddRequestSchema,
+	runtimeDbConnectionAddResponseSchema,
+	runtimeDbConnectionListResponseSchema,
+	runtimeDbConnectionRemoveRequestSchema,
+	runtimeDbConnectionRemoveResponseSchema,
+	runtimeDbConnectionTestRequestSchema,
+	runtimeDbConnectionTestResponseSchema,
+	runtimeDbDescribeRequestSchema,
+	runtimeDbDescribeResponseSchema,
+	runtimeDbQueryRequestSchema,
+	runtimeDbQueryResponseSchema,
+	runtimeDbTablesRequestSchema,
+	runtimeDbTablesResponseSchema,
 	runtimeDebugResetAllStateResponseSchema,
 	runtimeDirectoryListRequestSchema,
 	runtimeDirectoryListResponseSchema,
@@ -615,6 +641,27 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeGitCommitDiffRequest,
 		) => Promise<RuntimeGitCommitDiffResponse>;
+	};
+	dbApi: {
+		listConnections: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeDbConnectionListResponse>;
+		addConnection: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeDbConnectionAddRequest,
+		) => Promise<RuntimeDbConnectionAddResponse>;
+		removeConnection: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeDbConnectionRemoveRequest,
+		) => Promise<RuntimeDbConnectionRemoveResponse>;
+		testConnection: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeDbConnectionTestRequest,
+		) => Promise<RuntimeDbConnectionTestResponse>;
+		listTables: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeDbTablesRequest) => Promise<RuntimeDbTablesResponse>;
+		describeTable: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeDbDescribeRequest,
+		) => Promise<RuntimeDbDescribeResponse>;
+		runQuery: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeDbQueryRequest) => Promise<RuntimeDbQueryResponse>;
 	};
 	projectsApi: {
 		listProjects: (preferredWorkspaceId: string | null) => Promise<RuntimeProjectsResponse>;
@@ -1178,6 +1225,49 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeGitCommitDiffResponseSchema)
 			.query(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.loadCommitDiff(ctx.workspaceScope, input);
+			}),
+	}),
+	db: t.router({
+		connection: t.router({
+			list: workspaceProcedure.output(runtimeDbConnectionListResponseSchema).query(async ({ ctx }) => {
+				return await ctx.dbApi.listConnections(ctx.workspaceScope);
+			}),
+			add: workspaceProcedure
+				.input(runtimeDbConnectionAddRequestSchema)
+				.output(runtimeDbConnectionAddResponseSchema)
+				.mutation(async ({ ctx, input }) => {
+					return await ctx.dbApi.addConnection(ctx.workspaceScope, input);
+				}),
+			remove: workspaceProcedure
+				.input(runtimeDbConnectionRemoveRequestSchema)
+				.output(runtimeDbConnectionRemoveResponseSchema)
+				.mutation(async ({ ctx, input }) => {
+					return await ctx.dbApi.removeConnection(ctx.workspaceScope, input);
+				}),
+			test: workspaceProcedure
+				.input(runtimeDbConnectionTestRequestSchema)
+				.output(runtimeDbConnectionTestResponseSchema)
+				.mutation(async ({ ctx, input }) => {
+					return await ctx.dbApi.testConnection(ctx.workspaceScope, input);
+				}),
+		}),
+		tables: workspaceProcedure
+			.input(runtimeDbTablesRequestSchema)
+			.output(runtimeDbTablesResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.dbApi.listTables(ctx.workspaceScope, input);
+			}),
+		describe: workspaceProcedure
+			.input(runtimeDbDescribeRequestSchema)
+			.output(runtimeDbDescribeResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.dbApi.describeTable(ctx.workspaceScope, input);
+			}),
+		query: workspaceProcedure
+			.input(runtimeDbQueryRequestSchema)
+			.output(runtimeDbQueryResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.dbApi.runQuery(ctx.workspaceScope, input);
 			}),
 	}),
 	projects: t.router({
