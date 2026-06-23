@@ -1,0 +1,19 @@
+{
+  "id": "f0ba5",
+  "title": "修复：后端 auto-review 未自动 commit（卡在 review）",
+  "prompt": "背景：auto-review 从前端迁到后端后（提交 0eb59620 \"feat(auto-review): trigger auto commit/PR -> done -> relay from backend\"，以及 f7569027 revert Ask），启用 auto-review(commit) 的任务到达 review 后不会自动提交、也不会移到 done，而是卡在 review。\n\n复现：用测试任务 c5128 复现——agent 在 worktree 里改了 TEST_TASK_SCRATCH.md，但：\n1) 改动停在未提交状态（git status 显示 ' M TEST_TASK_SCRATCH.md'）；\n2) 任务卡在 review（session.state=awaiting_review, reviewReason='hook'）；\n3) 该 worktree 处于 detached HEAD（git branch --show-current 为空），而按 git 契约任务 worktree 应在 kanban/task/<id> 分支上（参见 git-contract-terminal-agents-implemented）。\n\n目标：让后端的 auto-review 在 reviewReason='hook' 进入 review 后，正确执行 Kanban-owned 的 commit（commit 模式）或 open-PR（pr 模式），随后把任务移到 done 并触发 relay/联动的 backlog 任务。\n\n排查方向：\n- 后端 auto-review 触发路径（broadcastTaskReadyForReview / 后端 hook 处理）是否真正调用了 commit 动作，还是只发了 ready-for-review 广播而漏了 commit；\n- 为何任务 worktree 是 detached HEAD 而不是 kanban/task/<id>，这是否阻断了 Kanban-owned merge/commit；\n- 对照前端迁移前的旧提交动作，确认迁移时遗漏的步骤。\n\n约束：不要重新引入已删除的『切分支前 auto-commit .kanban』补丁（方案 C 后那条路径是死的）。\n\n验收：\n- 启用 auto-review(commit) 的任务到达 review 后能自动 commit 并移到 done；pr 模式能自动开 PR 并移到 done；\n- 用一个新的测试任务端到端验证一次；\n- typecheck + biome 通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782220435480,
+  "updatedAt": 1782220435480,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
