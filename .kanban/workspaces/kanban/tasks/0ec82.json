@@ -1,0 +1,19 @@
+{
+  "id": "0ec82",
+  "title": "测试 auto-commit (重跑)",
+  "prompt": "这是一个测试任务，用于验证 auto-commit 自动审查流程。请在工作区根目录创建一个名为 AUTO_COMMIT_TEST2.md 的文件，内容写一行：'auto-commit rerun - 2026-06-23'。然后结束，不要自己 commit。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782229395160,
+  "updatedAt": 1782229395160,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
