@@ -1,0 +1,19 @@
+{
+  "id": "eb5cd",
+  "title": "Ask-C UI: review 卡片 Ask 分流按钮(先选 问自己/问 kanban agent 再点)",
+  "prompt": "在 web-ui 实现 review 新动作『Ask』的界面。依赖 Ask-A(向任意会话注入 prompt 的原语)和 Ask-B(review 抛出的 task agent 问题 + 任务↔发起 kanban 线程反向关联)均已完成。\n\n要做:\n- review 卡片在 Commit / Open PR 旁加一个『Ask』按钮,带右侧下拉(split button):先在下拉里选去向,再点发送。位置参考 web-ui/src/components/board-card.tsx 现有 Commit/Open PR 按钮(约 867-897 行)。\n- 卡片显示 task agent 在 review 时抛出的那个问题(来自 Ask-B 的字段)。\n- Ask 下拉两个去向(路由这个问题由谁答):\n  - 『问自己』→ 把问题退回 task agent 自己的会话(让它自行判断/继续)→ 调 Ask-A 原语注入 task 会话。\n  - 『问 kanban agent』→ 把问题 + 任务上下文交给发起该任务的 kanban-agent 线程(Ask-B 的反向关联;没有则走其新建绑定线程的兜底),注入该会话并触发 kanban agent 执行。\n- 关键:Ask 发出后【不触发 move-to-done】,任务留在 review(区别于 Commit/PR 那条 changedFiles===0 转 done 的逻辑)。\n- 『问 kanban agent』路径预留护栏接入点(max 迭代次数 / 拿不准升级给人 / opt-in 由 kanban agent 侧后续细化),本任务至少不要造成无限自动回路。\n\n严格遵循 web-ui 规范:Tailwind v4 设计 token、Radix 原语(下拉用 dropdown-menu)、lucide-react 图标、src/components/ui 基础组件、cn();web-ui 日志用 @/utils/logger,禁止 console.*;优先 react-use hooks;拆小单一职责组件。不要提交。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782184052165,
+  "updatedAt": 1782184052165,
+  "column": "backlog",
+  "rank": "Zn",
+  "dependsOn": []
+}
