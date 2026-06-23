@@ -7,6 +7,7 @@ import type {
 	RuntimeTaskAgentSettings,
 	RuntimeTaskAutoReviewMode,
 	RuntimeTaskImage,
+	RuntimeTaskOrigin,
 	RuntimeTaskOwner,
 } from "./api-contract";
 import { safeRandomUUID } from "./safe-uuid";
@@ -24,6 +25,7 @@ export interface RuntimeCreateTaskInput {
 	agentId?: RuntimeAgentId;
 	agentSettings?: RuntimeTaskAgentSettings;
 	owner?: RuntimeTaskOwner;
+	origin?: RuntimeTaskOrigin;
 	baseRef: string;
 }
 
@@ -65,6 +67,14 @@ function cloneTaskOwner(owner?: RuntimeTaskOwner | null): RuntimeTaskOwner | und
 		return undefined;
 	}
 	return { name, email };
+}
+
+// Copy the origin so board tasks do not retain caller-owned object references.
+function cloneTaskOrigin(origin?: RuntimeTaskOrigin): RuntimeTaskOrigin | undefined {
+	if (!origin) {
+		return undefined;
+	}
+	return { agentId: origin.agentId, threadId: origin.threadId };
 }
 
 function cloneTaskAgentSettings(settings?: RuntimeTaskAgentSettings | null): RuntimeTaskAgentSettings | undefined {
@@ -329,6 +339,7 @@ export function addTaskToColumn(
 		...(input.agentId ? { agentId: input.agentId } : {}),
 		...(input.agentSettings !== undefined ? { agentSettings: cloneTaskAgentSettings(input.agentSettings) } : {}),
 		...(cloneTaskOwner(input.owner) ? { owner: cloneTaskOwner(input.owner) } : {}),
+		...(input.origin ? { origin: cloneTaskOrigin(input.origin) } : {}),
 		baseRef,
 		createdAt: now,
 		updatedAt: now,

@@ -4,6 +4,7 @@ import type { RuntimeHomeChatThreadsData } from "../../../src/core/api-contract"
 import {
 	closeHomeThread,
 	createHomeThread,
+	decideAskThread,
 	listHomeThreads,
 	renameHomeThread,
 } from "../../../src/session/home-thread-registry";
@@ -79,6 +80,31 @@ describe("home thread registry", () => {
 
 		it("throws when the thread does not exist", () => {
 			expect(() => closeHomeThread(seed(), "missing")).toThrow();
+		});
+	});
+
+	describe("decideAskThread", () => {
+		it("targets an existing registered thread, using its registered agent", () => {
+			// The registry agent is authoritative even if the stale origin disagrees.
+			const decision = decideAskThread({ origin: { agentId: "pi", threadId: "t2" }, threads: seed().threads });
+			expect(decision).toEqual({ kind: "existing", agentId: "claude", threadId: "t2" });
+		});
+
+		it("targets the implicit default thread without requiring a registry entry", () => {
+			// The default thread keeps the legacy three-segment session id and is never
+			// listed in threads.json, so it resolves directly from the origin's agent.
+			const decision = decideAskThread({ origin: { agentId: "pi", threadId: "default" }, threads: [] });
+			expect(decision).toEqual({ kind: "existing", agentId: "pi", threadId: "default" });
+		});
+
+		it("falls back to create when the origin thread was closed (missing from the registry)", () => {
+			const decision = decideAskThread({ origin: { agentId: "pi", threadId: "gone" }, threads: seed().threads });
+			expect(decision).toEqual({ kind: "create" });
+		});
+
+		it("falls back to create when there is no origin at all", () => {
+			expect(decideAskThread({ origin: null, threads: seed().threads })).toEqual({ kind: "create" });
+			expect(decideAskThread({ origin: undefined, threads: seed().threads })).toEqual({ kind: "create" });
 		});
 	});
 });

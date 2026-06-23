@@ -12,6 +12,7 @@ import type {
 	RuntimeTaskTurnCheckpoint,
 } from "../core/api-contract";
 import { createLogger } from "../logging";
+import { deriveReviewQuestion } from "../session/review-question";
 import type { SessionMessage } from "../session/session-message";
 import { NoopSessionMessageJournal, type SessionMessageJournal } from "../session/session-message-journal";
 import { SessionMessageMergeCache } from "../session/session-message-merge-cache";
@@ -174,6 +175,7 @@ function createDefaultSummary(taskId: string): RuntimeTaskSessionSummary {
 		updatedAt: now(),
 		lastOutputAt: null,
 		reviewReason: null,
+		reviewQuestion: null,
 		exitCode: null,
 		lastHookAt: null,
 		latestHookActivity: null,
@@ -196,6 +198,15 @@ function updateSummary(entry: SessionEntry, patch: Partial<RuntimeTaskSessionSum
 		...patch,
 		updatedAt: now(),
 	};
+	// Promote the agent's closing message into the review-scoped question field.
+	// Done here, the single summary chokepoint, so every transition (hook to_review
+	// then the follow-up applyHookActivity that carries finalMessage, or process.exit)
+	// keeps reviewQuestion consistent without per-call-site bookkeeping.
+	entry.summary.reviewQuestion = deriveReviewQuestion(
+		entry.summary.state,
+		entry.summary.latestHookActivity?.finalMessage ?? null,
+		entry.summary.reviewQuestion ?? null,
+	);
 	return entry.summary;
 }
 

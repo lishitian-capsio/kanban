@@ -71,6 +71,29 @@ describe("TerminalSessionManager", () => {
 		expect(typeof updated?.lastHookAt).toBe("number");
 	});
 
+	it("surfaces the agent's closing message as the review question and clears it on resume", () => {
+		const manager = new TerminalSessionManager();
+		manager.hydrateFromRecord({
+			"task-1": createSummary({ state: "running", reviewReason: null }),
+		});
+
+		// Claude's Stop hook: transition to review, then the follow-up activity carries
+		// the last assistant message (mirrors hooks-api: transition first, metadata next).
+		manager.transitionToReview("task-1", "hook");
+		const reviewed = manager.applyHookActivity("task-1", {
+			source: "claude",
+			hookEventName: "Stop",
+			finalMessage: "I refactored the parser. Should I also update the docs?",
+		});
+		expect(reviewed?.state).toBe("awaiting_review");
+		expect(reviewed?.reviewQuestion).toBe("I refactored the parser. Should I also update the docs?");
+
+		// Returning to running clears the stale question.
+		const resumed = manager.transitionToRunning("task-1");
+		expect(resumed?.state).toBe("running");
+		expect(resumed?.reviewQuestion).toBeNull();
+	});
+
 	it("preserves a recorded agent session id across hydration from persisted state", () => {
 		// Mirrors the restart path: sessions.json is read back and hydrated into the manager,
 		// from where the next launch reads the pinned id and resumes the same conversation.

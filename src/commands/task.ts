@@ -7,12 +7,13 @@ import type {
 	RuntimeBoardDependency,
 	RuntimeReasoningEffort,
 	RuntimeTaskAgentSettings,
+	RuntimeTaskOrigin,
 	RuntimeTaskOwner,
 	RuntimeTaskSessionMode,
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
 import { runtimeAgentIdSchema, runtimeReasoningEffortSchema, runtimeTaskSessionModeSchema } from "../core/api-contract";
-import { resolveCreateTaskAgentId } from "../core/default-task-agent";
+import { resolveCreateTaskAgentId, resolveCreateTaskOrigin } from "../core/default-task-agent";
 import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import {
 	addTaskDependency,
@@ -444,6 +445,7 @@ async function createTask(input: {
 	agentId?: RuntimeAgentId;
 	agentSettings?: RuntimeTaskAgentSettings;
 	owner?: RuntimeTaskOwner;
+	origin?: RuntimeTaskOrigin;
 }): Promise<JsonRecord> {
 	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd);
 	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
@@ -470,6 +472,7 @@ async function createTask(input: {
 				agentId: input.agentId,
 				agentSettings: input.agentSettings,
 				owner: resolvedOwner,
+				origin: input.origin,
 				baseRef: resolvedBaseRef,
 			},
 			() => globalThis.crypto.randomUUID(),
@@ -495,6 +498,7 @@ async function createTask(input: {
 			...(created.agentId ? { agentId: created.agentId } : {}),
 			...formatTaskAgentSettings(created.agentSettings),
 			...(created.owner ? { owner: created.owner } : {}),
+			...(created.origin ? { origin: created.origin } : {}),
 		},
 	};
 }
@@ -1168,6 +1172,10 @@ export function registerTaskCommand(program: Command): void {
 					explicitAgentId: parseAgentId(options.agentId),
 					callerSessionId,
 				});
+				// Record which home thread/agent created this task (when an agent in a home
+				// chat ran `kanban task create`), so the "Ask" review action can route a
+				// review question back to that thread. Same env source as the agent default.
+				const resolvedOrigin = resolveCreateTaskOrigin(callerSessionId);
 				await runTaskCommand(
 					async () =>
 						await createTask({
@@ -1181,6 +1189,7 @@ export function registerTaskCommand(program: Command): void {
 							autoReviewMode: options.autoReviewMode,
 							owner: parseOwner(options.owner) ?? undefined,
 							agentId: resolvedAgentId,
+							origin: resolvedOrigin,
 							agentSettings: buildTaskAgentSettingsForCreate({
 								providerId: parseOptionalStringOrDefault(options.provider) ?? undefined,
 								modelId: parseOptionalStringOrDefault(options.model) ?? undefined,

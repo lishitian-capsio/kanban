@@ -57,6 +57,7 @@ import {
 	parseRuntimeConfigSaveRequest,
 	parseSessionPromptRequest,
 	parseShellSessionStartRequest,
+	parseTaskAskThreadResolveRequest,
 	parseTaskChatAbortRequest,
 	parseTaskChatCancelRequest,
 	parseTaskChatMessagesRequest,
@@ -676,6 +677,26 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				return { ok: false, thread: null, error: message };
+			}
+		},
+		resolveTaskAskThread: async (workspaceScope, input) => {
+			try {
+				const body = parseTaskAskThreadResolveRequest(input);
+				// Fall back to the workspace's current home agent / a task-derived name when
+				// the caller doesn't specify, so a fresh thread (origin missing or closed)
+				// stays bound to the task and talks to a sensible agent.
+				const fallbackAgentId =
+					body.fallbackAgentId ?? (await deps.loadScopedRuntimeConfig(workspaceScope)).selectedAgentId;
+				const fallbackName = body.fallbackName?.trim() || `Ask · ${body.taskId.slice(0, 8)}`;
+				const resolved = await deps.getScopedHomeThreadStore(workspaceScope).resolveTaskThread({
+					origin: body.origin ?? null,
+					fallbackAgentId,
+					fallbackName,
+				});
+				return { ok: true, ...resolved };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, sessionId: null, agentId: null, threadId: null, created: false, error: message };
 			}
 		},
 		getKanbanProviderCatalog: async (_workspaceScope) => {

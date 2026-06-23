@@ -1,9 +1,20 @@
 import { randomUUID } from "node:crypto";
 
-import type { RuntimeAgentId, RuntimeHomeChatThread, RuntimeHomeChatThreadsData } from "../core/api-contract";
+import type {
+	RuntimeAgentId,
+	RuntimeHomeChatThread,
+	RuntimeHomeChatThreadsData,
+	RuntimeTaskOrigin,
+} from "../core/api-contract";
 import { createHomeAgentSessionId } from "../core/home-agent-session";
 import { loadWorkspaceHomeThreads, mutateWorkspaceHomeThreads } from "../state/workspace-state";
-import { closeHomeThread, createHomeThread, listHomeThreads, renameHomeThread } from "./home-thread-registry";
+import {
+	closeHomeThread,
+	createHomeThread,
+	decideAskThread,
+	listHomeThreads,
+	renameHomeThread,
+} from "./home-thread-registry";
 
 /**
  * Persistence seam for the home chat thread registry. The default
@@ -32,6 +43,24 @@ export interface HomeThreadStoreOptions {
 export interface CreateThreadRequest {
 	agentId: RuntimeAgentId;
 	name: string;
+}
+
+export interface ResolveTaskThreadRequest {
+	/** The originating home thread recorded on the task, if any. */
+	origin?: RuntimeTaskOrigin | null;
+	/** Agent for a freshly created fallback thread when the origin can't be reused. */
+	fallbackAgentId: RuntimeAgentId;
+	/** Name for a freshly created fallback thread (typically references the task). */
+	fallbackName: string;
+}
+
+export interface ResolveTaskThreadResult {
+	/** The home agent session id to attach/inject the "Ask" question into. */
+	sessionId: string;
+	agentId: RuntimeAgentId;
+	threadId: string;
+	/** True when a fresh fallback thread was created to satisfy the request. */
+	created: boolean;
 }
 
 /**
@@ -71,6 +100,37 @@ export class HomeThreadStore {
 			name: request.name,
 			createdAt: now,
 			updatedAt: now,
+		};
+	}
+
+	/**
+	 * Resolve where a task's "Ask" review question should be routed: the home
+	 * agent session id of the originating thread when it still exists, otherwise a
+	 * freshly created thread bound to the task. Backs the reverse task → kanban
+	 * agent association the "Ask" action depends on.
+	 *
+	 * A closed/absent origin falls back to a new thread bound to the original
+	 * kanban agent (so the user keeps talking to the agent that created the task),
+	 * falling through to the workspace default agent only when no origin exists.
+	 */
+	async resolveTaskThread(request: ResolveTaskThreadRequest): Promise<ResolveTaskThreadResult> {
+		const data = await this.persistence.load();
+		const decision = decideAskThread({ origin: request.origin, threads: data.threads });
+		if (decision.kind === "existing") {
+			return {
+				sessionId: createHomeAgentSessionId(this.workspaceId, decision.agentId, decision.threadId),
+				agentId: decision.agentId,
+				threadId: decision.threadId,
+				created: false,
+			};
+		}
+		const agentId = request.origin?.agentId ?? request.fallbackAgentId;
+		const thread = await this.create({ agentId, name: request.fallbackName });
+		return {
+			sessionId: createHomeAgentSessionId(this.workspaceId, thread.agentId, thread.id),
+			agentId: thread.agentId,
+			threadId: thread.id,
+			created: true,
 		};
 	}
 

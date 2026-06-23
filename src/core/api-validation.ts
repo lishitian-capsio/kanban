@@ -21,6 +21,7 @@ import {
 	type RuntimeProjectRemoveRequest,
 	type RuntimeSessionPromptRequest,
 	type RuntimeShellSessionStartRequest,
+	type RuntimeTaskAskThreadResolveRequest,
 	type RuntimeTaskChatAbortRequest,
 	type RuntimeTaskChatCancelRequest,
 	type RuntimeTaskChatMessagesRequest,
@@ -55,6 +56,7 @@ import {
 	runtimeProjectRemoveRequestSchema,
 	runtimeSessionPromptRequestSchema,
 	runtimeShellSessionStartRequestSchema,
+	runtimeTaskAskThreadResolveRequestSchema,
 	runtimeTaskChatAbortRequestSchema,
 	runtimeTaskChatCancelRequestSchema,
 	runtimeTaskChatMessagesRequestSchema,
@@ -345,6 +347,18 @@ export function parseHomeChatThreadCloseRequest(value: unknown): RuntimeHomeChat
 	}
 	return {
 		id,
+	};
+}
+
+export function parseTaskAskThreadResolveRequest(value: unknown): RuntimeTaskAskThreadResolveRequest {
+	const parsed = parseWithSchema(runtimeTaskAskThreadResolveRequestSchema, value);
+	const taskId = parsed.taskId.trim();
+	if (!taskId) {
+		throw new Error("Task id cannot be empty.");
+	}
+	return {
+		...parsed,
+		taskId,
 	};
 }
 
