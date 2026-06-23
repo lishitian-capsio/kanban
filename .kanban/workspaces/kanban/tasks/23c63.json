@@ -10,10 +10,6 @@
     "name": "LiShitian",
     "email": "shitian@capsio.ai"
   },
-  "origin": {
-    "agentId": "claude",
-    "threadId": "f0010289-2e7a-483a-9777-3bb386752ca1"
-  },
   "baseRef": "main",
   "createdAt": 1782204475703,
   "updatedAt": 1782204489606,
