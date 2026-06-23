@@ -1,0 +1,19 @@
+{
+  "id": "e064d",
+  "title": "调查 pi 使用 aliyun-token-plan 时 413 掉线根因",
+  "prompt": "调查 Kanban home/sidebar agent 的 pi 会话在使用 aliyun-token-plan 时出现：Agent error: 413 Request body size exceeds maximum allowed size / RequestTooLarge 的真正根因。不要先做修复，先做证据驱动的定位。\\n\\n重点检查：\\n- pi/native agent 请求组装路径：系统提示、AGENTS.md/workspace instructions、历史消息、工具 schema、provider/model metadata、thread/session transcript 如何进入请求体。\\n- aliyun-token-plan 对应的 provider 配置与 wire protocol，请求实际发往哪里、body size/上下文限制由谁触发。\\n- 失败是否来自 home/sidebar pi 会话，而不是任务 c88b0 的 codex 会话；确认相关 session/task/thread id。\\n- 是否因为本轮把超长 AGENTS.md 注入进聊天历史，或因为 home 线程历史没有摘要/截断，或因为 provider 适配层未做 body/token 预算。\\n- 查日志、session journal、provider config、runtime 请求构造代码，给出可复现路径和精确证据。\\n\\n产出：\\n1. 根因结论，区分直接原因和触发条件。\\n2. 涉及的具体文件/函数/数据路径。\\n3. 为什么 aliyun-token-plan 更容易触发。\\n4. 建议修复方案，但本任务先不实现，除非用户后续明确要求。\\n\\n遵守 AGENTS.md：不要提交，不做无关改动，不使用 any；如需诊断日志也使用统一 logging facade，不要 console.*。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "codex",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782192601250,
+  "updatedAt": 1782192601250,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
