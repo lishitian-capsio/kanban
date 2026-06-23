@@ -3,7 +3,7 @@
   "title": "Database 查询执行后端: 读/写/分页/流式/超时/取消/限流",
   "prompt": "在 Database 共享核心(src/db/ 的 driver 接口 + 连接池 + 安全策略)之上,实现查询执行后端。依赖核心任务已完成,复用其 driver 接口与安全裁决点,不要重复实现连接/池/策略。\n\n要求:\n- 执行 SQL:接收 connectionId + SQL,返回结构化结果(列定义、行数据、受影响行数、执行耗时)。读路径走核心默认只读;写路径(UPDATE/INSERT/DELETE 等)必须先过核心安全裁决(连接级写 opt-in),被拒时返回清晰错误。\n- 性能(硬约束):\n  - 大结果集绝不一次性读进 runtime 内存——服务端 LIMIT 包装 + 分页(优先 keyset/游标),理想为流式逐行。\n  - 查询超时 + 可取消:跑飞的查询不能挂死 runtime。\n  - 结果行数/字节上限。\n  - per-connection / host-wide 查询并发限流(复用项目已有 p-limit 套路,参考 agent-start limiter)。\n  - 结果处理批量化,不要 per-chunk 碎操作churn事件循环。\n- 错误规范化:把驱动错误转成统一、对上层友好的错误结构,不泄露敏感连接信息。\n- 这层是纯后端能力,供 MCP/CLI/UI 三头共用;本任务不做任何 UI/MCP/CLI。\n遵循 AGENTS.md:不用 any;统一 logging facade;禁止 console.*。不要提交。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782141962408,
-  "updatedAt": 1782141962408,
+  "updatedAt": 1782185350061,
   "column": "backlog",
   "rank": "Zz",
   "dependsOn": [

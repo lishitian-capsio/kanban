@@ -3,7 +3,7 @@
   "title": "Database 人侧 UI: 顶栏 Database 入口 → 连接 → 结构树 → 表数据看+改",
   "prompt": "在 web-ui 实现 Database 的人侧界面,顶栏新增「Database」入口(复用 VaultView 那套壳的模式,不做独立路由)。依赖:查询执行后端 + Schema 内省后端 均已完成(经自包含 tRPC 端点消费,参考 Files panel 的做法,不要塞进 workspace-state 大负载)。\n\n界面流程:加连接 → 看到库/表/列结构树 → 点一张表 → 看它的数据(分页行表)→ 可行内编辑。注意:不做 SQL 编辑器——查询交给 agent;数据浏览/编辑由点表与点格子触发,不靠手写 SQL。\n要求:\n- 连接管理:列表 + 新建/编辑对话框(选库类型、填连接信息或 SQLite 路径)、测试连接(toast 反馈,用 sonner / showAppToast)。\n- 结构树:连接→库/schema→表/视图→列,展开懒加载,配合后端懒加载端点。\n- 表数据浏览:点表自动出数据(底层 SELECT ... LIMIT 由后端包好),keyset 分页/无限滚动,列排序/筛选。\n- 行内编辑(写):格子内改 / 插行 / 删行,生成 UPDATE/INSERT/DELETE(依赖内省拿到的主键拼 WHERE)。写操作走核心安全策略——连接未开写时禁用编辑;破坏性操作要确认弹窗。\n- 性能(硬约束):结果网格虚拟化,只渲染可视行,大表/宽表不卡(参考 perf12 board content-visibility culling 思路);分页配合后端 keyset,不拉全量。\n- 严格遵循 web-ui 规范:Tailwind v4 设计 token(surface/text/border)、Radix 原语、lucide-react 图标、src/components/ui 基础组件、cn();web-ui 日志用 @/utils/logger,禁止 console.*;优先 react-use hooks;拆成小的单一职责组件,共享逻辑抽到 hooks。\n不要提交。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782142006072,
-  "updatedAt": 1782142006072,
+  "updatedAt": 1782185354701,
   "column": "backlog",
   "rank": "Zv",
   "dependsOn": [

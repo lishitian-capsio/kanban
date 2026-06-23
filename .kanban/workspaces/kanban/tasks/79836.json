@@ -3,7 +3,7 @@
   "title": "Database CLI: kanban db connection/tables/describe/query",
   "prompt": "为 Database 增加 CLI 入口,跟现有 kanban task 命令同一套路:经 runtime endpoint 路由到共享核心,输出 JSON。依赖:核心 + 查询执行后端 + Schema 内省后端 均已完成。\n\n要求:\n- 命令(挂在 kanban db 命名空间下):\n  - kanban db connection list / add / remove / test —— 连接注册表 CRUD + 测试连接\n  - kanban db tables --connection <id> —— 列表/内省\n  - kanban db describe <table> --connection <id> —— 表结构\n  - kanban db query --connection <id> \"SELECT ...\" —— 执行查询,同样吃核心的默认只读 + 分页/上限\n- 全部调用共享核心,不要重复实现连接/查询/内省逻辑;遵循核心安全策略。\n- 命令实现参考现有 src/commands 下 task 命令的写法与 runtime endpoint 路由方式;输出 JSON(与其它 kanban CLI 命令一致)。\n- 注意 commander 嵌套子命令共享父选项的坑(子命令重声明父级已有的 --project-path 时,值会被路由到父命令,需用 this.optsWithGlobals())。\n遵循 AGENTS.md:不用 any;统一 logging facade;禁止 console.*(CLI 面向用户的输出走 cli-output 的 printLine,不走日志)。不要提交。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782141992820,
-  "updatedAt": 1782141992820,
+  "updatedAt": 1782185353571,
   "column": "backlog",
   "rank": "Zw",
   "dependsOn": [

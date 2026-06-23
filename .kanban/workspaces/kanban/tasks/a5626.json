@@ -3,7 +3,7 @@
   "title": "Database 核心: 驱动抽象 + 连接注册表 + 连接池 + 安全策略",
   "prompt": "为 kanban 新增「Database」功能的共享核心地基,模块放在 src/db/。\n\n【重要】worktree 里已经有一份完整的设计与实现计划:.plan/docs/database-core-foundation-design.md 和 database-core-foundation-plan.md。本轮请【直接照着该 plan 落地写代码并跑通测试】,不要再产出规划文档、不要停在出方案阶段。plan 里已按 Task 拆好步骤,按它实现即可。\n\n范围(只做核心,不做任何上层 UI/MCP/CLI):\n1. 统一 driver 接口:connect/disconnect/testConnection/query/introspect 抽象 + PostgreSQL/MySQL(mysql2)/SQLite(better-sqlite3)三个 adapter(优先成熟第三方驱动,不自造协议,接口可扩展)。\n2. 连接注册表:workspace 级登记;元数据随仓库走,密码/密钥绝不入仓库、留 machine-home(参考 committed-provider-store.ts + 两根分离边界)。\n3. 连接池:每连接维护池,复用 + 空闲回收,不每查新建。\n4. 安全策略:核心层统一裁决点(assertOperationAllowed),默认只读(只放行 SELECT/introspect),写=连接级显式 opt-in,agent 调用永远封顶只读。三个上层入口共用,不各写一套。\n\n遵循 AGENTS.md:不用 any;统一 logging facade(createLogger),禁止 console.*;优先 SDK 自带类型;测试用 bun vitest run <path> --exclude='**/.kanban/**'。\n这是 Database 所有其它任务的地基。除非我明确要求,否则不要 commit。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782141952815,
-  "updatedAt": 1782180162057,
+  "updatedAt": 1782185348934,
   "column": "in_progress",
   "rank": "a4V",
   "dependsOn": []

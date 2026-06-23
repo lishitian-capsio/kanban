@@ -3,7 +3,7 @@
   "title": "Database Schema 内省后端: 结构/主键/索引/外键 + 懒加载 + 缓存",
   "prompt": "在 Database 共享核心(src/db/ driver 接口的 introspect 抽象)之上,实现 schema 内省后端。依赖核心任务已完成,复用 driver 接口,不要重复实现连接逻辑。\n\n要求:\n- 为 PostgreSQL、MySQL/MariaDB、SQLite 实现内省:databases/schemas、tables/views、每张表的 columns(名称/类型/是否可空/默认值/主键)、indexes、外键关系。各库用各自系统目录/PRAGMA 实现,统一成跨库一致的返回结构。注意主键必须可靠拿到——人侧编辑与生成安全的 UPDATE/DELETE WHERE 依赖它。\n- 性能(硬约束):\n  - 懒加载:先库→表→列,展开才拉,不要一次性拉整个超大库元数据。\n  - 元数据缓存:进程级缓存 + fs/mutation signature 失效(复用项目已有 vault-read-cache / session-merge-cache 的缓存失效套路),重复展开树不该每次打 DB。\n- 这层是纯后端能力,供 MCP/CLI/UI 三头共用;本任务不做任何 UI/MCP/CLI。\n遵循 AGENTS.md:不用 any;统一 logging facade;禁止 console.*。不要提交。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782141969662,
-  "updatedAt": 1782143181159,
+  "updatedAt": 1782185351197,
   "column": "backlog",
   "rank": "Zy",
   "dependsOn": [

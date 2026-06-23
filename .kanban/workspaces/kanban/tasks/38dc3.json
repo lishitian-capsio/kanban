@@ -3,7 +3,7 @@
   "title": "Ask-B 后端: review 抛出 task agent 问题 + 任务↔发起 kanban 线程反向关联",
   "prompt": "为 kanban 的 review 新动作『Ask』做后端支撑(无 UI)。两块独立但相关的后端能力:\n\n【1】task agent 进 review 时『抛出一个问题』并放进 board 数据\n- task agent 干完一轮进 review 时,会有一个收尾的问题/请求(\"我做了 X,接下来 Y 行不行/选哪个\")。把这个问题捕获出来,作为该任务在 review 状态下的一个字段,放进 board/任务数据,供前端卡片显示。\n- 载体优先复用现有的 review reason / 收尾输出,不要另造一套 agent 上报协议。参考 src/terminal/session-state-machine.ts 的 transitionToReview(taskId, reason)、session summary 的 reviewReason,以及 transcript 收尾。\n- 只需把『task agent 的问题文本』可靠地带到前端可读处即可;不做按钮(按钮在 Ask-C)。\n\n【2】任务 → 发起它的 kanban(home)agent 线程的反向关联\n- 持久化记录:每个任务是由哪个 home 线程/kanban agent 创建的(基于现有 KANBAN_SESSION_TASK_ID + home 多线程,见 home-thread 相关存储)。\n- 供后续『问 kanban agent』时定位要把问题注入到哪个 kanban-agent 会话。\n- 兜底:若该任务没有发起线程(如 CLI 直接创建)或线程已关闭,提供一个『新建一个绑定该任务的 kanban-agent 线程』的解析路径。\n\n遵循 AGENTS.md:不用 any;统一 logging facade,禁止 console.*。wire contract 改动要同步 src/core/api-contract.ts。这是 Ask 功能后端(C 依赖它)。不要提交。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782184023575,
-  "updatedAt": 1782184245569,
+  "updatedAt": 1782185358185,
   "column": "in_progress",
   "rank": "a6",
   "dependsOn": []
