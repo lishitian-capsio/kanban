@@ -1,0 +1,23 @@
+{
+  "id": "8be02",
+  "title": "测试任务（auto-commit）",
+  "prompt": "这是一个测试任务，用于验证 auto-commit 自动审查流程。请做一个简单的无害改动（例如在 README 或某个文档中添加一行说明文字），以便触发 auto-commit。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "origin": {
+    "agentId": "claude",
+    "threadId": "f0010289-2e7a-483a-9777-3bb386752ca1"
+  },
+  "baseRef": "main",
+  "createdAt": 1782207874548,
+  "updatedAt": 1782207874548,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
