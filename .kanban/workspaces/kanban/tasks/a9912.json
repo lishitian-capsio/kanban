@@ -1,0 +1,19 @@
+{
+  "id": "a9912",
+  "title": "测试任务 (auto-commit)",
+  "prompt": "这是一个测试任务，用于验证 auto-commit 自动审查流程。请在工作区根目录创建一个名为 TEST_AUTOCOMMIT.md 的文件，内容写一行：'auto-commit 测试 - 由 Kanban 创建'。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782231515238,
+  "updatedAt": 1782231515238,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
