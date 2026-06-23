@@ -1,0 +1,19 @@
+{
+  "id": "b0f4d",
+  "title": "修复: Git History 中 kanban 内部分支不应可双击切换(board 可见不可切, task 隐藏)",
+  "prompt": "Bug/UX:kanban 自己的 Git History 视图把内部分支(kanban/board、kanban/task/*、kanban/board-archive/*)也列进可切换分支,双击会尝试切到它们——这是误操作风险。双击 kanban/board 会想把 board 数据分支 checkout 进主代码工作树(等于用 .kanban JSON 替换代码;且该分支已在 __board__ worktree 检出,实际多半被 git 拒绝并报错)。\n\n相关代码:\n- 前端 refs 面板:web-ui/src/components/git-history/git-refs-panel.tsx —— 第 90 行 refs.filter((r)=>r.type==='branch') 不过滤任何 kanban 内部分支;第 273 行双击行 onDoubleClick={()=>onCheckoutRef(ref.name)} 直接切换。\n- 数据源:web-ui/src/components/git-history/use-git-history-data.ts 经 trpc.workspace.getGitRefs 拿 refs(后端也未过滤)。\n- board 分支判定参考:src/workspace/task-worktree-path.ts 的 BOARD_WORKTREE_SENTINEL='__board__';board 分支名默认 kanban/board(见 api-contract.ts 注释、board-ref);task 分支为 kanban/task/<id>。\n\n采用方案 B(已定):\n- kanban/board 分支:【仍然可见】(可查看 board 变更历史),但【禁止双击 checkout】——双击不触发 onCheckoutRef(可在该行去掉 onDoubleClick 或在 onCheckoutRef 里对内部分支 no-op,并给个不可切换的视觉/tooltip 提示)。\n- kanban/task/*、kanban/board-archive/* 分支:从分支列表中【隐藏】(纯噪声)。\n- 远程同名分支(remote refs 里的 origin/kanban/*)同样按此规则处理,保持一致。\n\n实现建议:\n- 把'是否 kanban 内部分支'及'是否禁止切换/是否隐藏'做成一个集中、可测试的纯函数(分类:board=visible+non-switchable;task/archive=hidden;普通=正常),前端 refs 面板消费它。优先前端过滤(局部、低风险);若你判断后端 getGitRefs 源头滤更合适也可,但 board 历史查看需求要保留。\n- 不要影响普通代码分支的列出与双击切换行为。\n- 补单元测试覆盖分类纯函数 + 面板对 board(不可切)/task(隐藏)/普通(可切)的行为。\n\n严格遵循 web-ui 规范:Tailwind v4 设计 token、Radix 原语、lucide-react、src/components/ui、cn();web-ui 日志用 @/utils/logger,禁止 console.*;优先 react-use hooks。不要提交(除非另有要求)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782191057888,
+  "updatedAt": 1782191057888,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
