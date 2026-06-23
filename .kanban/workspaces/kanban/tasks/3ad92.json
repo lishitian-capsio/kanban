@@ -1,0 +1,19 @@
+{
+  "id": "3ad92",
+  "title": "修复: 后端 auto-review (auto-commit) 不触发",
+  "prompt": "BUG: 开启 auto-review (autoReviewEnabled=true, mode=commit) 的任务跑完后卡在 review，auto-commit 永远不触发，任务不会自动 commit→done。\n\n复现 (2026-06-23，runtime 确认在跑且加载的是带修复提交 14c538b4 的最新 dist 构建):\n- 新建任务，--auto-review-enabled true --auto-review-mode commit，启动。\n- Agent 正常完成工作（在 worktree 创建了文件，untracked，未自己 commit），约 12s 内任务正确进入 review / session.state=awaiting_review，session.reviewReason='hook'。\n- 任务随后在 review 卡了 4+ 分钟，auto-commit 从未触发：没有生成 commit、没有移动到 done。\n- 现场可参考测试任务 0ec82（如果还在）。\n\n诊断方向:\n- ready-for-review hook 这一段是正常的（任务能进 review）。断点在 'review 之后没有自动执行 commit'。\n- 重点排查后端 auto-review 触发器：hub.broadcastTaskReadyForReview 之后是否真的消费了 task 的 autoReviewEnabled/autoReviewMode 并调用 commit→done→relay 流程（参考最近提交 0eb59620 / 14c538b4 的实现）。\n- 先设 KANBAN_LOG_FILE=1 重跑一遍，抓 ~/.kanban/logs/ 里后端 auto-review 的决策日志，确认触发器是否被调用、在哪一步失败。\n- 注意 git 契约：任务 worktree 在 kanban/task/<id> 分支，auto-commit 需要在该分支生成 commit 再走 Kanban-owned merge。确认 auto-commit 是否因为 git 契约/分支状态判断而被静默跳过。\n\n验收:\n- 开 auto-review(commit) 的任务跑完后能自动 commit 并移动到 done，无需人工干预。\n- 链式 link 的下游 backlog 任务在上游 done 后能自动 start。\n- 给出根因说明。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782229853340,
+  "updatedAt": 1782229853340,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
