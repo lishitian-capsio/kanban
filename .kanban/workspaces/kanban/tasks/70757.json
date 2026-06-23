@@ -1,0 +1,19 @@
+{
+  "id": "70757",
+  "title": "Settings UI: show model capabilities, edit for third-party BYOK",
+  "prompt": "Surface the per-model capability metadata in Settings → Providers. Depends on the capability metadata layer task (per-model ModelCapability + wire contract in src/core/api-contract.ts).\n\nFor each provider/model:\n- OFFICIAL providers: render the resolved capabilities READ-ONLY (context window, max output, vision, tool calling, reasoning effort, cost in/out, speed tier, cutoff).\n- THIRD-PARTY BYOK (custom endpoint): make the capability fields EDITABLE so the user can declare what the SDK can't tell us; persist via the existing per-agent provider save path (saveAgentProvider / agent-provider-config.ts).\n\nFollow the web-ui stack & styling rules in AGENTS.md (Tailwind v4, Radix, lucide, surface tokens, ui primitives in src/components/ui). Reuse the existing Settings → Providers add/edit dialog rather than building a parallel surface; gate the editable-vs-readonly behavior on whether the provider is third-party (generic custom endpoint) vs official, using the existing capability helpers.\n\nAcceptance:\n- Official provider shows capabilities, not editable.\n- Third-party provider can edit & save capability fields; values round-trip and persist.\n- Never sends/persists the raw API key as part of this (keep the masking work in task d7146 intact).\n- web:typecheck + biome clean.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782179515714,
+  "updatedAt": 1782179515714,
+  "column": "backlog",
+  "rank": "Zs",
+  "dependsOn": []
+}
