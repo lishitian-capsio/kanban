@@ -1,0 +1,23 @@
+{
+  "id": "522ea",
+  "title": "Revert Ask review 功能(干净移除,慎处理通用注入原语)",
+  "prompt": "目标:把已经合并到 main 的 'Ask' review 功能干净地从代码库移除。决策背景:Ask 被判定为过度设计——'问自己'本质就是任务已有的 session chat,'问 kanban agent'想要的其实是自动 convergence,但用户决定两者都不做,直接回到 review 卡片只有 Commit / Open PR + 普通 session chat 的干净状态。\n\n## 涉及的三个 main 提交(从新到旧,注意它们不连续,中间夹着无关的 db/其它提交,不能用 reset)\n- 37a306b5  feat(review): add \"Ask\" split-button action to review cards (web-ui)\n- b050e79e  feat(review): backend support for the \"Ask\" review action\n- 76dae503  feat(review): add generic \"inject prompt into session\" primitive for Ask\n\n## 做法\n1. 在任务自己的 worktree 分支上操作(Kanban 已隔离),不要碰主工作树的 main。\n2. 优先用 `git revert`(逆序 revert 37a306b5 → b050e79e → 76dae503),解决交错提交带来的冲突。若 revert 冲突过重,改为手动删除对应代码(以最终代码干净为准,不必拘泥于 revert 形式)。\n3. **关键判断:第三个提交 76dae503 是『通用注入会话原语』(sendSessionPrompt / `kanban task message` CLI)。先全局搜索它的引用**——如果只有 Ask 在用,连同删除;如果 takeover 或其它功能也在用(很可能),则**保留该通用原语**,只移除 Ask 专属部分。同理检查 b050e79e 引入的 reviewQuestion / task.origin{agentId,threadId} / HomeThreadStore.resolveTaskThread 是否被别处(如 takeover/originator)依赖,被依赖的保留,纯 Ask 的删掉。\n4. 移除 web-ui 的 Ask split-button、相关组件/状态/文案;恢复 review 卡片为 Commit / Open PR 并存,review 时正常 session chat 不受影响。\n5. 删除 Ask 专属的 tRPC 端点 / 类型 / 测试;更新或删除相关单测,保证 `npm run typecheck` / web typecheck 与测试通过。\n\n## 工程要求\n- 遵守仓库 AGENTS.md;不用 console.*;TS 无 any;不要为了消类型错误而降级依赖。\n- 删除要彻底但精准:不得误删被其它功能共享的通用原语/会话注入能力。\n\n## 验收\n- review 卡片只剩 Commit / Open PR,无 Ask 入口;review 中仍可正常与 task agent 对话。\n- 全局无 Ask 专属的死代码残留;通用注入原语若被他处使用则完好保留。\n- typecheck + 测试通过。\n- 在 PR/提交说明里列出:revert/删除了哪些、保留了哪个通用原语及原因。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "origin": {
+    "agentId": "claude",
+    "threadId": "f0010289-2e7a-483a-9777-3bb386752ca1"
+  },
+  "baseRef": "main",
+  "createdAt": 1782203775427,
+  "updatedAt": 1782203775427,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
