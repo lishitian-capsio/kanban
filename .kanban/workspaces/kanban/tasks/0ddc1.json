@@ -3,7 +3,7 @@
   "title": "测试 auto commit",
   "prompt": "这是一个用于测试 auto commit 功能的任务。请做一个微小、安全的改动（例如在 README 或某个文档末尾追加一行验证文字），以便验证任务完成后能自动提交。",
   "startInPlanMode": false,
-  "autoReviewEnabled": true,
+  "autoReviewEnabled": false,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,8 +12,8 @@
   },
   "baseRef": "main",
   "createdAt": 1782209942872,
-  "updatedAt": 1782209995881,
-  "column": "review",
+  "updatedAt": 1782210158387,
+  "column": "trash",
   "rank": "Zq",
   "dependsOn": []
 }
