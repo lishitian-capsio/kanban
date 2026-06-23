@@ -12,19 +12,8 @@
   },
   "baseRef": "main",
   "createdAt": 1782184052165,
-  "updatedAt": 1782185359384,
-  "column": "backlog",
+  "updatedAt": 1782187383628,
+  "column": "in_progress",
   "rank": "Zn",
-  "dependsOn": [
-    {
-      "id": "ef7ee940",
-      "toTaskId": "fa5ec",
-      "createdAt": 1782184070756
-    },
-    {
-      "id": "218d9946",
-      "toTaskId": "38dc3",
-      "createdAt": 1782184071910
-    }
-  ]
+  "dependsOn": []
 }
