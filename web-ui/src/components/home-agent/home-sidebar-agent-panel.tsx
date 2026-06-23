@@ -220,7 +220,9 @@ export function HomeSidebarAgentPanel({
 						agents={runtimeProjectConfig.agents}
 						defaultAgentId={runtimeProjectConfig.selectedAgentId}
 						onSelectThread={homeThreads.setActiveThread}
-						onCreateThread={homeThreads.createThread}
+						onCreateThread={(input) => {
+							void homeThreads.createThread(input);
+						}}
 						onRenameThread={homeThreads.renameThread}
 						onCloseThread={homeThreads.closeThread}
 					/>

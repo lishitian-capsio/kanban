@@ -26,10 +26,13 @@ function ColumnSection({
 	onSaveTitle,
 	onCommitTask,
 	onOpenPrTask,
+	onAskSelfTask,
+	onAskKanbanAgentTask,
 	onMoveToTrashTask,
 	onRestoreFromTrashTask,
 	commitTaskLoadingById,
 	openPrTaskLoadingById,
+	askTaskLoadingById,
 	moveToTrashLoadingById,
 	activeDragSourceColumnId,
 	workspacePath,
@@ -50,10 +53,13 @@ function ColumnSection({
 	onSaveTitle?: (taskId: string, title: string) => void;
 	onCommitTask?: (taskId: string) => void;
 	onOpenPrTask?: (taskId: string) => void;
+	onAskSelfTask?: (taskId: string) => void;
+	onAskKanbanAgentTask?: (taskId: string) => void;
 	onMoveToTrashTask?: (taskId: string) => void;
 	onRestoreFromTrashTask?: (taskId: string) => void;
 	commitTaskLoadingById?: Record<string, boolean>;
 	openPrTaskLoadingById?: Record<string, boolean>;
+	askTaskLoadingById?: Record<string, boolean>;
 	moveToTrashLoadingById?: Record<string, boolean>;
 	activeDragSourceColumnId?: BoardColumnId | null;
 	workspacePath?: string | null;
@@ -207,8 +213,11 @@ function ColumnSection({
 												onRestoreFromTrash={onRestoreFromTrashTask}
 												onCommit={onCommitTask}
 												onOpenPr={onOpenPrTask}
+												onAskSelf={onAskSelfTask}
+												onAskKanbanAgent={onAskKanbanAgentTask}
 												isCommitLoading={commitTaskLoadingById?.[card.id] ?? false}
 												isOpenPrLoading={openPrTaskLoadingById?.[card.id] ?? false}
+												isAskLoading={askTaskLoadingById?.[card.id] ?? false}
 												isMoveToTrashLoading={moveToTrashLoadingById?.[card.id] ?? false}
 												workspacePath={workspacePath}
 												defaultKanbanModelId={defaultKanbanModelId}
@@ -250,10 +259,13 @@ export function ColumnContextPanel({
 	onSaveTaskTitle,
 	onCommitTask,
 	onOpenPrTask,
+	onAskSelfTask,
+	onAskKanbanAgentTask,
 	onMoveToTrashTask,
 	onRestoreFromTrashTask,
 	commitTaskLoadingById,
 	openPrTaskLoadingById,
+	askTaskLoadingById,
 	moveToTrashLoadingById,
 	panelWidth,
 }: {
@@ -272,10 +284,13 @@ export function ColumnContextPanel({
 	onSaveTaskTitle?: (taskId: string, title: string) => void;
 	onCommitTask?: (taskId: string) => void;
 	onOpenPrTask?: (taskId: string) => void;
+	onAskSelfTask?: (taskId: string) => void;
+	onAskKanbanAgentTask?: (taskId: string) => void;
 	onMoveToTrashTask?: (taskId: string) => void;
 	onRestoreFromTrashTask?: (taskId: string) => void;
 	commitTaskLoadingById?: Record<string, boolean>;
 	openPrTaskLoadingById?: Record<string, boolean>;
+	askTaskLoadingById?: Record<string, boolean>;
 	moveToTrashLoadingById?: Record<string, boolean>;
 	panelWidth?: string;
 	defaultKanbanModelId?: string | null;
@@ -363,10 +378,13 @@ export function ColumnContextPanel({
 							onSaveTitle={column.id !== "trash" ? onSaveTaskTitle : undefined}
 							onCommitTask={column.id === "review" ? onCommitTask : undefined}
 							onOpenPrTask={column.id === "review" ? onOpenPrTask : undefined}
+							onAskSelfTask={column.id === "review" ? onAskSelfTask : undefined}
+							onAskKanbanAgentTask={column.id === "review" ? onAskKanbanAgentTask : undefined}
 							onMoveToTrashTask={column.id === "review" ? onMoveToTrashTask : undefined}
 							onRestoreFromTrashTask={column.id === "trash" ? onRestoreFromTrashTask : undefined}
 							commitTaskLoadingById={column.id === "review" ? commitTaskLoadingById : undefined}
 							openPrTaskLoadingById={column.id === "review" ? openPrTaskLoadingById : undefined}
+							askTaskLoadingById={column.id === "review" ? askTaskLoadingById : undefined}
 							moveToTrashLoadingById={column.id === "review" ? moveToTrashLoadingById : undefined}
 							activeDragSourceColumnId={activeDragSourceColumnId}
 							workspacePath={workspacePath}

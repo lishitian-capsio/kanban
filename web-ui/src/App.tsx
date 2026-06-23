@@ -38,6 +38,7 @@ import { createIdleTaskSession } from "@/hooks/app-utils";
 import { KanbanAccessBlockedFallback } from "@/hooks/kanban-access-blocked-fallback";
 import { RuntimeDisconnectedFallback } from "@/hooks/runtime-disconnected-fallback";
 import { useAppHotkeys } from "@/hooks/use-app-hotkeys";
+import { useAskAction } from "@/hooks/use-ask-action";
 import { useBoardInteractions } from "@/hooks/use-board-interactions";
 import { useChatDock } from "@/hooks/use-chat-dock";
 import { useDebugTools } from "@/hooks/use-debug-tools";
@@ -436,6 +437,15 @@ export default function App(): ReactElement {
 	const homeThreads = useHomeThreads({
 		currentProjectId,
 		runtimeProjectConfig,
+	});
+	const { askTaskLoadingById, handleAskSelf, handleAskKanbanAgent } = useAskAction({
+		currentProjectId,
+		board,
+		taskSessions: sessions,
+		runtimeProjectConfig,
+		sendTaskChatMessage,
+		sendTaskSessionInput,
+		createHomeThread: homeThreads.createThread,
 	});
 	// HomeSidebarAgentPanel renders null exactly when hasNoProjects || !currentProjectId,
 	// so mirror that gate here rather than instantiating the panel to test for null.
@@ -969,9 +979,12 @@ export default function App(): ReactElement {
 												onSaveTaskTitle={handleSaveTaskTitle}
 												onCommitTask={handleCommitTask}
 												onOpenPrTask={handleOpenPrTask}
+												onAskSelfTask={handleAskSelf}
+												onAskKanbanAgentTask={handleAskKanbanAgent}
 												onCancelAutomaticTaskAction={handleCancelAutomaticTaskAction}
 												commitTaskLoadingById={commitTaskLoadingById}
 												openPrTaskLoadingById={openPrTaskLoadingById}
+												askTaskLoadingById={askTaskLoadingById}
 												moveToTrashLoadingById={moveToTrashLoadingById}
 												onMoveToTrashTask={handleMoveReviewCardToTrash}
 												onRestoreFromTrashTask={handleRestoreTaskFromTrash}
@@ -1054,10 +1067,13 @@ export default function App(): ReactElement {
 									onSaveTaskTitle={handleSaveTaskTitle}
 									onCommitTask={handleCommitTask}
 									onOpenPrTask={handleOpenPrTask}
+									onAskSelfTask={handleAskSelf}
+									onAskKanbanAgentTask={handleAskKanbanAgent}
 									onAgentCommitTask={handleAgentCommitTask}
 									onAgentOpenPrTask={handleAgentOpenPrTask}
 									commitTaskLoadingById={commitTaskLoadingById}
 									openPrTaskLoadingById={openPrTaskLoadingById}
+									askTaskLoadingById={askTaskLoadingById}
 									agentCommitTaskLoadingById={agentCommitTaskLoadingById}
 									agentOpenPrTaskLoadingById={agentOpenPrTaskLoadingById}
 									moveToTrashLoadingById={moveToTrashLoadingById}
