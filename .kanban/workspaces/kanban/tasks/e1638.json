@@ -1,0 +1,19 @@
+{
+  "id": "e1638",
+  "title": "Per-model capability metadata layer (official + third-party)",
+  "prompt": "Build the foundation for task-level model selection: a granular PER-MODEL capability metadata layer, covering both official providers and third-party BYOK custom-endpoint providers.\n\nToday capability is declared PER-AGENT only — the static hand-written table AGENT_PROVIDER_CAPABILITY in src/agent-sdk/kanban/provider-protocol.ts answers only 'generic BYOK vs vendor-native + which wire protocol'. That is too coarse to route a task to the right model. This task adds a per-MODEL layer beneath it; do NOT remove or repurpose the per-agent capability table.\n\nDefine a structured ModelCapability shape (extend the existing model metadata, don't fork it) with at least: context window, max output tokens, vision/multimodal, tool/function calling, reasoning-effort support, input/output cost, speed tier, knowledge cutoff.\n\nSources:\n- OFFICIAL providers: derive from the SDK / bundled models.json (the omp store already exposes model metadata — see memory 'cline-to-pi-test-staleness': provider data comes from the omp store + bundled models.json). Prefer SDK-provided types/metadata over hand-redefining (per AGENTS.md TypeScript principles).\n- THIRD-PARTY BYOK (custom endpoint): user-declared capability fields, persisted with the per-agent provider config (src/agent-sdk/kanban/agent-provider-config.ts). No probing in this task.\n\nScope: data layer + read/resolve path + wire contract additions in src/core/api-contract.ts only. NO Settings UI yet (separate task) and NO routing/selection logic yet (separate task).\n\nAcceptance:\n- A typed ModelCapability resolvable for any (agent, model) pair: official from metadata, third-party from stored declaration, sensible defaults when unknown.\n- Wire contract (api-contract.ts) carries the capability so the frontend can later read it.\n- Unit tests for resolution precedence (declared > metadata > default).\n- web:typecheck + biome clean; respect no any types, SDK types over local redefinitions.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782179502821,
+  "updatedAt": 1782179502821,
+  "column": "backlog",
+  "rank": "Zt",
+  "dependsOn": []
+}
