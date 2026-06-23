@@ -70,6 +70,28 @@ When the work looks good, hit **Commit** or **Open PR**. Kanban sends a dynamic 
 ### 7. Keep track with git interface
 Click the branch name in the navbar to open a full git interface to browse commit history, switch branches, fetch, pull, push, and visualize your git all without leaving Kanban. Keep track of everything your agents are doing across branches as work is completed.
 
+### 8. Run as a background service (optional)
+Instead of keeping a terminal open, you can register the runtime as an OS-level service that starts automatically at login. Run these from the root of your git repo:
+
+```bash
+kanban service install            # register + enable at login, and start now
+kanban service status             # JSON status (installed / running / enabled / pid)
+kanban service stop               # stop the running service
+kanban service start              # start it again
+kanban service restart            # restart
+kanban service uninstall          # disable + remove
+```
+
+Options for `install` (baked into the service definition): `--name <name>` (default `kanban`, useful for multiple boards), `--host <ip>`, `--port <n>`, `--no-passcode`, and TLS passthrough `--https --cert <path> --key <path>`. The other subcommands only take `--name` to identify the service. Every command prints JSON.
+
+The generated launch command always includes `--skip-shutdown-cleanup` (so a service restart never deletes your in-flight task worktrees) and `--no-open` (a background service must not open a browser tab).
+
+Each platform uses its own native mechanism — no extra daemon to install:
+
+- **Linux — systemd user service** at `~/.config/systemd/user/kanban.service`, controlled with `systemctl --user`. Logs go to journald (`journalctl --user -u kanban -f`). To keep the service running after logout / at boot, run the hint it prints: `loginctl enable-linger <user>`.
+- **macOS — launchd LaunchAgent** at `~/Library/LaunchAgents/ai.capsio.kanban.plist` (`RunAtLoad` + `KeepAlive`), controlled with `launchctl load -w` / `unload -w`. stdout/stderr go to `~/.kanban/logs/kanban.out.log` and `kanban.err.log`.
+- **Windows — Task Scheduler** task (trigger: at logon), managed with `schtasks`. No admin rights required. For a true always-on Windows *Service* (starts before login, survives logout), wrap the same launch command with [NSSM](https://nssm.cc/).
+
 ---
 
 [Apache 2.0 © 2026 Cline Bot Inc.](./LICENSE)

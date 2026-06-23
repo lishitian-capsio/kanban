@@ -10,6 +10,7 @@ import { printLine } from "./cli-output";
 import { registerDbCommand } from "./commands/db";
 import { registerFileCommand } from "./commands/file";
 import { registerHooksCommand } from "./commands/hooks";
+import { registerServiceCommand } from "./commands/service";
 import { registerTaskCommand } from "./commands/task";
 import { registerVaultCommand } from "./commands/vault";
 import { buildSubprocessProxyEnv, installProxyFetch } from "./config/proxy-fetch";
@@ -732,6 +733,7 @@ function createProgram(invocationArgs: string[]): Command {
 	registerVaultCommand(program);
 	registerDbCommand(program);
 	registerHooksCommand(program);
+	registerServiceCommand(program);
 
 	program
 		.command("mcp")
