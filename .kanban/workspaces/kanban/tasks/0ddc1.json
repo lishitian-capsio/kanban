@@ -1,0 +1,23 @@
+{
+  "id": "0ddc1",
+  "title": "测试 auto commit",
+  "prompt": "这是一个用于测试 auto commit 功能的任务。请做一个微小、安全的改动（例如在 README 或某个文档末尾追加一行验证文字），以便验证任务完成后能自动提交。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "origin": {
+    "agentId": "claude",
+    "threadId": "f0010289-2e7a-483a-9777-3bb386752ca1"
+  },
+  "baseRef": "main",
+  "createdAt": 1782209942872,
+  "updatedAt": 1782209942872,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
