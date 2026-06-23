@@ -20,6 +20,13 @@
       "name": "性能优化",
       "createdAt": 1782142030052,
       "updatedAt": 1782142030052
+    },
+    {
+      "id": "1ac02029-0cbb-4630-bd01-d1e31f409656",
+      "agentId": "claude",
+      "name": "ｌｉｍｉｔｅｒ",
+      "createdAt": 1782184511956,
+      "updatedAt": 1782184511956
     }
   ]
 }
