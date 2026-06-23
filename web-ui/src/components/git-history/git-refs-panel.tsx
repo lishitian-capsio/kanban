@@ -1,7 +1,8 @@
 import { Fzf } from "fzf";
-import { AlertCircle, ArrowDown, ArrowUp, Cloud, FileText, GitBranch, Info, Locate, Search } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, Cloud, FileText, GitBranch, Info, Locate, Lock, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { classifyGitRefDisposition } from "@/components/git-history/git-ref-classification";
 import { renderFuzzyHighlightedText } from "@/components/shared/render-fuzzy-highlighted-text";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -86,9 +87,17 @@ export function GitRefsPanel({
 }): React.ReactElement {
 	const [searchQuery, setSearchQuery] = useState("");
 
-	const detachedRef = refs.find((r) => r.type === "detached");
-	const branchRefs = refs.filter((r) => r.type === "branch");
-	const remoteRefs = refs.filter((r) => r.type === "remote");
+	// Drop Kanban's internal worktree noise (task / board-archive branches) from
+	// the list entirely. The board *data* branch is kept (so its history stays
+	// browsable) but is later flagged non-switchable. See git-ref-classification.ts.
+	const visibleRefs = useMemo(
+		() => refs.filter((ref) => classifyGitRefDisposition(ref.name, ref.type) !== "hidden"),
+		[refs],
+	);
+
+	const detachedRef = visibleRefs.find((r) => r.type === "detached");
+	const branchRefs = visibleRefs.filter((r) => r.type === "branch");
+	const remoteRefs = visibleRefs.filter((r) => r.type === "remote");
 	const headBranch = branchRefs.find((r) => r.isHead);
 	const otherBranches = branchRefs.filter((r) => !r.isHead);
 	const searchableRefs = useMemo(() => [...otherBranches, ...remoteRefs], [otherBranches, remoteRefs]);
@@ -265,12 +274,15 @@ export function GitRefsPanel({
 
 						{filteredOtherBranches.map((ref) => {
 							const isSelected = !isWorkingCopySelected && selectedRefName === ref.name;
+							const isSwitchable = classifyGitRefDisposition(ref.name, ref.type) === "switchable";
 							return (
 								<RefRow
 									key={ref.name}
 									isSelected={isSelected}
 									onSelect={() => onSelectRef(ref)}
-									onDoubleClick={onCheckoutRef ? () => onCheckoutRef(ref.name) : undefined}
+									onDoubleClick={
+										onCheckoutRef && isSwitchable ? () => onCheckoutRef(ref.name) : undefined
+									}
 								>
 									<GitBranch size={12} />
 									<span className="kb-line-clamp-1" style={{ flex: 1 }}>
@@ -280,7 +292,31 @@ export function GitRefsPanel({
 											isSelected ? MATCHED_TEXT_STYLE_SELECTED : MATCHED_TEXT_STYLE,
 										)}
 									</span>
-									<AheadBehindIndicator ahead={ref.ahead} behind={ref.behind} isSelected={isSelected} />
+									{isSwitchable ? (
+										<AheadBehindIndicator
+											ahead={ref.ahead}
+											behind={ref.behind}
+											isSelected={isSelected}
+										/>
+									) : (
+										<Tooltip
+											side="bottom"
+											content={
+												<div style={{ maxWidth: 240, whiteSpace: "normal", lineHeight: 1.4 }}>
+													Kanban&rsquo;s board data branch. Its history is viewable here, but
+													it can&rsquo;t be checked out into your code working tree.
+												</div>
+											}
+										>
+											<span
+												className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 font-medium text-text-tertiary"
+												style={{ fontSize: 10 }}
+											>
+												<Lock size={9} />
+												View only
+											</span>
+										</Tooltip>
+									)}
 								</RefRow>
 							);
 						})}
