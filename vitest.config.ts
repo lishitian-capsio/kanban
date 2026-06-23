@@ -18,6 +18,9 @@ export default defineConfig({
 			"**/node_modules/**",
 			"**/dist/**",
 			".worktrees/**",
+			// Bun-only suites (bun:sqlite et al.) run via `npm run test:bun`; they
+			// cannot be collected under plain Node `vitest`.
+			"test/bun/**",
 		],
 		testTimeout: 15_000,
 	},

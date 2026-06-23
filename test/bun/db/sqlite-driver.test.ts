@@ -1,12 +1,16 @@
+import { Database } from "bun:sqlite";
+import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
-
-import Database from "better-sqlite3";
-import { describe, expect, it } from "vitest";
 
 import { SqliteDriver } from "../../../src/db/driver/sqlite-driver";
 import { DbPolicyError } from "../../../src/db/errors";
 import { createTempDir } from "../../utilities/temp-dir";
 
+/**
+ * The SQLite driver runs on `bun:sqlite`, which is unavailable under plain Node,
+ * so these tests use Bun's native test runner (`bun test test/bun`) and are
+ * excluded from the Node `vitest` collection. See vitest.config.ts.
+ */
 async function seededDbPath(): Promise<string> {
 	const { path: dir } = createTempDir();
 	const path = join(dir, "test.db");
@@ -50,13 +54,34 @@ describe("SqliteDriver", () => {
 		await driver.disconnect();
 	});
 
+	it("executes a write and reports affected rows when writes are allowed", async () => {
+		const filePath = await seededDbPath();
+		const driver = new SqliteDriver({ engine: "sqlite", filePath, allowWrites: true } as never);
+		await driver.connect();
+		const result = await driver.query({ sql: "INSERT INTO users (id, name) VALUES (3, 'carol')", readOnly: false });
+		expect(result.rowCount).toBe(1);
+		expect(result.rows).toEqual([]);
+		const read = await driver.query({ sql: "SELECT COUNT(*) AS n FROM users", readOnly: true });
+		expect(read.rows[0]).toEqual({ n: 3 });
+		await driver.disconnect();
+	});
+
+	it("binds positional parameters", async () => {
+		const filePath = await seededDbPath();
+		const driver = new SqliteDriver({ engine: "sqlite", filePath } as never);
+		await driver.connect();
+		const result = await driver.query({ sql: "SELECT name FROM users WHERE id = ?", params: [2], readOnly: true });
+		expect(result.rows).toEqual([{ name: "bob" }]);
+		await driver.disconnect();
+	});
+
 	it("testConnection returns ok with a server version", async () => {
 		const filePath = await seededDbPath();
 		const driver = new SqliteDriver({ engine: "sqlite", filePath } as never);
 		await driver.connect();
 		const res = await driver.testConnection();
 		expect(res.ok).toBe(true);
-		expect(res.serverVersion).toBeTypeOf("string");
+		expect(typeof res.serverVersion).toBe("string");
 		await driver.disconnect();
 	});
 

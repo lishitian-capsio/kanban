@@ -1,6 +1,5 @@
+import { Database, type SQLQueryBindings, type Statement } from "bun:sqlite";
 import { statSync } from "node:fs";
-
-import Database from "better-sqlite3";
 
 import { createLogger } from "../../logging";
 import { DbConnectionError, DbPolicyError, DbQueryError } from "../errors";
@@ -25,6 +24,11 @@ const log = createLogger("db:sqlite-driver");
 
 function quoteSqliteIdentifier(name: string): string {
 	return `"${name.replace(/"/g, '""')}"`;
+}
+
+/** Spread-friendly cast of the request bindings to bun:sqlite's accepted shape. */
+function asBindings(params: ReadonlyArray<unknown> | undefined): SQLQueryBindings[] {
+	return (params ?? []) as SQLQueryBindings[];
 }
 
 interface SqliteMasterRow {
@@ -63,10 +67,10 @@ interface PragmaForeignKeyRow {
 	to: string | null;
 }
 
-/** SQLite adapter on better-sqlite3. Synchronous engine wrapped in the async driver contract. */
+/** SQLite adapter on bun:sqlite. Synchronous engine wrapped in the async driver contract. */
 export class SqliteDriver implements DatabaseDriver {
 	readonly engine = "sqlite" as const;
-	private db: Database.Database | null = null;
+	private db: Database | null = null;
 
 	constructor(private readonly config: ConnectionConfig & { allowWrites?: boolean }) {}
 
@@ -79,7 +83,10 @@ export class SqliteDriver implements DatabaseDriver {
 		}
 		try {
 			// Open read-only at the handle level unless the connection opted into writes.
-			this.db = new Database(this.config.filePath, { readonly: this.config.allowWrites !== true });
+			this.db = new Database(
+				this.config.filePath,
+				this.config.allowWrites === true ? { readwrite: true, create: true } : { readonly: true },
+			);
 		} catch (error) {
 			throw new DbConnectionError(`failed to open sqlite database: ${String(error)}`);
 		}
@@ -90,7 +97,7 @@ export class SqliteDriver implements DatabaseDriver {
 		this.db = null;
 	}
 
-	private require(): Database.Database {
+	private require(): Database {
 		if (!this.db) {
 			throw new DbConnectionError("sqlite driver is not connected");
 		}
@@ -107,23 +114,32 @@ export class SqliteDriver implements DatabaseDriver {
 	async query(request: QueryRequest): Promise<QueryResult> {
 		const db = this.require();
 		const started = performance.now();
-		let stmt: Database.Statement;
+		let stmt: Statement;
 		try {
 			stmt = db.prepare(request.sql);
 		} catch (error) {
 			throw new DbQueryError(`sqlite prepare failed: ${String(error)}`, error);
 		}
+		// A row-returning statement (SELECT / PRAGMA / RETURNING) exposes columns;
+		// bun:sqlite has no `reader` flag, so column presence is the equivalent signal.
+		const isReader = stmt.columnNames.length > 0;
 		// DB-level read-only guard (defense-in-depth alongside the policy classifier).
-		if (request.readOnly && !stmt.reader) {
+		if (request.readOnly && !isReader) {
 			throw new DbPolicyError("statement is not read-only but was requested as read-only");
 		}
 		try {
-			if (stmt.reader) {
-				const rows = (request.params ? stmt.all(...request.params) : stmt.all()) as Array<Record<string, unknown>>;
-				const fields = stmt.columns().map((c) => ({ name: c.name, dataType: c.type ?? undefined }));
+			if (isReader) {
+				const rows = stmt.all(...asBindings(request.params)) as Array<Record<string, unknown>>;
+				// `declaredTypes` is populated after execution and mirrors the schema
+				// decltype (closest to better-sqlite3's `column.type`).
+				const declaredTypes = stmt.declaredTypes;
+				const fields = stmt.columnNames.map((name, index) => ({
+					name,
+					dataType: declaredTypes[index] ?? undefined,
+				}));
 				return { rows, fields, rowCount: rows.length, durationMs: performance.now() - started };
 			}
-			const info = request.params ? stmt.run(...request.params) : stmt.run();
+			const info = stmt.run(...asBindings(request.params));
 			return { rows: [], fields: [], rowCount: info.changes, durationMs: performance.now() - started };
 		} catch (error) {
 			throw new DbQueryError(`sqlite query failed: ${String(error)}`, error);
@@ -172,7 +188,7 @@ export class SqliteDriver implements DatabaseDriver {
 		const master = `${quoteSqliteIdentifier(schema)}.sqlite_master`;
 		const obj = db
 			.prepare(`SELECT name, type FROM ${master} WHERE name = ? AND type IN ('table','view')`)
-			.get(table) as SqliteMasterRow | undefined;
+			.get(table) as SqliteMasterRow | null;
 		if (!obj) {
 			throw new DbQueryError(`sqlite table not found: ${schema}.${table}`);
 		}
@@ -238,7 +254,11 @@ export class SqliteDriver implements DatabaseDriver {
 		const fks: ForeignKeyInfo[] = [];
 		for (const group of byId.values()) {
 			group.sort((a, b) => a.seq - b.seq);
-			const referencedTable = group[0].table;
+			const first = group[0];
+			if (!first) {
+				continue;
+			}
+			const referencedTable = first.table;
 			// A null `to` means the FK references the target's PRIMARY KEY implicitly;
 			// resolve it to the referenced table's PK columns so WHERE generation is reliable.
 			const needsPk = group.some((g) => g.to === null);

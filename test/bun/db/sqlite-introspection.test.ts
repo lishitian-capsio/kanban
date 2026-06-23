@@ -1,13 +1,16 @@
+import { Database } from "bun:sqlite";
+import { describe, expect, it } from "bun:test";
 import { utimesSync } from "node:fs";
 import { join } from "node:path";
-
-import Database from "better-sqlite3";
-import { describe, expect, it } from "vitest";
 
 import { SqliteDriver } from "../../../src/db/driver/sqlite-driver";
 import { createTempDir } from "../../utilities/temp-dir";
 
 /**
+ * The SQLite driver runs on `bun:sqlite`, which is unavailable under plain Node,
+ * so these tests use Bun's native test runner (`bun test test/bun`) and are
+ * excluded from the Node `vitest` collection. See vitest.config.ts.
+ *
  * Seed a database exercising every introspection facet: an INTEGER PRIMARY KEY
  * (rowid alias, no backing index), a composite primary key, a unique index, a
  * foreign key, and a view.
