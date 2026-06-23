@@ -1,7 +1,7 @@
 {
   "id": "ef5ce",
   "title": "修复: Windows 上 Bun 原生 PTY 跳过 .cmd 包装导致 CLI agent 起不来",
-  "prompt": "Bug:在 Windows 上,所有外部 CLI agent(claude/codex/droid/gemini/opencode)都启动不了。\n\n根因(已定位):见 src/terminal/pty-session.ts 的 PtySession.spawn。PTY 有两个后端,Bun 原生 Terminal API 优先(checkBunTerminalAvailable() 为真就走,约 216-233 行),否则回落 node-pty(约 235-250 行)。问题在于:\n- Windows 的 .cmd/.bat 启动包装(shouldUseWindowsCmdLaunch / resolveWindowsComSpec / buildWindowsCmdArgsCommandLine,来自 src/core/windows-cmd-launch.ts)【只在 node-pty 路径里被应用】(237-239 行),它在 Bun 原生路径的提前 return 之后。\n- 而 isBunTerminalAvailable()(约 134-146 行)【没有 win32 判断】。于是 Windows 上 runtime 跑在 Bun 里、Bun terminal 探测通过时,会走 Bun 分支直接 Bun.spawn([binary, ...args]),不做 cmd/ComSpec 包装。\n- CLI agent 在 Windows 上通常是 npm 全局的 .cmd/.bat 垫片,不经 cmd.exe 包装无法 spawn → 起不来。\n\n修复方向(二选一,自行评估并选更稳妥的;倾向 A):\n- A) 在 Bun 原生路径里也应用同一套 Windows cmd 包装:spawn 前用 shouldUseWindowsCmdLaunch 判断,需要时用 resolveWindowsComSpec + buildWindowsCmdArgsCommandLine 改写 binary/args,再传给 Bun.spawn。让两条路径对 Windows .cmd/.bat 行为一致。\n- B) 在 win32 上强制回落 node-pty:在 isBunTerminalAvailable()/checkBunTerminalAvailable() 里对 process.platform==='win32' 直接返回 false(因为能正确处理 Windows 的就是 node-pty/conpty 路径)。代价是 Windows 放弃 Bun 原生 PTY。\n\n要求:\n- 复用 src/core/windows-cmd-launch.ts 现有 helper,不要重写 Windows 启动逻辑。\n- 补/调单元测试:覆盖 'win32 + Bun 后端 + .cmd 二进制' 会正确做 cmd 包装(或正确回落 node-pty)。注意现有测试用 KANBAN_FORCE_NODE_PTY=1 强制 node-pty,新测试要能在不强制时覆盖 Bun 路径的 Windows 分支。\n- 不影响 Linux/macOS 现有行为。\n遵循 AGENTS.md:不用 any;统一 logging facade,禁止 console.*。不要提交(除非另有要求)。",
+  "prompt": "Bug:在 Windows 上,所有外部 CLI agent(claude/codex/droid/gemini/opencode)都启动不了。\n\n根因(已定位):见 src/terminal/pty-session.ts 的 PtySession.spawn。PTY 优先走 Bun 原生 Terminal API(checkBunTerminalAvailable() 为真,约 216-233 行),否则回落 node-pty(约 235-250 行)。Windows 的 .cmd/.bat 启动包装(shouldUseWindowsCmdLaunch / resolveWindowsComSpec / buildWindowsCmdArgsCommandLine,来自 src/core/windows-cmd-launch.ts)【只在 node-pty 路径被应用】(237-239 行),在 Bun 原生路径的提前 return 之后;而 isBunTerminalAvailable()(约 134-146 行)【没有 win32 判断】。于是 Windows+Bun 直接 Bun.spawn([binary,...args]) 不做 cmd/ComSpec 包装,CLI agent 的 .cmd/.bat 垫片无法 spawn → 起不来。\n\n【采用修法 A(已定,不要选 B)】:在 Bun 原生路径里也应用同一套 Windows cmd 包装——Bun.spawn 之前用 shouldUseWindowsCmdLaunch(binary, process.platform, launchEnv) 判断,需要时用 resolveWindowsComSpec(launchEnv) 作为可执行、buildWindowsCmdArgsCommandLine(binary, normalizedArgs) 改写参数,再传给 Bun.spawn。让 Bun 路径与 node-pty 路径对 Windows .cmd/.bat 的处理完全一致。把两条路径共用的 Windows 改写逻辑抽成一个小 helper,避免重复。\n\n要求:\n- 复用 src/core/windows-cmd-launch.ts 现有 helper,不要重写 Windows 启动逻辑。\n- 补/调单元测试:覆盖 'win32 + Bun 后端 + .cmd 二进制' 会正确做 cmd 包装。现有测试用 KANBAN_FORCE_NODE_PTY=1 强制 node-pty,新测试要在不强制时覆盖 Bun 路径的 Windows 分支(可对 Bun.spawn 的入参做断言)。\n- 不影响 Linux/macOS 现有行为,也不影响非 .cmd 二进制。\n遵循 AGENTS.md:不用 any;统一 logging facade,禁止 console.*。不要提交(除非另有要求)。",
   "startInPlanMode": false,
   "autoReviewEnabled": false,
   "autoReviewMode": "commit",
@@ -12,8 +12,8 @@
   },
   "baseRef": "main",
   "createdAt": 1782190560946,
-  "updatedAt": 1782190586574,
-  "column": "backlog",
-  "rank": "Zq",
+  "updatedAt": 1782190659604,
+  "column": "in_progress",
+  "rank": "aH",
   "dependsOn": []
 }
