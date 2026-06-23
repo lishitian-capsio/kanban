@@ -51,3 +51,24 @@ export class DbQueryError extends DbError {
 		super(message);
 	}
 }
+
+/** A pagination cursor token could not be decoded (corrupt or foreign). */
+export class InvalidCursorError extends DbError {
+	constructor() {
+		super("invalid pagination cursor");
+	}
+}
+
+/** A query exceeded its execution deadline and was abandoned. */
+export class QueryTimeoutError extends DbError {
+	constructor(readonly timeoutMs: number) {
+		super(`query exceeded the ${timeoutMs}ms execution timeout`);
+	}
+}
+
+/** A query was cancelled by the caller (abort signal) before it finished. */
+export class QueryCancelledError extends DbError {
+	constructor() {
+		super("query was cancelled");
+	}
+}

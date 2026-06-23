@@ -1,0 +1,246 @@
+import { describe, expect, it } from "vitest";
+
+import { DatabaseService } from "../../../src/db/db-service";
+import type { DatabaseDriver } from "../../../src/db/driver/driver";
+import { QueryExecutionError } from "../../../src/db/execution/query-error-normalizer";
+import { QueryExecutor } from "../../../src/db/execution/query-executor";
+import { createQueryConcurrencyLimiter } from "../../../src/db/execution/query-limiter";
+import { PoolManager } from "../../../src/db/pool/pool-manager";
+import type { ConnectionRecord } from "../../../src/db/registry/connection-store";
+import type { FieldInfo, QueryRequest } from "../../../src/db/types";
+
+interface FakeDriverController {
+	rows: Array<Record<string, unknown>>;
+	fields: FieldInfo[];
+	rowCount: number;
+	durationMs: number;
+	hang: boolean;
+	seen: QueryRequest[];
+	disconnectCount: number;
+}
+
+function controller(overrides: Partial<FakeDriverController> = {}): FakeDriverController {
+	return {
+		rows: [{ ok: 1 }],
+		fields: [{ name: "ok" }],
+		rowCount: 1,
+		durationMs: 3,
+		hang: false,
+		seen: [],
+		disconnectCount: 0,
+		...overrides,
+	};
+}
+
+function record(overrides: Partial<ConnectionRecord> = {}): ConnectionRecord {
+	return {
+		connId: "c1",
+		label: "c1",
+		engine: "postgres",
+		host: "h",
+		port: 5432,
+		database: "d",
+		user: "u",
+		filePath: null,
+		ssl: null,
+		allowWrites: false,
+		createdAt: "2026-06-22T00:00:00.000Z",
+		...overrides,
+	};
+}
+
+function fakeDriver(ctrl: FakeDriverController): DatabaseDriver {
+	return {
+		engine: "postgres",
+		connect: async () => {},
+		disconnect: async () => {
+			ctrl.disconnectCount++;
+		},
+		testConnection: async () => ({ ok: true, latencyMs: 1, serverVersion: "PostgreSQL 16" }),
+		query: async (req) => {
+			ctrl.seen.push(req);
+			if (ctrl.hang) {
+				await new Promise<never>(() => {});
+			}
+			return { rows: ctrl.rows, fields: ctrl.fields, rowCount: ctrl.rowCount, durationMs: ctrl.durationMs };
+		},
+		introspect: async () => ({ engine: "postgres", tables: [] }),
+	};
+}
+
+function makeExecutor(
+	rec: ConnectionRecord,
+	ctrl: FakeDriverController,
+	limits?: ConstructorParameters<typeof QueryExecutor>[0]["limits"],
+) {
+	const poolManager = new PoolManager({ createDriver: () => fakeDriver(ctrl) });
+	const loadConnection = async (id: string) => (id === rec.connId ? rec : null);
+	const service = new DatabaseService({
+		poolManager,
+		loadConnection,
+		loadCredential: async () => undefined,
+	});
+	const executor = new QueryExecutor({ service, loadConnection, limits });
+	return { executor, service };
+}
+
+describe("QueryExecutor reads", () => {
+	it("wraps a read in a server-side LIMIT subquery using pageSize+1", async () => {
+		const ctrl = controller({ rows: [{ a: 1 }, { a: 2 }] });
+		const { executor } = makeExecutor(record(), ctrl);
+		await executor.execute({ connId: "c1", sql: "SELECT a FROM t", caller: "human", page: { pageSize: 2 } });
+		expect(ctrl.seen[0].sql).toBe("SELECT * FROM (SELECT a FROM t) AS _kanban_q LIMIT 3 OFFSET 0");
+		expect(ctrl.seen[0].readOnly).toBe(true);
+	});
+
+	it("returns a page with a next cursor when the probe row indicates more", async () => {
+		const ctrl = controller({ rows: [{ a: 1 }, { a: 2 }, { a: 3 }] }); // 3 = pageSize(2) + probe
+		const { executor } = makeExecutor(record(), ctrl);
+		const result = await executor.execute({
+			connId: "c1",
+			sql: "SELECT a FROM t",
+			caller: "human",
+			page: { pageSize: 2 },
+		});
+		expect(result.rows).toEqual([{ a: 1 }, { a: 2 }]);
+		expect(result.rowCount).toBe(2);
+		expect(result.affectedRows).toBeNull();
+		expect(result.classification).toBe("read");
+		expect(result.pagination.paginated).toBe(true);
+		expect(result.pagination.hasMore).toBe(true);
+		expect(result.pagination.nextCursor).not.toBeNull();
+	});
+
+	it("reports no next page when the driver returns fewer than the probe limit", async () => {
+		const ctrl = controller({ rows: [{ a: 1 }, { a: 2 }] });
+		const { executor } = makeExecutor(record(), ctrl);
+		const result = await executor.execute({
+			connId: "c1",
+			sql: "SELECT a FROM t",
+			caller: "human",
+			page: { pageSize: 2 },
+		});
+		expect(result.pagination.hasMore).toBe(false);
+		expect(result.pagination.nextCursor).toBeNull();
+	});
+
+	it("clamps the requested page size to the row cap", async () => {
+		const ctrl = controller({ rows: [{ a: 1 }] });
+		const { executor } = makeExecutor(record(), ctrl, { maxRows: 10 });
+		await executor.execute({ connId: "c1", sql: "SELECT a FROM t", caller: "human", page: { pageSize: 1000 } });
+		expect(ctrl.seen[0].sql).toContain("LIMIT 11 OFFSET 0");
+	});
+
+	it("resumes from a supplied cursor", async () => {
+		const ctrl = controller({ rows: [{ a: 1 }, { a: 2 }, { a: 3 }] });
+		const { executor } = makeExecutor(record(), ctrl);
+		const first = await executor.execute({
+			connId: "c1",
+			sql: "SELECT a FROM t",
+			caller: "human",
+			page: { pageSize: 2 },
+		});
+		await executor.execute({
+			connId: "c1",
+			sql: "SELECT a FROM t",
+			caller: "human",
+			page: { pageSize: 2, cursor: first.pagination.nextCursor },
+		});
+		expect(ctrl.seen[1].sql).toContain("LIMIT 3 OFFSET 2");
+	});
+
+	it("truncates a page by the byte cap", async () => {
+		const big = "x".repeat(2000);
+		const ctrl = controller({ rows: [{ a: big }, { a: big }, { a: big }] });
+		const { executor } = makeExecutor(record(), ctrl, { maxBytes: 2500 });
+		const result = await executor.execute({
+			connId: "c1",
+			sql: "SELECT a FROM t",
+			caller: "human",
+			page: { pageSize: 10 },
+		});
+		expect(result.truncated.byBytes).toBe(true);
+		expect(result.rows.length).toBeLessThan(3);
+		expect(result.pagination.hasMore).toBe(true);
+	});
+
+	it("reports the driver's execution time", async () => {
+		const ctrl = controller({ durationMs: 42 });
+		const { executor } = makeExecutor(record(), ctrl);
+		const result = await executor.execute({ connId: "c1", sql: "SELECT 1", caller: "human" });
+		expect(result.durationMs).toBe(42);
+		expect(result.totalDurationMs).toBeGreaterThanOrEqual(0);
+	});
+});
+
+describe("QueryExecutor writes & policy", () => {
+	it("passes a write through unwrapped and reports affected rows", async () => {
+		const ctrl = controller({ rows: [], fields: [], rowCount: 5 });
+		const { executor } = makeExecutor(record({ allowWrites: true }), ctrl);
+		const result = await executor.execute({ connId: "c1", sql: "UPDATE t SET x = 1", caller: "human" });
+		expect(ctrl.seen[0].sql).toBe("UPDATE t SET x = 1");
+		expect(ctrl.seen[0].readOnly).toBe(false);
+		expect(result.classification).toBe("write");
+		expect(result.affectedRows).toBe(5);
+		expect(result.pagination.paginated).toBe(false);
+	});
+
+	it("normalizes a policy denial (agent write) into a structured error", async () => {
+		const ctrl = controller();
+		const { executor } = makeExecutor(record({ allowWrites: true }), ctrl);
+		const error = await executor.execute({ connId: "c1", sql: "DELETE FROM t", caller: "agent" }).catch((e) => e);
+		expect(error).toBeInstanceOf(QueryExecutionError);
+		expect((error as QueryExecutionError).normalized.code).toBe("policy_denied");
+		expect(ctrl.seen).toHaveLength(0); // never reached the driver
+	});
+
+	it("normalizes an unknown connection into a connection_failed error", async () => {
+		const ctrl = controller();
+		const { executor } = makeExecutor(record(), ctrl);
+		const error = await executor.execute({ connId: "missing", sql: "SELECT 1", caller: "human" }).catch((e) => e);
+		expect((error as QueryExecutionError).normalized.code).toBe("connection_failed");
+	});
+});
+
+describe("QueryExecutor timeout & cancellation", () => {
+	it("times out a runaway query and tears down the connection", async () => {
+		const ctrl = controller({ hang: true });
+		const { executor } = makeExecutor(record(), ctrl, { timeoutMs: 20 });
+		const error = await executor.execute({ connId: "c1", sql: "SELECT 1", caller: "human" }).catch((e) => e);
+		expect((error as QueryExecutionError).normalized.code).toBe("timeout");
+		// the runaway connection's driver was disconnected (invalidated) so the runtime is not hung
+		await new Promise((r) => setTimeout(r, 5));
+		expect(ctrl.disconnectCount).toBe(1);
+	});
+
+	it("cancels via an abort signal", async () => {
+		const ctrl = controller({ hang: true });
+		const { executor } = makeExecutor(record(), ctrl);
+		const ac = new AbortController();
+		const promise = executor.execute({ connId: "c1", sql: "SELECT 1", caller: "human", signal: ac.signal });
+		ac.abort();
+		const error = await promise.catch((e) => e);
+		expect((error as QueryExecutionError).normalized.code).toBe("cancelled");
+	});
+});
+
+describe("QueryExecutor concurrency", () => {
+	it("funnels execution through the injected limiter", async () => {
+		const ctrl = controller();
+		const poolManager = new PoolManager({ createDriver: () => fakeDriver(ctrl) });
+		const loadConnection = async (id: string) => (id === "c1" ? record() : null);
+		const service = new DatabaseService({ poolManager, loadConnection, loadCredential: async () => undefined });
+		const seenConnIds: string[] = [];
+		const inner = createQueryConcurrencyLimiter({ hostConcurrency: 4, perConnectionConcurrency: 4 });
+		const limiter = {
+			...inner,
+			run: <T>(connId: string, fn: () => Promise<T>) => {
+				seenConnIds.push(connId);
+				return inner.run(connId, fn);
+			},
+		};
+		const executor = new QueryExecutor({ service, loadConnection, limiter });
+		await executor.execute({ connId: "c1", sql: "SELECT 1", caller: "human" });
+		expect(seenConnIds).toEqual(["c1"]);
+	});
+});
