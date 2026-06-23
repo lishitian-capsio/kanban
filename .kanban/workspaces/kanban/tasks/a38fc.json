@@ -1,0 +1,23 @@
+{
+  "id": "a38fc",
+  "title": "测试任务 auto commit",
+  "prompt": "这是一个用于验证 auto-commit 自动审查流程的测试任务。请在工作区内的 AUTO_COMMIT_TEST.md 文件中追加一行：'auto-commit verification line (2026-06-23 run)'。这是一个最小改动，用于触发任务完成后自动提交并移动到 done 列。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "origin": {
+    "agentId": "claude",
+    "threadId": "f0010289-2e7a-483a-9777-3bb386752ca1"
+  },
+  "baseRef": "main",
+  "createdAt": 1782210217779,
+  "updatedAt": 1782210217779,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
