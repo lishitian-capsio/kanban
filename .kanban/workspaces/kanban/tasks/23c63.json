@@ -1,0 +1,23 @@
+{
+  "id": "23c63",
+  "title": "把 auto-review 从前端 hook 下沉到后端 runtime(headless 也能自动)",
+  "prompt": "目标:让 auto-review(自动 commit / 开 PR -> 移到 done -> 触发下游链接任务)由后端 runtime 触发,而不是依赖浏览器里开着 web-ui。现在不开前端页面,任务会卡在 review 不自动收尾;后台常驻(kanban service)场景下完全失效。\n\n现状(务必先读懂):\n- 触发逻辑全在前端 hook: web-ui/src/hooks/use-review-auto-actions.ts (useReviewAutoActions)。它订阅 board,任务进入 review 且 autoReviewEnabled 时,延迟约 500ms (AUTO_REVIEW_ACTION_DELAY_MS) 调 runAutoReviewGitAction(commit 或 pr),成功后 requestMoveTaskToTrash 移到 done;带失败重试节流 (web-ui/src/git-actions/auto-review-retry, shouldSkipAfterFailure)。\n- 后端只存设置: src/core/task-board-mutations.ts 与 src/core/api-contract.ts 里的 autoReviewEnabled / autoReviewMode,不触发任何动作。\n- 任务进入 review 的后端链路: agent Stop hook -> transitionToReview -> applySessionEvent。这是后端触发 auto-review 的天然挂载点。\n\n要做:\n1. 在后端任务转入 review 的状态机事件处,检查 autoReviewEnabled;为真则执行对应 autoReviewMode(commit 或 pr)的 git action,然后移到 done,并触发已链接 backlog 任务自动开工(复用现有 task done / 链接自动接力逻辑)。\n2. 把前端 use-review-auto-actions 的行为迁移到后端: 包括失败重试节流(失败不要死循环)、以及 git action 成功后才移 done 的顺序保证。\n3. 退役前端 hook,避免前后端重复触发(double commit/PR)。前端改为纯展示后端推送的状态。确认无回归。\n4. 复用现有 git action 执行路径,不要新造 git 逻辑;遵守已有 git contract(任务在 kanban/task/<id> 分支、Kanban-owned merge),不要让 agent 自己敲 raw git。\n\n工程要求(遵守 AGENTS.md): 后端不用 console.*(用 createLogger);TS 无 any;auto-review 的判定/节流/顺序做成可单测纯逻辑,与 IO/git 分离并补单测;注意并发(多任务同时进 review、agent-start 限流)下不重复触发。\n\n验收: 不开 web-ui 时 autoReviewEnabled 任务进 review 后由后端自动完成 commit/PR -> done -> 下游自动开工;前端不再重复触发但仍能看到状态/失败提示;失败重试有节流;typecheck + 测试通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "origin": {
+    "agentId": "claude",
+    "threadId": "f0010289-2e7a-483a-9777-3bb386752ca1"
+  },
+  "baseRef": "main",
+  "createdAt": 1782204475703,
+  "updatedAt": 1782204475703,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
