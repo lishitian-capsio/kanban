@@ -1,6 +1,7 @@
 import * as pty from "node-pty";
 
 import {
+	buildWindowsCmdArgsArray,
 	buildWindowsCmdArgsCommandLine,
 	resolveWindowsComSpec,
 	shouldUseWindowsCmdLaunch,
@@ -111,13 +112,50 @@ function terminatePtyProcess(ptyProcess: pty.IPty): void {
 }
 
 // ---------------------------------------------------------------------------
+// Windows .cmd/.bat launch wrapping (shared by both PTY backends)
+// ---------------------------------------------------------------------------
+
+// Windows cannot directly spawn the `.cmd`/`.bat` shims npm installs for the CLI
+// agents (claude/codex/droid/gemini/opencode); they must run through the command
+// processor. This rewrites a launch into a `cmd.exe /d /s /c "<command>"`
+// invocation when needed, returning null when no wrapping applies (non-Windows,
+// or a directly-spawnable .exe/.com). Both PTY backends call this so they treat
+// Windows shims identically — node-pty consumes `commandLine` (a single
+// pre-escaped string), Bun consumes `argv` (the array following `executable`).
+interface WindowsCmdLaunch {
+	executable: string;
+	commandLine: string;
+	argv: string[];
+}
+
+function resolveWindowsCmdLaunch(
+	binary: string,
+	args: string[],
+	launchEnv: NodeJS.ProcessEnv,
+): WindowsCmdLaunch | null {
+	if (!shouldUseWindowsCmdLaunch(binary, process.platform, launchEnv)) {
+		return null;
+	}
+	return {
+		executable: resolveWindowsComSpec(launchEnv),
+		commandLine: buildWindowsCmdArgsCommandLine(binary, args),
+		argv: buildWindowsCmdArgsArray(binary, args),
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Bun native PTY backend
 // ---------------------------------------------------------------------------
 
-const isBunRuntime = typeof globalThis.Bun !== "undefined";
+function isBunRuntime(): boolean {
+	return typeof globalThis.Bun !== "undefined";
+}
 
-// When set, forces node-pty backend even under Bun (used in tests).
-const forceNodePty = process.env.KANBAN_FORCE_NODE_PTY === "1";
+// When set, forces node-pty backend even under Bun (used in tests). Read at call
+// time so test harnesses can toggle the backend without re-importing the module.
+function isNodePtyForced(): boolean {
+	return process.env.KANBAN_FORCE_NODE_PTY === "1";
+}
 
 interface BunTerminalProcess {
 	pid: number;
@@ -132,7 +170,7 @@ interface BunTerminalProcess {
 }
 
 function isBunTerminalAvailable(): boolean {
-	if (!isBunRuntime || forceNodePty) return false;
+	if (!isBunRuntime() || isNodePtyForced()) return false;
 	try {
 		const testProc = (globalThis as { Bun: { spawn: Function } }).Bun.spawn(["true"], {
 			terminal: { cols: 1, rows: 1, data() {} },
@@ -214,8 +252,12 @@ export class PtySession {
 		// file-descriptor handling is incompatible with Bun's event loop and
 		// causes child processes to receive SIGHUP immediately on spawn.
 		if (checkBunTerminalAvailable()) {
+			const windowsLaunch = resolveWindowsCmdLaunch(binary, normalizedArgs, launchEnv);
+			const spawnArgv = windowsLaunch
+				? [windowsLaunch.executable, ...windowsLaunch.argv]
+				: [binary, ...normalizedArgs];
 			const bunProc = (globalThis as { Bun: { spawn: Function } }).Bun.spawn(
-				[binary, ...normalizedArgs],
+				spawnArgv,
 				{
 					cwd,
 					env: sanitizedEnv,
@@ -234,9 +276,9 @@ export class PtySession {
 
 		// Node.js / node-pty path
 		const terminalName = env?.TERM?.trim() || process.env.TERM?.trim() || "xterm-256color";
-		const useWindowsShellLaunch = shouldUseWindowsCmdLaunch(binary, process.platform, launchEnv);
-		const spawnBinary = useWindowsShellLaunch ? resolveWindowsComSpec(launchEnv) : binary;
-		const spawnArgs = useWindowsShellLaunch ? buildWindowsCmdArgsCommandLine(binary, normalizedArgs) : normalizedArgs;
+		const windowsLaunch = resolveWindowsCmdLaunch(binary, normalizedArgs, launchEnv);
+		const spawnBinary = windowsLaunch ? windowsLaunch.executable : binary;
+		const spawnArgs = windowsLaunch ? windowsLaunch.commandLine : normalizedArgs;
 		const ptyOptions: pty.IPtyForkOptions = {
 			name: terminalName,
 			cwd,
