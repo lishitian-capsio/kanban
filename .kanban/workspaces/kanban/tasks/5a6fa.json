@@ -1,0 +1,19 @@
+{
+  "id": "5a6fa",
+  "title": "终端: 评估并移除 node-pty, 转 Bun 原生 Terminal-only",
+  "prompt": "目标:移除 node-pty(项目最后一个原生编译依赖),让终端/agent 启动只用 Bun 原生 Terminal API。但先调研确认可行,再动手——不要盲删。\n\n背景:\n- src/terminal/pty-session.ts 现有两个后端:Bun 原生 Terminal(优先,checkBunTerminalAvailable() 为真即用)与 node-pty(回落,用于纯 Node 或 Bun terminal 不可用)。\n- 隐患:文件顶部是静态 import 星号 as pty from 'node-pty'(项目禁止动态/inline import),所以即使运行时走 Bun 分支不用它,import 时也必须成功加载其原生 binding;在 node-pty 编译失败的平台(Windows/特殊架构)会连带把能用的 Bun 路径一起搞挂。\n- 相关:已有任务给 Bun 路径补了 Windows 的 .cmd/.bat cmd 包装(修法 A,见 src/core/windows-cmd-launch.ts 的 helper)。本任务应建立在那之上——移除 node-pty 后,Bun 路径(含 Windows cmd 包装)成为唯一路径。\n\n第一步【调研,产出结论再继续】:\n- 确认 Bun 原生 Terminal API(Bun.spawn 的 terminal 选项)在所有目标平台(至少 Linux/macOS/Windows)对交互式 CLI agent(claude/codex/droid/gemini/opencode)的覆盖度:resize、信号/中断、退出码、Windows .cmd 垫片(配合 cmd 包装)、编码等是否都满足现有 PtySession 契约。\n- 明确移除影响:是否就此【放弃在纯 Node 下运行 runtime】(node-pty 是 Node 路径)——若项目仍需 Node 运行能力,则不能移除,本任务应停在调研结论并说明。把结论写进 .plan/docs/。\n\n第二步【确认可行才做】:\n- 删除 pty-session.ts 的 node-pty 后端与静态 import,只保留/收敛 Bun 原生路径(保留 Windows cmd 包装与现有 onData/onExit/resize/kill 契约不变)。\n- package.json 移除 node-pty 依赖。\n- 处理 KANBAN_FORCE_NODE_PTY 测试开关(失去意义则移除,并改造相关测试不再依赖强制 node-pty)。\n- 全仓库确认不再 import node-pty。\n- 测试:覆盖 spawn/resize/write/kill/exit 与 Windows cmd 包装路径,在 Bun 下跑通。\n\n若调研结论是\"仍需 Node、不能移除\",就不要硬删,保留 node-pty 并在文档里记录原因。遵循 AGENTS.md:不用 any;统一 logging facade,禁止 console.*;禁止动态/inline import。不要提交(除非另有要求)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782198122575,
+  "updatedAt": 1782198122575,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
