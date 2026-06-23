@@ -37,6 +37,8 @@ import type {
 	RuntimeAgentProviderSetListResponse,
 	RuntimeCommandRunResponse,
 	RuntimeRunUpdateResponse,
+	RuntimeTaskChatSendRequest,
+	RuntimeTaskChatSendResponse,
 	RuntimeTaskSessionSummary,
 	RuntimeUpdateStatusResponse,
 } from "../core/api-contract";
@@ -53,6 +55,7 @@ import {
 	parseKanbanOauthLoginRequest,
 	parseKanbanProviderModelsRequest,
 	parseRuntimeConfigSaveRequest,
+	parseSessionPromptRequest,
 	parseShellSessionStartRequest,
 	parseTaskChatAbortRequest,
 	parseTaskChatCancelRequest,
@@ -183,7 +186,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		return fn(piService);
 	};
 
-	return {
+	const runtimeApi: RuntimeTrpcContext["runtimeApi"] = {
 		loadConfig: async (workspaceScope) => {
 			const activeRuntimeConfig = deps.getActiveRuntimeConfig?.();
 			if (!workspaceScope && !activeRuntimeConfig) {
@@ -889,6 +892,25 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				};
 			}
 		},
+		// Generic "inject an arbitrary prompt into a session" primitive. It is the
+		// programmable surface (tRPC + CLI) behind the review Commit/PR actions and
+		// the upcoming Ask action, and deliberately reuses the unified delivery path
+		// in `sendTaskChatMessage` — which already routes a native pi task session, a
+		// lazily-(re)started home/kanban-agent thread, and a CLI/terminal PTY — rather
+		// than reimplementing transport selection.
+		sendSessionPrompt: async (workspaceScope, input) => {
+			const body = parseSessionPromptRequest(input);
+			const chatRequest: RuntimeTaskChatSendRequest = {
+				taskId: body.taskId,
+				text: body.text,
+				...(body.mode !== undefined ? { mode: body.mode } : {}),
+			};
+			const response: RuntimeTaskChatSendResponse = await runtimeApi.sendTaskChatMessage(
+				workspaceScope,
+				chatRequest,
+			);
+			return response;
+		},
 		startShellSession: async (workspaceScope, input) => {
 			try {
 				const body = parseShellSessionStartRequest(input);
@@ -1012,4 +1034,5 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			return { ok: true, config: getAgentProviderConfig(input.agentId) ?? undefined };
 		},
 	};
+	return runtimeApi;
 }

@@ -93,6 +93,8 @@ import type {
 	RuntimeProjectRemoveResponse,
 	RuntimeProjectsResponse,
 	RuntimeRunUpdateResponse,
+	RuntimeSessionPromptRequest,
+	RuntimeSessionPromptResponse,
 	RuntimeSetGitUserIdentityRequest,
 	RuntimeSetGitUserIdentityResponse,
 	RuntimeShellSessionStartRequest,
@@ -246,6 +248,8 @@ import {
 	runtimeProjectRemoveResponseSchema,
 	runtimeProjectsResponseSchema,
 	runtimeRunUpdateResponseSchema,
+	runtimeSessionPromptRequestSchema,
+	runtimeSessionPromptResponseSchema,
 	runtimeSetGitUserIdentityRequestSchema,
 	runtimeSetGitUserIdentityResponseSchema,
 	runtimeShellSessionStartRequestSchema,
@@ -347,6 +351,10 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeTaskChatSendRequest,
 		) => Promise<RuntimeTaskChatSendResponse>;
+		sendSessionPrompt: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeSessionPromptRequest,
+		) => Promise<RuntimeSessionPromptResponse>;
 		reloadTaskChatSession: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeTaskChatReloadRequest,
@@ -724,6 +732,12 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeTaskChatSendResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.sendTaskChatMessage(ctx.workspaceScope, input);
+			}),
+		sendSessionPrompt: workspaceProcedure
+			.input(runtimeSessionPromptRequestSchema)
+			.output(runtimeSessionPromptResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.sendSessionPrompt(ctx.workspaceScope, input);
 			}),
 		abortTaskChatTurn: workspaceProcedure
 			.input(runtimeTaskChatAbortRequestSchema)

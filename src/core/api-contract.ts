@@ -1896,6 +1896,28 @@ export const runtimeTaskChatSendResponseSchema = z.object({
 });
 export type RuntimeTaskChatSendResponse = z.infer<typeof runtimeTaskChatSendResponseSchema>;
 
+/**
+ * Generic "inject an arbitrary prompt into a session" request. The session
+ * target is a task id, or a home/kanban-agent thread session id — the runtime
+ * routes both to the right transport (native pi chat vs CLI terminal PTY). This
+ * is the programmable primitive behind the review Commit/PR actions and the
+ * upcoming Ask action.
+ */
+export const runtimeSessionPromptRequestSchema = z.object({
+	taskId: z.string(),
+	text: z.string(),
+	mode: runtimeTaskSessionModeSchema.optional(),
+});
+export type RuntimeSessionPromptRequest = z.infer<typeof runtimeSessionPromptRequestSchema>;
+
+export const runtimeSessionPromptResponseSchema = z.object({
+	ok: z.boolean(),
+	summary: runtimeTaskSessionSummarySchema.nullable(),
+	message: runtimeTaskChatMessageSchema.nullable().optional(),
+	error: z.string().optional(),
+});
+export type RuntimeSessionPromptResponse = z.infer<typeof runtimeSessionPromptResponseSchema>;
+
 export const runtimeTaskChatReloadRequestSchema = z.object({
 	taskId: z.string(),
 });

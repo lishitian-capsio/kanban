@@ -19,6 +19,7 @@ import {
 	type RuntimeKanbanProviderModelsRequest,
 	type RuntimeProjectAddRequest,
 	type RuntimeProjectRemoveRequest,
+	type RuntimeSessionPromptRequest,
 	type RuntimeShellSessionStartRequest,
 	type RuntimeTaskChatAbortRequest,
 	type RuntimeTaskChatCancelRequest,
@@ -52,6 +53,7 @@ import {
 	runtimeKanbanProviderModelsRequestSchema,
 	runtimeProjectAddRequestSchema,
 	runtimeProjectRemoveRequestSchema,
+	runtimeSessionPromptRequestSchema,
 	runtimeShellSessionStartRequestSchema,
 	runtimeTaskChatAbortRequestSchema,
 	runtimeTaskChatCancelRequestSchema,
@@ -282,6 +284,23 @@ export function parseTaskChatSendRequest(value: unknown): RuntimeTaskChatSendReq
 	const hasImages = Boolean(parsed.images && parsed.images.length > 0);
 	if (!text && !hasImages) {
 		throw new Error("Task chat text or images are required.");
+	}
+	return {
+		...parsed,
+		taskId,
+		text,
+	};
+}
+
+export function parseSessionPromptRequest(value: unknown): RuntimeSessionPromptRequest {
+	const parsed = parseWithSchema(runtimeSessionPromptRequestSchema, value);
+	const taskId = parsed.taskId.trim();
+	if (!taskId) {
+		throw new Error("Session prompt taskId cannot be empty.");
+	}
+	const text = parsed.text.trim();
+	if (!text) {
+		throw new Error("Session prompt text is required.");
 	}
 	return {
 		...parsed,

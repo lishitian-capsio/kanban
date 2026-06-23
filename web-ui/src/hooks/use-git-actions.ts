@@ -2,7 +2,8 @@ import { useCallback, useMemo, useState } from "react";
 import { showAppToast } from "@/components/app-toaster";
 import { type UseGitHistoryDataResult, useGitHistoryData } from "@/components/git-history/use-git-history-data";
 import { buildTaskGitActionPrompt, type TaskGitAction } from "@/git-actions/build-task-git-action-prompt";
-import { isNativeAgentSelected, resolveEffectiveTaskAgentId } from "@/runtime/native-agent";
+import { injectSessionPrompt } from "@/git-actions/inject-session-prompt";
+import { resolveEffectiveTaskAgentId } from "@/runtime/native-agent";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type {
 	RuntimeConfigResponse,
@@ -298,45 +299,22 @@ export function useGitActions({
 				// auto-commit retrying) coalesces into a single toast instead of
 				// stacking copies on screen.
 				const errorToastKey = `task-git-action:${taskId}:${action}`;
-				if (isNativeAgentSelected(effectiveAgentId)) {
-					const sent = await sendTaskChatMessage(taskId, prompt, { mode: "act" });
-					if (!sent.ok) {
-						showAppToast(
-							{
-								intent: "danger",
-								icon: "warning-sign",
-								message: sent.message ?? "Could not send instructions to the task chat session.",
-								timeout: 7000,
-							},
-							errorToastKey,
-						);
-						return false;
-					}
-					return true;
-				}
-				const typed = await sendTaskSessionInput(taskId, prompt, { appendNewline: false, mode: "paste" });
-				if (!typed.ok) {
-					showAppToast(
-						{
-							intent: "danger",
-							icon: "warning-sign",
-							message: typed.message ?? "Could not send instructions to the task session.",
-							timeout: 7000,
-						},
-						errorToastKey,
-					);
-					return false;
-				}
-				await new Promise<void>((resolve) => {
-					window.setTimeout(resolve, 200);
+				// Commit/PR are now built on the shared "inject a prompt into a
+				// session" primitive: a fixed template preset (the git action prompt)
+				// delivered through the same native-vs-CLI transport choreography the
+				// Ask action will reuse.
+				const delivered = await injectSessionPrompt({
+					taskId,
+					prompt,
+					agentId: effectiveAgentId,
+					senders: { sendTaskChatMessage, sendTaskSessionInput },
 				});
-				const submitted = await sendTaskSessionInput(taskId, "\r", { appendNewline: false });
-				if (!submitted.ok) {
+				if (!delivered.ok) {
 					showAppToast(
 						{
 							intent: "danger",
 							icon: "warning-sign",
-							message: submitted.message ?? "Could not submit instructions to the task session.",
+							message: delivered.message ?? "Could not send instructions to the task session.",
 							timeout: 7000,
 						},
 						errorToastKey,
