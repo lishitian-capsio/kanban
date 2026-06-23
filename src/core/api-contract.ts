@@ -458,6 +458,239 @@ export const runtimeFilePathResponseSchema = z.object({
 export type RuntimeFilePathResponse = z.infer<typeof runtimeFilePathResponseSchema>;
 
 // ---------------------------------------------------------------------------
+// Database (human-side browser/editor)
+//
+// The wire contract for the Database view. Connection metadata is secret-free
+// (the password lives only in machine-home credentials, surfaced as `hasCredential`).
+// The frontend never writes SQL: it sends structured browse/edit intents and the
+// runtime builds the parameterized SQL (server-side LIMIT bound + policy chokepoint).
+// Cell values cross the wire as display strings (or null) and edits return the same way.
+// ---------------------------------------------------------------------------
+
+export const runtimeDbEngineSchema = z.enum(["postgres", "mysql", "sqlite"]);
+export type RuntimeDbEngine = z.infer<typeof runtimeDbEngineSchema>;
+
+export const runtimeDbSslConfigSchema = z.object({
+	mode: z.enum(["disable", "require", "verify-ca", "verify-full"]),
+	caPath: z.string().optional(),
+});
+export type RuntimeDbSslConfig = z.infer<typeof runtimeDbSslConfigSchema>;
+
+export const runtimeDbConnectionSchema = z.object({
+	connId: z.string(),
+	label: z.string(),
+	engine: runtimeDbEngineSchema,
+	host: z.string().nullable(),
+	port: z.number().int().positive().nullable(),
+	database: z.string().nullable(),
+	user: z.string().nullable(),
+	filePath: z.string().nullable(),
+	ssl: runtimeDbSslConfigSchema.nullable(),
+	allowWrites: z.boolean(),
+	createdAt: z.string(),
+	/** Whether a machine-home credential (password) is configured for this connection. */
+	hasCredential: z.boolean(),
+});
+export type RuntimeDbConnection = z.infer<typeof runtimeDbConnectionSchema>;
+
+export const runtimeDbConnectionsListResponseSchema = z.object({
+	connections: z.array(runtimeDbConnectionSchema),
+});
+export type RuntimeDbConnectionsListResponse = z.infer<typeof runtimeDbConnectionsListResponseSchema>;
+
+/**
+ * Create (no `connId`) or edit (with `connId`) a connection. `password`: a string sets it,
+ * `null` clears it, omitted leaves the stored secret unchanged (edit without re-typing).
+ */
+export const runtimeDbUpsertConnectionRequestSchema = z.object({
+	connId: z.string().optional(),
+	label: z.string().min(1),
+	engine: runtimeDbEngineSchema,
+	host: z.string().nullable().optional(),
+	port: z.number().int().positive().nullable().optional(),
+	database: z.string().nullable().optional(),
+	user: z.string().nullable().optional(),
+	filePath: z.string().nullable().optional(),
+	ssl: runtimeDbSslConfigSchema.nullable().optional(),
+	allowWrites: z.boolean(),
+	password: z.string().nullable().optional(),
+});
+export type RuntimeDbUpsertConnectionRequest = z.infer<typeof runtimeDbUpsertConnectionRequestSchema>;
+
+export const runtimeDbUpsertConnectionResponseSchema = z.object({
+	connection: runtimeDbConnectionSchema,
+});
+export type RuntimeDbUpsertConnectionResponse = z.infer<typeof runtimeDbUpsertConnectionResponseSchema>;
+
+export const runtimeDbDeleteConnectionRequestSchema = z.object({
+	connId: z.string(),
+});
+export type RuntimeDbDeleteConnectionRequest = z.infer<typeof runtimeDbDeleteConnectionRequestSchema>;
+
+export const runtimeDbDeleteConnectionResponseSchema = z.object({
+	deleted: z.boolean(),
+});
+export type RuntimeDbDeleteConnectionResponse = z.infer<typeof runtimeDbDeleteConnectionResponseSchema>;
+
+/**
+ * Test connectivity. With a `connId` and no `password`, the stored credential is used (re-test
+ * a saved connection); otherwise the supplied draft config is tested without persisting.
+ */
+export const runtimeDbTestConnectionRequestSchema = z.object({
+	connId: z.string().optional(),
+	engine: runtimeDbEngineSchema,
+	host: z.string().nullable().optional(),
+	port: z.number().int().positive().nullable().optional(),
+	database: z.string().nullable().optional(),
+	user: z.string().nullable().optional(),
+	filePath: z.string().nullable().optional(),
+	ssl: runtimeDbSslConfigSchema.nullable().optional(),
+	password: z.string().nullable().optional(),
+});
+export type RuntimeDbTestConnectionRequest = z.infer<typeof runtimeDbTestConnectionRequestSchema>;
+
+export const runtimeDbTestConnectionResponseSchema = z.object({
+	ok: z.boolean(),
+	latencyMs: z.number().nullable(),
+	serverVersion: z.string().nullable(),
+	error: z.string().nullable(),
+});
+export type RuntimeDbTestConnectionResponse = z.infer<typeof runtimeDbTestConnectionResponseSchema>;
+
+export const runtimeDbColumnSchema = z.object({
+	name: z.string(),
+	dataType: z.string(),
+	nullable: z.boolean(),
+	isPrimaryKey: z.boolean(),
+	defaultValue: z.string().nullable(),
+});
+export type RuntimeDbColumn = z.infer<typeof runtimeDbColumnSchema>;
+
+export const runtimeDbTableSchema = z.object({
+	schema: z.string(),
+	name: z.string(),
+	kind: z.enum(["table", "view"]),
+	columns: z.array(runtimeDbColumnSchema),
+});
+export type RuntimeDbTable = z.infer<typeof runtimeDbTableSchema>;
+
+export const runtimeDbIntrospectRequestSchema = z.object({
+	connId: z.string(),
+});
+export type RuntimeDbIntrospectRequest = z.infer<typeof runtimeDbIntrospectRequestSchema>;
+
+export const runtimeDbIntrospectResponseSchema = z.object({
+	engine: runtimeDbEngineSchema,
+	tables: z.array(runtimeDbTableSchema),
+});
+export type RuntimeDbIntrospectResponse = z.infer<typeof runtimeDbIntrospectResponseSchema>;
+
+export const runtimeDbFilterOpSchema = z.enum([
+	"eq",
+	"ne",
+	"lt",
+	"lte",
+	"gt",
+	"gte",
+	"contains",
+	"starts_with",
+	"ends_with",
+	"is_null",
+	"is_not_null",
+]);
+export type RuntimeDbFilterOp = z.infer<typeof runtimeDbFilterOpSchema>;
+
+export const runtimeDbFilterSchema = z.object({
+	column: z.string(),
+	op: runtimeDbFilterOpSchema,
+	value: z.string().nullable().optional(),
+});
+export type RuntimeDbFilter = z.infer<typeof runtimeDbFilterSchema>;
+
+export const runtimeDbSortSchema = z.object({
+	column: z.string(),
+	direction: z.enum(["asc", "desc"]),
+});
+export type RuntimeDbSort = z.infer<typeof runtimeDbSortSchema>;
+
+export const runtimeDbBrowseTableRequestSchema = z.object({
+	connId: z.string(),
+	schema: z.string(),
+	table: z.string(),
+	filters: z.array(runtimeDbFilterSchema).optional(),
+	sort: z.array(runtimeDbSortSchema).optional(),
+	cursor: z.string().nullable().optional(),
+	pageSize: z.number().int().positive().optional(),
+});
+export type RuntimeDbBrowseTableRequest = z.infer<typeof runtimeDbBrowseTableRequestSchema>;
+
+/** A single result cell as a display string, or null for SQL NULL. */
+export const runtimeDbCellSchema = z.string().nullable();
+/** A row keyed by column name (single-table SELECT * ⇒ unique names). */
+export const runtimeDbRowSchema = z.record(z.string(), runtimeDbCellSchema);
+export type RuntimeDbRow = z.infer<typeof runtimeDbRowSchema>;
+
+export const runtimeDbResultColumnSchema = z.object({
+	name: z.string(),
+	dataType: z.string().nullable(),
+});
+export type RuntimeDbResultColumn = z.infer<typeof runtimeDbResultColumnSchema>;
+
+export const runtimeDbBrowseTableResponseSchema = z.object({
+	columns: z.array(runtimeDbResultColumnSchema),
+	rows: z.array(runtimeDbRowSchema),
+	rowCount: z.number().int().nonnegative(),
+	pagination: z.object({
+		pageSize: z.number().int().positive(),
+		hasMore: z.boolean(),
+		nextCursor: z.string().nullable(),
+	}),
+	truncated: z.object({
+		byRows: z.boolean(),
+		byBytes: z.boolean(),
+	}),
+});
+export type RuntimeDbBrowseTableResponse = z.infer<typeof runtimeDbBrowseTableResponseSchema>;
+
+export const runtimeDbColumnValueSchema = z.object({
+	column: z.string(),
+	value: z.string().nullable(),
+});
+export type RuntimeDbColumnValue = z.infer<typeof runtimeDbColumnValueSchema>;
+
+export const runtimeDbUpdateRowRequestSchema = z.object({
+	connId: z.string(),
+	schema: z.string(),
+	table: z.string(),
+	assignments: z.array(runtimeDbColumnValueSchema).min(1),
+	/** Row-identifying key (introspected primary key). */
+	where: z.array(runtimeDbColumnValueSchema).min(1),
+});
+export type RuntimeDbUpdateRowRequest = z.infer<typeof runtimeDbUpdateRowRequestSchema>;
+
+export const runtimeDbInsertRowRequestSchema = z.object({
+	connId: z.string(),
+	schema: z.string(),
+	table: z.string(),
+	values: z.array(runtimeDbColumnValueSchema).min(1),
+});
+export type RuntimeDbInsertRowRequest = z.infer<typeof runtimeDbInsertRowRequestSchema>;
+
+export const runtimeDbDeleteRowRequestSchema = z.object({
+	connId: z.string(),
+	schema: z.string(),
+	table: z.string(),
+	/** Row-identifying key (introspected primary key). */
+	where: z.array(runtimeDbColumnValueSchema).min(1),
+});
+export type RuntimeDbDeleteRowRequest = z.infer<typeof runtimeDbDeleteRowRequestSchema>;
+
+export const runtimeDbWriteResponseSchema = z.object({
+	affectedRows: z.number().nullable(),
+});
+export type RuntimeDbWriteResponse = z.infer<typeof runtimeDbWriteResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // Vault documents
 //
 // The readable (markdown + YAML frontmatter) channel of the vault, sibling to
@@ -2167,32 +2400,6 @@ export type RuntimeGitRefsResponse = z.infer<typeof runtimeGitRefsResponseSchema
 // and are never returned. Kept self-contained here (api-contract imports only core) so
 // the web-ui bundle never pulls in the driver modules.
 
-export const runtimeDbEngineSchema = z.enum(["postgres", "mysql", "sqlite"]);
-export type RuntimeDbEngine = z.infer<typeof runtimeDbEngineSchema>;
-
-export const runtimeDbSslConfigSchema = z.object({
-	mode: z.enum(["disable", "require", "verify-ca", "verify-full"]),
-	caPath: z.string().optional(),
-});
-export type RuntimeDbSslConfig = z.infer<typeof runtimeDbSslConfigSchema>;
-
-/** A committed, secret-free connection record plus whether a machine-home credential exists. */
-export const runtimeDbConnectionSchema = z.object({
-	connId: z.string(),
-	label: z.string(),
-	engine: runtimeDbEngineSchema,
-	host: z.string().nullable(),
-	port: z.number().int().positive().nullable(),
-	database: z.string().nullable(),
-	user: z.string().nullable(),
-	filePath: z.string().nullable(),
-	ssl: runtimeDbSslConfigSchema.nullable(),
-	allowWrites: z.boolean(),
-	createdAt: z.string(),
-	hasCredential: z.boolean(),
-});
-export type RuntimeDbConnection = z.infer<typeof runtimeDbConnectionSchema>;
-
 export const runtimeDbConnectionListResponseSchema = z.object({
 	connections: z.array(runtimeDbConnectionSchema),
 });
@@ -2246,15 +2453,6 @@ export const runtimeDbConnectionTestResponseSchema = z.object({
 	error: z.string().optional(),
 });
 export type RuntimeDbConnectionTestResponse = z.infer<typeof runtimeDbConnectionTestResponseSchema>;
-
-export const runtimeDbColumnSchema = z.object({
-	name: z.string(),
-	dataType: z.string(),
-	nullable: z.boolean(),
-	isPrimaryKey: z.boolean(),
-	defaultValue: z.string().nullable(),
-});
-export type RuntimeDbColumn = z.infer<typeof runtimeDbColumnSchema>;
 
 export const runtimeDbTableSummarySchema = z.object({
 	schema: z.string(),

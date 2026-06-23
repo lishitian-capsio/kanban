@@ -379,6 +379,18 @@ body,
 	contain-intrinsic-size: auto 92px;
 }
 
+/*
+ * Off-screen cell paint culling for the database result grid. Row virtualization
+ * (TableVirtuoso) already bounds vertical work; this bounds horizontal work so a wide
+ * table (many columns) doesn't pay full paint for cells scrolled out of view. Same idea
+ * as the board card rule above: the browser skips painting off-screen cells while keeping
+ * them in the DOM, and remembers each cell's rendered size to avoid layout shift.
+ */
+.kb-db-cell {
+	content-visibility: auto;
+	contain-intrinsic-size: auto 28px;
+}
+
 .kb-board-card-dependency-source {
 	box-shadow: inset 0 0 0 1px var(--color-accent);
 }

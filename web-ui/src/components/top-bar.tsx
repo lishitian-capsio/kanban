@@ -9,6 +9,7 @@ import {
 	ChevronDown,
 	CircleArrowDown,
 	Command,
+	Database,
 	GitBranch,
 	Library,
 	Menu,
@@ -320,6 +321,8 @@ export function TopBar({
 	isGitHistoryOpen,
 	onToggleVault,
 	isVaultOpen,
+	onToggleDatabase,
+	isDatabaseOpen,
 	onToggleHomeChat,
 	isHomeChatOpen,
 	onOpenSettings,
@@ -366,6 +369,8 @@ export function TopBar({
 	isGitHistoryOpen?: boolean;
 	onToggleVault?: () => void;
 	isVaultOpen?: boolean;
+	onToggleDatabase?: () => void;
+	isDatabaseOpen?: boolean;
 	onToggleHomeChat?: () => void;
 	isHomeChatOpen?: boolean;
 	onOpenSettings?: (section?: SettingsSection) => void;
@@ -563,6 +568,18 @@ export function TopBar({
 									title="Vault"
 								>
 									Vault
+								</Button>
+							) : null}
+							{!hideProjectDependentActions && onToggleDatabase ? (
+								<Button
+									variant={isDatabaseOpen ? "primary" : "default"}
+									size="sm"
+									icon={<Database size={14} />}
+									onClick={onToggleDatabase}
+									className={cn("shrink-0", isDatabaseOpen ? "ring-1 ring-accent" : "kb-navbar-btn")}
+									title="Database"
+								>
+									Database
 								</Button>
 							) : null}
 						</>

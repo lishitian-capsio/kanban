@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { UpdateNotificationController } from "@/components/update-notification-controller";
+import { DatabaseView } from "@/components/database/database-view";
 import { VaultView } from "@/components/vault/vault-view";
 import { createInitialBoardData } from "@/data/board-data";
 import { createIdleTaskSession } from "@/hooks/app-utils";
@@ -90,6 +91,7 @@ export default function App(): ReactElement {
 	const [isClearTrashDialogOpen, setIsClearTrashDialogOpen] = useState(false);
 	const [isGitHistoryOpen, setIsGitHistoryOpen] = useState(false);
 	const [isVaultOpen, setIsVaultOpen] = useState(false);
+	const [isDatabaseOpen, setIsDatabaseOpen] = useState(false);
 	const [pendingTaskStartAfterEditId, setPendingTaskStartAfterEditId] = useState<string | null>(null);
 	const taskEditorResetRef = useRef<() => void>(() => {});
 	const lastStreamErrorRef = useRef<string | null>(null);
@@ -97,6 +99,7 @@ export default function App(): ReactElement {
 		setCanPersistWorkspaceState(false);
 		setIsGitHistoryOpen(false);
 		setIsVaultOpen(false);
+		setIsDatabaseOpen(false);
 		setPendingTaskStartAfterEditId(null);
 		taskEditorResetRef.current();
 	}, []);
@@ -237,6 +240,7 @@ export default function App(): ReactElement {
 	useEffect(() => {
 		if (selectedCard) {
 			setIsVaultOpen(false);
+			setIsDatabaseOpen(false);
 		}
 	}, [selectedCard]);
 
@@ -571,6 +575,7 @@ export default function App(): ReactElement {
 			return;
 		}
 		setIsVaultOpen(false);
+		setIsDatabaseOpen(false);
 		setIsGitHistoryOpen((current) => !current);
 	}, [hasNoProjects]);
 	const handleCloseGitHistory = useCallback(() => {
@@ -581,7 +586,16 @@ export default function App(): ReactElement {
 			return;
 		}
 		setIsGitHistoryOpen(false);
+		setIsDatabaseOpen(false);
 		setIsVaultOpen((current) => !current);
+	}, [hasNoProjects]);
+	const handleToggleDatabase = useCallback(() => {
+		if (hasNoProjects) {
+			return;
+		}
+		setIsGitHistoryOpen(false);
+		setIsVaultOpen(false);
+		setIsDatabaseOpen((current) => !current);
 	}, [hasNoProjects]);
 
 	const {
@@ -914,6 +928,8 @@ export default function App(): ReactElement {
 						isGitHistoryOpen={isGitHistoryOpen}
 						onToggleVault={hasNoProjects || selectedCard ? undefined : handleToggleVault}
 						isVaultOpen={isVaultOpen}
+						onToggleDatabase={hasNoProjects || selectedCard ? undefined : handleToggleDatabase}
+						isDatabaseOpen={isDatabaseOpen}
 						onToggleHomeChat={isHomeChatAvailable ? handleToggleHomeChat : undefined}
 						isHomeChatOpen={chatDock.open}
 						hideProjectDependentActions={shouldHideProjectDependentTopBarActions}
@@ -951,6 +967,8 @@ export default function App(): ReactElement {
 									<div className="flex flex-1 min-h-0 min-w-0">
 										{isVaultOpen ? (
 											<VaultView workspaceId={currentProjectId} initialView="requirements" />
+										) : isDatabaseOpen ? (
+											<DatabaseView workspaceId={currentProjectId} />
 										) : isGitHistoryOpen ? (
 											<GitHistoryView
 												workspaceId={currentProjectId}

@@ -35,3 +35,29 @@ export {
 	writeCredentials,
 } from "./registry/connection-store";
 export * from "./types";
+export {
+	type BuildBrowseQueryInput,
+	type BuildDeleteRowInput,
+	type BuildInsertRowInput,
+	type BuildUpdateRowInput,
+	type BuiltQuery,
+	buildBrowseQuery,
+	buildDeleteRow,
+	buildInsertRow,
+	buildUpdateRow,
+	type ColumnValue,
+	type DbFilter,
+	type DbFilterOp,
+	type DbSort,
+} from "./query-builder";
+export {
+	type ExecuteQueryInput,
+	type ExecuteQueryPagination,
+	type ExecuteQueryResult,
+	type NormalizedQueryError,
+	type QueryErrorCode,
+	QueryExecutionError,
+	QueryExecutor,
+	type QueryExecutorDeps,
+} from "./execution";
+export { formatDbCell, formatDbRow } from "./result-format";

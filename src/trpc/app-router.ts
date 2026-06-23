@@ -5,6 +5,8 @@ import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import type { WorkspaceDbApi } from "./workspace-db-api";
+
 import type {
 	RuntimeAgentProviderConfigListResponse,
 	RuntimeAgentProviderConfigSaveRequest,
@@ -344,6 +346,21 @@ import {
 	runtimeWorktreeDeleteResponseSchema,
 	runtimeWorktreeEnsureRequestSchema,
 	runtimeWorktreeEnsureResponseSchema,
+	runtimeDbBrowseTableRequestSchema,
+	runtimeDbBrowseTableResponseSchema,
+	runtimeDbConnectionsListResponseSchema,
+	runtimeDbDeleteConnectionRequestSchema,
+	runtimeDbDeleteConnectionResponseSchema,
+	runtimeDbDeleteRowRequestSchema,
+	runtimeDbInsertRowRequestSchema,
+	runtimeDbIntrospectRequestSchema,
+	runtimeDbIntrospectResponseSchema,
+	runtimeDbTestConnectionRequestSchema,
+	runtimeDbTestConnectionResponseSchema,
+	runtimeDbUpdateRowRequestSchema,
+	runtimeDbUpsertConnectionRequestSchema,
+	runtimeDbUpsertConnectionResponseSchema,
+	runtimeDbWriteResponseSchema,
 } from "../core/api-contract";
 
 export interface RuntimeTrpcWorkspaceScope {
@@ -641,7 +658,7 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeGitCommitDiffRequest,
 		) => Promise<RuntimeGitCommitDiffResponse>;
-	};
+	} & WorkspaceDbApi;
 	dbApi: {
 		listConnections: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeDbConnectionListResponse>;
 		addConnection: (
@@ -1302,6 +1319,61 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeHookIngestResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.hooksApi.ingest(input);
+			}),
+	}),
+	database: t.router({
+		listConnections: workspaceProcedure
+			.output(runtimeDbConnectionsListResponseSchema)
+			.query(async ({ ctx }) => {
+				return await ctx.workspaceApi.listConnections(ctx.workspaceScope);
+			}),
+		upsertConnection: workspaceProcedure
+			.input(runtimeDbUpsertConnectionRequestSchema)
+			.output(runtimeDbUpsertConnectionResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.upsertConnection(ctx.workspaceScope, input);
+			}),
+		deleteConnection: workspaceProcedure
+			.input(runtimeDbDeleteConnectionRequestSchema)
+			.output(runtimeDbDeleteConnectionResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.deleteConnection(ctx.workspaceScope, input);
+			}),
+		testConnection: workspaceProcedure
+			.input(runtimeDbTestConnectionRequestSchema)
+			.output(runtimeDbTestConnectionResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.testConnection(ctx.workspaceScope, input);
+			}),
+		introspect: workspaceProcedure
+			.input(runtimeDbIntrospectRequestSchema)
+			.output(runtimeDbIntrospectResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.introspect(ctx.workspaceScope, input);
+			}),
+		browseTable: workspaceProcedure
+			.input(runtimeDbBrowseTableRequestSchema)
+			.output(runtimeDbBrowseTableResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.browseTable(ctx.workspaceScope, input);
+			}),
+		updateRow: workspaceProcedure
+			.input(runtimeDbUpdateRowRequestSchema)
+			.output(runtimeDbWriteResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.updateRow(ctx.workspaceScope, input);
+			}),
+		insertRow: workspaceProcedure
+			.input(runtimeDbInsertRowRequestSchema)
+			.output(runtimeDbWriteResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.insertRow(ctx.workspaceScope, input);
+			}),
+		deleteRow: workspaceProcedure
+			.input(runtimeDbDeleteRowRequestSchema)
+			.output(runtimeDbWriteResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.deleteRow(ctx.workspaceScope, input);
 			}),
 	}),
 });
