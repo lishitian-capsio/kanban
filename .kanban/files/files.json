@@ -15,6 +15,14 @@
       "category": "image",
       "size": 27035,
       "addedAt": 1782110252251
+    },
+    {
+      "id": "a0ba9",
+      "name": "image.png",
+      "mime": "image/png",
+      "category": "image",
+      "size": 23426,
+      "addedAt": 1782190350613
     }
   ]
 }
