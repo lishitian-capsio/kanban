@@ -1,0 +1,19 @@
+{
+  "id": "c4d8d",
+  "title": "修复: Git History 隐藏 kanban/task/* 分支, kanban/board 可见但禁止双击切换",
+  "prompt": "Bug/UX:kanban 自己的 Git History 视图把内部分支也当成普通可切换分支列出来,双击会尝试切到主代码工作树,是个 footgun。\n\n现状(已定位):\n- web-ui/src/components/git-history/git-refs-panel.tsx 第 90 行 refs.filter(r=>r.type==='branch') 不过滤任何 kanban 内部分支;每行双击(约 273 行)直接调 onCheckoutRef(ref.name) 切换。\n- refs 来自后端 trpc workspace.getGitRefs(src/trpc/workspace-api.ts),后端也没过滤。\n- 内部分支命名:board 数据分支默认 kanban/board(BOARD_WORKTREE_SENTINEL='__board__',见 src/workspace/task-worktree-path.ts;board 分支名以 .kanban/board-ref 为准,见 src/state/board-ref.ts);归档分支 kanban/board-archive/<ts>;任务分支 kanban/task/<id>。\n\n采用方案 B(已定):\n- 【kanban/task/* 和 kanban/board-archive/* 完全隐藏】——不在 Git History 的分支列表里出现(包括过滤掉 remote 对应项)。\n- 【kanban/board 仍然可见】(用户要能查看 board 变更历史),但【禁止对它双击切换】:该行不绑定 onCheckoutRef / 双击无效,并给个轻量视觉提示(如 lock 图标或置灰 + tooltip 说明这是 board 数据分支,不可切换)。\n- 实现建议:加一个小的纯函数 helper 对分支名分类(board / board-archive / task / 普通),供过滤与禁切判断复用;board 分支名要用权威来源(board-ref 的 branch)而不是硬编码字符串,避免用户改过分支名后失配。优先在【前端 refs 面板/use-git-history-data】层做过滤与禁切(局部、低风险);如判断后端 getGitRefs 更合适也可,但不要影响其它 getGitRefs 调用方。\n\n要求:\n- 不影响普通代码分支的列出与双击切换行为。\n- 补单元测试:覆盖 task/archive 分支被过滤、kanban/board 出现但不可 checkout、普通分支正常可 checkout。\n严格遵循 web-ui 规范(Tailwind token、lucide 图标、@/utils/logger 禁 console.*、react-use)。遵循 AGENTS.md 不用 any。不要提交。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782191228835,
+  "updatedAt": 1782191228835,
+  "column": "backlog",
+  "rank": "Zp",
+  "dependsOn": []
+}
