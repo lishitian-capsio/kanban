@@ -1,0 +1,23 @@
+{
+  "id": "56ada",
+  "title": "Ask 体验增强：问题就地显示/可追踪 + 与 auto-review 结合",
+  "prompt": "在修复任务 16c34（恢复 Commit/PR、内联发送、回到发起 agent）之后，对 review 卡片的 Ask 体验做增量增强。请基于 16c34 改完后的代码进行，先读懂现有 Ask 实现（review 卡片 split-button、sendSessionPrompt 注入路径、auto-review 的触发逻辑、task summary 上的 reviewQuestion、auto-review-enabled 开关）。\n\n═══ 第一部分：Ask 问题就地显示 / 可追踪 ═══\n\n1) review 卡片底部三个动作并排：Commit / Open PR / Ask（不可让 Ask 挤掉前两者）。\n2) 点 Ask → 卡片上就地弹出小 composer（popover/inline，不跳转到 worktree 页）：\n   - 多行输入框（占位『问点什么…』）；\n   - 目标选择（radio/chip）：『本任务 agent（问自己）』/『发起会话 kanban agent』，每项配一句话说明以消除歧义；默认值=当前默认目标；\n   - ⌘+Enter 发送，行为与 Commit 一致：原地触发 + 原地反馈，不做页面跳转。\n3) 发送后在卡片上显示一枚『问题 pill』：展示问题摘要 + 状态机（发送中 → 已送达 → 回答中 → 已回复）。点 pill 才跳到会话（跳转是用户主动行为，不是发送的副作用）。\n4) 在 chat 面板里，Ask 问题渲染成有辨识度的消息：带『Ask』badge + 目标 agent 名，用 quote/高亮块与普通对话轮区分，便于回看定位『我问的 / 它答的』。\n\n═══ 第二部分：与 auto-review 结合 ═══\n\n背景：auto-review（commit 或 pr）在任务一进 review 就触发并移到 done、触发下游链接任务；Ask 永不移到 done。两者是相反信任级别，需要让 Ask 能在自动动作前拦截。\n\n5) 宽限窗（grace window）：开启了 auto-review 的任务进入 review 时，不立即执行自动动作，先显示倒计时 chip（如『Ns 后自动 Commit … [现在追问]』，N 可配，给个合理默认如 5s 并允许设为 0 表示沿用旧的即时行为）。窗口结束无人干预 → 照常执行 auto 动作 → done → 触发下游（链路保持不变）。\n6) 点 Ask = 暂停该任务挂起的 auto-review（复用 auto-review-enabled=false 的取消语义，但记为『因 Ask 暂停』而非用户永久关闭）。任务钉在 review 做 Q&A；卡片显示『auto-review: 已暂停（追问中）』。\n7) 追问收尾的两个出口：『满意，放行』→ 恢复原本的 auto 动作（commit 或 pr）→ done → 触发下游；或用户手动 Commit/Open PR。要保证下游链接任务的自动接力逻辑在『放行』后仍然正确触发。\n8) 卡片 pill 统一展示合并状态：倒计时 → 已暂停(追问中) → 回答中 → 已放行。\n\n═══ 工程要求（遵守仓库 AGENTS.md）═══\n- web-ui 用 Tailwind + 既有 UI primitives（Button/Dialog/Tooltip/Popover 等）、lucide 图标；不用 console.*（用 logger）；TS 无 any。\n- 宽限窗/暂停/放行的状态机与 auto-review 恢复逻辑要可单测（纯逻辑与 IO 分离）；下游链接触发的回归要覆盖。\n- 不重新引入已删除的 Ask-B 反向关联死路径。\n- 倒计时为 0 / auto-review 关闭时，行为与当前一致（即时 auto-review 或纯手动 review），不得回归。\n\n═══ 验收 ═══\n- review 卡片同时显示 Commit/PR/Ask；点 Ask 就地弹 composer，发送不跳页、有反馈；卡片出现可追踪的问题 pill；chat 内 Ask 消息有 badge 区分。\n- auto-review 任务进 review 时出现宽限窗倒计时；点 Ask 能在自动动作前暂停；『放行』后恢复 auto 动作并正确触发下游链接任务；倒计时 0 / auto-review off 时无行为回归。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "origin": {
+    "agentId": "claude",
+    "threadId": "f0010289-2e7a-483a-9777-3bb386752ca1"
+  },
+  "baseRef": "main",
+  "createdAt": 1782203256334,
+  "updatedAt": 1782203256334,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
