@@ -1,0 +1,23 @@
+{
+  "id": "b9631",
+  "title": "彻底移除 Cline 托管 provider（managed OAuth/credits/api.cline.bot）",
+  "prompt": "目标：从 Kanban 中彻底移除 \"Cline 托管模型 provider\"（即 app.cline.bot / api.cline.bot / data.cline.bot 这套托管模型 + credits + OAuth/设备登录服务）。Settings 里那个 Account 面板的 \"Sign in with cline\" 登录卡片要随之消失。\n\n【极其重要 — 不要误伤】代码库里 \"cline\" 这个 token 有两个互不相干的含义：(1) 历史上的原生 agent id 'cline'，现已改名为 'pi'；(2) 本任务要删除的 Cline 托管 provider / OAuth（runtimeKanbanOauthProviderSchema 里的 \"cline\"、providerId/oauthProvider、api.cline.bot/app.cline.bot/data.cline.bot、credits、Featurebase、设备登录）。本任务只动 (2)，绝不要去碰或重命名 agent id 'pi' 相关的任何东西，也不要 blanket-rename \"cline\" 字符串。详见仓库 AGENTS.md 里 'The token cline survives in two unrelated places' 这条。\n\n【范围 — 要删除/清理的】\n- OAuth provider 枚举与契约：src/core/api-contract.ts 的 runtimeKanbanOauthProviderSchema 中的 'cline' 取值，以及由它派生的类型/逻辑（注意 web-ui 通过 @runtime-contract 共享，窄化枚举会波及 web:typecheck，要一并修干净）。\n- 后端服务：src/agent-sdk/kanban/agent-provider-service.ts、mcp-runtime-service.ts、src/agent-sdk/ai/provider-models/descriptors.ts 中与 cline 托管 provider/OAuth/托管模型 相关的部分。\n- web-ui：components/shared/kanban-oauth-signin-panel.tsx（Account 登录卡片）、account-organization-section.tsx、kanban-setup-section.tsx、hooks/use-runtime-settings-kanban-controller.ts（含 managedOauthProvider==='cline' 的设备登录分支 ~line 793、toManagedKanbanOauthProvider）、runtime/native-agent.ts、runtime/onboarding.ts、telemetry/posthog-config.ts、featurebase 反馈相关。把已经空掉的 Account/sign-in UI 干净移除，不要留下空壳面板。\n- 相关测试：上面列出的 *.test.ts(x) 全部更新或删除，使其反映 provider 已不存在。\n\n【行为预期】移除后，pi 不再有 \"托管模型/credits/官方登录\" 这条路径；pi 与各 CLI agent 仍通过各自的 per-agent provider（BYOK / 自定义 baseUrl+apiKey / official 等现有机制）正常工作。不要破坏 per-agent provider、env injection、codex/claude/droid 等 projector 逻辑。\n\n【完成标准】整个仓库 typecheck 通过（务必含 web:typecheck，因为契约是跨 src 与 web-ui 共享的），相关单测通过，全仓 grep 不再出现指向 Cline 托管 provider 的活引用（api.cline.bot/app.cline.bot/data.cline.bot、managedOauthProvider 的 'cline' 分支等），且 agent id 'pi' 相关功能完全未受影响。先通读 AGENTS.md 相关条目和上述文件再动手，建议先理出删除清单再改。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "origin": {
+    "agentId": "claude",
+    "threadId": "1ac02029-0cbb-4630-bd01-d1e31f409656"
+  },
+  "baseRef": "main",
+  "createdAt": 1782207994424,
+  "updatedAt": 1782207994424,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
