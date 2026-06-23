@@ -3,7 +3,7 @@
   "title": "测试任务 auto commit",
   "prompt": "这是一个用于验证 auto-commit 自动审查流程的测试任务。请在工作区内的 AUTO_COMMIT_TEST.md 文件中追加一行：'auto-commit verification line (2026-06-23 run)'。这是一个最小改动，用于触发任务完成后自动提交并移动到 done 列。",
   "startInPlanMode": false,
-  "autoReviewEnabled": true,
+  "autoReviewEnabled": false,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,8 +12,8 @@
   },
   "baseRef": "main",
   "createdAt": 1782210217779,
-  "updatedAt": 1782210270452,
-  "column": "review",
+  "updatedAt": 1782210303295,
+  "column": "trash",
   "rank": "Zq",
   "dependsOn": []
 }
