@@ -18,7 +18,6 @@ import type { KeyboardEvent, MouseEvent } from "react";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { showAppToast } from "@/components/app-toaster";
-import { BoardCardAskControl } from "@/components/board-card-ask-control";
 import {
 	formatKanbanReasoningEffortLabel,
 	formatKanbanSelectedModelButtonText,
@@ -28,7 +27,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import { resolveTaskReviewQuestion } from "@/git-actions/resolve-review-question";
 import type { RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useTaskWorkspaceSnapshotValue } from "@/stores/workspace-metadata-store";
 import type { BoardCard as BoardCardModel, BoardColumnId } from "@/types";
@@ -239,12 +237,9 @@ function BoardCardComponent({
 	onSaveTitle,
 	onCommit,
 	onOpenPr,
-	onAskSelf,
-	onAskKanbanAgent,
 	onCancelAutomaticAction,
 	isCommitLoading = false,
 	isOpenPrLoading = false,
-	isAskLoading = false,
 	isMoveToTrashLoading = false,
 	onDependencyPointerDown,
 	onDependencyPointerEnter,
@@ -266,12 +261,9 @@ function BoardCardComponent({
 	onSaveTitle?: (taskId: string, title: string) => void;
 	onCommit?: (taskId: string) => void;
 	onOpenPr?: (taskId: string) => void;
-	onAskSelf?: (taskId: string) => void;
-	onAskKanbanAgent?: (taskId: string) => void;
 	onCancelAutomaticAction?: (taskId: string) => void;
 	isCommitLoading?: boolean;
 	isOpenPrLoading?: boolean;
-	isAskLoading?: boolean;
 	isMoveToTrashLoading?: boolean;
 	onDependencyPointerDown?: (taskId: string, event: MouseEvent<HTMLElement>) => void;
 	onDependencyPointerEnter?: (taskId: string) => void;
@@ -460,14 +452,7 @@ function BoardCardComponent({
 	// surface a "Continue session" affordance instead of the generic restore label.
 	const canContinueAgentSession = isTrashCard && !!sessionSummary?.agentSessionId;
 	const showReviewGitActions = columnId === "review" && (reviewWorkspaceSnapshot?.changedFiles ?? 0) > 0;
-	// The agent's review question (the text it stopped on) is what the Ask action
-	// routes. Ask is offered whenever the task is parked awaiting review — even
-	// with a zero diff (no Commit/Open PR), the agent may still have a question.
-	const reviewQuestion = useMemo(() => resolveTaskReviewQuestion(sessionSummary), [sessionSummary]);
-	const showAskAction =
-		columnId === "review" && sessionSummary?.state === "awaiting_review" && (!!onAskSelf || !!onAskKanbanAgent);
-	const showReviewActionsRow = showReviewGitActions || showAskAction;
-	const isAnyGitActionLoading = isCommitLoading || isOpenPrLoading || isAskLoading;
+	const isAnyGitActionLoading = isCommitLoading || isOpenPrLoading;
 	const cancelAutomaticActionLabel =
 		!isTrashCard && card.autoReviewEnabled ? getTaskAutoReviewCancelButtonLabel(card.autoReviewMode) : null;
 	const agentOverrideLabel = useMemo(
@@ -879,49 +864,36 @@ function BoardCardComponent({
 									) : null}
 								</p>
 							) : null}
-							{showReviewActionsRow ? (
+							{showReviewGitActions ? (
 								<div className="flex gap-1.5 mt-1.5">
-									{showAskAction ? (
-										<BoardCardAskControl
-											question={reviewQuestion}
-											isLoading={isAskLoading}
-											disabled={isCommitLoading || isOpenPrLoading}
-											onAskSelf={() => onAskSelf?.(card.id)}
-											onAskKanbanAgent={() => onAskKanbanAgent?.(card.id)}
-										/>
-									) : null}
-									{showReviewGitActions ? (
-										<>
-											<Button
-												variant="primary"
-												size="sm"
-												icon={isCommitLoading ? <Spinner size={12} /> : undefined}
-												disabled={isAnyGitActionLoading}
-												style={{ flex: "1 1 0" }}
-												onMouseDown={stopEvent}
-												onClick={(event) => {
-													stopEvent(event);
-													onCommit?.(card.id);
-												}}
-											>
-												Commit
-											</Button>
-											<Button
-												variant="primary"
-												size="sm"
-												icon={isOpenPrLoading ? <Spinner size={12} /> : undefined}
-												disabled={isAnyGitActionLoading}
-												style={{ flex: "1 1 0" }}
-												onMouseDown={stopEvent}
-												onClick={(event) => {
-													stopEvent(event);
-													onOpenPr?.(card.id);
-												}}
-											>
-												Open PR
-											</Button>
-										</>
-									) : null}
+									<Button
+										variant="primary"
+										size="sm"
+										icon={isCommitLoading ? <Spinner size={12} /> : undefined}
+										disabled={isAnyGitActionLoading}
+										style={{ flex: "1 1 0" }}
+										onMouseDown={stopEvent}
+										onClick={(event) => {
+											stopEvent(event);
+											onCommit?.(card.id);
+										}}
+									>
+										Commit
+									</Button>
+									<Button
+										variant="primary"
+										size="sm"
+										icon={isOpenPrLoading ? <Spinner size={12} /> : undefined}
+										disabled={isAnyGitActionLoading}
+										style={{ flex: "1 1 0" }}
+										onMouseDown={stopEvent}
+										onClick={(event) => {
+											stopEvent(event);
+											onOpenPr?.(card.id);
+										}}
+									>
+										Open PR
+									</Button>
 								</div>
 							) : null}
 							{cancelAutomaticActionLabel && onCancelAutomaticAction ? (

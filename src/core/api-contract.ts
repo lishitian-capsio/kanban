@@ -198,20 +198,6 @@ export const runtimeSetGitUserIdentityResponseSchema = z.object({
 });
 export type RuntimeSetGitUserIdentityResponse = z.infer<typeof runtimeSetGitUserIdentityResponseSchema>;
 
-// Provenance: the home (sidebar) kanban-agent chat thread that created this task.
-// Stamped once at creation when a task is created from a home chat (Kanban injects
-// the originating home session id via `KANBAN_SESSION_TASK_ID`; the CLI decodes its
-// agent/thread). Absent for human-created (web-ui) and CLI-direct tasks. The "Ask"
-// review action reads this to route a review question back to the originating
-// kanban-agent thread; when it is absent or that thread was closed, a fresh thread
-// bound to the task is created instead. Workspace-relative — the workspace id is the
-// task's own, so only the agent and thread segments are stored.
-export const runtimeTaskOriginSchema = z.object({
-	agentId: runtimeAgentIdSchema,
-	threadId: z.string(),
-});
-export type RuntimeTaskOrigin = z.infer<typeof runtimeTaskOriginSchema>;
-
 // Durable task spec fields, pre-title-resolution. Exported so the on-disk sharded
 // task store (src/state/task-shard-store.ts) can extend this exact shape with its
 // storage-only fields (column, rank, dependsOn) instead of redefining the columns.
@@ -226,7 +212,6 @@ export const runtimeBoardCardObjectSchema = z.object({
 	agentId: runtimeAgentIdSchema.optional(),
 	agentSettings: runtimeTaskAgentSettingsSchema.optional(),
 	owner: runtimeTaskOwnerSchema.optional(),
-	origin: runtimeTaskOriginSchema.optional(),
 	baseRef: z.string(),
 	createdAt: z.number(),
 	updatedAt: z.number(),
@@ -324,33 +309,6 @@ export const runtimeHomeChatThreadMutationResponseSchema = z.object({
 	error: z.string().optional(),
 });
 export type RuntimeHomeChatThreadMutationResponse = z.infer<typeof runtimeHomeChatThreadMutationResponseSchema>;
-
-// Resolve which kanban-agent home thread a task's "Ask" review question should be
-// routed to. `origin` is the task's recorded provenance (the caller already holds
-// the board, so it passes the card's `origin` through); the runtime consults the
-// thread registry to decide whether the originating thread still exists or a fresh
-// thread must be opened. `fallbackAgentId`/`fallbackName` parameterize that fresh
-// thread; both default server-side (workspace `selectedAgentId` / a task-derived
-// name) when omitted.
-export const runtimeTaskAskThreadResolveRequestSchema = z.object({
-	taskId: z.string(),
-	origin: runtimeTaskOriginSchema.nullable().optional(),
-	fallbackAgentId: runtimeAgentIdSchema.optional(),
-	fallbackName: z.string().optional(),
-});
-export type RuntimeTaskAskThreadResolveRequest = z.infer<typeof runtimeTaskAskThreadResolveRequestSchema>;
-
-export const runtimeTaskAskThreadResolveResponseSchema = z.object({
-	ok: z.boolean(),
-	// The home agent session id to attach/inject the question into (null on error).
-	sessionId: z.string().nullable(),
-	agentId: runtimeAgentIdSchema.nullable(),
-	threadId: z.string().nullable(),
-	// True when a fresh fallback thread was opened to satisfy the request.
-	created: z.boolean(),
-	error: z.string().optional(),
-});
-export type RuntimeTaskAskThreadResolveResponse = z.infer<typeof runtimeTaskAskThreadResolveResponseSchema>;
 
 // ---------------------------------------------------------------------------
 // Files library
@@ -1282,16 +1240,6 @@ export const runtimeTaskSessionSummarySchema = z.object({
 	updatedAt: z.number(),
 	lastOutputAt: z.number().nullable(),
 	reviewReason: runtimeTaskSessionReviewReasonSchema,
-	/**
-	 * The agent's closing question/request, captured when the task cleanly enters
-	 * `awaiting_review` (Claude's `Stop` `last_assistant_message`, Codex's result,
-	 * or pi's final assistant text — the same source as
-	 * `latestHookActivity.finalMessage`, promoted to a stable review-scoped field).
-	 * Backs the "Ask" review action so a card can surface what the agent asked.
-	 * Null while running and for non-clean exits with no closing text. Optional so
-	 * summaries persisted before this field parse back without migration.
-	 */
-	reviewQuestion: z.string().nullable().optional(),
 	exitCode: z.number().nullable(),
 	lastHookAt: z.number().nullable().default(null),
 	latestHookActivity: runtimeTaskHookActivitySchema.nullable().default(null),
@@ -2090,28 +2038,6 @@ export const runtimeTaskChatSendResponseSchema = z.object({
 	error: z.string().optional(),
 });
 export type RuntimeTaskChatSendResponse = z.infer<typeof runtimeTaskChatSendResponseSchema>;
-
-/**
- * Generic "inject an arbitrary prompt into a session" request. The session
- * target is a task id, or a home/kanban-agent thread session id — the runtime
- * routes both to the right transport (native pi chat vs CLI terminal PTY). This
- * is the programmable primitive behind the review Commit/PR actions and the
- * upcoming Ask action.
- */
-export const runtimeSessionPromptRequestSchema = z.object({
-	taskId: z.string(),
-	text: z.string(),
-	mode: runtimeTaskSessionModeSchema.optional(),
-});
-export type RuntimeSessionPromptRequest = z.infer<typeof runtimeSessionPromptRequestSchema>;
-
-export const runtimeSessionPromptResponseSchema = z.object({
-	ok: z.boolean(),
-	summary: runtimeTaskSessionSummarySchema.nullable(),
-	message: runtimeTaskChatMessageSchema.nullable().optional(),
-	error: z.string().optional(),
-});
-export type RuntimeSessionPromptResponse = z.infer<typeof runtimeSessionPromptResponseSchema>;
 
 export const runtimeTaskChatReloadRequestSchema = z.object({
 	taskId: z.string(),

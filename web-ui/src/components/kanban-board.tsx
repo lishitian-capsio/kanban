@@ -41,14 +41,11 @@ export function KanbanBoard({
 	onSaveTaskTitle,
 	onCommitTask,
 	onOpenPrTask,
-	onAskSelfTask,
-	onAskKanbanAgentTask,
 	onCancelAutomaticTaskAction,
 	onMoveToTrashTask,
 	onRestoreFromTrashTask,
 	commitTaskLoadingById,
 	openPrTaskLoadingById,
-	askTaskLoadingById,
 	moveToTrashLoadingById,
 	dependencies,
 	onCreateDependency,
@@ -71,14 +68,11 @@ export function KanbanBoard({
 	onSaveTaskTitle?: (taskId: string, title: string) => void;
 	onCommitTask?: (taskId: string) => void;
 	onOpenPrTask?: (taskId: string) => void;
-	onAskSelfTask?: (taskId: string) => void;
-	onAskKanbanAgentTask?: (taskId: string) => void;
 	onCancelAutomaticTaskAction?: (taskId: string) => void;
 	onMoveToTrashTask?: (taskId: string) => void;
 	onRestoreFromTrashTask?: (taskId: string) => void;
 	commitTaskLoadingById?: Record<string, boolean>;
 	openPrTaskLoadingById?: Record<string, boolean>;
-	askTaskLoadingById?: Record<string, boolean>;
 	moveToTrashLoadingById?: Record<string, boolean>;
 	dependencies: BoardDependency[];
 	onCreateDependency?: (fromTaskId: string, toTaskId: string) => void;
@@ -414,14 +408,11 @@ export function KanbanBoard({
 							onSaveTitle={column.id !== "trash" ? onSaveTaskTitle : undefined}
 							onCommitTask={column.id === "review" ? onCommitTask : undefined}
 							onOpenPrTask={column.id === "review" ? onOpenPrTask : undefined}
-							onAskSelfTask={column.id === "review" ? onAskSelfTask : undefined}
-							onAskKanbanAgentTask={column.id === "review" ? onAskKanbanAgentTask : undefined}
 							onCancelAutomaticTaskAction={onCancelAutomaticTaskAction}
 							onMoveToTrashTask={column.id === "review" ? onMoveToTrashTask : undefined}
 							onRestoreFromTrashTask={column.id === "trash" ? onRestoreFromTrashTask : undefined}
 							commitTaskLoadingById={column.id === "review" ? commitTaskLoadingById : undefined}
 							openPrTaskLoadingById={column.id === "review" ? openPrTaskLoadingById : undefined}
-							askTaskLoadingById={column.id === "review" ? askTaskLoadingById : undefined}
 							moveToTrashLoadingById={column.id === "review" ? moveToTrashLoadingById : undefined}
 							activeDragTaskId={activeDragTaskId}
 							activeDragSourceColumnId={activeDragSourceColumnId}

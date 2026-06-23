@@ -6,7 +6,6 @@
 // and the `RuntimeTaskSessionSummary` lifecycle/session-id helpers shared by the
 // event adapter and the task session service.
 import type { RuntimeTaskSessionSummary } from "../../core/api-contract";
-import { deriveReviewQuestion } from "../../session/review-question";
 import { now } from "../../session/session-message";
 import { createSessionMessageBuffer, type SessionMessageBuffer } from "../../session/session-message-buffer";
 
@@ -78,7 +77,6 @@ export function createDefaultSummary(taskId: string): RuntimeTaskSessionSummary 
 		updatedAt: now(),
 		lastOutputAt: null,
 		reviewReason: null,
-		reviewQuestion: null,
 		exitCode: null,
 		lastHookAt: null,
 		latestHookActivity: null,
@@ -97,15 +95,6 @@ export function updateSummary(
 		...patch,
 		updatedAt: now(),
 	};
-	// Promote the final assistant text into the review-scoped question field at the
-	// summary chokepoint, mirroring the terminal manager so reviewQuestion behaves
-	// identically across agents. pi's agent_end sets state + finalMessage together,
-	// so this captures the closing question in one pass.
-	entry.summary.reviewQuestion = deriveReviewQuestion(
-		entry.summary.state,
-		entry.summary.latestHookActivity?.finalMessage ?? null,
-		entry.summary.reviewQuestion ?? null,
-	);
 	return cloneSummary(entry.summary);
 }
 

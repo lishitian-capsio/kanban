@@ -46,7 +46,7 @@ export interface UseHomeThreadsResult {
 	activeThread: HomeThread | null;
 	activeThreadId: string;
 	setActiveThread: (threadId: string) => void;
-	createThread: (input: { name: string; agentId: RuntimeAgentId }) => Promise<HomeThread | null>;
+	createThread: (input: { name: string; agentId: RuntimeAgentId }) => Promise<void>;
 	renameThread: (threadId: string, name: string) => Promise<void>;
 	closeThread: (threadId: string) => Promise<void>;
 	isLoading: boolean;
@@ -172,9 +172,9 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 	);
 
 	const createThread = useCallback(
-		async ({ name, agentId }: { name: string; agentId: RuntimeAgentId }): Promise<HomeThread | null> => {
+		async ({ name, agentId }: { name: string; agentId: RuntimeAgentId }) => {
 			if (!currentProjectId) {
-				return null;
+				return;
 			}
 			try {
 				const response = await getRuntimeTrpcClient(currentProjectId).runtime.createHomeThread.mutate({
@@ -190,10 +190,8 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 					[currentProjectId]: [...(current[currentProjectId] ?? []), created],
 				}));
 				setActiveThreadIdByWorkspace((current) => ({ ...current, [currentProjectId]: created.id }));
-				return { ...created, isDefault: false };
 			} catch (error) {
 				notifyError(error instanceof Error ? error.message : String(error));
-				return null;
 			}
 		},
 		[currentProjectId],

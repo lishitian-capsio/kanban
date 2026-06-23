@@ -7,13 +7,11 @@ import type {
 	RuntimeBoardDependency,
 	RuntimeReasoningEffort,
 	RuntimeTaskAgentSettings,
-	RuntimeTaskOrigin,
 	RuntimeTaskOwner,
-	RuntimeTaskSessionMode,
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
-import { runtimeAgentIdSchema, runtimeReasoningEffortSchema, runtimeTaskSessionModeSchema } from "../core/api-contract";
-import { resolveCreateTaskAgentId, resolveCreateTaskOrigin } from "../core/default-task-agent";
+import { runtimeAgentIdSchema, runtimeReasoningEffortSchema } from "../core/api-contract";
+import { resolveCreateTaskAgentId } from "../core/default-task-agent";
 import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import {
 	addTaskDependency,
@@ -102,17 +100,6 @@ function parseAutoReviewMode(value: string | undefined): "commit" | "pr" | undef
 		return value;
 	}
 	throw new Error(`Invalid auto review mode "${value}". Expected: commit, pr.`);
-}
-
-function parseSessionMode(value: string | undefined): RuntimeTaskSessionMode | undefined {
-	if (value === undefined) {
-		return undefined;
-	}
-	const result = runtimeTaskSessionModeSchema.safeParse(value.trim());
-	if (!result.success) {
-		throw new Error(`Invalid --mode "${value}". Expected: act, plan.`);
-	}
-	return result.data;
 }
 
 const VALID_AGENT_IDS = runtimeAgentIdSchema.options;
@@ -445,7 +432,6 @@ async function createTask(input: {
 	agentId?: RuntimeAgentId;
 	agentSettings?: RuntimeTaskAgentSettings;
 	owner?: RuntimeTaskOwner;
-	origin?: RuntimeTaskOrigin;
 }): Promise<JsonRecord> {
 	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd);
 	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
@@ -472,7 +458,6 @@ async function createTask(input: {
 				agentId: input.agentId,
 				agentSettings: input.agentSettings,
 				owner: resolvedOwner,
-				origin: input.origin,
 				baseRef: resolvedBaseRef,
 			},
 			() => globalThis.crypto.randomUUID(),
@@ -498,7 +483,6 @@ async function createTask(input: {
 			...(created.agentId ? { agentId: created.agentId } : {}),
 			...formatTaskAgentSettings(created.agentSettings),
 			...(created.owner ? { owner: created.owner } : {}),
-			...(created.origin ? { origin: created.origin } : {}),
 		},
 	};
 }
@@ -731,41 +715,6 @@ async function startTask(input: { cwd: string; taskId: string; projectPath?: str
 			column: "in_progress",
 			workspacePath: workspaceRepoPath,
 		},
-	};
-}
-
-/**
- * Inject an arbitrary prompt/message into a live session — either a task
- * agent's session or a home/kanban-agent thread session (pass the home-agent
- * session id as `taskId`). This is the CLI face of the `sendSessionPrompt`
- * primitive, so a kanban/home agent running on the CLI side can programmatically
- * drive another session. Delivery transport (native pi chat vs CLI terminal
- * PTY) is resolved by the runtime.
- */
-async function messageTaskSession(input: {
-	cwd: string;
-	taskId: string;
-	message: string;
-	mode?: RuntimeTaskSessionMode;
-	projectPath?: string;
-}): Promise<JsonRecord> {
-	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd);
-	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
-	const runtimeClient = createRuntimeTrpcClient(workspaceId);
-	const result = await runtimeClient.runtime.sendSessionPrompt.mutate({
-		taskId: input.taskId,
-		text: input.message,
-		...(input.mode !== undefined ? { mode: input.mode } : {}),
-	});
-	if (!result.ok) {
-		throw new Error(result.error ?? `Could not deliver the message to session "${input.taskId}".`);
-	}
-	return {
-		ok: true,
-		taskId: input.taskId,
-		delivered: true,
-		sessionState: result.summary?.state ?? null,
-		latestMessageId: result.message?.id ?? null,
 	};
 }
 
@@ -1172,10 +1121,6 @@ export function registerTaskCommand(program: Command): void {
 					explicitAgentId: parseAgentId(options.agentId),
 					callerSessionId,
 				});
-				// Record which home thread/agent created this task (when an agent in a home
-				// chat ran `kanban task create`), so the "Ask" review action can route a
-				// review question back to that thread. Same env source as the agent default.
-				const resolvedOrigin = resolveCreateTaskOrigin(callerSessionId);
 				await runTaskCommand(
 					async () =>
 						await createTask({
@@ -1189,7 +1134,6 @@ export function registerTaskCommand(program: Command): void {
 							autoReviewMode: options.autoReviewMode,
 							owner: parseOwner(options.owner) ?? undefined,
 							agentId: resolvedAgentId,
-							origin: resolvedOrigin,
 							agentSettings: buildTaskAgentSettingsForCreate({
 								providerId: parseOptionalStringOrDefault(options.provider) ?? undefined,
 								modelId: parseOptionalStringOrDefault(options.model) ?? undefined,
@@ -1373,29 +1317,4 @@ export function registerTaskCommand(program: Command): void {
 					}),
 			);
 		});
-
-	task
-		.command("message")
-		.alias("msg")
-		.description(
-			"Inject a prompt/message into a live session — a task agent's session, or a home/kanban-agent thread session (pass its __home_agent__ session id as --task-id).",
-		)
-		.requiredOption("--task-id <id>", "Target session: a task ID, or a home/kanban-agent session ID.")
-		.requiredOption("--message <text>", "Message/prompt text to inject into the session.")
-		.option("--mode <mode>", "Session mode for native (pi) sessions: act | plan.", parseSessionMode)
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(
-			async (options: { taskId: string; message: string; mode?: RuntimeTaskSessionMode; projectPath?: string }) => {
-				await runTaskCommand(
-					async () =>
-						await messageTaskSession({
-							cwd: process.cwd(),
-							taskId: options.taskId,
-							message: options.message,
-							mode: options.mode,
-							projectPath: options.projectPath,
-						}),
-				);
-			},
-		);
 }

@@ -299,10 +299,9 @@ export function useGitActions({
 				// auto-commit retrying) coalesces into a single toast instead of
 				// stacking copies on screen.
 				const errorToastKey = `task-git-action:${taskId}:${action}`;
-				// Commit/PR are now built on the shared "inject a prompt into a
+				// Commit/PR are built on the shared "inject a prompt into a
 				// session" primitive: a fixed template preset (the git action prompt)
-				// delivered through the same native-vs-CLI transport choreography the
-				// Ask action will reuse.
+				// delivered through the native-vs-CLI transport choreography.
 				const delivered = await injectSessionPrompt({
 					taskId,
 					prompt,

@@ -1,10 +1,4 @@
-import type {
-	RuntimeAgentId,
-	RuntimeHomeChatThread,
-	RuntimeHomeChatThreadsData,
-	RuntimeTaskOrigin,
-} from "../core/api-contract";
-import { DEFAULT_HOME_THREAD_ID } from "../core/home-agent-session";
+import type { RuntimeAgentId, RuntimeHomeChatThread, RuntimeHomeChatThreadsData } from "../core/api-contract";
 
 /**
  * Pure, I/O-free operations over the persisted home chat thread registry.
@@ -63,44 +57,6 @@ export function renameHomeThread(
 export interface CloseHomeThreadResult {
 	next: RuntimeHomeChatThreadsData;
 	removed: RuntimeHomeChatThread;
-}
-
-export interface DecideAskThreadInput {
-	/** The originating home thread recorded on the task, if any. */
-	origin: RuntimeTaskOrigin | null | undefined;
-	/** The current registry threads (the implicit default thread is never listed). */
-	threads: RuntimeHomeChatThread[];
-}
-
-/**
- * The target for routing a task's "Ask" review question back to a kanban agent.
- * `existing` carries the agent+thread to derive a home session id from; `create`
- * signals the orchestration layer to open a fresh thread bound to the task.
- */
-export type AskThreadDecision = { kind: "existing"; agentId: RuntimeAgentId; threadId: string } | { kind: "create" };
-
-/**
- * Pure decision for where a task's "Ask" should land:
- * - the implicit {@link DEFAULT_HOME_THREAD_ID} resolves directly (it is never
- *   listed in the registry, mirroring its legacy three-segment session id);
- * - a still-registered origin thread resolves to that thread, using the thread's
- *   registered agent as the source of truth;
- * - otherwise (no origin, or the origin thread was closed) we signal `create`, so
- *   the caller opens a fresh thread bound to the task.
- */
-export function decideAskThread(input: DecideAskThreadInput): AskThreadDecision {
-	const { origin } = input;
-	if (!origin) {
-		return { kind: "create" };
-	}
-	if (origin.threadId === DEFAULT_HOME_THREAD_ID) {
-		return { kind: "existing", agentId: origin.agentId, threadId: DEFAULT_HOME_THREAD_ID };
-	}
-	const thread = input.threads.find((candidate) => candidate.id === origin.threadId);
-	if (!thread) {
-		return { kind: "create" };
-	}
-	return { kind: "existing", agentId: thread.agentId, threadId: thread.id };
 }
 
 /** Remove a thread, returning the new data and the removed entry. Throws if missing. */

@@ -23,14 +23,11 @@ export function BoardColumn({
 	onSaveTitle,
 	onCommitTask,
 	onOpenPrTask,
-	onAskSelfTask,
-	onAskKanbanAgentTask,
 	onCancelAutomaticTaskAction,
 	onMoveToTrashTask,
 	onRestoreFromTrashTask,
 	commitTaskLoadingById,
 	openPrTaskLoadingById,
-	askTaskLoadingById,
 	moveToTrashLoadingById,
 	onCardClick,
 	activeDragTaskId,
@@ -56,14 +53,11 @@ export function BoardColumn({
 	onSaveTitle?: (taskId: string, title: string) => void;
 	onCommitTask?: (taskId: string) => void;
 	onOpenPrTask?: (taskId: string) => void;
-	onAskSelfTask?: (taskId: string) => void;
-	onAskKanbanAgentTask?: (taskId: string) => void;
 	onCancelAutomaticTaskAction?: (taskId: string) => void;
 	onMoveToTrashTask?: (taskId: string) => void;
 	onRestoreFromTrashTask?: (taskId: string) => void;
 	commitTaskLoadingById?: Record<string, boolean>;
 	openPrTaskLoadingById?: Record<string, boolean>;
-	askTaskLoadingById?: Record<string, boolean>;
 	moveToTrashLoadingById?: Record<string, boolean>;
 	onCardClick?: (card: BoardCardModel) => void;
 	activeDragTaskId?: string | null;
@@ -198,12 +192,9 @@ export function BoardColumn({
 											onRestoreFromTrash={onRestoreFromTrashTask}
 											onCommit={onCommitTask}
 											onOpenPr={onOpenPrTask}
-											onAskSelf={onAskSelfTask}
-											onAskKanbanAgent={onAskKanbanAgentTask}
 											onCancelAutomaticAction={onCancelAutomaticTaskAction}
 											isCommitLoading={commitTaskLoadingById?.[card.id] ?? false}
 											isOpenPrLoading={openPrTaskLoadingById?.[card.id] ?? false}
-											isAskLoading={askTaskLoadingById?.[card.id] ?? false}
 											isMoveToTrashLoading={moveToTrashLoadingById?.[card.id] ?? false}
 											onDependencyPointerDown={onDependencyPointerDown}
 											onDependencyPointerEnter={onDependencyPointerEnter}

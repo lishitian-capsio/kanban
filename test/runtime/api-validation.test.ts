@@ -5,7 +5,6 @@ import {
 	parseHomeChatThreadCreateRequest,
 	parseHomeChatThreadRenameRequest,
 	parseHookIngestRequest,
-	parseSessionPromptRequest,
 	parseTaskSessionStartRequest,
 	parseWorkspaceFileSearchRequest,
 } from "../../src/core/api-validation";
@@ -135,38 +134,5 @@ describe("parseHomeChatThreadCloseRequest", () => {
 
 	it("throws on empty id", () => {
 		expect(() => parseHomeChatThreadCloseRequest({ id: "   " })).toThrow("id cannot be empty");
-	});
-});
-
-describe("parseSessionPromptRequest", () => {
-	it("trims the taskId and text", () => {
-		expect(parseSessionPromptRequest({ taskId: "  task-1 ", text: "  do it  " })).toEqual({
-			taskId: "task-1",
-			text: "do it",
-		});
-	});
-
-	it("preserves a valid session mode", () => {
-		expect(parseSessionPromptRequest({ taskId: "task-1", text: "plan it", mode: "plan" })).toEqual({
-			taskId: "task-1",
-			text: "plan it",
-			mode: "plan",
-		});
-	});
-
-	it("throws on empty taskId", () => {
-		expect(() => parseSessionPromptRequest({ taskId: "   ", text: "hi" })).toThrow(
-			"Session prompt taskId cannot be empty.",
-		);
-	});
-
-	it("throws on empty text", () => {
-		expect(() => parseSessionPromptRequest({ taskId: "task-1", text: "   " })).toThrow(
-			"Session prompt text is required.",
-		);
-	});
-
-	it("rejects an invalid mode", () => {
-		expect(() => parseSessionPromptRequest({ taskId: "task-1", text: "hi", mode: "turbo" })).toThrow();
 	});
 });

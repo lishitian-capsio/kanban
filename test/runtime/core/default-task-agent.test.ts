@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveCreateTaskAgentId, resolveCreateTaskOrigin } from "../../../src/core/default-task-agent";
+import { resolveCreateTaskAgentId } from "../../../src/core/default-task-agent";
 
 const HOME_CLAUDE = "__home_agent__:workspace-1:claude";
 const HOME_PI = "__home_agent__:workspace-1:pi";
-const HOME_PI_THREAD = "__home_agent__:workspace-1:pi:thread-abc";
 const REGULAR_TASK_ID = "4f1c2d3e-task-uuid";
 
 describe("resolveCreateTaskAgentId", () => {
@@ -67,29 +66,5 @@ describe("resolveCreateTaskAgentId", () => {
 				callerSessionId: "__home_agent__:workspace-1:not-a-real-agent",
 			}),
 		).toBeUndefined();
-	});
-});
-
-describe("resolveCreateTaskOrigin", () => {
-	it("captures the agent and explicit thread of a home caller session", () => {
-		expect(resolveCreateTaskOrigin(HOME_PI_THREAD)).toEqual({ agentId: "pi", threadId: "thread-abc" });
-	});
-
-	it("captures the default thread for a legacy three-segment home session", () => {
-		expect(resolveCreateTaskOrigin(HOME_CLAUDE)).toEqual({ agentId: "claude", threadId: "default" });
-	});
-
-	it("returns undefined for a regular (non-home) task caller", () => {
-		// A subtask created by a task agent has no home thread to route an Ask back to.
-		expect(resolveCreateTaskOrigin(REGULAR_TASK_ID)).toBeUndefined();
-	});
-
-	it("returns undefined when there is no caller session id", () => {
-		expect(resolveCreateTaskOrigin(undefined)).toBeUndefined();
-		expect(resolveCreateTaskOrigin("")).toBeUndefined();
-	});
-
-	it("returns undefined when the home caller encodes an unknown agent", () => {
-		expect(resolveCreateTaskOrigin("__home_agent__:workspace-1:not-a-real-agent")).toBeUndefined();
 	});
 });

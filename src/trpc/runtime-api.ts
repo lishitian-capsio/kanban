@@ -37,8 +37,6 @@ import type {
 	RuntimeAgentProviderSetListResponse,
 	RuntimeCommandRunResponse,
 	RuntimeRunUpdateResponse,
-	RuntimeTaskChatSendRequest,
-	RuntimeTaskChatSendResponse,
 	RuntimeTaskSessionSummary,
 	RuntimeUpdateStatusResponse,
 } from "../core/api-contract";
@@ -52,9 +50,7 @@ import {
 	parseKanbanMcpSettingsSaveRequest,
 	parseKanbanProviderModelsRequest,
 	parseRuntimeConfigSaveRequest,
-	parseSessionPromptRequest,
 	parseShellSessionStartRequest,
-	parseTaskAskThreadResolveRequest,
 	parseTaskChatAbortRequest,
 	parseTaskChatCancelRequest,
 	parseTaskChatMessagesRequest,
@@ -184,7 +180,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		return fn(piService);
 	};
 
-	const runtimeApi: RuntimeTrpcContext["runtimeApi"] = {
+	return {
 		loadConfig: async (workspaceScope) => {
 			const activeRuntimeConfig = deps.getActiveRuntimeConfig?.();
 			if (!workspaceScope && !activeRuntimeConfig) {
@@ -676,26 +672,6 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				return { ok: false, thread: null, error: message };
 			}
 		},
-		resolveTaskAskThread: async (workspaceScope, input) => {
-			try {
-				const body = parseTaskAskThreadResolveRequest(input);
-				// Fall back to the workspace's current home agent / a task-derived name when
-				// the caller doesn't specify, so a fresh thread (origin missing or closed)
-				// stays bound to the task and talks to a sensible agent.
-				const fallbackAgentId =
-					body.fallbackAgentId ?? (await deps.loadScopedRuntimeConfig(workspaceScope)).selectedAgentId;
-				const fallbackName = body.fallbackName?.trim() || `Ask · ${body.taskId.slice(0, 8)}`;
-				const resolved = await deps.getScopedHomeThreadStore(workspaceScope).resolveTaskThread({
-					origin: body.origin ?? null,
-					fallbackAgentId,
-					fallbackName,
-				});
-				return { ok: true, ...resolved };
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return { ok: false, sessionId: null, agentId: null, threadId: null, created: false, error: message };
-			}
-		},
 		getKanbanProviderCatalog: async (_workspaceScope) => {
 			return await agentProviderService.getAllAgentProviderCatalog();
 		},
@@ -864,25 +840,6 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				};
 			}
 		},
-		// Generic "inject an arbitrary prompt into a session" primitive. It is the
-		// programmable surface (tRPC + CLI) behind the review Commit/PR actions and
-		// the upcoming Ask action, and deliberately reuses the unified delivery path
-		// in `sendTaskChatMessage` — which already routes a native pi task session, a
-		// lazily-(re)started home/kanban-agent thread, and a CLI/terminal PTY — rather
-		// than reimplementing transport selection.
-		sendSessionPrompt: async (workspaceScope, input) => {
-			const body = parseSessionPromptRequest(input);
-			const chatRequest: RuntimeTaskChatSendRequest = {
-				taskId: body.taskId,
-				text: body.text,
-				...(body.mode !== undefined ? { mode: body.mode } : {}),
-			};
-			const response: RuntimeTaskChatSendResponse = await runtimeApi.sendTaskChatMessage(
-				workspaceScope,
-				chatRequest,
-			);
-			return response;
-		},
 		startShellSession: async (workspaceScope, input) => {
 			try {
 				const body = parseShellSessionStartRequest(input);
@@ -1006,5 +963,4 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			return { ok: true, config: getAgentProviderConfig(input.agentId) ?? undefined };
 		},
 	};
-	return runtimeApi;
 }

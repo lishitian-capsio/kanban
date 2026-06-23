@@ -1,5 +1,5 @@
-import { type RuntimeAgentId, type RuntimeTaskOrigin, runtimeAgentIdSchema } from "./api-contract";
-import { parseHomeAgentSessionId, resolveHomeAgentId } from "./home-agent-session";
+import type { RuntimeAgentId } from "./api-contract";
+import { resolveHomeAgentId } from "./home-agent-session";
 
 export interface ResolveCreateTaskAgentIdInput {
 	/**
@@ -46,30 +46,4 @@ export function resolveCreateTaskAgentId(input: ResolveCreateTaskAgentIdInput): 
 		}
 	}
 	return undefined;
-}
-
-/**
- * Resolve the origin (home agent + thread) to stamp on a newly created task card.
- *
- * Reads the caller's `KANBAN_SESSION_TASK_ID` (passed in as `callerSessionId`):
- * when it encodes a home chat session, the task records which home thread/agent
- * created it so the "Ask" review action can later route a question back to that
- * thread. Like {@link resolveCreateTaskAgentId} this is pure and never throws —
- * an absent, non-home, or unknown-agent caller resolves to `undefined`, which
- * leaves the task originless (handled by the Ask fallback that opens a fresh
- * thread bound to the task).
- */
-export function resolveCreateTaskOrigin(callerSessionId: string | undefined): RuntimeTaskOrigin | undefined {
-	if (!callerSessionId) {
-		return undefined;
-	}
-	const parts = parseHomeAgentSessionId(callerSessionId);
-	if (!parts) {
-		return undefined;
-	}
-	const agentId = runtimeAgentIdSchema.safeParse(parts.agentId).data;
-	if (!agentId) {
-		return undefined;
-	}
-	return { agentId, threadId: parts.threadId };
 }

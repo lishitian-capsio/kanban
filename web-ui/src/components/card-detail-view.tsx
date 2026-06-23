@@ -345,8 +345,6 @@ export function CardDetailView({
 	onSaveTaskTitle,
 	onCommitTask,
 	onOpenPrTask,
-	onAskSelfTask,
-	onAskKanbanAgentTask,
 	onAgentCommitTask,
 	onAgentOpenPrTask,
 	onMoveReviewCardToTrash,
@@ -354,7 +352,6 @@ export function CardDetailView({
 	onCancelAutomaticTaskAction,
 	commitTaskLoadingById,
 	openPrTaskLoadingById,
-	askTaskLoadingById,
 	agentCommitTaskLoadingById,
 	agentOpenPrTaskLoadingById,
 	moveToTrashLoadingById,
@@ -404,8 +401,6 @@ export function CardDetailView({
 	onSaveTaskTitle?: (taskId: string, title: string) => void;
 	onCommitTask?: (taskId: string) => void;
 	onOpenPrTask?: (taskId: string) => void;
-	onAskSelfTask?: (taskId: string) => void;
-	onAskKanbanAgentTask?: (taskId: string) => void;
 	onAgentCommitTask?: (taskId: string) => void;
 	onAgentOpenPrTask?: (taskId: string) => void;
 	onMoveReviewCardToTrash?: (taskId: string) => void;
@@ -413,7 +408,6 @@ export function CardDetailView({
 	onCancelAutomaticTaskAction?: (taskId: string) => void;
 	commitTaskLoadingById?: Record<string, boolean>;
 	openPrTaskLoadingById?: Record<string, boolean>;
-	askTaskLoadingById?: Record<string, boolean>;
 	agentCommitTaskLoadingById?: Record<string, boolean>;
 	agentOpenPrTaskLoadingById?: Record<string, boolean>;
 	moveToTrashLoadingById?: Record<string, boolean>;
@@ -871,13 +865,10 @@ export function CardDetailView({
 							onSaveTaskTitle={onSaveTaskTitle}
 							onCommitTask={onCommitTask}
 							onOpenPrTask={onOpenPrTask}
-							onAskSelfTask={onAskSelfTask}
-							onAskKanbanAgentTask={onAskKanbanAgentTask}
 							onMoveToTrashTask={onMoveReviewCardToTrash}
 							onRestoreFromTrashTask={onRestoreTaskFromTrash}
 							commitTaskLoadingById={commitTaskLoadingById}
 							openPrTaskLoadingById={openPrTaskLoadingById}
-							askTaskLoadingById={askTaskLoadingById}
 							moveToTrashLoadingById={moveToTrashLoadingById}
 							panelWidth="100%"
 							defaultKanbanModelId={runtimeConfig?.kanbanProviderSettings?.modelId ?? null}

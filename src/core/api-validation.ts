@@ -15,9 +15,7 @@ import {
 	type RuntimeKanbanProviderModelsRequest,
 	type RuntimeProjectAddRequest,
 	type RuntimeProjectRemoveRequest,
-	type RuntimeSessionPromptRequest,
 	type RuntimeShellSessionStartRequest,
-	type RuntimeTaskAskThreadResolveRequest,
 	type RuntimeTaskChatAbortRequest,
 	type RuntimeTaskChatCancelRequest,
 	type RuntimeTaskChatMessagesRequest,
@@ -47,9 +45,7 @@ import {
 	runtimeKanbanProviderModelsRequestSchema,
 	runtimeProjectAddRequestSchema,
 	runtimeProjectRemoveRequestSchema,
-	runtimeSessionPromptRequestSchema,
 	runtimeShellSessionStartRequestSchema,
-	runtimeTaskAskThreadResolveRequestSchema,
 	runtimeTaskChatAbortRequestSchema,
 	runtimeTaskChatCancelRequestSchema,
 	runtimeTaskChatMessagesRequestSchema,
@@ -287,23 +283,6 @@ export function parseTaskChatSendRequest(value: unknown): RuntimeTaskChatSendReq
 	};
 }
 
-export function parseSessionPromptRequest(value: unknown): RuntimeSessionPromptRequest {
-	const parsed = parseWithSchema(runtimeSessionPromptRequestSchema, value);
-	const taskId = parsed.taskId.trim();
-	if (!taskId) {
-		throw new Error("Session prompt taskId cannot be empty.");
-	}
-	const text = parsed.text.trim();
-	if (!text) {
-		throw new Error("Session prompt text is required.");
-	}
-	return {
-		...parsed,
-		taskId,
-		text,
-	};
-}
-
 export function parseHomeChatThreadCreateRequest(value: unknown): RuntimeHomeChatThreadCreateRequest {
 	const parsed = parseWithSchema(runtimeHomeChatThreadCreateRequestSchema, value);
 	const name = parsed.name.trim();
@@ -340,18 +319,6 @@ export function parseHomeChatThreadCloseRequest(value: unknown): RuntimeHomeChat
 	}
 	return {
 		id,
-	};
-}
-
-export function parseTaskAskThreadResolveRequest(value: unknown): RuntimeTaskAskThreadResolveRequest {
-	const parsed = parseWithSchema(runtimeTaskAskThreadResolveRequestSchema, value);
-	const taskId = parsed.taskId.trim();
-	if (!taskId) {
-		throw new Error("Task id cannot be empty.");
-	}
-	return {
-		...parsed,
-		taskId,
 	};
 }
 

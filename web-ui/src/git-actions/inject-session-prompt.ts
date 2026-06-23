@@ -68,8 +68,8 @@ function delay(ms: number): Promise<void> {
 /**
  * Inject an arbitrary prompt into a live session, dispatching to the correct
  * transport for the backing agent. This is the shared primitive behind the
- * review Commit/Open-PR actions and the future Ask action — it owns the
- * native-vs-CLI delivery choreography so callers only supply text + a target.
+ * review Commit/Open-PR actions — it owns the native-vs-CLI delivery
+ * choreography so callers only supply text + a target.
  *
  * It deliberately reuses the existing `sendTaskChatMessage` /
  * `sendTaskSessionInput` senders rather than reimplementing delivery.

@@ -98,15 +98,11 @@ import type {
 	RuntimeProjectRemoveResponse,
 	RuntimeProjectsResponse,
 	RuntimeRunUpdateResponse,
-	RuntimeSessionPromptRequest,
-	RuntimeSessionPromptResponse,
 	RuntimeSetGitUserIdentityRequest,
 	RuntimeSetGitUserIdentityResponse,
 	RuntimeShellSessionStartRequest,
 	RuntimeShellSessionStartResponse,
 	RuntimeSlashCommandsResponse,
-	RuntimeTaskAskThreadResolveRequest,
-	RuntimeTaskAskThreadResolveResponse,
 	RuntimeTaskChatAbortRequest,
 	RuntimeTaskChatAbortResponse,
 	RuntimeTaskChatCancelRequest,
@@ -258,15 +254,11 @@ import {
 	runtimeProjectRemoveResponseSchema,
 	runtimeProjectsResponseSchema,
 	runtimeRunUpdateResponseSchema,
-	runtimeSessionPromptRequestSchema,
-	runtimeSessionPromptResponseSchema,
 	runtimeSetGitUserIdentityRequestSchema,
 	runtimeSetGitUserIdentityResponseSchema,
 	runtimeShellSessionStartRequestSchema,
 	runtimeShellSessionStartResponseSchema,
 	runtimeSlashCommandsResponseSchema,
-	runtimeTaskAskThreadResolveRequestSchema,
-	runtimeTaskAskThreadResolveResponseSchema,
 	runtimeTaskChatAbortRequestSchema,
 	runtimeTaskChatAbortResponseSchema,
 	runtimeTaskChatCancelRequestSchema,
@@ -378,10 +370,6 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeTaskChatSendRequest,
 		) => Promise<RuntimeTaskChatSendResponse>;
-		sendSessionPrompt: (
-			scope: RuntimeTrpcWorkspaceScope,
-			input: RuntimeSessionPromptRequest,
-		) => Promise<RuntimeSessionPromptResponse>;
 		reloadTaskChatSession: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeTaskChatReloadRequest,
@@ -407,10 +395,6 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatThreadCloseRequest,
 		) => Promise<RuntimeHomeChatThreadMutationResponse>;
-		resolveTaskAskThread: (
-			scope: RuntimeTrpcWorkspaceScope,
-			input: RuntimeTaskAskThreadResolveRequest,
-		) => Promise<RuntimeTaskAskThreadResolveResponse>;
 		getKanbanProviderCatalog: (
 			scope: RuntimeTrpcWorkspaceScope | null,
 		) => Promise<RuntimeKanbanProviderCatalogResponse>;
@@ -762,12 +746,6 @@ export const runtimeAppRouter = t.router({
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.sendTaskChatMessage(ctx.workspaceScope, input);
 			}),
-		sendSessionPrompt: workspaceProcedure
-			.input(runtimeSessionPromptRequestSchema)
-			.output(runtimeSessionPromptResponseSchema)
-			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.sendSessionPrompt(ctx.workspaceScope, input);
-			}),
 		abortTaskChatTurn: workspaceProcedure
 			.input(runtimeTaskChatAbortRequestSchema)
 			.output(runtimeTaskChatAbortResponseSchema)
@@ -800,12 +778,6 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeHomeChatThreadMutationResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.closeHomeThread(ctx.workspaceScope, input);
-			}),
-		resolveTaskAskThread: workspaceProcedure
-			.input(runtimeTaskAskThreadResolveRequestSchema)
-			.output(runtimeTaskAskThreadResolveResponseSchema)
-			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.resolveTaskAskThread(ctx.workspaceScope, input);
 			}),
 		getKanbanProviderCatalog: t.procedure
 			.output(runtimeKanbanProviderCatalogResponseSchema)
