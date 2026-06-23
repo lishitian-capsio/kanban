@@ -1,0 +1,19 @@
+{
+  "id": "c5128",
+  "title": "测试任务（auto-review）",
+  "prompt": "这是一个用于验证 auto-review 功能的测试任务。请在 README 或任意合适的文件中添加一行注释（例如记录当前时间或一句测试说明），确认改动后即可完成。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782220152369,
+  "updatedAt": 1782220152369,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
