@@ -1,0 +1,19 @@
+{
+  "id": "c88b0",
+  "title": "深入理解并优化性能",
+  "prompt": "深入理解当前 Kanban 代码库的运行路径与性能热点，重点关注用户可感知的慢路径、频繁重渲染/高频事件处理、磁盘/进程/网络 I/O、任务启动与运行时状态流等可能瓶颈。先阅读相关架构与现有测试，定位可量化的优化点；实施生产质量的改进，保持现有架构边界和类型安全，不引入 any，不做无关重构。为有风险的行为补充或更新测试，并在最终说明中列出发现的瓶颈、改动、验证命令和残余风险。遵守仓库 AGENTS.md：不要提交，使用统一 logging facade，web-ui 使用既有 Tailwind/Radix/Lucide/UI primitive 约定。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "codex",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782191904347,
+  "updatedAt": 1782191904347,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
