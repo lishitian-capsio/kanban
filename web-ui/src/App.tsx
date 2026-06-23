@@ -36,7 +36,6 @@ import { DatabaseView } from "@/components/database/database-view";
 import { VaultView } from "@/components/vault/vault-view";
 import { createInitialBoardData } from "@/data/board-data";
 import { createIdleTaskSession } from "@/hooks/app-utils";
-import { KanbanAccessBlockedFallback } from "@/hooks/kanban-access-blocked-fallback";
 import { RuntimeDisconnectedFallback } from "@/hooks/runtime-disconnected-fallback";
 import { useAppHotkeys } from "@/hooks/use-app-hotkeys";
 import { useAskAction } from "@/hooks/use-ask-action";
@@ -48,7 +47,6 @@ import { useDocumentVisibility } from "@/hooks/use-document-visibility";
 import { useGitActions } from "@/hooks/use-git-actions";
 import { useGitUserIdentity } from "@/hooks/use-git-user-identity";
 import { useHomeThreads } from "@/hooks/use-home-threads";
-import { useKanbanAccessGate } from "@/hooks/use-kanban-access-gate";
 import { useOpenWorkspace } from "@/hooks/use-open-workspace";
 import { parseRemovedProjectPathFromStreamError, useProjectNavigation } from "@/hooks/use-project-navigation";
 import { useProjectUiState } from "@/hooks/use-project-ui-state";
@@ -137,9 +135,6 @@ export default function App(): ReactElement {
 		isLoading: isRuntimeProjectConfigLoading,
 		refresh: refreshRuntimeProjectConfig,
 	} = useRuntimeProjectConfig(currentProjectId);
-	const { isBlocked: isKanbanAccessBlocked, refresh: refreshKanbanAccess } = useKanbanAccessGate({
-		workspaceId: currentProjectId,
-	});
 	const isTaskAgentReady = isTaskAgentSetupSatisfied(runtimeProjectConfig);
 	const settingsWorkspaceId = navigationCurrentProjectId ?? currentProjectId;
 	const { config: settingsRuntimeProjectConfig, refresh: refreshSettingsRuntimeProjectConfig } =
@@ -831,9 +826,6 @@ export default function App(): ReactElement {
 	if (isRuntimeDisconnected) {
 		return <RuntimeDisconnectedFallback />;
 	}
-	if (isKanbanAccessBlocked) {
-		return <KanbanAccessBlockedFallback />;
-	}
 
 	return (
 		<LayoutCustomizationsProvider onResetBottomTerminalLayoutCustomizations={resetBottomTerminalLayoutCustomizations}>
@@ -1151,7 +1143,6 @@ export default function App(): ReactElement {
 						refreshRuntimeProjectConfig();
 						refreshSettingsRuntimeProjectConfig();
 					}}
-					onAccountSwitched={refreshKanbanAccess}
 				/>
 				<DebugDialog
 					open={isDebugDialogOpen}

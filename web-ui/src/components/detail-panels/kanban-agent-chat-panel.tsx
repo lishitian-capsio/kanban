@@ -2,7 +2,6 @@
 // Rendering lives here, while session state and action wiring come from the
 // controller hook so multiple surfaces can share the same behavior.
 
-import { AlertTriangle } from "lucide-react";
 import React, {
 	type ReactElement,
 	useCallback,
@@ -24,7 +23,6 @@ import {
 import { KanbanThinkingIndicator } from "@/components/detail-panels/kanban-thinking-indicator";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
-import { Link } from "@/components/ui/link";
 import { Spinner } from "@/components/ui/spinner";
 import { useKanbanChatPanelController } from "@/hooks/use-kanban-chat-panel-controller";
 import type { KanbanChatActionResult } from "@/hooks/use-kanban-chat-runtime-actions";
@@ -43,35 +41,17 @@ import type { TaskImage } from "@/types";
 // keeps following streamed output even when a freshly grown last message leaves
 // a sub-pixel gap.
 const BOTTOM_LOCK_THRESHOLD_PX = 24;
-const KANBAN_BUY_CREDITS_URL = "https://app.cline.bot/";
 
-const KanbanCreditLimitNotice = React.memo(function KanbanCreditLimitNotice() {
-	return (
-		<div className="mx-1 flex items-start gap-2 rounded-md border border-status-orange/40 bg-status-orange/10 px-3 py-2 text-xs text-status-orange">
-			<AlertTriangle size={14} className="mt-0.5 shrink-0" />
-			<p className="m-0 min-w-0">
-				Out of Kanban credits.{" "}
-				<Link href={KANBAN_BUY_CREDITS_URL} external>
-					Buy more credits
-				</Link>{" "}
-				to continue.
-			</p>
-		</div>
-	);
-});
-
-// Dynamic trailing content (thinking indicator, credit notice) and the list's
-// bottom padding live in the virtualized footer so they grow/shrink in place
-// and `followOutput` keeps them in view while pinned to the bottom.
+// Dynamic trailing content (thinking indicator) and the list's bottom padding
+// live in the virtualized footer so they grow/shrink in place and
+// `followOutput` keeps them in view while pinned to the bottom.
 interface KanbanChatListContext {
 	showAgentProgressIndicator: boolean;
-	isCreditLimitNoticeVisible: boolean;
 }
 
 const KanbanChatListFooter: VirtuosoComponents<KanbanChatMessage, KanbanChatListContext>["Footer"] = ({ context }) => (
 	<div className="flex flex-col gap-2 px-2 pt-2 pb-3">
 		{context?.showAgentProgressIndicator ? <KanbanThinkingIndicator /> : null}
-		{context?.isCreditLimitNoticeVisible ? <KanbanCreditLimitNotice /> : null}
 	</div>
 );
 
@@ -204,7 +184,6 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 		const modeByTaskIdRef = useRef<Map<string, RuntimeTaskSessionMode>>(new Map());
 		const [composerError, setComposerError] = useState<string | null>(null);
 		const [isSavingModel, setIsSavingModel] = useState(false);
-		const isCreditLimitNoticeVisible = summary?.latestHookActivity?.notificationType === "credit_limit";
 		const [mode, setMode] = useState<RuntimeTaskSessionMode>(() => {
 			const persistedMode = modeByTaskIdRef.current.get(taskId);
 			return persistedMode ?? summary?.mode ?? defaultMode;
@@ -263,8 +242,8 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 		}, [taskId]);
 
 		const chatListContext = useMemo<KanbanChatListContext>(
-			() => ({ showAgentProgressIndicator, isCreditLimitNoticeVisible }),
-			[showAgentProgressIndicator, isCreditLimitNoticeVisible],
+			() => ({ showAgentProgressIndicator }),
+			[showAgentProgressIndicator],
 		);
 
 		useEffect(() => {

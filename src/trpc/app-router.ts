@@ -44,7 +44,6 @@ import type {
 	RuntimeDebugResetAllStateResponse,
 	RuntimeDirectoryListRequest,
 	RuntimeDirectoryListResponse,
-	RuntimeFeaturebaseTokenResponse,
 	RuntimeFetchRemoteModelsRequest,
 	RuntimeFetchRemoteModelsResponse,
 	RuntimeFileAddRequest,
@@ -79,23 +78,12 @@ import type {
 	RuntimeHomeChatThreadsListResponse,
 	RuntimeHookIngestRequest,
 	RuntimeHookIngestResponse,
-	RuntimeKanbanAccountBalanceResponse,
-	RuntimeKanbanAccountOrganizationsResponse,
-	RuntimeKanbanAccountProfileResponse,
-	RuntimeKanbanAccountSwitchRequest,
-	RuntimeKanbanAccountSwitchResponse,
-	RuntimeKanbanDeviceAuthCompleteRequest,
-	RuntimeKanbanDeviceAuthCompleteResponse,
-	RuntimeKanbanDeviceAuthStartResponse,
-	RuntimeKanbanKanbanAccessResponse,
 	RuntimeKanbanMcpAuthStatusResponse,
 	RuntimeKanbanMcpOAuthRequest,
 	RuntimeKanbanMcpOAuthResponse,
 	RuntimeKanbanMcpSettingsResponse,
 	RuntimeKanbanMcpSettingsSaveRequest,
 	RuntimeKanbanMcpSettingsSaveResponse,
-	RuntimeKanbanOauthLoginRequest,
-	RuntimeKanbanOauthLoginResponse,
 	RuntimeKanbanProviderCatalogResponse,
 	RuntimeKanbanProviderModelsRequest,
 	RuntimeKanbanProviderModelsResponse,
@@ -214,7 +202,6 @@ import {
 	runtimeDebugResetAllStateResponseSchema,
 	runtimeDirectoryListRequestSchema,
 	runtimeDirectoryListResponseSchema,
-	runtimeFeaturebaseTokenResponseSchema,
 	runtimeFetchRemoteModelsRequestSchema,
 	runtimeFetchRemoteModelsResponseSchema,
 	runtimeFileAddRequestSchema,
@@ -249,23 +236,12 @@ import {
 	runtimeHomeChatThreadsListResponseSchema,
 	runtimeHookIngestRequestSchema,
 	runtimeHookIngestResponseSchema,
-	runtimeKanbanAccountBalanceResponseSchema,
-	runtimeKanbanAccountOrganizationsResponseSchema,
-	runtimeKanbanAccountProfileResponseSchema,
-	runtimeKanbanAccountSwitchRequestSchema,
-	runtimeKanbanAccountSwitchResponseSchema,
-	runtimeKanbanDeviceAuthCompleteRequestSchema,
-	runtimeKanbanDeviceAuthCompleteResponseSchema,
-	runtimeKanbanDeviceAuthStartResponseSchema,
-	runtimeKanbanKanbanAccessResponseSchema,
 	runtimeKanbanMcpAuthStatusResponseSchema,
 	runtimeKanbanMcpOAuthRequestSchema,
 	runtimeKanbanMcpOAuthResponseSchema,
 	runtimeKanbanMcpSettingsResponseSchema,
 	runtimeKanbanMcpSettingsSaveRequestSchema,
 	runtimeKanbanMcpSettingsSaveResponseSchema,
-	runtimeKanbanOauthLoginRequestSchema,
-	runtimeKanbanOauthLoginResponseSchema,
 	runtimeKanbanProviderCatalogResponseSchema,
 	runtimeKanbanProviderModelsRequestSchema,
 	runtimeKanbanProviderModelsResponseSchema,
@@ -434,21 +410,6 @@ export interface RuntimeTrpcContext {
 		getKanbanProviderCatalog: (
 			scope: RuntimeTrpcWorkspaceScope | null,
 		) => Promise<RuntimeKanbanProviderCatalogResponse>;
-		getKanbanAccountProfile: (
-			scope: RuntimeTrpcWorkspaceScope | null,
-		) => Promise<RuntimeKanbanAccountProfileResponse>;
-		getKanbanKanbanAccess: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeKanbanKanbanAccessResponse>;
-		getFeaturebaseToken: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeFeaturebaseTokenResponse>;
-		getKanbanAccountBalance: (
-			scope: RuntimeTrpcWorkspaceScope | null,
-		) => Promise<RuntimeKanbanAccountBalanceResponse>;
-		getKanbanAccountOrganizations: (
-			scope: RuntimeTrpcWorkspaceScope | null,
-		) => Promise<RuntimeKanbanAccountOrganizationsResponse>;
-		switchKanbanAccount: (
-			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeKanbanAccountSwitchRequest,
-		) => Promise<RuntimeKanbanAccountSwitchResponse>;
 		getKanbanProviderModels: (
 			scope: RuntimeTrpcWorkspaceScope | null,
 			input: RuntimeKanbanProviderModelsRequest,
@@ -457,15 +418,6 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope | null,
 			input: RuntimeFetchRemoteModelsRequest,
 		) => Promise<RuntimeFetchRemoteModelsResponse>;
-		runKanbanProviderOAuthLogin: (
-			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeKanbanOauthLoginRequest,
-		) => Promise<RuntimeKanbanOauthLoginResponse>;
-		startKanbanDeviceAuth: (scope: RuntimeTrpcWorkspaceScope | null) => Promise<RuntimeKanbanDeviceAuthStartResponse>;
-		completeKanbanDeviceAuth: (
-			scope: RuntimeTrpcWorkspaceScope | null,
-			input: RuntimeKanbanDeviceAuthCompleteRequest,
-		) => Promise<RuntimeKanbanDeviceAuthCompleteResponse>;
 		getKanbanMcpAuthStatuses: (
 			scope: RuntimeTrpcWorkspaceScope | null,
 		) => Promise<RuntimeKanbanMcpAuthStatusResponse>;
@@ -855,29 +807,6 @@ export const runtimeAppRouter = t.router({
 			.query(async ({ ctx }) => {
 				return await ctx.runtimeApi.getKanbanProviderCatalog(ctx.workspaceScope);
 			}),
-		getKanbanAccountProfile: t.procedure.output(runtimeKanbanAccountProfileResponseSchema).query(async ({ ctx }) => {
-			return await ctx.runtimeApi.getKanbanAccountProfile(ctx.workspaceScope);
-		}),
-		getKanbanKanbanAccess: t.procedure.output(runtimeKanbanKanbanAccessResponseSchema).query(async ({ ctx }) => {
-			return await ctx.runtimeApi.getKanbanKanbanAccess(ctx.workspaceScope);
-		}),
-		getFeaturebaseToken: t.procedure.output(runtimeFeaturebaseTokenResponseSchema).query(async ({ ctx }) => {
-			return await ctx.runtimeApi.getFeaturebaseToken(ctx.workspaceScope);
-		}),
-		getKanbanAccountBalance: t.procedure.output(runtimeKanbanAccountBalanceResponseSchema).query(async ({ ctx }) => {
-			return await ctx.runtimeApi.getKanbanAccountBalance(ctx.workspaceScope);
-		}),
-		getKanbanAccountOrganizations: t.procedure
-			.output(runtimeKanbanAccountOrganizationsResponseSchema)
-			.query(async ({ ctx }) => {
-				return await ctx.runtimeApi.getKanbanAccountOrganizations(ctx.workspaceScope);
-			}),
-		switchKanbanAccount: t.procedure
-			.input(runtimeKanbanAccountSwitchRequestSchema)
-			.output(runtimeKanbanAccountSwitchResponseSchema)
-			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.switchKanbanAccount(ctx.workspaceScope, input);
-			}),
 		getKanbanProviderModels: t.procedure
 			.input(runtimeKanbanProviderModelsRequestSchema)
 			.output(runtimeKanbanProviderModelsResponseSchema)
@@ -907,23 +836,6 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeKanbanMcpSettingsSaveResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.saveKanbanMcpSettings(ctx.workspaceScope, input);
-			}),
-		runKanbanProviderOAuthLogin: t.procedure
-			.input(runtimeKanbanOauthLoginRequestSchema)
-			.output(runtimeKanbanOauthLoginResponseSchema)
-			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.runKanbanProviderOAuthLogin(ctx.workspaceScope, input);
-			}),
-		startKanbanDeviceAuth: t.procedure
-			.output(runtimeKanbanDeviceAuthStartResponseSchema)
-			.mutation(async ({ ctx }) => {
-				return await ctx.runtimeApi.startKanbanDeviceAuth(ctx.workspaceScope);
-			}),
-		completeKanbanDeviceAuth: t.procedure
-			.input(runtimeKanbanDeviceAuthCompleteRequestSchema)
-			.output(runtimeKanbanDeviceAuthCompleteResponseSchema)
-			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.completeKanbanDeviceAuth(ctx.workspaceScope, input);
 			}),
 		startShellSession: workspaceProcedure
 			.input(runtimeShellSessionStartRequestSchema)

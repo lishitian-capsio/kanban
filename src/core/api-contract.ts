@@ -1615,9 +1615,10 @@ export const runtimeProjectShortcutSchema = z.object({
 export type RuntimeProjectShortcut = z.infer<typeof runtimeProjectShortcutSchema>;
 
 // Managed OAuth providers for the Kanban-native (pi) agent's model access.
-// "cline" here is the Cline-hosted account/model API (app.cline.bot / api.cline.bot),
-// NOT the removed external Cline CLI agent — keep it.
-export const runtimeKanbanOauthProviderSchema = z.enum(["cline", "oca", "openai-codex"]);
+// The Cline-hosted managed provider ("cline") and its account/credits/device-auth
+// machinery were removed; the remaining values are retained as a generic, nullable
+// `oauthProvider` field marker (no live login path in the omp runtime).
+export const runtimeKanbanOauthProviderSchema = z.enum(["oca", "openai-codex"]);
 export type RuntimeKanbanOauthProvider = z.infer<typeof runtimeKanbanOauthProviderSchema>;
 
 export const runtimeKanbanProviderSettingsSchema = z.object({
@@ -1633,63 +1634,6 @@ export const runtimeKanbanProviderSettingsSchema = z.object({
 	oauthExpiresAt: z.number().int().positive().nullable(),
 });
 export type RuntimeKanbanProviderSettings = z.infer<typeof runtimeKanbanProviderSettingsSchema>;
-
-export const runtimeKanbanAccountProfileSchema = z.object({
-	accountId: z.string().nullable(),
-	email: z.string().nullable(),
-	displayName: z.string().nullable(),
-});
-export type RuntimeKanbanAccountProfile = z.infer<typeof runtimeKanbanAccountProfileSchema>;
-
-export const runtimeKanbanAccountProfileResponseSchema = z.object({
-	profile: runtimeKanbanAccountProfileSchema.nullable(),
-	error: z.string().optional(),
-});
-export type RuntimeKanbanAccountProfileResponse = z.infer<typeof runtimeKanbanAccountProfileResponseSchema>;
-
-export const runtimeKanbanKanbanAccessResponseSchema = z.object({
-	enabled: z.boolean(),
-	error: z.string().optional(),
-});
-export type RuntimeKanbanKanbanAccessResponse = z.infer<typeof runtimeKanbanKanbanAccessResponseSchema>;
-
-export const runtimeKanbanAccountOrganizationSchema = z.object({
-	organizationId: z.string(),
-	name: z.string(),
-	active: z.boolean(),
-	roles: z.array(z.string()),
-});
-export type RuntimeKanbanAccountOrganization = z.infer<typeof runtimeKanbanAccountOrganizationSchema>;
-
-export const runtimeKanbanAccountOrganizationsResponseSchema = z.object({
-	organizations: z.array(runtimeKanbanAccountOrganizationSchema),
-	error: z.string().optional(),
-});
-export type RuntimeKanbanAccountOrganizationsResponse = z.infer<typeof runtimeKanbanAccountOrganizationsResponseSchema>;
-
-export const runtimeKanbanAccountBalanceResponseSchema = z.object({
-	balance: z.number().nullable(),
-	activeAccountLabel: z.string().nullable(),
-	activeOrganizationId: z.string().nullable(),
-	error: z.string().optional(),
-});
-export type RuntimeKanbanAccountBalanceResponse = z.infer<typeof runtimeKanbanAccountBalanceResponseSchema>;
-
-export const runtimeKanbanAccountSwitchRequestSchema = z.object({
-	organizationId: z.string().nullable(),
-});
-export type RuntimeKanbanAccountSwitchRequest = z.infer<typeof runtimeKanbanAccountSwitchRequestSchema>;
-
-export const runtimeKanbanAccountSwitchResponseSchema = z.object({
-	ok: z.boolean(),
-	error: z.string().optional(),
-});
-export type RuntimeKanbanAccountSwitchResponse = z.infer<typeof runtimeKanbanAccountSwitchResponseSchema>;
-
-export const runtimeFeaturebaseTokenResponseSchema = z.object({
-	featurebaseJwt: z.string(),
-});
-export type RuntimeFeaturebaseTokenResponse = z.infer<typeof runtimeFeaturebaseTokenResponseSchema>;
 
 export const runtimeProviderProtocolSchema = z.enum(["anthropic", "openai"]);
 export type RuntimeProviderProtocol = z.infer<typeof runtimeProviderProtocolSchema>;
@@ -1875,40 +1819,6 @@ export const runtimeAgentProviderMutationResponseSchema = z.object({
 	error: z.string().optional(),
 });
 export type RuntimeAgentProviderMutationResponse = z.infer<typeof runtimeAgentProviderMutationResponseSchema>;
-
-export const runtimeKanbanOauthLoginRequestSchema = z.object({
-	provider: runtimeKanbanOauthProviderSchema,
-	baseUrl: z.string().nullable().optional(),
-});
-export type RuntimeKanbanOauthLoginRequest = z.infer<typeof runtimeKanbanOauthLoginRequestSchema>;
-
-export const runtimeKanbanOauthLoginResponseSchema = z.object({
-	ok: z.boolean(),
-	provider: runtimeKanbanOauthProviderSchema,
-	settings: runtimeKanbanProviderSettingsSchema.optional(),
-	error: z.string().optional(),
-});
-export type RuntimeKanbanOauthLoginResponse = z.infer<typeof runtimeKanbanOauthLoginResponseSchema>;
-
-export const runtimeKanbanDeviceAuthStartResponseSchema = z.object({
-	deviceCode: z.string(),
-	userCode: z.string(),
-	verificationUrl: z.string(),
-	expiresInSeconds: z.number(),
-	pollIntervalSeconds: z.number(),
-});
-export type RuntimeKanbanDeviceAuthStartResponse = z.infer<typeof runtimeKanbanDeviceAuthStartResponseSchema>;
-
-export const runtimeKanbanDeviceAuthCompleteRequestSchema = z.object({
-	deviceCode: z.string(),
-	expiresInSeconds: z.number(),
-	pollIntervalSeconds: z.number(),
-	baseUrl: z.string().nullable().optional(),
-});
-export type RuntimeKanbanDeviceAuthCompleteRequest = z.infer<typeof runtimeKanbanDeviceAuthCompleteRequestSchema>;
-
-export const runtimeKanbanDeviceAuthCompleteResponseSchema = runtimeKanbanOauthLoginResponseSchema;
-export type RuntimeKanbanDeviceAuthCompleteResponse = z.infer<typeof runtimeKanbanDeviceAuthCompleteResponseSchema>;
 
 const runtimeKanbanMcpServerBaseSchema = z.object({
 	name: z.string(),

@@ -5,17 +5,13 @@ import {
 	type RuntimeConfigSaveRequest,
 	type RuntimeDirectoryListRequest,
 	type RuntimeFetchRemoteModelsRequest,
-	type RuntimeFetchRemoteModelsResponse,
 	type RuntimeGitCheckoutRequest,
 	type RuntimeHomeChatThreadCloseRequest,
 	type RuntimeHomeChatThreadCreateRequest,
 	type RuntimeHomeChatThreadRenameRequest,
 	type RuntimeHookIngestRequest,
-	type RuntimeKanbanAccountSwitchRequest,
-	type RuntimeKanbanDeviceAuthCompleteRequest,
 	type RuntimeKanbanMcpOAuthRequest,
 	type RuntimeKanbanMcpSettingsSaveRequest,
-	type RuntimeKanbanOauthLoginRequest,
 	type RuntimeKanbanProviderModelsRequest,
 	type RuntimeProjectAddRequest,
 	type RuntimeProjectRemoveRequest,
@@ -46,11 +42,8 @@ import {
 	runtimeHomeChatThreadCreateRequestSchema,
 	runtimeHomeChatThreadRenameRequestSchema,
 	runtimeHookIngestRequestSchema,
-	runtimeKanbanAccountSwitchRequestSchema,
-	runtimeKanbanDeviceAuthCompleteRequestSchema,
 	runtimeKanbanMcpOAuthRequestSchema,
 	runtimeKanbanMcpSettingsSaveRequestSchema,
-	runtimeKanbanOauthLoginRequestSchema,
 	runtimeKanbanProviderModelsRequestSchema,
 	runtimeProjectAddRequestSchema,
 	runtimeProjectRemoveRequestSchema,
@@ -490,22 +483,6 @@ export function parseKanbanMcpOAuthRequest(value: unknown): RuntimeKanbanMcpOAut
 	};
 }
 
-export function parseKanbanOauthLoginRequest(value: unknown): RuntimeKanbanOauthLoginRequest {
-	const parsed = parseWithSchema(runtimeKanbanOauthLoginRequestSchema, value);
-	return {
-		...parsed,
-		baseUrl: typeof parsed.baseUrl === "string" ? parsed.baseUrl.trim() || null : parsed.baseUrl,
-	};
-}
-
-export function parseKanbanDeviceAuthCompleteRequest(value: unknown): RuntimeKanbanDeviceAuthCompleteRequest {
-	const parsed = parseWithSchema(runtimeKanbanDeviceAuthCompleteRequestSchema, value);
-	return {
-		...parsed,
-		baseUrl: typeof parsed.baseUrl === "string" ? parsed.baseUrl.trim() || null : parsed.baseUrl,
-	};
-}
-
 export function parseShellSessionStartRequest(value: unknown): RuntimeShellSessionStartRequest {
 	const parsed = parseWithSchema(runtimeShellSessionStartRequestSchema, value);
 	const taskId = parsed.taskId.trim();
@@ -566,8 +543,4 @@ export function parseTerminalWsClientMessage(value: unknown): RuntimeTerminalWsC
 
 export function parseDirectoryListRequest(value: unknown): RuntimeDirectoryListRequest {
 	return parseWithSchema(runtimeDirectoryListRequestSchema, value);
-}
-
-export function parseKanbanAccountSwitchRequest(value: unknown): RuntimeKanbanAccountSwitchRequest {
-	return parseWithSchema(runtimeKanbanAccountSwitchRequestSchema, value);
 }

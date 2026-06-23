@@ -12,7 +12,6 @@ import {
 	type KanbanProviderDialogInitialValues,
 	type KanbanProviderDialogMode,
 } from "@/components/shared/kanban-add-provider-dialog";
-import { KanbanOauthSignInPanel } from "@/components/shared/kanban-oauth-signin-panel";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -81,16 +80,14 @@ export function KanbanSetupSection({
 		.map((value) => value.trim())
 		.filter((value) => value.length > 0)
 		.join(", ");
-	const shouldShowBaseUrlField =
-		!controller.isOauthProviderSelected &&
-		(selectedProvider?.supportsBaseUrl ?? controller.baseUrl.trim().length > 0);
+	const shouldShowBaseUrlField = selectedProvider?.supportsBaseUrl ?? controller.baseUrl.trim().length > 0;
 	const isBedrockProvider = controller.normalizedProviderId === "bedrock";
 	const isVertexProvider = controller.normalizedProviderId === "vertex";
 	const selectedProviderOption = useMemo(
 		() => kanbanProviderOptions.find((option) => option.value === controller.providerId) ?? null,
 		[kanbanProviderOptions, controller.providerId],
 	);
-	const canEditSelectedProvider = controller.providerId.trim().length > 0 && !controller.isOauthProviderSelected;
+	const canEditSelectedProvider = controller.providerId.trim().length > 0;
 	const selectedProviderEditInitialValues = useMemo((): KanbanProviderDialogInitialValues | null => {
 		if (!canEditSelectedProvider) {
 			return null;
@@ -270,33 +267,28 @@ export function KanbanSetupSection({
 				{controller.isLoadingProviderCatalog ? (
 					<p className="text-text-secondary text-[12px] mt-1 mb-0">Fetching Kanban providers...</p>
 				) : null}
-				<div
-					className="grid gap-2 mt-3"
-					style={{ gridTemplateColumns: controller.isOauthProviderSelected ? "1fr" : "1fr 1fr" }}
-				>
-					{controller.isOauthProviderSelected ? null : (
-						<div className="min-w-0">
-							<p className="text-text-secondary text-[12px] mt-0 mb-1">API key</p>
-							<input
-								type="password"
-								value={controller.apiKey}
-								onChange={(event) => controller.setApiKey(event.target.value)}
-								placeholder={apiKeyPlaceholder}
-								disabled={controlsDisabled}
-								className="h-8 w-full rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
-							/>
-							{providerEnvHint ? (
-								<p className="text-text-tertiary text-[11px] mt-1 mb-0 break-all">Or use {providerEnvHint}</p>
-							) : null}
-						</div>
-					)}
+				<div className="grid gap-2 mt-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+					<div className="min-w-0">
+						<p className="text-text-secondary text-[12px] mt-0 mb-1">API key</p>
+						<input
+							type="password"
+							value={controller.apiKey}
+							onChange={(event) => controller.setApiKey(event.target.value)}
+							placeholder={apiKeyPlaceholder}
+							disabled={controlsDisabled}
+							className="h-8 w-full rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
+						/>
+						{providerEnvHint ? (
+							<p className="text-text-tertiary text-[11px] mt-1 mb-0 break-all">Or use {providerEnvHint}</p>
+						) : null}
+					</div>
 					{shouldShowBaseUrlField ? (
 						<div className="min-w-0">
 							<p className="text-text-secondary text-[12px] mt-0 mb-1">Base URL</p>
 							<input
 								value={controller.baseUrl}
 								onChange={(event) => controller.setBaseUrl(event.target.value)}
-								placeholder="https://api.cline.bot"
+								placeholder="https://api.example.com/v1"
 								disabled={controlsDisabled}
 								className="h-8 w-full rounded-md border border-border bg-surface-2 px-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
 							/>
@@ -410,12 +402,6 @@ export function KanbanSetupSection({
 						</div>
 					</div>
 				) : null}
-				<KanbanOauthSignInPanel
-					controller={controller}
-					controlsDisabled={controlsDisabled}
-					onError={onError}
-					onSaved={onSaved}
-				/>
 			</div>
 
 			<div className="mt-4">

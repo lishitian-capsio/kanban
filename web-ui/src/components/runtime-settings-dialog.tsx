@@ -17,7 +17,6 @@ import {
 	Bell,
 	Check,
 	ChevronDown,
-	CircleUser,
 	ExternalLink,
 	FolderOpen,
 	GitCommit,
@@ -34,13 +33,11 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BoardBranchSetting } from "@/components/board-branch-setting";
 import { GitIdentitySetting } from "@/components/git-identity-setting";
-import { AccountOrganizationSection } from "@/components/shared/account-organization-section";
 import {
 	KanbanAddProviderDialog,
 	type KanbanProviderDialogInitialValues,
 } from "@/components/shared/kanban-add-provider-dialog";
 import { buildProviderEditInitialValues } from "@/components/shared/provider-edit-initial-values";
-import { KanbanOauthSignInPanel } from "@/components/shared/kanban-oauth-signin-panel";
 import {
 	getRuntimeShortcutIconComponent,
 	getRuntimeShortcutPickerOption,
@@ -120,7 +117,6 @@ const SETTINGS_AGENT_ORDER: readonly RuntimeAgentId[] = ["pi", "claude", "codex"
 
 type SettingsNavId =
 	| "general"
-	| "account"
 	| "providers"
 	| "proxy"
 	| "git-prompts"
@@ -132,10 +128,8 @@ const SETTINGS_NAV_ITEMS: ReadonlyArray<{
 	id: SettingsNavId;
 	label: string;
 	icon: React.ReactNode;
-	accountOnly?: boolean;
 }> = [
 	{ id: "general", label: "General", icon: <SlidersHorizontal size={16} /> },
-	{ id: "account", label: "Account", icon: <CircleUser size={16} />, accountOnly: true },
 	{ id: "providers", label: "Providers", icon: <Key size={16} /> },
 	{ id: "proxy", label: "Network Proxy", icon: <Globe size={16} /> },
 	{ id: "git-prompts", label: "Git Prompts", icon: <GitCommit size={16} /> },
@@ -387,7 +381,6 @@ export function RuntimeSettingsDialog({
 	initialConfig = null,
 	onOpenChange,
 	onSaved,
-	onAccountSwitched,
 	initialSection,
 }: {
 	open: boolean;
@@ -395,10 +388,9 @@ export function RuntimeSettingsDialog({
 	initialConfig?: RuntimeConfigResponse | null;
 	onOpenChange: (open: boolean) => void;
 	onSaved?: () => void;
-	onAccountSwitched?: () => void;
 	initialSection?: RuntimeSettingsSection | null;
 }): React.ReactElement {
-	const { config, isLoading, isSaving, save, refresh } = useRuntimeConfig(open, workspaceId, initialConfig);
+	const { config, isLoading, isSaving, save } = useRuntimeConfig(open, workspaceId, initialConfig);
 	const { resetLayoutCustomizations } = useLayoutCustomizations();
 	const [agentAutonomousModeEnabled, setAgentAutonomousModeEnabled] = useState(true);
 	const [readyForReviewNotificationsEnabled, setReadyForReviewNotificationsEnabled] = useState(true);
@@ -564,14 +556,7 @@ export function RuntimeSettingsDialog({
 		[providersAgentId, reloadProviderSets, workspaceId],
 	);
 
-	// The slim Account section only manages managed-provider OAuth + account/org/credits;
-	// per-agent provider/model/MCP config now lives inline in the home chat composer.
-	const showAccountSection = agentSettings.isOauthProviderSelected;
-	const showClineAccountControls = showAccountSection && agentSettings.providerId.trim() === "cline";
-	const navItems = useMemo(
-		() => SETTINGS_NAV_ITEMS.filter((item) => !item.accountOnly || showAccountSection),
-		[showAccountSection],
-	);
+	const navItems = SETTINGS_NAV_ITEMS;
 	const initialAgentAutonomousModeEnabled = config?.agentAutonomousModeEnabled ?? true;
 	const initialReadyForReviewNotificationsEnabled = config?.readyForReviewNotificationsEnabled ?? true;
 	const initialShortcuts = config?.shortcuts ?? [];
@@ -728,12 +713,6 @@ export function RuntimeSettingsDialog({
 		}
 	});
 
-	useEffect(() => {
-		if (activeSection === "account" && !showAccountSection) {
-			setActiveSection("general");
-		}
-	}, [activeSection, showAccountSection]);
-
 	const handleBodyScroll = useCallback(() => {
 		if (isScrollingProgrammatically.current) return;
 		const body = bodyRef.current;
@@ -871,11 +850,6 @@ export function RuntimeSettingsDialog({
 		[workspaceId],
 	);
 
-	const handleAccountSaved = useCallback(() => {
-		refresh();
-		onSaved?.();
-	}, [onSaved, refresh]);
-
 	const handleDialogOpenChange = useCallback(
 		(nextOpen: boolean) => {
 			if (!nextOpen) {
@@ -949,40 +923,6 @@ export function RuntimeSettingsDialog({
 							Allows agents to use tools without stopping for permission. Use at your own risk.
 						</p>
 					</div>
-
-					{/* ---- Account ---- */}
-					{showAccountSection ? (
-						<>
-							<div data-settings-section="account" />
-							<div className="sticky top-0 -mx-5 px-5 pt-4 pb-2 bg-surface-1 z-10">
-								<h2 className="flex items-center gap-2 text-base font-semibold text-text-primary m-0">
-									<CircleUser size={16} className="text-text-secondary" />
-									Account
-								</h2>
-							</div>
-							<div className="rounded-lg border border-border bg-surface-0 px-4 py-3 mb-4">
-								<p className="text-text-secondary text-[13px] mt-0 mb-2">
-									Sign in to the managed provider your agents use. Provider, model, and other per-agent
-									settings are configured inline in the chat composer.
-								</p>
-								<KanbanOauthSignInPanel
-									controller={agentSettings}
-									controlsDisabled={controlsDisabled}
-									onError={setSaveError}
-									onSaved={handleAccountSaved}
-								/>
-								{showClineAccountControls ? (
-									<div className="mt-4">
-										<AccountOrganizationSection
-											workspaceId={workspaceId}
-											open={open}
-											onAccountSwitched={onAccountSwitched}
-										/>
-									</div>
-								) : null}
-							</div>
-						</>
-					) : null}
 
 					{/* ---- Providers ---- */}
 					<div data-settings-section="providers" />

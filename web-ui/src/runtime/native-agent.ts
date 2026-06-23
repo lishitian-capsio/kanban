@@ -57,26 +57,6 @@ export function isKanbanProviderAuthenticated(settings: RuntimeKanbanProviderSet
 	return settings.apiKeyConfigured || settings.oauthAccessTokenConfigured;
 }
 
-/**
- * Returns true only when the selected provider is the Kanban managed OAuth
- * provider **and** an access token is configured.  This is stricter than
- * {@link isKanbanProviderAuthenticated} which accepts any configured provider
- * (Claude API key, Codex, etc.).
- *
- * Use this for features that require a Kanban-issued token (e.g. Featurebase
- * JWT authentication).
- */
-export function isKanbanOauthAuthenticated(settings: RuntimeKanbanProviderSettings | null | undefined): boolean {
-	if (!settings) {
-		return false;
-	}
-	return (
-		settings.oauthProvider === "cline" &&
-		settings.oauthAccessTokenConfigured === true &&
-		settings.oauthRefreshTokenConfigured === true
-	);
-}
-
 export function isTaskAgentSetupSatisfied(
 	config: Pick<RuntimeConfigResponse, "selectedAgentId" | "agents" | "kanbanProviderSettings"> | null | undefined,
 ): boolean | null {

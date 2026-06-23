@@ -75,9 +75,6 @@ vi.mock("@radix-ui/react-select", () => ({
 }));
 
 const resetLayoutCustomizationsMock = vi.hoisted(() => vi.fn());
-const oauthSignInOnSavedRef = vi.hoisted(() => ({
-	onSaved: null as null | (() => void),
-}));
 
 vi.mock("@runtime-agent-catalog", () => ({
 	getRuntimeAgentCatalogEntry: vi.fn((agentId: string) => ({
@@ -95,17 +92,6 @@ vi.mock("@runtime-shortcuts", () => ({
 	areRuntimeProjectShortcutsEqual: vi.fn(() => true),
 }));
 
-vi.mock("@/components/shared/kanban-oauth-signin-panel", () => ({
-	KanbanOauthSignInPanel: ({ onSaved }: { onSaved?: () => void }) => {
-		oauthSignInOnSavedRef.onSaved = onSaved ?? null;
-		return null;
-	},
-}));
-
-vi.mock("@/components/shared/account-organization-section", () => ({
-	AccountOrganizationSection: () => null,
-}));
-
 vi.mock("@/components/ui/tooltip", () => ({
 	TooltipProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 	Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -114,20 +100,19 @@ vi.mock("@/components/ui/tooltip", () => ({
 vi.mock("@/hooks/use-runtime-settings-kanban-controller", () => ({
 	useRuntimeSettingsKanbanController: () => ({
 		currentProviderSettings: {
-			providerId: "cline",
-			modelId: "cline-sonnet",
+			providerId: "anthropic",
+			modelId: "claude-sonnet-4-6",
 			baseUrl: null,
 			reasoningEffort: null,
-			apiKeyConfigured: false,
-			oauthProvider: "cline",
-			oauthAccessTokenConfigured: true,
-			oauthRefreshTokenConfigured: true,
-			oauthAccountId: "acc-1",
+			apiKeyConfigured: true,
+			oauthProvider: null,
+			oauthAccessTokenConfigured: false,
+			oauthRefreshTokenConfigured: false,
+			oauthAccountId: null,
 			oauthExpiresAt: null,
 		},
 		hasUnsavedChanges: false,
-		providerId: "cline",
-		isOauthProviderSelected: true,
+		providerId: "anthropic",
 		saveProviderSettings: vi.fn(async () => ({ ok: true })),
 	}),
 }));
@@ -173,7 +158,7 @@ function findButtonByAriaLabel(container: ParentNode, ariaLabel: string): HTMLBu
 	) ?? null) as HTMLButtonElement | null;
 }
 
-const savedKanbanOauthConfig = {
+const savedKanbanConfig = {
 	selectedAgentId: "pi",
 	selectedShortcutLabel: null,
 	agentAutonomousModeEnabled: true,
@@ -204,16 +189,16 @@ const savedKanbanOauthConfig = {
 		},
 	],
 	kanbanProviderSettings: {
-		providerId: null,
-		modelId: "cline-sonnet",
+		providerId: "anthropic",
+		modelId: "claude-sonnet-4-6",
 		baseUrl: null,
 		reasoningEffort: null,
-		apiKeyConfigured: false,
-		oauthProvider: "cline",
-		oauthAccessTokenConfigured: true,
-		oauthRefreshTokenConfigured: true,
-		oauthAccountId: "acc-1",
-		oauthExpiresAt: 1_800_000_000_000,
+		apiKeyConfigured: true,
+		oauthProvider: null,
+		oauthAccessTokenConfigured: false,
+		oauthRefreshTokenConfigured: false,
+		oauthAccountId: null,
+		oauthExpiresAt: null,
 	},
 } as unknown as RuntimeConfigResponse;
 
@@ -229,7 +214,6 @@ describe("RuntimeSettingsDialog", () => {
 			Element.prototype.scrollTo = () => {};
 		}
 		resetLayoutCustomizationsMock.mockReset();
-		oauthSignInOnSavedRef.onSaved = null;
 		window.localStorage.clear();
 		document.documentElement.removeAttribute("data-theme");
 		previousActEnvironment = (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
@@ -262,7 +246,7 @@ describe("RuntimeSettingsDialog", () => {
 				<RuntimeSettingsDialog
 					open={true}
 					workspaceId={"workspace-1"}
-					initialConfig={savedKanbanOauthConfig}
+					initialConfig={savedKanbanConfig}
 					onOpenChange={() => {}}
 				/>,
 			);
@@ -278,7 +262,7 @@ describe("RuntimeSettingsDialog", () => {
 				<RuntimeSettingsDialog
 					open={true}
 					workspaceId={"workspace-1"}
-					initialConfig={savedKanbanOauthConfig}
+					initialConfig={savedKanbanConfig}
 					onOpenChange={() => {}}
 				/>,
 			);
@@ -301,7 +285,7 @@ describe("RuntimeSettingsDialog", () => {
 				<RuntimeSettingsDialog
 					open={true}
 					workspaceId={"workspace-1"}
-					initialConfig={savedKanbanOauthConfig}
+					initialConfig={savedKanbanConfig}
 					onOpenChange={handleOpenChange}
 				/>,
 			);
@@ -348,7 +332,7 @@ describe("RuntimeSettingsDialog", () => {
 				<RuntimeSettingsDialog
 					open={true}
 					workspaceId={"workspace-1"}
-					initialConfig={savedKanbanOauthConfig}
+					initialConfig={savedKanbanConfig}
 					onOpenChange={handleOpenChange}
 				/>,
 			);
@@ -384,7 +368,7 @@ describe("RuntimeSettingsDialog", () => {
 				<RuntimeSettingsDialog
 					open={true}
 					workspaceId={"workspace-1"}
-					initialConfig={savedKanbanOauthConfig}
+					initialConfig={savedKanbanConfig}
 					onOpenChange={() => {}}
 				/>,
 			);
@@ -423,29 +407,6 @@ describe("RuntimeSettingsDialog", () => {
 		});
 
 		expect(claudeTab?.className).toContain("border-border-bright");
-	});
-
-	it("forwards account OAuth sign-in saves to the dialog onSaved callback", async () => {
-		const handleSaved = vi.fn();
-		await act(async () => {
-			root.render(
-				<RuntimeSettingsDialog
-					open={true}
-					workspaceId={"workspace-1"}
-					initialConfig={savedKanbanOauthConfig}
-					onOpenChange={() => {}}
-					onSaved={handleSaved}
-				/>,
-			);
-		});
-
-		expect(oauthSignInOnSavedRef.onSaved).toBeTypeOf("function");
-
-		await act(async () => {
-			oauthSignInOnSavedRef.onSaved?.();
-		});
-
-		expect(handleSaved).toHaveBeenCalledTimes(1);
 	});
 });
 

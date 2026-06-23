@@ -11,21 +11,10 @@ import type {
 	RuntimeAgentProviderSetListResponse,
 	RuntimeConfigResponse,
 	RuntimeDebugResetAllStateResponse,
-	RuntimeFeaturebaseTokenResponse,
-	RuntimeKanbanAccountBalanceResponse,
-	RuntimeKanbanAccountOrganizationsResponse,
-	RuntimeKanbanAccountProfileResponse,
-	RuntimeKanbanAccountSwitchResponse,
-	RuntimeKanbanDeviceAuthCompleteRequest,
-	RuntimeKanbanDeviceAuthCompleteResponse,
-	RuntimeKanbanDeviceAuthStartResponse,
-	RuntimeKanbanKanbanAccessResponse,
 	RuntimeKanbanMcpAuthStatusResponse,
 	RuntimeKanbanMcpOAuthResponse,
 	RuntimeKanbanMcpServer,
 	RuntimeKanbanMcpSettingsResponse,
-	RuntimeKanbanOauthLoginResponse,
-	RuntimeKanbanOauthProvider,
 	RuntimeKanbanProviderCatalogItem,
 	RuntimeKanbanProviderModel,
 	RuntimeProjectShortcut,
@@ -77,23 +66,6 @@ export async function fetchKanbanProviderCatalog(
 	return response.providers;
 }
 
-export async function fetchKanbanAccountProfile(
-	workspaceId: string | null,
-): Promise<RuntimeKanbanAccountProfileResponse> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.getKanbanAccountProfile.query();
-}
-
-export async function fetchKanbanKanbanAccess(workspaceId: string | null): Promise<RuntimeKanbanKanbanAccessResponse> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.getKanbanKanbanAccess.query();
-}
-
-export async function fetchFeaturebaseToken(workspaceId: string | null): Promise<RuntimeFeaturebaseTokenResponse> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.getFeaturebaseToken.query();
-}
-
 export async function fetchKanbanProviderModels(
 	workspaceId: string | null,
 	providerId: string,
@@ -101,30 +73,6 @@ export async function fetchKanbanProviderModels(
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
 	const response = await trpcClient.runtime.getKanbanProviderModels.query({ providerId });
 	return response.models;
-}
-
-export async function runKanbanProviderOauthLogin(
-	workspaceId: string | null,
-	input: {
-		provider: RuntimeKanbanOauthProvider;
-		baseUrl?: string | null;
-	},
-): Promise<RuntimeKanbanOauthLoginResponse> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.runKanbanProviderOAuthLogin.mutate(input);
-}
-
-export async function startKanbanDeviceAuth(workspaceId: string | null): Promise<RuntimeKanbanDeviceAuthStartResponse> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.startKanbanDeviceAuth.mutate();
-}
-
-export async function completeKanbanDeviceAuth(
-	workspaceId: string | null,
-	input: RuntimeKanbanDeviceAuthCompleteRequest,
-): Promise<RuntimeKanbanDeviceAuthCompleteResponse> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.completeKanbanDeviceAuth.mutate(input);
 }
 
 export async function fetchKanbanMcpSettings(workspaceId: string | null): Promise<RuntimeKanbanMcpSettingsResponse> {
@@ -167,28 +115,6 @@ export async function resetRuntimeDebugState(workspaceId: string | null): Promis
 export async function openFileOnHost(workspaceId: string | null, filePath: string): Promise<void> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
 	await trpcClient.runtime.openFile.mutate({ filePath });
-}
-
-export async function fetchKanbanAccountBalance(
-	workspaceId: string | null,
-): Promise<RuntimeKanbanAccountBalanceResponse> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.getKanbanAccountBalance.query();
-}
-
-export async function fetchKanbanAccountOrganizations(
-	workspaceId: string | null,
-): Promise<RuntimeKanbanAccountOrganizationsResponse> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.getKanbanAccountOrganizations.query();
-}
-
-export async function switchKanbanAccount(
-	workspaceId: string | null,
-	organizationId: string | null,
-): Promise<RuntimeKanbanAccountSwitchResponse> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.runtime.switchKanbanAccount.mutate({ organizationId });
 }
 
 export async function fetchRuntimeUpdateStatus(workspaceId: string | null): Promise<RuntimeUpdateStatusResponse> {

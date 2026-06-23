@@ -5,14 +5,6 @@
 // Model lists still query the bundled registry (stateless).
 
 import type {
-	RuntimeKanbanAccountBalanceResponse,
-	RuntimeKanbanAccountOrganizationsResponse,
-	RuntimeKanbanAccountProfileResponse,
-	RuntimeKanbanAccountSwitchResponse,
-	RuntimeKanbanDeviceAuthCompleteResponse,
-	RuntimeKanbanDeviceAuthStartResponse,
-	RuntimeKanbanKanbanAccessResponse,
-	RuntimeKanbanOauthLoginResponse,
 	RuntimeKanbanProviderCatalogItem,
 	RuntimeKanbanProviderCatalogResponse,
 	RuntimeKanbanProviderModel,
@@ -391,60 +383,6 @@ export function createAgentProviderService() {
 			return {
 				providerId: normalizedProviderId,
 				models: [],
-			};
-		},
-
-		// ----- Account / OAuth (stateless stubs) -----
-
-		async getKanbanAccountProfile(): Promise<RuntimeKanbanAccountProfileResponse> {
-			return { profile: null };
-		},
-
-		async getKanbanKanbanAccess(): Promise<RuntimeKanbanKanbanAccessResponse> {
-			return { enabled: true };
-		},
-
-		async getFeaturebaseToken(): Promise<{ featurebaseJwt: string }> {
-			throw new Error("Featurebase token is not supported in the omp runtime.");
-		},
-
-		async getKanbanAccountBalance(): Promise<RuntimeKanbanAccountBalanceResponse> {
-			return { balance: null, activeAccountLabel: null, activeOrganizationId: null };
-		},
-
-		async getKanbanAccountOrganizations(): Promise<RuntimeKanbanAccountOrganizationsResponse> {
-			return { organizations: [] };
-		},
-
-		async switchKanbanAccount(_organizationId: string | null): Promise<RuntimeKanbanAccountSwitchResponse> {
-			return { ok: false, error: "Account switching is not supported in the omp runtime." };
-		},
-
-		async runOauthLogin(_input: {
-			providerId: string;
-			baseUrl?: string | null;
-		}): Promise<RuntimeKanbanOauthLoginResponse> {
-			return {
-				ok: false,
-				provider: _input.providerId as RuntimeKanbanOauthLoginResponse["provider"],
-				error: "OAuth login is not supported in the omp runtime.",
-			};
-		},
-
-		async startDeviceAuth(): Promise<RuntimeKanbanDeviceAuthStartResponse> {
-			throw new Error("Device auth is not supported in the omp runtime.");
-		},
-
-		async completeDeviceAuth(_input: {
-			deviceCode: string;
-			expiresInSeconds: number;
-			pollIntervalSeconds: number;
-			baseUrl?: string | null;
-		}): Promise<RuntimeKanbanDeviceAuthCompleteResponse> {
-			return {
-				ok: false,
-				provider: "cline",
-				error: "Device auth is not supported in the omp runtime.",
 			};
 		},
 	};

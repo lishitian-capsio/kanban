@@ -274,69 +274,6 @@ describe("KanbanAgentChatPanel", () => {
 		expect(container.textContent).toContain('Failed to load MCP server "linear"');
 	});
 
-	it("renders a chat-level out-of-credits notice when credit-limit metadata is present", async () => {
-		await act(async () => {
-			renderPanel(
-				root,
-				<KanbanAgentChatPanel
-					taskId="task-1"
-					summary={createSummary(
-						"awaiting_review",
-						{
-							activityText: "Agent error: 402 Insufficient balance",
-							toolName: null,
-							toolInputSummary: null,
-							finalMessage: "402 Insufficient balance. Your Kanban Credits balance is $0.00",
-							hookEventName: "agent_error",
-							notificationType: "credit_limit",
-							source: "pi",
-						},
-						{ reviewReason: "error" },
-					)}
-					onLoadMessages={async () => []}
-				/>,
-			);
-			await Promise.resolve();
-		});
-
-		await vi.waitFor(() => {
-			const buyCreditsLink = container.querySelector('a[href="https://app.cline.bot/"]');
-			expect(buyCreditsLink).toBeInstanceOf(HTMLAnchorElement);
-		});
-		expect(container.textContent).toContain("Out of Kanban credits.");
-	});
-
-	it("shows out-of-credits notice after interrupted state when credit-limit metadata persists", async () => {
-		await act(async () => {
-			renderPanel(
-				root,
-				<KanbanAgentChatPanel
-					taskId="task-1"
-					summary={createSummary(
-						"interrupted",
-						{
-							activityText: "Agent error: 402 Insufficient balance",
-							toolName: null,
-							toolInputSummary: null,
-							finalMessage: "402 Insufficient balance. Your Kanban Credits balance is $0.00",
-							hookEventName: "agent_end",
-							notificationType: "credit_limit",
-							source: "pi",
-						},
-						{ reviewReason: "interrupted" },
-					)}
-					onLoadMessages={async () => []}
-				/>,
-			);
-			await Promise.resolve();
-		});
-
-		await vi.waitFor(() => {
-			const buyCreditsLink = container.querySelector('a[href="https://app.cline.bot/"]');
-			expect(buyCreditsLink).toBeInstanceOf(HTMLAnchorElement);
-		});
-	});
-
 	it("renders user message images inline without a task header", async () => {
 		await act(async () => {
 			renderPanel(

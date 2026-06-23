@@ -1,31 +1,25 @@
 // Owns the Kanban-specific settings state machine inside the settings dialog.
-// It loads provider data, drives model selection, saves settings, and runs
-// OAuth login flows so the dialog component can stay presentation-focused.
+// It loads provider data, drives model selection, and saves settings so the
+// dialog component can stay presentation-focused.
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { showAppToast } from "@/components/app-toaster";
 import { getRuntimeKanbanProviderSettings } from "@/runtime/native-agent";
 import {
-	completeKanbanDeviceAuth,
 	fetchAgentProviderSets,
 	fetchKanbanProviderCatalog,
 	fetchKanbanProviderModels,
-	runKanbanProviderOauthLogin,
 	saveAgentProviderConfig,
-	startKanbanDeviceAuth,
 } from "@/runtime/runtime-config-query";
 import type {
 	RuntimeAgentId,
 	RuntimeAgentProviderConfig,
 	RuntimeConfigResponse,
-	RuntimeKanbanOauthLoginResponse,
-	RuntimeKanbanOauthProvider,
 	RuntimeKanbanProviderCatalogItem,
 	RuntimeKanbanProviderModel,
 	RuntimeKanbanProviderSettings,
 	RuntimeReasoningEffort,
 	RuntimeTaskAgentSettings,
 } from "@/runtime/types";
-import { isLocalhostAccess } from "@/utils/localhost-detection";
 import { createLogger } from "@/utils/logger";
 
 const log = createLogger("models");
@@ -158,36 +152,17 @@ export interface UseRuntimeSettingsKanbanControllerResult {
 	providerModels: RuntimeKanbanProviderModel[];
 	isLoadingProviderCatalog: boolean;
 	isLoadingProviderModels: boolean;
-	isRunningOauthLogin: boolean;
-	deviceAuthInfo: { userCode: string; verificationUrl: string } | null;
 	normalizedProviderId: string;
-	managedOauthProvider: RuntimeKanbanOauthProvider | null;
-	isOauthProviderSelected: boolean;
 	apiKeyConfigured: boolean;
-	oauthConfigured: boolean;
-	oauthAccountId: string;
-	oauthExpiresAt: string;
 	selectedModelSupportsReasoningEffort: boolean;
 	hasUnsavedChanges: boolean;
 	saveProviderSettings: (overrides?: SaveProviderSettingsOverrides) => Promise<SaveResult>;
 	refreshProviderModels: () => Promise<SaveResult>;
 	addCustomProvider: (input: AddKanbanProviderInput, agentId?: RuntimeAgentId) => Promise<SaveResult>;
 	updateCustomProvider: (input: UpdateKanbanProviderInput, agentId?: RuntimeAgentId) => Promise<SaveResult>;
-	runOauthLogin: () => Promise<SaveResult>;
 }
 
-function toManagedKanbanOauthProvider(value: string): RuntimeKanbanOauthProvider | null {
-	const normalized = value.trim().toLowerCase();
-	if (normalized === "cline" || normalized === "oca" || normalized === "openai-codex") {
-		return normalized;
-	}
-	return null;
-}
-
-function normalizeBaseUrlForProvider(providerId: string, baseUrl: string | null | undefined): string {
-	if (toManagedKanbanOauthProvider(providerId)) {
-		return "";
-	}
+function normalizeBaseUrlForProvider(_providerId: string, baseUrl: string | null | undefined): string {
 	return baseUrl ?? "";
 }
 
@@ -286,11 +261,6 @@ export function useRuntimeSettingsKanbanController(
 	const [isLoadingProviderCatalog, setIsLoadingProviderCatalog] = useState(false);
 	const [isLoadingProviderModels, setIsLoadingProviderModels] = useState(false);
 	const providerModelsRequestIdRef = useRef(0);
-	const [isRunningOauthLogin, setIsRunningOauthLogin] = useState(false);
-	const [deviceAuthInfo, setDeviceAuthInfo] = useState<{
-		userCode: string;
-		verificationUrl: string;
-	} | null>(null);
 
 	const effectiveProviderSettings = getEffectiveProviderSettings(config, providerSettingsOverride);
 	const configProviderSettings = getRuntimeKanbanProviderSettings(config);
@@ -310,30 +280,23 @@ export function useRuntimeSettingsKanbanController(
 		? (taskKanbanSettings?.reasoningEffort ?? "")
 		: (effectiveProviderSettings?.reasoningEffort ?? "");
 	const normalizedProviderId = providerId.trim().toLowerCase();
-	const managedOauthProvider = toManagedKanbanOauthProvider(normalizedProviderId);
-	const isOauthProviderSelected = managedOauthProvider !== null;
 	const apiKeyConfigured = effectiveProviderSettings?.apiKeyConfigured ?? false;
-	const oauthConfigured = effectiveProviderSettings?.oauthAccessTokenConfigured ?? false;
-	const oauthAccountId = effectiveProviderSettings?.oauthAccountId ?? "";
-	const oauthExpiresAt = effectiveProviderSettings?.oauthExpiresAt?.toString() ?? "";
 	const currentProviderSettings = useMemo<RuntimeKanbanProviderSettings>(() => {
 		const baseSettings = effectiveProviderSettings ?? getRuntimeKanbanProviderSettings(null);
-		const isSelectedManagedOauthProvider =
-			managedOauthProvider !== null && managedOauthProvider === baseSettings.oauthProvider;
 		return {
 			...baseSettings,
-			providerId: managedOauthProvider === null ? providerId.trim() || null : null,
+			providerId: providerId.trim() || null,
 			modelId: modelId.trim() || null,
-			baseUrl: managedOauthProvider === null ? baseUrl.trim() || null : null,
+			baseUrl: baseUrl.trim() || null,
 			reasoningEffort: reasoningEffort || null,
-			apiKeyConfigured: managedOauthProvider === null ? baseSettings.apiKeyConfigured : false,
-			oauthProvider: managedOauthProvider,
-			oauthAccessTokenConfigured: isSelectedManagedOauthProvider ? baseSettings.oauthAccessTokenConfigured : false,
-			oauthRefreshTokenConfigured: isSelectedManagedOauthProvider ? baseSettings.oauthRefreshTokenConfigured : false,
-			oauthAccountId: isSelectedManagedOauthProvider ? baseSettings.oauthAccountId : null,
-			oauthExpiresAt: isSelectedManagedOauthProvider ? baseSettings.oauthExpiresAt : null,
+			apiKeyConfigured: baseSettings.apiKeyConfigured,
+			oauthProvider: baseSettings.oauthProvider,
+			oauthAccessTokenConfigured: false,
+			oauthRefreshTokenConfigured: false,
+			oauthAccountId: null,
+			oauthExpiresAt: null,
 		};
-	}, [baseUrl, effectiveProviderSettings, managedOauthProvider, modelId, providerId, reasoningEffort]);
+	}, [baseUrl, effectiveProviderSettings, modelId, providerId, reasoningEffort]);
 	const selectedModelSupportsReasoningEffort = useMemo(() => {
 		return providerModels.find((model) => model.id === modelId)?.supportsReasoningEffort ?? false;
 	}, [modelId, providerModels]);
@@ -572,19 +535,12 @@ export function useRuntimeSettingsKanbanController(
 					message: "Choose a Kanban provider before saving.",
 				};
 			}
-			const trimmedBaseUrl = toManagedKanbanOauthProvider(trimmedProviderId)
-				? null
-				: overrides && "baseUrl" in overrides
-					? overrides.baseUrl?.trim() || null
-					: baseUrl.trim() || null;
+			const trimmedBaseUrl =
+				overrides && "baseUrl" in overrides ? overrides.baseUrl?.trim() || null : baseUrl.trim() || null;
 			const trimmedModelId =
 				overrides && "modelId" in overrides ? overrides.modelId?.trim() || null : modelId.trim() || null;
 			const trimmedApiKey =
-				overrides && "apiKey" in overrides
-					? overrides.apiKey?.trim() || null
-					: managedOauthProvider
-						? null
-						: apiKey.trim() || undefined;
+				overrides && "apiKey" in overrides ? overrides.apiKey?.trim() || null : apiKey.trim() || undefined;
 			const nextReasoningEffort =
 				overrides && "reasoningEffort" in overrides ? (overrides.reasoningEffort ?? null) : reasoningEffort || null;
 			const nextRegion =
@@ -674,7 +630,6 @@ export function useRuntimeSettingsKanbanController(
 			gcpProjectId,
 			gcpRegion,
 			hasUnsavedChanges,
-			managedOauthProvider,
 			modelId,
 			providerId,
 			region,
@@ -778,59 +733,6 @@ export function useRuntimeSettingsKanbanController(
 		},
 		[effectiveProviderSettings, loadProviderModelsForProvider, workspaceId],
 	);
-
-	const runOauthLogin = useCallback(async (): Promise<SaveResult> => {
-		if (!managedOauthProvider) {
-			return { ok: false, message: "Choose an OAuth provider from the Provider field first." };
-		}
-		setIsRunningOauthLogin(true);
-		setDeviceAuthInfo(null);
-		try {
-			let response: RuntimeKanbanOauthLoginResponse;
-			// Local users (accessing via localhost) get the smoother browser OAuth
-			// flow. Remote/headless users fall back to the device-code flow since
-			// the server may not be able to open the user's browser.
-			const useDeviceAuth = managedOauthProvider === "cline" && !isLocalhostAccess();
-			if (useDeviceAuth) {
-				// Two-phase device auth for remote/headless environments
-				const startResult = await startKanbanDeviceAuth(workspaceId);
-				setDeviceAuthInfo({
-					userCode: startResult.userCode,
-					verificationUrl: startResult.verificationUrl,
-				});
-				response = await completeKanbanDeviceAuth(workspaceId, {
-					deviceCode: startResult.deviceCode,
-					expiresInSeconds: startResult.expiresInSeconds,
-					pollIntervalSeconds: startResult.pollIntervalSeconds,
-				});
-			} else {
-				// Browser OAuth flow for local sessions and non-cline providers
-				response = await runKanbanProviderOauthLogin(workspaceId, {
-					provider: managedOauthProvider,
-				});
-			}
-			setDeviceAuthInfo(null);
-			if (!response.ok) {
-				return { ok: false, message: response.error ?? "OAuth login failed." };
-			}
-			const nextSettings = response.settings ?? null;
-			if (nextSettings) {
-				const nextProviderId = nextSettings.providerId ?? nextSettings.oauthProvider ?? providerId.trim();
-				setProviderId(nextProviderId);
-				setModelId(nextSettings.modelId ?? getDefaultModelIdForProvider(providerCatalog, nextProviderId));
-				setApiKey("");
-				setBaseUrl(nextSettings.baseUrl ?? "");
-				setReasoningEffort(nextSettings.reasoningEffort ?? "");
-			}
-			setProviderSettingsOverride(nextSettings);
-			return { ok: true };
-		} catch (error) {
-			return { ok: false, message: error instanceof Error ? error.message : String(error) };
-		} finally {
-			setIsRunningOauthLogin(false);
-			setDeviceAuthInfo(null);
-		}
-	}, [managedOauthProvider, providerCatalog, providerId, workspaceId]);
 
 	const updateCustomProvider = useCallback(
 		async (input: UpdateKanbanProviderInput, agentId: RuntimeAgentId = "pi"): Promise<SaveResult> => {
@@ -945,21 +847,13 @@ export function useRuntimeSettingsKanbanController(
 		providerModels,
 		isLoadingProviderCatalog,
 		isLoadingProviderModels,
-		isRunningOauthLogin,
-		deviceAuthInfo,
 		normalizedProviderId,
-		managedOauthProvider,
-		isOauthProviderSelected,
 		apiKeyConfigured,
-		oauthConfigured,
-		oauthAccountId,
-		oauthExpiresAt,
 		selectedModelSupportsReasoningEffort,
 		hasUnsavedChanges,
 		saveProviderSettings: saveProviderSettingsDraft,
 		refreshProviderModels,
 		addCustomProvider,
 		updateCustomProvider,
-		runOauthLogin,
 	};
 }

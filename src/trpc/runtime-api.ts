@@ -48,11 +48,8 @@ import {
 	parseHomeChatThreadCloseRequest,
 	parseHomeChatThreadCreateRequest,
 	parseHomeChatThreadRenameRequest,
-	parseKanbanAccountSwitchRequest,
-	parseKanbanDeviceAuthCompleteRequest,
 	parseKanbanMcpOAuthRequest,
 	parseKanbanMcpSettingsSaveRequest,
-	parseKanbanOauthLoginRequest,
 	parseKanbanProviderModelsRequest,
 	parseRuntimeConfigSaveRequest,
 	parseSessionPromptRequest,
@@ -702,25 +699,6 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		getKanbanProviderCatalog: async (_workspaceScope) => {
 			return await agentProviderService.getAllAgentProviderCatalog();
 		},
-		getKanbanAccountProfile: async (_workspaceScope) => {
-			return await agentProviderService.getKanbanAccountProfile();
-		},
-		getKanbanKanbanAccess: async (_workspaceScope) => {
-			return await agentProviderService.getKanbanKanbanAccess();
-		},
-		getFeaturebaseToken: async (_workspaceScope) => {
-			return await agentProviderService.getFeaturebaseToken();
-		},
-		getKanbanAccountBalance: async (_workspaceScope) => {
-			return await agentProviderService.getKanbanAccountBalance();
-		},
-		getKanbanAccountOrganizations: async (_workspaceScope) => {
-			return await agentProviderService.getKanbanAccountOrganizations();
-		},
-		switchKanbanAccount: async (_workspaceScope, input) => {
-			const body = parseKanbanAccountSwitchRequest(input);
-			return await agentProviderService.switchKanbanAccount(body.organizationId);
-		},
 		getKanbanProviderModels: async (_workspaceScope, input) => {
 			const body = parseKanbanProviderModelsRequest(input);
 			return await agentProviderService.getProviderModels(body.providerId);
@@ -775,33 +753,6 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			const body = parseKanbanMcpSettingsSaveRequest(input);
 			const response = await kanbanMcpSettingsService.saveSettings(body);
 			deps.bumpKanbanSessionContextVersion?.();
-			return response;
-		},
-		runKanbanProviderOAuthLogin: async (_workspaceScope, input) => {
-			const body = parseKanbanOauthLoginRequest(input);
-			const response = await agentProviderService.runOauthLogin({
-				providerId: body.provider,
-				baseUrl: body.baseUrl,
-			});
-			if (response.ok) {
-				deps.bumpKanbanSessionContextVersion?.();
-			}
-			return response;
-		},
-		startKanbanDeviceAuth: async () => {
-			return await agentProviderService.startDeviceAuth();
-		},
-		completeKanbanDeviceAuth: async (_workspaceScope, input) => {
-			const body = parseKanbanDeviceAuthCompleteRequest(input);
-			const response = await agentProviderService.completeDeviceAuth({
-				deviceCode: body.deviceCode,
-				expiresInSeconds: body.expiresInSeconds,
-				pollIntervalSeconds: body.pollIntervalSeconds,
-				baseUrl: body.baseUrl,
-			});
-			if (response.ok) {
-				deps.bumpKanbanSessionContextVersion?.();
-			}
 			return response;
 		},
 		sendTaskChatMessage: async (workspaceScope, input) => {

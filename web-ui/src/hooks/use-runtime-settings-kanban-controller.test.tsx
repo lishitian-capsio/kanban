@@ -14,23 +14,12 @@ const fetchKanbanProviderCatalogMock = vi.hoisted(() => vi.fn());
 const fetchKanbanProviderModelsMock = vi.hoisted(() => vi.fn());
 const saveAgentProviderConfigMock = vi.hoisted(() => vi.fn());
 const fetchAgentProviderSetsMock = vi.hoisted(() => vi.fn());
-const runKanbanProviderOauthLoginMock = vi.hoisted(() => vi.fn());
-const startKanbanDeviceAuthMock = vi.hoisted(() => vi.fn());
-const completeKanbanDeviceAuthMock = vi.hoisted(() => vi.fn());
-const isLocalhostAccessMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/runtime/runtime-config-query", () => ({
 	saveAgentProviderConfig: saveAgentProviderConfigMock,
 	fetchAgentProviderSets: fetchAgentProviderSetsMock,
 	fetchKanbanProviderCatalog: fetchKanbanProviderCatalogMock,
 	fetchKanbanProviderModels: fetchKanbanProviderModelsMock,
-	runKanbanProviderOauthLogin: runKanbanProviderOauthLoginMock,
-	startKanbanDeviceAuth: startKanbanDeviceAuthMock,
-	completeKanbanDeviceAuth: completeKanbanDeviceAuthMock,
-}));
-
-vi.mock("@/utils/localhost-detection", () => ({
-	isLocalhostAccess: isLocalhostAccessMock,
 }));
 
 interface HookSnapshot {
@@ -42,10 +31,7 @@ interface HookSnapshot {
 	providerCatalogIds: string[];
 	providerModelIds: string[];
 	selectedModelSupportsReasoningEffort: boolean;
-	isOauthProviderSelected: boolean;
 	apiKeyConfigured: boolean;
-	oauthConfigured: boolean;
-	oauthAccountId: string;
 	hasUnsavedChanges: boolean;
 	setProviderId: (value: string) => void;
 	setModelId: (value: string) => void;
@@ -62,11 +48,10 @@ interface HookSnapshot {
 	updateCustomProvider: (
 		input: Parameters<ReturnType<typeof useRuntimeSettingsKanbanController>["updateCustomProvider"]>[0],
 	) => Promise<{ ok: boolean; message?: string }>;
-	runOauthLogin: () => Promise<{ ok: boolean; message?: string }>;
 }
 
 function createRuntimeConfigResponse(
-	clineOverrides: Partial<RuntimeConfigResponse["kanbanProviderSettings"]> = {},
+	providerOverrides: Partial<RuntimeConfigResponse["kanbanProviderSettings"]> = {},
 ): RuntimeConfigResponse {
 	return {
 		selectedAgentId: "pi",
@@ -90,17 +75,17 @@ function createRuntimeConfigResponse(
 		],
 		shortcuts: [],
 		kanbanProviderSettings: {
-			providerId: "cline",
+			providerId: "anthropic",
 			modelId: "claude-sonnet-4-6",
 			baseUrl: null,
 			reasoningEffort: null,
-			apiKeyConfigured: false,
-			oauthProvider: "cline",
+			apiKeyConfigured: true,
+			oauthProvider: null,
 			oauthAccessTokenConfigured: false,
 			oauthRefreshTokenConfigured: false,
 			oauthAccountId: null,
 			oauthExpiresAt: null,
-			...clineOverrides,
+			...providerOverrides,
 		},
 		commitPromptTemplate: "",
 		openPrPromptTemplate: "",
@@ -176,10 +161,7 @@ function HookHarness({
 			providerCatalogIds: state.providerCatalog.map((provider) => provider.id),
 			providerModelIds: state.providerModels.map((model) => model.id),
 			selectedModelSupportsReasoningEffort: state.selectedModelSupportsReasoningEffort,
-			isOauthProviderSelected: state.isOauthProviderSelected,
 			apiKeyConfigured: state.apiKeyConfigured,
-			oauthConfigured: state.oauthConfigured,
-			oauthAccountId: state.oauthAccountId,
 			hasUnsavedChanges: state.hasUnsavedChanges,
 			setProviderId: (value) => {
 				state.setProviderId(value);
@@ -200,7 +182,6 @@ function HookHarness({
 			refreshProviderModels: state.refreshProviderModels,
 			addCustomProvider: state.addCustomProvider,
 			updateCustomProvider: state.updateCustomProvider,
-			runOauthLogin: state.runOauthLogin,
 		});
 	}, [onSnapshot, state]);
 
@@ -218,11 +199,6 @@ describe("useRuntimeSettingsKanbanController", () => {
 		saveAgentProviderConfigMock.mockReset();
 		fetchAgentProviderSetsMock.mockReset();
 		fetchAgentProviderSetsMock.mockResolvedValue({ agents: {} });
-		runKanbanProviderOauthLoginMock.mockReset();
-		startKanbanDeviceAuthMock.mockReset();
-		completeKanbanDeviceAuthMock.mockReset();
-		isLocalhostAccessMock.mockReset();
-		isLocalhostAccessMock.mockReturnValue(true);
 		fetchKanbanProviderCatalogMock.mockResolvedValue([]);
 		fetchKanbanProviderModelsMock.mockResolvedValue([]);
 		previousActEnvironment = (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
@@ -251,12 +227,12 @@ describe("useRuntimeSettingsKanbanController", () => {
 		let latestSnapshot: HookSnapshot | null = null;
 		fetchKanbanProviderCatalogMock.mockResolvedValue([
 			{
-				id: "cline",
-				name: "Kanban",
-				oauthSupported: true,
+				id: "anthropic",
+				name: "Anthropic",
+				oauthSupported: false,
 				enabled: true,
 				defaultModelId: "claude-sonnet-4-6",
-				baseUrl: "https://api.cline.bot/api/v1",
+				baseUrl: "https://api.anthropic.com",
 			},
 		]);
 		fetchKanbanProviderModelsMock.mockResolvedValue([
@@ -286,11 +262,10 @@ describe("useRuntimeSettingsKanbanController", () => {
 		});
 
 		expect(fetchKanbanProviderCatalogMock).toHaveBeenCalledWith("workspace-1");
-		expect(fetchKanbanProviderModelsMock).toHaveBeenCalledWith("workspace-1", "cline");
-		expect(requireSnapshot(latestSnapshot).providerCatalogIds).toEqual(["cline"]);
+		expect(fetchKanbanProviderModelsMock).toHaveBeenCalledWith("workspace-1", "anthropic");
+		expect(requireSnapshot(latestSnapshot).providerCatalogIds).toEqual(["anthropic"]);
 		expect(requireSnapshot(latestSnapshot).providerModelIds).toEqual(["claude-sonnet-4-6"]);
 		expect(requireSnapshot(latestSnapshot).selectedModelSupportsReasoningEffort).toBe(false);
-		expect(requireSnapshot(latestSnapshot).isOauthProviderSelected).toBe(true);
 		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(false);
 	});
 
@@ -299,12 +274,12 @@ describe("useRuntimeSettingsKanbanController", () => {
 		let latestSnapshot: HookSnapshot | null = null;
 		fetchKanbanProviderCatalogMock.mockResolvedValue([
 			{
-				id: "cline",
-				name: "Kanban",
-				oauthSupported: true,
+				id: "anthropic",
+				name: "Anthropic",
+				oauthSupported: false,
 				enabled: true,
 				defaultModelId: "claude-sonnet-4-6",
-				baseUrl: "https://api.cline.bot/api/v1",
+				baseUrl: "https://api.anthropic.com",
 			},
 		]);
 		fetchKanbanProviderModelsMock.mockResolvedValue([
@@ -334,22 +309,22 @@ describe("useRuntimeSettingsKanbanController", () => {
 		});
 
 		expect(fetchKanbanProviderCatalogMock).toHaveBeenCalledWith(null);
-		expect(fetchKanbanProviderModelsMock).toHaveBeenCalledWith(null, "cline");
-		expect(requireSnapshot(latestSnapshot).providerCatalogIds).toEqual(["cline"]);
+		expect(fetchKanbanProviderModelsMock).toHaveBeenCalledWith(null, "anthropic");
+		expect(requireSnapshot(latestSnapshot).providerCatalogIds).toEqual(["anthropic"]);
 		expect(requireSnapshot(latestSnapshot).providerModelIds).toEqual(["claude-sonnet-4-6"]);
 	});
 
-	it("defaults provider settings to cline when the config omits cline settings", async () => {
+	it("defaults provider settings to the configured provider when the config omits provider settings", async () => {
 		const config = createLegacyRuntimeConfigResponse();
 		let latestSnapshot: HookSnapshot | null = null;
 		fetchKanbanProviderCatalogMock.mockResolvedValue([
 			{
-				id: "cline",
-				name: "Kanban",
-				oauthSupported: true,
+				id: "anthropic",
+				name: "Anthropic",
+				oauthSupported: false,
 				enabled: true,
 				defaultModelId: "claude-sonnet-4-6",
-				baseUrl: "https://api.cline.bot/api/v1",
+				baseUrl: "https://api.anthropic.com",
 			},
 		]);
 
@@ -372,55 +347,25 @@ describe("useRuntimeSettingsKanbanController", () => {
 		});
 
 		expect(fetchKanbanProviderCatalogMock).toHaveBeenCalledWith("workspace-1");
-		expect(fetchKanbanProviderModelsMock).toHaveBeenCalledWith("workspace-1", "cline");
-		expect(requireSnapshot(latestSnapshot).providerId).toBe("cline");
 		expect(requireSnapshot(latestSnapshot).modelId).toBe("claude-sonnet-4-6");
-		expect(requireSnapshot(latestSnapshot).baseUrl).toBe("");
-		expect(requireSnapshot(latestSnapshot).isOauthProviderSelected).toBe(true);
 		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(true);
-	});
-
-	it("normalizes legacy base urls away for OAuth providers", async () => {
-		const config = createRuntimeConfigResponse({
-			providerId: "cline",
-			oauthProvider: "cline",
-			baseUrl: "https://legacy.example.com",
-		});
-		let latestSnapshot: HookSnapshot | null = null;
-
-		await act(async () => {
-			root.render(
-				<HookHarness
-					open={true}
-					workspaceId="workspace-1"
-					config={config}
-					onSnapshot={(snapshot) => {
-						latestSnapshot = snapshot;
-					}}
-				/>,
-			);
-			await flushAsyncWork();
-		});
-
-		expect(requireSnapshot(latestSnapshot).baseUrl).toBe("");
-		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(false);
 	});
 
 	it("defaults the model when Kanban settings load with a blank model", async () => {
 		const config = createRuntimeConfigResponse({
-			providerId: "cline",
-			oauthProvider: "cline",
+			providerId: "anthropic",
+			oauthProvider: null,
 			modelId: null,
 		});
 		let latestSnapshot: HookSnapshot | null = null;
 		fetchKanbanProviderCatalogMock.mockResolvedValue([
 			{
-				id: "cline",
-				name: "Kanban",
-				oauthSupported: true,
+				id: "anthropic",
+				name: "Anthropic",
+				oauthSupported: false,
 				enabled: true,
 				defaultModelId: "claude-sonnet-4-6",
-				baseUrl: "https://api.cline.bot/api/v1",
+				baseUrl: "https://api.anthropic.com",
 			},
 		]);
 
@@ -442,7 +387,7 @@ describe("useRuntimeSettingsKanbanController", () => {
 			await flushAsyncWork();
 		});
 
-		expect(requireSnapshot(latestSnapshot).providerId).toBe("cline");
+		expect(requireSnapshot(latestSnapshot).providerId).toBe("anthropic");
 		expect(requireSnapshot(latestSnapshot).modelId).toBe("claude-sonnet-4-6");
 	});
 
@@ -922,15 +867,16 @@ describe("useRuntimeSettingsKanbanController", () => {
 
 	it("adds a custom provider and refreshes models", async () => {
 		const config = createRuntimeConfigResponse({
-			providerId: "cline",
+			providerId: "anthropic",
+			oauthProvider: null,
 			modelId: "claude-sonnet-4-6",
 		});
 		let latestSnapshot: HookSnapshot | null = null;
 		fetchKanbanProviderCatalogMock.mockResolvedValue([
 			{
-				id: "cline",
-				name: "Kanban",
-				oauthSupported: true,
+				id: "anthropic",
+				name: "Anthropic",
+				oauthSupported: false,
 				enabled: true,
 				defaultModelId: "claude-sonnet-4-6",
 			},
@@ -1010,7 +956,7 @@ describe("useRuntimeSettingsKanbanController", () => {
 		expect(requireSnapshot(latestSnapshot).modelId).toBe("qwen2.5-coder:32b");
 		expect(requireSnapshot(latestSnapshot).baseUrl).toBe("http://localhost:8000/v1");
 		expect(requireSnapshot(latestSnapshot).apiKeyConfigured).toBe(true);
-		expect(requireSnapshot(latestSnapshot).providerCatalogIds).toEqual(["cline"]);
+		expect(requireSnapshot(latestSnapshot).providerCatalogIds).toEqual(["anthropic"]);
 		expect(requireSnapshot(latestSnapshot).providerModelIds).toEqual(["qwen2.5-coder:32b"]);
 		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(false);
 	});
@@ -1092,161 +1038,21 @@ describe("useRuntimeSettingsKanbanController", () => {
 		expect(savedConfig).not.toHaveProperty("baseUrl");
 	});
 
-	it("applies OAuth login results to the local settings state (device auth, remote)", async () => {
-		isLocalhostAccessMock.mockReturnValue(false);
-		const config = createRuntimeConfigResponse({
-			providerId: "cline",
-			oauthProvider: "cline",
-			oauthAccessTokenConfigured: false,
-			oauthAccountId: null,
-			oauthExpiresAt: null,
-		});
-		let latestSnapshot: HookSnapshot | null = null;
-		startKanbanDeviceAuthMock.mockResolvedValue({
-			deviceCode: "device-code-1",
-			userCode: "ABCD-1234",
-			verificationUrl: "https://auth.cline.bot/verify",
-			expiresInSeconds: 300,
-			pollIntervalSeconds: 5,
-		});
-		completeKanbanDeviceAuthMock.mockResolvedValue({
-			ok: true,
-			provider: "cline",
-			settings: {
-				providerId: "cline",
-				modelId: "claude-sonnet-4-6",
-				baseUrl: null,
-				reasoningEffort: null,
-				apiKeyConfigured: false,
-				oauthProvider: "cline",
-				oauthAccessTokenConfigured: true,
-				oauthRefreshTokenConfigured: true,
-				oauthAccountId: "acct-123",
-				oauthExpiresAt: 123456789,
-			},
-		});
-
-		await act(async () => {
-			root.render(
-				<HookHarness
-					open={true}
-					workspaceId="workspace-1"
-					config={config}
-					onSnapshot={(snapshot) => {
-						latestSnapshot = snapshot;
-					}}
-				/>,
-			);
-			await flushAsyncWork();
-		});
-
-		await act(async () => {
-			expect(await requireSnapshot(latestSnapshot).runOauthLogin()).toEqual({ ok: true });
-		});
-
-		expect(startKanbanDeviceAuthMock).toHaveBeenCalledWith("workspace-1");
-		expect(completeKanbanDeviceAuthMock).toHaveBeenCalledWith("workspace-1", {
-			deviceCode: "device-code-1",
-			expiresInSeconds: 300,
-			pollIntervalSeconds: 5,
-		});
-		expect(requireSnapshot(latestSnapshot).oauthConfigured).toBe(true);
-		expect(requireSnapshot(latestSnapshot).oauthAccountId).toBe("acct-123");
-		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(false);
-	});
-
-	it("uses the provider default when OAuth login returns no model", async () => {
-		isLocalhostAccessMock.mockReturnValue(false);
-		const config = createRuntimeConfigResponse({
-			providerId: "cline",
-			oauthProvider: "cline",
-			modelId: "claude-sonnet-4-6",
-			oauthAccessTokenConfigured: false,
-			oauthAccountId: null,
-			oauthExpiresAt: null,
-		});
-		let latestSnapshot: HookSnapshot | null = null;
-		fetchKanbanProviderCatalogMock.mockResolvedValue([
-			{
-				id: "cline",
-				name: "Kanban",
-				oauthSupported: true,
-				enabled: true,
-				defaultModelId: "claude-sonnet-4-6",
-				baseUrl: "https://api.cline.bot/api/v1",
-			},
-		]);
-		startKanbanDeviceAuthMock.mockResolvedValue({
-			deviceCode: "device-code-2",
-			userCode: "EFGH-5678",
-			verificationUrl: "https://auth.cline.bot/verify",
-			expiresInSeconds: 300,
-			pollIntervalSeconds: 5,
-		});
-		completeKanbanDeviceAuthMock.mockResolvedValue({
-			ok: true,
-			provider: "cline",
-			settings: {
-				providerId: "cline",
-				modelId: null,
-				baseUrl: null,
-				reasoningEffort: null,
-				apiKeyConfigured: false,
-				oauthProvider: "cline",
-				oauthAccessTokenConfigured: true,
-				oauthRefreshTokenConfigured: true,
-				oauthAccountId: "acct-123",
-				oauthExpiresAt: 123456789,
-			},
-		});
-
-		await act(async () => {
-			root.render(
-				<HookHarness
-					open={true}
-					workspaceId="workspace-1"
-					config={config}
-					onSnapshot={(snapshot) => {
-						latestSnapshot = snapshot;
-					}}
-				/>,
-			);
-			await flushAsyncWork();
-		});
-
-		await act(async () => {
-			await flushAsyncWork();
-		});
-
-		await act(async () => {
-			expect(await requireSnapshot(latestSnapshot).runOauthLogin()).toEqual({ ok: true });
-		});
-
-		expect(startKanbanDeviceAuthMock).toHaveBeenCalledWith("workspace-1");
-		expect(completeKanbanDeviceAuthMock).toHaveBeenCalledWith("workspace-1", {
-			deviceCode: "device-code-2",
-			expiresInSeconds: 300,
-			pollIntervalSeconds: 5,
-		});
-		expect(requireSnapshot(latestSnapshot).modelId).toBe("claude-sonnet-4-6");
-		expect(requireSnapshot(latestSnapshot).oauthConfigured).toBe(true);
-	});
-
 	it("shows reasoning effort support for GPT style models", async () => {
 		const config = createRuntimeConfigResponse({
-			providerId: "cline",
-			oauthProvider: "cline",
+			providerId: "openrouter",
+			oauthProvider: null,
 			modelId: "openai/gpt-5.4",
 		});
 		let latestSnapshot: HookSnapshot | null = null;
 		fetchKanbanProviderCatalogMock.mockResolvedValue([
 			{
-				id: "cline",
-				name: "Kanban",
-				oauthSupported: true,
+				id: "openrouter",
+				name: "OpenRouter",
+				oauthSupported: false,
 				enabled: true,
 				defaultModelId: "openai/gpt-5.4",
-				baseUrl: "https://api.cline.bot/api/v1",
+				baseUrl: "https://openrouter.ai/api/v1",
 			},
 		]);
 		fetchKanbanProviderModelsMock.mockResolvedValue([
@@ -1276,173 +1082,5 @@ describe("useRuntimeSettingsKanbanController", () => {
 		});
 
 		expect(requireSnapshot(latestSnapshot).selectedModelSupportsReasoningEffort).toBe(true);
-	});
-
-	it("clears base url when saving an OAuth provider", async () => {
-		const config = createRuntimeConfigResponse({
-			providerId: "openrouter",
-			oauthProvider: null,
-			modelId: "gpt-5",
-			baseUrl: "https://openrouter.ai/api",
-		});
-		let latestSnapshot: HookSnapshot | null = null;
-		saveAgentProviderConfigMock.mockResolvedValue({
-			ok: true,
-			config: {
-				agentId: "pi",
-				provider: "cline",
-				model: "gpt-5",
-			},
-		});
-
-		await act(async () => {
-			root.render(
-				<HookHarness
-					open={true}
-					workspaceId="workspace-1"
-					config={config}
-					onSnapshot={(snapshot) => {
-						latestSnapshot = snapshot;
-					}}
-				/>,
-			);
-			await flushAsyncWork();
-		});
-
-		await act(async () => {
-			requireSnapshot(latestSnapshot).setProviderId("cline");
-			await flushAsyncWork();
-		});
-
-		await act(async () => {
-			expect(await requireSnapshot(latestSnapshot).saveProviderSettings()).toEqual({ ok: true });
-		});
-
-		expect(saveAgentProviderConfigMock).toHaveBeenCalledWith("workspace-1", "pi", expect.objectContaining({
-			agentId: "pi",
-			provider: "cline",
-			model: "gpt-5",
-		}));
-		expect(requireSnapshot(latestSnapshot).baseUrl).toBe("");
-	});
-
-	it("uses browser OAuth for cline provider when accessing from localhost", async () => {
-		isLocalhostAccessMock.mockReturnValue(true);
-		const config = createRuntimeConfigResponse({
-			providerId: "cline",
-			oauthProvider: "cline",
-			oauthAccessTokenConfigured: false,
-			oauthAccountId: null,
-			oauthExpiresAt: null,
-		});
-		let latestSnapshot: HookSnapshot | null = null;
-		runKanbanProviderOauthLoginMock.mockResolvedValue({
-			ok: true,
-			provider: "cline",
-			settings: {
-				providerId: "cline",
-				modelId: "claude-sonnet-4-6",
-				baseUrl: null,
-				reasoningEffort: null,
-				apiKeyConfigured: false,
-				oauthProvider: "cline",
-				oauthAccessTokenConfigured: true,
-				oauthRefreshTokenConfigured: true,
-				oauthAccountId: "acct-browser",
-				oauthExpiresAt: 123456789,
-			},
-		});
-
-		await act(async () => {
-			root.render(
-				<HookHarness
-					open={true}
-					workspaceId="workspace-1"
-					config={config}
-					onSnapshot={(snapshot) => {
-						latestSnapshot = snapshot;
-					}}
-				/>,
-			);
-			await flushAsyncWork();
-		});
-
-		await act(async () => {
-			expect(await requireSnapshot(latestSnapshot).runOauthLogin()).toEqual({ ok: true });
-		});
-
-		// Should use browser OAuth, NOT device auth
-		expect(runKanbanProviderOauthLoginMock).toHaveBeenCalledWith("workspace-1", {
-			provider: "cline",
-		});
-		expect(startKanbanDeviceAuthMock).not.toHaveBeenCalled();
-		expect(completeKanbanDeviceAuthMock).not.toHaveBeenCalled();
-		expect(requireSnapshot(latestSnapshot).oauthConfigured).toBe(true);
-		expect(requireSnapshot(latestSnapshot).oauthAccountId).toBe("acct-browser");
-		expect(requireSnapshot(latestSnapshot).hasUnsavedChanges).toBe(false);
-	});
-
-	it("uses device auth for cline provider when accessing remotely", async () => {
-		isLocalhostAccessMock.mockReturnValue(false);
-		const config = createRuntimeConfigResponse({
-			providerId: "cline",
-			oauthProvider: "cline",
-			oauthAccessTokenConfigured: false,
-			oauthAccountId: null,
-			oauthExpiresAt: null,
-		});
-		let latestSnapshot: HookSnapshot | null = null;
-		startKanbanDeviceAuthMock.mockResolvedValue({
-			deviceCode: "device-code-headless",
-			userCode: "HEAD-LESS",
-			verificationUrl: "https://auth.cline.bot/verify",
-			expiresInSeconds: 300,
-			pollIntervalSeconds: 5,
-		});
-		completeKanbanDeviceAuthMock.mockResolvedValue({
-			ok: true,
-			provider: "cline",
-			settings: {
-				providerId: "cline",
-				modelId: "claude-sonnet-4-6",
-				baseUrl: null,
-				reasoningEffort: null,
-				apiKeyConfigured: false,
-				oauthProvider: "cline",
-				oauthAccessTokenConfigured: true,
-				oauthRefreshTokenConfigured: true,
-				oauthAccountId: "acct-device",
-				oauthExpiresAt: 123456789,
-			},
-		});
-
-		await act(async () => {
-			root.render(
-				<HookHarness
-					open={true}
-					workspaceId="workspace-1"
-					config={config}
-					onSnapshot={(snapshot) => {
-						latestSnapshot = snapshot;
-					}}
-				/>,
-			);
-			await flushAsyncWork();
-		});
-
-		await act(async () => {
-			expect(await requireSnapshot(latestSnapshot).runOauthLogin()).toEqual({ ok: true });
-		});
-
-		// Should use device auth, NOT browser OAuth
-		expect(startKanbanDeviceAuthMock).toHaveBeenCalledWith("workspace-1");
-		expect(completeKanbanDeviceAuthMock).toHaveBeenCalledWith("workspace-1", {
-			deviceCode: "device-code-headless",
-			expiresInSeconds: 300,
-			pollIntervalSeconds: 5,
-		});
-		expect(runKanbanProviderOauthLoginMock).not.toHaveBeenCalled();
-		expect(requireSnapshot(latestSnapshot).oauthConfigured).toBe(true);
-		expect(requireSnapshot(latestSnapshot).oauthAccountId).toBe("acct-device");
 	});
 });
