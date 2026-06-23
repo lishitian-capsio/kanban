@@ -44,6 +44,15 @@ import {
 	writeBoardRef,
 } from "./board-ref";
 import {
+	type ConnectionRecord,
+	type DbCredential,
+	normalizeConnId,
+	readConnections,
+	writeConnections,
+	readCredentials,
+	writeCredentials,
+} from "../db/registry/connection-store";
+import {
 	buildCommittedProviderFromProviderSettings,
 	type CommittedProviderRecord,
 	type CommittedProvidersData,
@@ -397,6 +406,75 @@ function getWorkspaceRequirementVersionsShardDir(repoPath: string, workspaceId: 
 
 function getWorkspaceRequirementTaskLinksShardDir(repoPath: string, workspaceId: string): string {
 	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), REQUIREMENT_TASK_LINKS_SHARD_DIRNAME);
+}
+
+const DB_CONNECTIONS_SHARD_DIRNAME = "db-connections";
+
+/** Committed (board-data) per-connection metadata shard dir. Travels with the repo. */
+export function getWorkspaceDbConnectionsShardDir(repoPath: string, workspaceId: string): string {
+	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), DB_CONNECTIONS_SHARD_DIRNAME);
+}
+
+/** Machine-home DB credentials file (secrets only; never committed). */
+export function getDbCredentialsPath(): string {
+	const override = process.env.KANBAN_DB_CREDENTIALS_PATH?.trim();
+	if (override) {
+		return override;
+	}
+	return join(getMachineKanbanHomePath(), "settings", "db-credentials.json");
+}
+
+/** Load all committed DB connection records for a workspace. */
+export async function loadWorkspaceDbConnections(workspaceId: string): Promise<ConnectionRecord[]> {
+	const repoPath = await resolveRepoPathForWorkspaceId(workspaceId);
+	if (!repoPath) {
+		return [];
+	}
+	return await readConnections(getWorkspaceDbConnectionsShardDir(repoPath, workspaceId));
+}
+
+/** Locked read→mutate→write of a workspace's committed DB connection records. */
+export async function mutateWorkspaceDbConnections(
+	workspaceId: string,
+	mutate: (records: ConnectionRecord[]) => ConnectionRecord[] | Promise<ConnectionRecord[]>,
+): Promise<ConnectionRecord[]> {
+	const repoPath = await resolveRepoPathForWorkspaceId(workspaceId);
+	if (!repoPath) {
+		throw new Error(`Unknown workspace "${workspaceId}"; cannot resolve its repository path.`);
+	}
+	const shardDir = getWorkspaceDbConnectionsShardDir(repoPath, workspaceId);
+	return await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
+		const current = await readConnections(shardDir);
+		const next = await mutate(current);
+		await writeConnections(shardDir, next);
+		return next;
+	});
+}
+
+/** Load one machine-home credential by connection id. */
+export async function loadDbCredential(connId: string): Promise<DbCredential | undefined> {
+	const id = normalizeConnId(connId);
+	const data = await readCredentials(getDbCredentialsPath());
+	return data.credentials[id];
+}
+
+/** Read→mutate→write one machine-home credential (machine-local; no repo lock). */
+export async function mutateDbCredential(
+	connId: string,
+	mutate: (current: DbCredential | undefined) => DbCredential | undefined,
+): Promise<void> {
+	const path = getDbCredentialsPath();
+	const id = normalizeConnId(connId);
+	await lockedFileSystem.withLock({ path, type: "file" }, async () => {
+		const data = await readCredentials(path);
+		const next = mutate(data.credentials[id]);
+		if (next === undefined) {
+			delete data.credentials[id];
+		} else {
+			data.credentials[id] = next;
+		}
+		await writeCredentials(path, data);
+	});
 }
 
 /** Repo-scoped vault directory holding migrated requirement documents (`.md`). */
