@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-
-import { createDriver, registerDriver } from "../../../src/db/driver/driver-registry";
 import type { DatabaseDriver } from "../../../src/db/driver/driver";
+import { createDriver, registerDriver } from "../../../src/db/driver/driver-registry";
 import { UnsupportedEngineError } from "../../../src/db/errors";
 import type { ConnectionConfig } from "../../../src/db/types";
 
@@ -13,6 +12,17 @@ function fakeDriver(config: ConnectionConfig): DatabaseDriver {
 		testConnection: async () => ({ ok: true, latencyMs: 0, serverVersion: null }),
 		query: async () => ({ rows: [], fields: [], rowCount: 0, durationMs: 0 }),
 		introspect: async () => ({ engine: config.engine, tables: [] }),
+		listSchemas: async () => [],
+		listTables: async () => [],
+		describeTable: async (schema, table) => ({
+			schema,
+			name: table,
+			kind: "table",
+			columns: [],
+			indexes: [],
+			foreignKeys: [],
+		}),
+		metadataSignature: async () => "",
 	};
 }
 

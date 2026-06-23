@@ -4,6 +4,9 @@ import type {
 	QueryRequest,
 	QueryResult,
 	SchemaIntrospection,
+	SchemaSummary,
+	TableDetail,
+	TableSummary,
 	TestConnectionResult,
 } from "../types";
 
@@ -27,4 +30,20 @@ export interface DatabaseDriver {
 	query(request: QueryRequest): Promise<QueryResult>;
 	/** Read the catalog, normalized to {@link SchemaIntrospection}. Always read-only. */
 	introspect(): Promise<SchemaIntrospection>;
+	/**
+	 * Lazy introspection — one tree level at a time, so a huge database is never
+	 * materialized wholesale. All three are always read-only catalog reads.
+	 */
+	/** List the top-level namespaces (Postgres schemas / MySQL databases / SQLite attached dbs). */
+	listSchemas(): Promise<SchemaSummary[]>;
+	/** List the tables and views within one schema (no columns — expand to get them). */
+	listTables(schema: string): Promise<TableSummary[]>;
+	/** Full detail of one table/view: columns, indexes, and foreign keys. */
+	describeTable(schema: string, table: string): Promise<TableDetail>;
+	/**
+	 * Cheap freshness probe for the metadata cache — must not issue a heavy query.
+	 * SQLite returns the db file's mtime+size; remote engines return a constant
+	 * (their caching is gated by the in-process mutation generation instead).
+	 */
+	metadataSignature(): Promise<string>;
 }

@@ -72,6 +72,72 @@ export interface SchemaIntrospection {
 	tables: TableInfo[];
 }
 
+// ---------------------------------------------------------------------------
+// Lazy, hierarchical introspection (schemas → tables → table detail).
+//
+// The eager `SchemaIntrospection` above pulls every column of every table in
+// one shot. The types below back the lazy backend: each level is fetched only
+// when the consumer expands into it, so a huge database is never materialized
+// wholesale. Shapes are deliberately identical across engines — a Postgres
+// schema, a MySQL database, and a SQLite attached database all surface as a
+// `SchemaSummary`; `TableSummary.schema` / `TableDetail.schema` reference that
+// same name.
+// ---------------------------------------------------------------------------
+
+/**
+ * A top-level namespace within one connection: a Postgres schema, a MySQL
+ * database, or a SQLite attached database (usually just `main`). System
+ * catalogs are filtered out by the drivers.
+ */
+export interface SchemaSummary {
+	name: string;
+}
+
+/** A table or view within a schema — name + kind only, no columns (lazy). */
+export interface TableSummary {
+	schema: string;
+	name: string;
+	kind: "table" | "view";
+}
+
+/** One index on a table, with its ordered column list. */
+export interface IndexInfo {
+	name: string;
+	/** Indexed columns in index order (composite indexes keep their ordering). */
+	columns: string[];
+	isUnique: boolean;
+	/** True when this index backs the table's PRIMARY KEY constraint. */
+	isPrimary: boolean;
+}
+
+/** One foreign-key constraint: local columns → referenced table columns. */
+export interface ForeignKeyInfo {
+	/** Constraint name, or null when the engine does not expose one. */
+	name: string | null;
+	/** Local columns, ordered to line up positionally with `referencedColumns`. */
+	columns: string[];
+	referencedSchema: string;
+	referencedTable: string;
+	referencedColumns: string[];
+}
+
+/**
+ * Full detail of a single table or view, fetched only when it is expanded.
+ * `columns[].isPrimaryKey` is the authoritative per-column primary-key flag
+ * (the human editor and safe UPDATE/DELETE WHERE generation depend on it);
+ * the primary key is additionally surfaced as an entry in `indexes` with
+ * `isPrimary: true` (except a SQLite `INTEGER PRIMARY KEY` rowid alias, which
+ * has no backing index — there `isPrimaryKey` on the column is the only signal).
+ */
+export interface TableDetail {
+	schema: string;
+	name: string;
+	kind: "table" | "view";
+	columns: ColumnInfo[];
+	indexes: IndexInfo[];
+	foreignKeys: ForeignKeyInfo[];
+}
+
 export interface TestConnectionResult {
 	ok: boolean;
 	latencyMs: number;

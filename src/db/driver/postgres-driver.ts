@@ -7,10 +7,15 @@ import { DbConnectionError, DbQueryError } from "../errors";
 import type {
 	ColumnInfo,
 	ConnectionConfig,
+	ForeignKeyInfo,
+	IndexInfo,
 	QueryRequest,
 	QueryResult,
 	SchemaIntrospection,
+	SchemaSummary,
+	TableDetail,
 	TableInfo,
+	TableSummary,
 	TestConnectionResult,
 } from "../types";
 import type { DatabaseDriver } from "./driver";
@@ -163,6 +168,169 @@ export class PostgresDriver implements DatabaseDriver {
 		log.debug("postgres introspect complete", { tableCount: tables.length });
 		return { engine: this.engine, tables };
 	}
+
+	async listSchemas(): Promise<SchemaSummary[]> {
+		const sql = `
+			SELECT schema_name
+			FROM information_schema.schemata
+			WHERE schema_name NOT IN ('pg_catalog', 'information_schema')
+			  AND schema_name NOT LIKE 'pg_temp%'
+			  AND schema_name NOT LIKE 'pg_toast%'
+			ORDER BY schema_name`;
+		const result = await this.require().query(sql);
+		return (result.rows as Array<{ schema_name: string }>).map((r) => ({ name: r.schema_name }));
+	}
+
+	async listTables(schema: string): Promise<TableSummary[]> {
+		const sql = `
+			SELECT table_name, table_type
+			FROM information_schema.tables
+			WHERE table_schema = $1
+			ORDER BY table_name`;
+		const result = await this.require().query(sql, [schema]);
+		return (result.rows as Array<{ table_name: string; table_type: string }>).map((r) => ({
+			schema,
+			name: r.table_name,
+			kind: r.table_type === "VIEW" ? "view" : "table",
+		}));
+	}
+
+	async describeTable(schema: string, table: string): Promise<TableDetail> {
+		const pool = this.require();
+		const columnsSql = `
+			SELECT c.column_name, c.data_type, c.is_nullable, c.column_default,
+			       (pk.column_name IS NOT NULL) AS is_primary_key
+			FROM information_schema.columns c
+			LEFT JOIN (
+			  SELECT kcu.column_name
+			  FROM information_schema.table_constraints tc
+			  JOIN information_schema.key_column_usage kcu
+			    ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
+			  WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = $1 AND tc.table_name = $2
+			) pk ON pk.column_name = c.column_name
+			WHERE c.table_schema = $1 AND c.table_name = $2
+			ORDER BY c.ordinal_position`;
+		const indexesSql = `
+			SELECT i.relname AS index_name, ix.indisunique AS is_unique, ix.indisprimary AS is_primary,
+			       a.attname AS column_name, k.ord AS ord
+			FROM pg_index ix
+			JOIN pg_class t ON t.oid = ix.indrelid
+			JOIN pg_namespace n ON n.oid = t.relnamespace
+			JOIN pg_class i ON i.oid = ix.indexrelid
+			JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+			JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+			WHERE n.nspname = $1 AND t.relname = $2
+			ORDER BY i.relname, k.ord`;
+		const foreignKeysSql = `
+			SELECT con.conname AS fk_name, att.attname AS column_name,
+			       ref_ns.nspname AS ref_schema, ref_cl.relname AS ref_table, ref_att.attname AS ref_column,
+			       k.ord AS ord
+			FROM pg_constraint con
+			JOIN pg_class cl ON cl.oid = con.conrelid
+			JOIN pg_namespace ns ON ns.oid = cl.relnamespace
+			JOIN pg_class ref_cl ON ref_cl.oid = con.confrelid
+			JOIN pg_namespace ref_ns ON ref_ns.oid = ref_cl.relnamespace
+			JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS k(attnum, ord) ON true
+			JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = k.attnum
+			JOIN LATERAL unnest(con.confkey) WITH ORDINALITY AS fk(attnum, ord2) ON fk.ord2 = k.ord
+			JOIN pg_attribute ref_att ON ref_att.attrelid = con.confrelid AND ref_att.attnum = fk.attnum
+			WHERE con.contype = 'f' AND ns.nspname = $1 AND cl.relname = $2
+			ORDER BY con.conname, k.ord`;
+
+		const [colsRes, idxRes, fkRes, kindRes] = await Promise.all([
+			pool.query(columnsSql, [schema, table]),
+			pool.query(indexesSql, [schema, table]),
+			pool.query(foreignKeysSql, [schema, table]),
+			pool.query(`SELECT table_type FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2`, [
+				schema,
+				table,
+			]),
+		]);
+
+		const columns = (colsRes.rows as unknown as PgColumnRow[]).map((c) => ({
+			name: c.column_name,
+			dataType: c.data_type,
+			nullable: c.is_nullable === "YES",
+			isPrimaryKey: c.is_primary_key === true,
+			defaultValue: c.column_default,
+		}));
+		const indexes = foldPgIndexes(idxRes.rows as unknown as PgIndexRow[]);
+		const foreignKeys = foldPgForeignKeys(fkRes.rows as unknown as PgForeignKeyRow[]);
+		const kind = (kindRes.rows[0] as { table_type?: string } | undefined)?.table_type === "VIEW" ? "view" : "table";
+		return { schema, name: table, kind, columns, indexes, foreignKeys };
+	}
+
+	async metadataSignature(): Promise<string> {
+		// No cheap, reliable remote schema-change probe — rely on the in-process
+		// mutation generation (bumped by the service on write/DDL) instead.
+		return "";
+	}
+}
+
+interface PgColumnRow {
+	column_name: string;
+	data_type: string;
+	is_nullable: string;
+	column_default: string | null;
+	is_primary_key: boolean;
+}
+interface PgIndexRow {
+	index_name: string;
+	is_unique: boolean;
+	is_primary: boolean;
+	column_name: string;
+	ord: number;
+}
+interface PgForeignKeyRow {
+	fk_name: string;
+	column_name: string;
+	ref_schema: string;
+	ref_table: string;
+	ref_column: string;
+	ord: number;
+}
+
+/** Fold flat per-(index,column) rows into one {@link IndexInfo} per index, columns ordered by `ord`. */
+function foldPgIndexes(rows: PgIndexRow[]): IndexInfo[] {
+	const byName = new Map<string, { info: IndexInfo; cols: Array<{ name: string; ord: number }> }>();
+	for (const row of rows) {
+		let entry = byName.get(row.index_name);
+		if (!entry) {
+			entry = {
+				info: { name: row.index_name, columns: [], isUnique: row.is_unique, isPrimary: row.is_primary },
+				cols: [],
+			};
+			byName.set(row.index_name, entry);
+		}
+		entry.cols.push({ name: row.column_name, ord: row.ord });
+	}
+	return [...byName.values()].map(({ info, cols }) => ({
+		...info,
+		columns: cols.sort((a, b) => a.ord - b.ord).map((c) => c.name),
+	}));
+}
+
+/** Fold flat per-(constraint,column) rows into one {@link ForeignKeyInfo} per constraint. */
+function foldPgForeignKeys(rows: PgForeignKeyRow[]): ForeignKeyInfo[] {
+	const byName = new Map<string, { row: PgForeignKeyRow; cols: Array<{ col: string; ref: string; ord: number }> }>();
+	for (const row of rows) {
+		let entry = byName.get(row.fk_name);
+		if (!entry) {
+			entry = { row, cols: [] };
+			byName.set(row.fk_name, entry);
+		}
+		entry.cols.push({ col: row.column_name, ref: row.ref_column, ord: row.ord });
+	}
+	return [...byName.values()].map(({ row, cols }) => {
+		const ordered = cols.sort((a, b) => a.ord - b.ord);
+		return {
+			name: row.fk_name,
+			columns: ordered.map((c) => c.col),
+			referencedSchema: row.ref_schema,
+			referencedTable: row.ref_table,
+			referencedColumns: ordered.map((c) => c.ref),
+		};
+	});
 }
 
 interface FlatColumnRow {
