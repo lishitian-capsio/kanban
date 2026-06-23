@@ -1,0 +1,19 @@
+{
+  "id": "c141b",
+  "title": "新增 kanban service 子命令：跨平台后台常驻服务",
+  "prompt": "目标：在 Kanban CLI 中新增一个 `service` 子命令组，让用户用一条 kanban 命令就能把 Kanban runtime 安装/卸载/启停为操作系统级的后台常驻服务，覆盖 Linux / macOS / Windows。Kanban 现在只能前台运行（bun dist/cli.js），没有 install/daemon 能力，要补上。\n\n## 子命令设计（commander，挂在现有顶层 CLI 下，参考 task/file/vault 子命令的注册方式）\n- `kanban service install`  生成并注册当前平台的服务定义，设为开机/登录自启\n- `kanban service uninstall` 反向移除\n- `kanban service start | stop | restart`\n- `kanban service status`  返回 JSON（和其它命令一致，全部输出 JSON）\n- 可选项：`--host <ip>` `--port <n>` `--name <serviceName>`（默认 kanban）、`--no-passcode`、透传到底层的运行参数\n\n## 关键：服务启动命令必须带 --skip-shutdown-cleanup\n否则服务重启会清掉 .kanban/worktrees/*（见 AGENTS.md / 既有行为）。同时默认带 --no-open。要把当前 bun 可执行路径与 dist/cli.js 路径解析正确（绝对路径），不要依赖 cwd。\n\n## 各平台实现（用各自原生机制，不要引入第三方常驻守护进程）\n- **Linux**：systemd **user** service，写 ~/.config/systemd/user/<name>.service，执行 systemctl --user daemon-reload + enable --now；status/stop/restart 走 systemctl --user。建议在 install 时提示 loginctl enable-linger。日志走 journald。\n- **macOS**：launchd LaunchAgent，写 ~/Library/LaunchAgents/<reverse-dns>.plist（RunAtLoad + KeepAlive），launchctl load -w / bootout 控制；StandardOutPath/StandardErrorPath 指向 ~/.kanban/logs 或合适位置。\n- **Windows**：优先用 Task Scheduler（schtasks，触发器=登录时/开机时，无需额外依赖）实现 install/uninstall/start/stop/status；在文档里说明若要真正的 Windows Service 可改用 NSSM。注意 Windows 下终端 agent 的 cmd 包装由 runtime 处理，无需在此重复。\n\n## 工程要求（遵守仓库 AGENTS.md）\n- 把平台差异抽象成一个接口（如 ServiceManager），三个平台各一个实现，按 process.platform 选择；纯逻辑（plist/unit/xml 文本生成、命令拼接）要可单测，IO/spawn 与文本生成分离。\n- 不允许 console.*，用 src/logging 的 createLogger；用户可见输出走 src/cli-output.ts 的 printLine（和现有 CLI 一致）。\n- 错误要友好：未安装时 start/status 给清晰提示；平台不支持时明确报错。\n- TypeScript 无 any；为文本生成器与命令拼接补单元测试。\n- 更新 --help 文本与 README/相关文档，给出三平台用法示例。\n\n## 验收\n- 三平台各自的 install→start→status→stop→uninstall 闭环可用（至少 Linux 实测，mac/win 逻辑+单测覆盖）。\n- status 输出 JSON。\n- 安装生成的启动命令包含 --skip-shutdown-cleanup 与 --no-open，并能正确透传 --host/--port/--no-passcode。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782197629192,
+  "updatedAt": 1782197629192,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
