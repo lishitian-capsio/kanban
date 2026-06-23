@@ -1,0 +1,23 @@
+{
+  "id": "51663",
+  "title": "移除今天新增的 Ask 审查动作",
+  "prompt": "GOAL: Completely remove the \"Ask\" review action feature that was added TODAY (2026-06-23). The user has decided to drop it. Do a clean removal, not a blind `git revert`, because one piece is shared and must stay.\n\nThe three commits that introduced it (newest → oldest):\n- 37a306b5  feat(review): add \"Ask\" split-button action to review cards (web-ui)\n- b050e79e  feat(review): backend support for the \"Ask\" review action\n- 76dae503  feat(review): add generic \"inject prompt into session\" primitive for Ask\n\nREMOVE (Ask-specific, web-ui + backend):\n- web-ui/src/components/board-card-ask-control.tsx (+ .test.tsx)\n- web-ui/src/hooks/use-ask-action.ts (+ .test.tsx)\n- web-ui/src/git-actions/build-ask-prompt.ts and ask-guardrail.ts (+ any tests)\n- App.tsx: drop `import { useAskAction }` and its wiring\n- board-card.tsx: drop BoardCardAskControl import/usage and the Ask-only comment\n- Backend \"Ask\" review handling introduced in b050e79e\n- Stale \"Ask\" doc-comment references in src/core/api-contract.ts (~line 1290 reviewQuestion, ~line 2099), trpc/runtime-api.ts (~869), src/session/home-thread-store.ts comments\n\nKEEP — DO NOT REMOVE (this is the critical constraint):\n- The generic \"inject prompt into session\" primitive: runtimeSessionPromptRequestSchema / injectSessionPrompt / the unified delivery path. The Commit and PR review actions ALSO depend on it. Commit 76dae503 named it \"for Ask\" but it is shared — keep the primitive, remove only the Ask caller. Verify Commit/PR still build and work.\n- The `reviewQuestion` summary field itself (just fix its comment; the field has independent value).\n- Unrelated legitimate \"ask\" usages that are NOT the review action: the `permission.ask` hook in src/terminal/agent-session-adapters.ts, \"ask for approval before making changes\" prompt text (pi-system-prompt.ts, append-system-prompt.ts), and the OAuth \"ask the user to paste an API key\" comment.\n\nACCEPTANCE:\n- No remaining references to the Ask review action (board-card-ask-control, use-ask-action, build-ask-prompt, ask-guardrail) anywhere.\n- Commit/PR review actions still function (shared inject primitive intact).\n- `bun run typecheck`, `web:typecheck`, biome/lint, and the test suite all clean.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "origin": {
+    "agentId": "claude",
+    "threadId": "f0010289-2e7a-483a-9777-3bb386752ca1"
+  },
+  "baseRef": "main",
+  "createdAt": 1782208389502,
+  "updatedAt": 1782208389502,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
