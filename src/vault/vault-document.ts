@@ -65,7 +65,10 @@ export function serializeVaultDocument(doc: VaultDocument): string {
 	// writes are byte-deterministic and produce meaningful git diffs.
 	const ordered: Record<string, VaultFrontmatterValue> = { _id: doc.id, type: doc.type };
 	for (const key of Object.keys(doc.frontmatter).sort()) {
-		ordered[key] = doc.frontmatter[key];
+		const value = doc.frontmatter[key];
+		if (value !== undefined) {
+			ordered[key] = value;
+		}
 	}
 	return matter.stringify(stripTrailingNewlines(doc.body), ordered);
 }
@@ -79,7 +82,10 @@ export function serializeVaultDocument(doc: VaultDocument): string {
 export function extractWikilinkRefs(text: string): WikilinkRef[] {
 	const refs: WikilinkRef[] = [];
 	for (const match of text.matchAll(WIKILINK_PATTERN)) {
-		const target = match[1].trim();
+		const target = match[1]?.trim();
+		if (target === undefined) {
+			continue;
+		}
 		if (target.length === 0) {
 			continue;
 		}

@@ -27,7 +27,7 @@
       "@runtime-task-worktree-path": ["../src/workspace/task-worktree-path.ts"],
       "@runtime-task-state": ["../src/core/task-board-mutations.ts"]
     },
-    "types": ["vitest/globals"]
+    "types": ["vitest/globals", "bun"]
   },
   "include": ["src", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"]
 }

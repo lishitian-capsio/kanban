@@ -69,7 +69,7 @@ const LEVEL_LABEL: Record<LogLevel, string> = {
 /** "2026-06-17T09:00:00.000Z" -> "09:00:00.000" for compact terminal output. */
 function shortTime(timestamp: string): string {
 	const match = timestamp.match(/T(\d{2}:\d{2}:\d{2}\.\d{3})/);
-	return match ? match[1] : timestamp;
+	return match?.[1] ?? timestamp;
 }
 
 function hasFields(fields: LogFields): boolean {

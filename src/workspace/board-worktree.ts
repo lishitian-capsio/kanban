@@ -121,7 +121,7 @@ async function getDefaultRemote(repoPath: string): Promise<string | null> {
 	if (remotes.length === 0) {
 		return null;
 	}
-	return remotes.includes("origin") ? "origin" : remotes[0];
+	return remotes.includes("origin") ? "origin" : (remotes[0] ?? null);
 }
 
 async function remoteBranchExists(repoPath: string, remote: string, branch: string): Promise<boolean> {
