@@ -191,6 +191,26 @@ async function describeTable(input: {
 	};
 }
 
+async function browseTable(input: {
+	cwd: string;
+	projectPath?: string;
+	connId: string;
+	table: string;
+	schema: string;
+	pageSize?: number;
+	cursor?: string;
+}): Promise<JsonRecord> {
+	const { repoPath, client } = await resolveDbWorkspace(input.projectPath, input.cwd);
+	const result = await client.db.browse.mutate({
+		connId: input.connId,
+		schema: input.schema,
+		table: input.table,
+		...(input.pageSize !== undefined ? { pageSize: input.pageSize } : {}),
+		...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
+	});
+	return { ok: true, workspacePath: repoPath, ...result };
+}
+
 async function runQuery(input: {
 	cwd: string;
 	projectPath?: string;
@@ -366,6 +386,37 @@ export function registerDbCommand(program: Command): void {
 					}),
 			);
 		});
+
+	db.command("browse")
+		.argument("<table>", "Table or view to browse.")
+		.description(
+			"Browse a table page-by-page with keyset (seek) pagination — flat latency at any depth, " +
+				"unlike OFFSET. Falls back to OFFSET for a table with no primary key.",
+		)
+		.requiredOption("--connection <id>", "Connection id.")
+		.requiredOption("--schema <schema>", "Schema/namespace the table lives in.")
+		.option("--page-size <n>", "Rows per page (clamped by the core row cap).", parsePort)
+		.option("--cursor <token>", "Opaque next-page cursor returned by a prior browse.")
+		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
+		.action(
+			async (
+				table: string,
+				options: { connection: string; schema: string; pageSize?: number; cursor?: string; projectPath?: string },
+			) => {
+				await runDbCommand(
+					async () =>
+						await browseTable({
+							cwd: process.cwd(),
+							projectPath: options.projectPath,
+							connId: options.connection,
+							table,
+							schema: options.schema,
+							pageSize: options.pageSize,
+							cursor: options.cursor,
+						}),
+				);
+			},
+		);
 
 	db.command("query")
 		.argument("<sql>", "SQL statement to execute.")

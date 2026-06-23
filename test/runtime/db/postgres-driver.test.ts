@@ -49,6 +49,30 @@ describe("PostgresDriver", () => {
 		await driver.disconnect();
 	});
 
+	it("applies a transaction-scoped server-side statement_timeout for a read with a deadline", async () => {
+		const { pool, calls } = fakePool();
+		const driver = new PostgresDriver(config, () => pool);
+		await driver.connect();
+		await driver.query({ sql: "SELECT 1 AS one", readOnly: true, timeoutMs: 1500 });
+		const texts = calls.map((c) => c.text);
+		// SET LOCAL is inside the tx (after BEGIN, before the SELECT) so it rolls back with the tx.
+		expect(texts).toContain("SET LOCAL statement_timeout = 1500");
+		expect(texts.indexOf("SET LOCAL statement_timeout = 1500")).toBeGreaterThan(
+			texts.indexOf("BEGIN TRANSACTION READ ONLY"),
+		);
+		await driver.disconnect();
+	});
+
+	it("omits the statement_timeout when no deadline (or a non-positive one) is given", async () => {
+		const { pool, calls } = fakePool();
+		const driver = new PostgresDriver(config, () => pool);
+		await driver.connect();
+		await driver.query({ sql: "SELECT 1 AS one", readOnly: true });
+		await driver.query({ sql: "SELECT 1 AS one", readOnly: true, timeoutMs: 0 });
+		expect(calls.some((c) => c.text.startsWith("SET LOCAL statement_timeout"))).toBe(false);
+		await driver.disconnect();
+	});
+
 	it("runs a write query without the read-only transaction when readOnly is false", async () => {
 		const { pool, calls } = fakePool();
 		const driver = new PostgresDriver(config, () => pool);

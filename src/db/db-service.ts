@@ -34,6 +34,8 @@ export interface RunQueryInput {
 	sql: string;
 	caller: DbCaller;
 	params?: ReadonlyArray<unknown>;
+	/** Server-side execution deadline (ms); forwarded to the driver. See {@link QueryRequest.timeoutMs}. */
+	timeoutMs?: number;
 }
 
 export interface IntrospectInput {
@@ -92,7 +94,12 @@ export class DatabaseService {
 			connectionAllowsWrites: record.allowWrites,
 		});
 		log.debug("running query", { connId: input.connId, caller: input.caller, readOnly: resolved.readOnly });
-		const result = await driver.query({ sql: input.sql, params: input.params, readOnly: resolved.readOnly });
+		const result = await driver.query({
+			sql: input.sql,
+			params: input.params,
+			readOnly: resolved.readOnly,
+			...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+		});
 		// A successful write/DDL may have changed the schema — drop cached metadata so
 		// the next tree expansion reflects it (the read-only path leaves the cache warm).
 		if (!resolved.readOnly) {

@@ -41,6 +41,27 @@ describe("MysqlDriver", () => {
 		await driver.disconnect();
 	});
 
+	it("sets and then resets max_execution_time for a read with a deadline", async () => {
+		const { pool, calls } = fakePool();
+		const driver = new MysqlDriver(config, () => pool);
+		await driver.connect();
+		await driver.query({ sql: "SELECT 1 AS one", readOnly: true, timeoutMs: 1500 });
+		expect(calls).toContain("SET max_execution_time = 1500");
+		// Reset to 0 before the connection returns to the pool, so the limit never leaks.
+		expect(calls).toContain("SET max_execution_time = 0");
+		expect(calls.indexOf("SET max_execution_time = 1500")).toBeLessThan(calls.indexOf("SET max_execution_time = 0"));
+		await driver.disconnect();
+	});
+
+	it("omits max_execution_time when no deadline is given", async () => {
+		const { pool, calls } = fakePool();
+		const driver = new MysqlDriver(config, () => pool);
+		await driver.connect();
+		await driver.query({ sql: "SELECT 1 AS one", readOnly: true });
+		expect(calls.some((c) => c.startsWith("SET max_execution_time"))).toBe(false);
+		await driver.disconnect();
+	});
+
 	it("testConnection reports the server version", async () => {
 		const { pool } = fakePool();
 		const driver = new MysqlDriver(config, () => pool);

@@ -23,10 +23,43 @@ function fakeDriver(seen: QueryRequest[]): DatabaseDriver {
 				durationMs: 3,
 			};
 		},
-		introspect: async () => ({
-			engine: "postgres",
-			tables: [
-				{
+		introspect: async () => {
+			introspectCalls.introspect++;
+			return {
+				engine: "postgres" as const,
+				tables: [
+					{
+						schema: "public",
+						name: "users",
+						kind: "table" as const,
+						columns: [
+							{ name: "id", dataType: "int4", nullable: false, isPrimaryKey: true, defaultValue: null },
+							{ name: "email", dataType: "text", nullable: false, isPrimaryKey: false, defaultValue: null },
+						],
+					},
+					{ schema: "audit", name: "events", kind: "view" as const, columns: [] },
+				],
+			};
+		},
+		// Lazy, hierarchical introspection — the path the entry now uses (counted in `introspectCalls`).
+		listSchemas: async () => {
+			introspectCalls.listSchemas++;
+			return [{ name: "public" }, { name: "audit" }];
+		},
+		listTables: async (schema) => {
+			introspectCalls.listTables++;
+			if (schema === "public") {
+				return [{ schema: "public", name: "users", kind: "table" as const }];
+			}
+			if (schema === "audit") {
+				return [{ schema: "audit", name: "events", kind: "view" as const }];
+			}
+			return [];
+		},
+		describeTable: async (schema, table) => {
+			introspectCalls.describeTable++;
+			if (schema === "public" && table === "users") {
+				return {
 					schema: "public",
 					name: "users",
 					kind: "table",
@@ -34,12 +67,18 @@ function fakeDriver(seen: QueryRequest[]): DatabaseDriver {
 						{ name: "id", dataType: "int4", nullable: false, isPrimaryKey: true, defaultValue: null },
 						{ name: "email", dataType: "text", nullable: false, isPrimaryKey: false, defaultValue: null },
 					],
-				},
-				{ schema: "audit", name: "events", kind: "view", columns: [] },
-			],
-		}),
+					indexes: [],
+					foreignKeys: [],
+				};
+			}
+			return { schema, name: table, kind: "table", columns: [], indexes: [], foreignKeys: [] };
+		},
+		metadataSignature: async () => "const",
 	};
 }
+
+/** Counts how often each lazy introspection method is hit (to assert caching / no eager scan). */
+const introspectCalls = { introspect: 0, listSchemas: 0, listTables: 0, describeTable: 0 };
 
 interface Harness {
 	api: ReturnType<typeof createDbApi>;
@@ -146,23 +185,42 @@ describe("createDbApi", () => {
 		await expect(h.api.testConnection(SCOPE, { connId: "ghost" })).rejects.toThrow(/unknown connection/);
 	});
 
-	it("lists tables with column counts and filters by schema", async () => {
-		const h = makeHarness([pgRecord({ connId: "main" })]);
-		const all = await h.api.listTables(SCOPE, { connId: "main" });
+	it("lists tables (names only, no eager column scan) and filters by schema", async () => {
+		const h = makeHarness([pgRecord({ connId: "list-tables" })]);
+		introspectCalls.introspect = 0;
+		const all = await h.api.listTables(SCOPE, { connId: "list-tables" });
 		expect(all.tables).toEqual([
-			{ schema: "public", name: "users", kind: "table", columnCount: 2 },
-			{ schema: "audit", name: "events", kind: "view", columnCount: 0 },
+			{ schema: "public", name: "users", kind: "table" },
+			{ schema: "audit", name: "events", kind: "view" },
 		]);
-		const filtered = await h.api.listTables(SCOPE, { connId: "main", schema: "PUBLIC" });
+		// The entry must NOT use the eager whole-catalog introspect() anymore.
+		expect(introspectCalls.introspect).toBe(0);
+		const filtered = await h.api.listTables(SCOPE, { connId: "list-tables", schema: "PUBLIC" });
 		expect(filtered.tables).toHaveLength(1);
 		expect(filtered.tables[0].name).toBe("users");
 	});
 
-	it("describes a table's columns (case-insensitive name match)", async () => {
-		const h = makeHarness([pgRecord({ connId: "main" })]);
-		const result = await h.api.describeTable(SCOPE, { connId: "main", table: "Users" });
+	it("describes ONE table via the lazy cached path (no eager whole-catalog scan)", async () => {
+		const h = makeHarness([pgRecord({ connId: "describe-one" })]);
+		introspectCalls.introspect = 0;
+		const result = await h.api.describeTable(SCOPE, { connId: "describe-one", table: "Users" });
 		expect(result.table?.name).toBe("users");
 		expect(result.table?.columns.map((column) => column.name)).toEqual(["id", "email"]);
+		expect(introspectCalls.introspect).toBe(0);
+	});
+
+	it("re-expanding an unchanged catalog hits the introspection cache (no new DB round-trips)", async () => {
+		const h = makeHarness([pgRecord({ connId: "cache-warm" })]);
+		// Warm the cache.
+		await h.api.listTables(SCOPE, { connId: "cache-warm" });
+		await h.api.describeTable(SCOPE, { connId: "cache-warm", table: "users" });
+		const before = { ...introspectCalls };
+		// Repeat the same expansions — must be served entirely from the cache.
+		await h.api.listTables(SCOPE, { connId: "cache-warm" });
+		await h.api.describeTable(SCOPE, { connId: "cache-warm", table: "users" });
+		expect(introspectCalls.listSchemas).toBe(before.listSchemas);
+		expect(introspectCalls.listTables).toBe(before.listTables);
+		expect(introspectCalls.describeTable).toBe(before.describeTable);
 	});
 
 	it("returns a null table for an unknown table name", async () => {

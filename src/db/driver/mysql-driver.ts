@@ -20,6 +20,7 @@ import type {
 } from "../types";
 import type { DatabaseDriver } from "./driver";
 import { registerDriver } from "./driver-registry";
+import { serverTimeoutMs } from "./driver-timeout";
 
 const log = createLogger("db:mysql-driver");
 
@@ -115,8 +116,13 @@ export class MysqlDriver implements DatabaseDriver {
 		const params = request.params ? [...request.params] : undefined;
 		if (request.readOnly) {
 			const conn = await pool.getConnection();
+			const timeoutMs = serverTimeoutMs(request.timeoutMs);
 			try {
 				await conn.query("START TRANSACTION READ ONLY");
+				// Server-side deadline: MySQL aborts the read-only SELECT itself at max_execution_time.
+				if (timeoutMs > 0) {
+					await conn.query(`SET max_execution_time = ${timeoutMs}`);
+				}
 				const [rows, fields] = await conn.query(request.sql, params);
 				await conn.query("COMMIT");
 				return this.toResult(rows, fields, started);
@@ -128,6 +134,14 @@ export class MysqlDriver implements DatabaseDriver {
 				}
 				throw new DbQueryError(`mysql query failed: ${String(error)}`, error);
 			} finally {
+				// Reset before returning the connection to the pool so the limit never leaks.
+				if (timeoutMs > 0) {
+					try {
+						await conn.query("SET max_execution_time = 0");
+					} catch {
+						// best-effort reset
+					}
+				}
 				conn.release();
 			}
 		}

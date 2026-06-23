@@ -1,12 +1,22 @@
 import { createLogger } from "../../logging";
 import type { DatabaseService } from "../db-service";
-import { DbConnectionError } from "../errors";
+import { DbConnectionError, InvalidCursorError } from "../errors";
 import { classifySql } from "../policy/sql-classifier";
 import type { ConnectionRecord } from "../registry/connection-store";
 import type { DbCaller, FieldInfo, QueryResult, SqlClassification } from "../types";
 import { buildBoundedQuery, capRowsByBytes, finalizePage } from "./query-bounds";
 import { runWithDeadline } from "./query-deadline";
 import { normalizeQueryError, QueryExecutionError } from "./query-error-normalizer";
+import {
+	buildKeysetQuery,
+	decodeBrowseCursor,
+	encodeBrowseCursor,
+	encodeKeysetCursor,
+	keyValuesOf,
+	quoteIdentifier,
+	quoteQualifiedTable,
+	selectKeysetKey,
+} from "./query-keyset";
 import { getQueryConcurrencyLimiter, type QueryConcurrencyLimiter } from "./query-limiter";
 
 const log = createLogger("db:query-executor");
@@ -37,7 +47,7 @@ export interface QueryExecutorDeps {
 	 * the access policy cannot be bypassed. {@link DatabaseService.invalidate} is the
 	 * teardown used to abandon a timed-out / cancelled connection.
 	 */
-	service: Pick<DatabaseService, "runQuery" | "invalidate">;
+	service: Pick<DatabaseService, "runQuery" | "invalidate" | "describeTable">;
 	/** Resolve a connection's record (the executor needs its engine to classify + bound). */
 	loadConnection: (connId: string) => Promise<ConnectionRecord | null>;
 	/** Concurrency throttle. Defaults to the host-wide singleton. */
@@ -58,6 +68,18 @@ export interface ExecuteQueryInput {
 	/** Per-query limit overrides. */
 	limits?: Partial<QueryExecutionLimits>;
 	/** Cancellation signal. */
+	signal?: AbortSignal;
+}
+
+export interface BrowseTableInput {
+	connId: string;
+	/** Schema/namespace the table lives in. */
+	schema: string;
+	/** Table (or view) name to browse. */
+	table: string;
+	caller: DbCaller;
+	page?: { pageSize?: number; cursor?: string | null };
+	limits?: Partial<QueryExecutionLimits>;
 	signal?: AbortSignal;
 }
 
@@ -117,13 +139,66 @@ export class QueryExecutor {
 		try {
 			return await this.limiter.run(input.connId, () => this.runBounded(input, started));
 		} catch (error) {
-			if (error instanceof QueryExecutionError) {
-				throw error;
-			}
-			const normalized = normalizeQueryError(error);
-			log.debug("query failed", { connId: input.connId, caller: input.caller, code: normalized.code, error });
-			throw new QueryExecutionError(normalized, { cause: error });
+			throw this.toExecutionError(input.connId, input.caller, error);
 		}
+	}
+
+	/**
+	 * Browse a table with keyset (seek) pagination — `WHERE (pk) > (lastKey) ORDER BY pk LIMIT n`
+	 * — so deep pages stay index-served and flat instead of OFFSET's O(offset) scan. The ordering
+	 * key is the table's primary key (resolved via cached introspection); a table without one
+	 * falls back to OFFSET. The opaque cursor is self-describing, so the caller pages identically
+	 * either way. Shares the executor's concurrency throttle, timeout, teardown, and row/byte caps.
+	 */
+	async browseTable(input: BrowseTableInput): Promise<ExecuteQueryResult> {
+		const started = this.now();
+		try {
+			return await this.limiter.run(input.connId, () => this.runBrowse(input, started));
+		} catch (error) {
+			throw this.toExecutionError(input.connId, input.caller, error);
+		}
+	}
+
+	private toExecutionError(connId: string, caller: DbCaller, error: unknown): QueryExecutionError {
+		if (error instanceof QueryExecutionError) {
+			return error;
+		}
+		const normalized = normalizeQueryError(error);
+		log.debug("query failed", { connId, caller, code: normalized.code, error });
+		return new QueryExecutionError(normalized, { cause: error });
+	}
+
+	/** Run a prepared (sql, params) under the per-query timeout + cancellation + teardown. */
+	private runUnderDeadline(args: {
+		connId: string;
+		sql: string;
+		caller: DbCaller;
+		params: ReadonlyArray<unknown> | undefined;
+		timeoutMs: number;
+		signal: AbortSignal | undefined;
+	}): Promise<QueryResult> {
+		return runWithDeadline(
+			() =>
+				this.deps.service.runQuery({
+					connId: args.connId,
+					sql: args.sql,
+					caller: args.caller,
+					params: args.params,
+					// Push the deadline down to the DB so it cancels a runaway query server-side, not
+					// just in-process. (0 disables; the driver ignores it for engines that can't honor it.)
+					timeoutMs: args.timeoutMs,
+				}),
+			{
+				timeoutMs: args.timeoutMs,
+				signal: args.signal,
+				onAbandon: (reason) => {
+					// Drop the pooled driver so the runaway query's sockets are torn down and
+					// the runtime regains control immediately.
+					log.warn("abandoning query; tearing down connection", { connId: args.connId, reason });
+					void this.deps.service.invalidate(args.connId);
+				},
+			},
+		);
 	}
 
 	private async runBounded(input: ExecuteQueryInput, started: number): Promise<ExecuteQueryResult> {
@@ -141,27 +216,104 @@ export class QueryExecutor {
 			page: { pageSize, cursor: input.page?.cursor },
 		});
 
-		const driverResult = await runWithDeadline(
-			() =>
-				this.deps.service.runQuery({
-					connId: input.connId,
-					sql: bounded.sql,
-					caller: input.caller,
-					params: input.params,
-				}),
-			{
-				timeoutMs: limits.timeoutMs,
-				signal: input.signal,
-				onAbandon: (reason) => {
-					// Drop the pooled driver so the runaway query's sockets are torn down and
-					// the runtime regains control immediately.
-					log.warn("abandoning query; tearing down connection", { connId: input.connId, reason });
-					void this.deps.service.invalidate(input.connId);
-				},
-			},
-		);
+		const driverResult = await this.runUnderDeadline({
+			connId: input.connId,
+			sql: bounded.sql,
+			caller: input.caller,
+			params: input.params,
+			timeoutMs: limits.timeoutMs,
+			signal: input.signal,
+		});
 
 		return this.shapeResult({ input, started, classification, pageSize, bounded, driverResult, limits });
+	}
+
+	private async runBrowse(input: BrowseTableInput, started: number): Promise<ExecuteQueryResult> {
+		const limits = { ...this.limits, ...input.limits };
+		const record = await this.deps.loadConnection(input.connId);
+		if (!record) {
+			throw new DbConnectionError(`unknown connection: "${input.connId}"`);
+		}
+		const pageSize = clampPageSize(input.page?.pageSize ?? limits.defaultPageSize, limits.maxRows);
+		const detail = await this.deps.service.describeTable({
+			connId: input.connId,
+			caller: input.caller,
+			schema: input.schema,
+			table: input.table,
+		});
+		const key = selectKeysetKey(detail);
+		const cursor = decodeBrowseCursor(input.page?.cursor);
+
+		let sql: string;
+		let params: unknown[];
+		let strategy: { mode: "keyset"; keyColumns: string[] } | { mode: "offset"; offset: number };
+		if (key) {
+			// A cursor minted for the OFFSET fallback can't resume a keyset scan — reject it loudly
+			// rather than silently restarting from the top.
+			if (cursor && cursor.mode !== "keyset") {
+				throw new InvalidCursorError();
+			}
+			const built = buildKeysetQuery({
+				engine: record.engine,
+				schema: input.schema,
+				table: input.table,
+				keyColumns: key.columns,
+				cursorValues: cursor?.mode === "keyset" ? cursor.values : null,
+				pageSize,
+			});
+			sql = built.sql;
+			params = built.params;
+			strategy = { mode: "keyset", keyColumns: key.columns };
+		} else {
+			if (cursor && cursor.mode !== "offset") {
+				throw new InvalidCursorError();
+			}
+			const offset = cursor?.mode === "offset" ? cursor.offset : 0;
+			const ref = quoteQualifiedTable(record.engine, input.schema, input.table);
+			// Deterministic order so OFFSET paging is stable even without a key (best effort).
+			const firstColumn = detail.columns[0]?.name;
+			const orderBy = firstColumn ? ` ORDER BY ${quoteIdentifier(record.engine, firstColumn)} ASC` : "";
+			sql = `SELECT * FROM ${ref}${orderBy} LIMIT ${pageSize + 1} OFFSET ${offset}`;
+			params = [];
+			strategy = { mode: "offset", offset };
+		}
+
+		const driverResult = await this.runUnderDeadline({
+			connId: input.connId,
+			sql,
+			caller: input.caller,
+			params,
+			timeoutMs: limits.timeoutMs,
+			signal: input.signal,
+		});
+
+		const probeHasMore = driverResult.rows.length > pageSize;
+		let rows = probeHasMore ? driverResult.rows.slice(0, pageSize) : driverResult.rows;
+		const capped = capRowsByBytes(rows, limits.maxBytes);
+		rows = capped.rows;
+		const truncatedByBytes = capped.truncated;
+		const hasMore = probeHasMore || truncatedByBytes;
+		let nextCursor: string | null = null;
+		const last = rows[rows.length - 1];
+		if (hasMore && last) {
+			nextCursor =
+				strategy.mode === "keyset"
+					? encodeKeysetCursor(keyValuesOf(last, strategy.keyColumns))
+					: encodeBrowseCursor({ mode: "offset", offset: strategy.offset + rows.length });
+		}
+
+		return {
+			columns: driverResult.fields,
+			rows,
+			rowCount: rows.length,
+			affectedRows: null,
+			classification: "read",
+			readOnly: true,
+			durationMs: driverResult.durationMs,
+			totalDurationMs: this.now() - started,
+			pagination: { paginated: true, pageSize, hasMore, nextCursor },
+			truncated: { byRows: false, byBytes: truncatedByBytes },
+		};
 	}
 
 	private shapeResult(args: {

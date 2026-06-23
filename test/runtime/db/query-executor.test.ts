@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { DatabaseService } from "../../../src/db/db-service";
 import type { DatabaseDriver } from "../../../src/db/driver/driver";
+import { IntrospectionCache } from "../../../src/db/introspection/introspection-cache";
 import { QueryExecutionError } from "../../../src/db/execution/query-error-normalizer";
 import { QueryExecutor } from "../../../src/db/execution/query-executor";
 import { createQueryConcurrencyLimiter } from "../../../src/db/execution/query-limiter";
@@ -17,6 +18,8 @@ interface FakeDriverController {
 	hang: boolean;
 	seen: QueryRequest[];
 	disconnectCount: number;
+	/** When true, describeTable reports no primary key (forces the OFFSET browse fallback). */
+	noPk: boolean;
 }
 
 function controller(overrides: Partial<FakeDriverController> = {}): FakeDriverController {
@@ -28,6 +31,7 @@ function controller(overrides: Partial<FakeDriverController> = {}): FakeDriverCo
 		hang: false,
 		seen: [],
 		disconnectCount: 0,
+		noPk: false,
 		...overrides,
 	};
 }
@@ -65,6 +69,20 @@ function fakeDriver(ctrl: FakeDriverController): DatabaseDriver {
 			return { rows: ctrl.rows, fields: ctrl.fields, rowCount: ctrl.rowCount, durationMs: ctrl.durationMs };
 		},
 		introspect: async () => ({ engine: "postgres", tables: [] }),
+		listSchemas: async () => [{ name: "public" }],
+		listTables: async (schema) => [{ schema, name: "t", kind: "table" as const }],
+		describeTable: async (schema, table) => ({
+			schema,
+			name: table,
+			kind: "table" as const,
+			columns: [
+				{ name: "id", dataType: "int8", nullable: false, isPrimaryKey: !ctrl.noPk, defaultValue: null },
+				{ name: "a", dataType: "int4", nullable: true, isPrimaryKey: false, defaultValue: null },
+			],
+			indexes: [],
+			foreignKeys: [],
+		}),
+		metadataSignature: async () => "const",
 	};
 }
 
@@ -79,6 +97,8 @@ function makeExecutor(
 		poolManager,
 		loadConnection,
 		loadCredential: async () => undefined,
+		// Fresh per-executor cache so introspection results don't leak across tests via the singleton.
+		introspectionCache: new IntrospectionCache(),
 	});
 	const executor = new QueryExecutor({ service, loadConnection, limits });
 	return { executor, service };
@@ -242,5 +262,78 @@ describe("QueryExecutor concurrency", () => {
 		const executor = new QueryExecutor({ service, loadConnection, limiter });
 		await executor.execute({ connId: "c1", sql: "SELECT 1", caller: "human" });
 		expect(seenConnIds).toEqual(["c1"]);
+	});
+});
+
+describe("QueryExecutor.browseTable (keyset pagination)", () => {
+	it("first page: keyset ORDER BY pk with no WHERE, probe LIMIT, keyset next cursor", async () => {
+		const ctrl = controller({ rows: [{ id: 1, a: 9 }, { id: 2, a: 8 }, { id: 3, a: 7 }] }); // 3 = pageSize(2)+probe
+		const { executor } = makeExecutor(record(), ctrl);
+		const result = await executor.browseTable({
+			connId: "c1",
+			schema: "public",
+			table: "t",
+			caller: "human",
+			page: { pageSize: 2 },
+		});
+		expect(ctrl.seen[0].sql).toBe('SELECT * FROM "public"."t" ORDER BY "id" ASC LIMIT 3');
+		expect(ctrl.seen[0].params).toEqual([]);
+		expect(ctrl.seen[0].readOnly).toBe(true);
+		expect(result.rows).toEqual([{ id: 1, a: 9 }, { id: 2, a: 8 }]);
+		expect(result.pagination.hasMore).toBe(true);
+		expect(result.pagination.nextCursor).not.toBeNull();
+		expect(result.readOnly).toBe(true);
+		expect(result.affectedRows).toBeNull();
+	});
+
+	it("resumes after the cursor with a keyset WHERE predicate bound as a param", async () => {
+		const first = controller({ rows: [{ id: 1, a: 9 }, { id: 2, a: 8 }, { id: 3, a: 7 }] });
+		const { executor } = makeExecutor(record(), first);
+		const page1 = await executor.browseTable({ connId: "c1", schema: "public", table: "t", caller: "human", page: { pageSize: 2 } });
+
+		const second = controller({ rows: [{ id: 3, a: 7 }] });
+		const { executor: exec2 } = makeExecutor(record(), second);
+		await exec2.browseTable({
+			connId: "c1",
+			schema: "public",
+			table: "t",
+			caller: "human",
+			page: { pageSize: 2, cursor: page1.pagination.nextCursor },
+		});
+		expect(second.seen[0].sql).toBe('SELECT * FROM "public"."t" WHERE "id" > $1 ORDER BY "id" ASC LIMIT 3');
+		expect(second.seen[0].params).toEqual([2]); // last id of page 1
+	});
+
+	it("falls back to OFFSET (deterministic order) when the table has no primary key", async () => {
+		const ctrl = controller({ noPk: true, rows: [{ id: 1, a: 9 }, { id: 2, a: 8 }, { id: 3, a: 7 }] });
+		const { executor } = makeExecutor(record(), ctrl);
+		const page1 = await executor.browseTable({ connId: "c1", schema: "public", table: "t", caller: "human", page: { pageSize: 2 } });
+		expect(ctrl.seen[0].sql).toBe('SELECT * FROM "public"."t" ORDER BY "id" ASC LIMIT 3 OFFSET 0');
+		expect(page1.pagination.hasMore).toBe(true);
+
+		const next = controller({ noPk: true, rows: [{ id: 3, a: 7 }] });
+		const { executor: exec2 } = makeExecutor(record(), next);
+		await exec2.browseTable({
+			connId: "c1",
+			schema: "public",
+			table: "t",
+			caller: "human",
+			page: { pageSize: 2, cursor: page1.pagination.nextCursor },
+		});
+		expect(next.seen[0].sql).toBe('SELECT * FROM "public"."t" ORDER BY "id" ASC LIMIT 3 OFFSET 2');
+	});
+
+	it("rejects a keyset cursor handed to the OFFSET-fallback table (and vice versa)", async () => {
+		// keyset cursor from a PK table...
+		const pk = controller({ rows: [{ id: 1, a: 9 }, { id: 2, a: 8 }, { id: 3, a: 7 }] });
+		const { executor } = makeExecutor(record(), pk);
+		const keysetPage = await executor.browseTable({ connId: "c1", schema: "public", table: "t", caller: "human", page: { pageSize: 2 } });
+
+		// ...handed to a no-PK table must be rejected, not silently restarted.
+		const noPk = controller({ noPk: true });
+		const { executor: exec2 } = makeExecutor(record(), noPk);
+		await expect(
+			exec2.browseTable({ connId: "c1", schema: "public", table: "t", caller: "human", page: { pageSize: 2, cursor: keysetPage.pagination.nextCursor } }),
+		).rejects.toBeInstanceOf(QueryExecutionError);
 	});
 });

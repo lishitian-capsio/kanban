@@ -29,6 +29,8 @@ import type {
 	RuntimeConfigResponse,
 	RuntimeConfigSaveRequest,
 	RuntimeDbConnectionAddRequest,
+	RuntimeDbBrowseRequest,
+	RuntimeDbBrowseResponse,
 	RuntimeDbConnectionAddResponse,
 	RuntimeDbConnectionListResponse,
 	RuntimeDbConnectionRemoveRequest,
@@ -186,6 +188,8 @@ import {
 	runtimeCommandRunResponseSchema,
 	runtimeConfigResponseSchema,
 	runtimeConfigSaveRequestSchema,
+	runtimeDbBrowseRequestSchema,
+	runtimeDbBrowseResponseSchema,
 	runtimeDbConnectionAddRequestSchema,
 	runtimeDbConnectionAddResponseSchema,
 	runtimeDbConnectionListResponseSchema,
@@ -631,6 +635,7 @@ export interface RuntimeTrpcContext {
 			input: RuntimeDbDescribeRequest,
 		) => Promise<RuntimeDbDescribeResponse>;
 		runQuery: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeDbQueryRequest) => Promise<RuntimeDbQueryResponse>;
+		browseTable: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeDbBrowseRequest) => Promise<RuntimeDbBrowseResponse>;
 	};
 	projectsApi: {
 		listProjects: (preferredWorkspaceId: string | null) => Promise<RuntimeProjectsResponse>;
@@ -1197,6 +1202,12 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeDbQueryResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.dbApi.runQuery(ctx.workspaceScope, input);
+			}),
+		browse: workspaceProcedure
+			.input(runtimeDbBrowseRequestSchema)
+			.output(runtimeDbBrowseResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.dbApi.browseTable(ctx.workspaceScope, input);
 			}),
 	}),
 	projects: t.router({

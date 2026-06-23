@@ -23,6 +23,7 @@ export {
 	QueryExecutionError,
 } from "./query-error-normalizer";
 export {
+	type BrowseTableInput,
 	DEFAULT_QUERY_EXECUTION_LIMITS,
 	type ExecuteQueryInput,
 	type ExecuteQueryPagination,
@@ -31,6 +32,20 @@ export {
 	QueryExecutor,
 	type QueryExecutorDeps,
 } from "./query-executor";
+export {
+	type BrowseCursor,
+	buildKeysetQuery,
+	type BuildKeysetQueryInput,
+	decodeBrowseCursor,
+	decodeKeysetCursor,
+	encodeBrowseCursor,
+	encodeKeysetCursor,
+	type KeysetQuery,
+	keyValuesOf,
+	quoteIdentifier,
+	quoteQualifiedTable,
+	selectKeysetKey,
+} from "./query-keyset";
 export {
 	createQueryConcurrencyLimiter,
 	getQueryConcurrencyLimiter,

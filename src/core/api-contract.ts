@@ -2368,7 +2368,13 @@ export const runtimeDbTableSummarySchema = z.object({
 	schema: z.string(),
 	name: z.string(),
 	kind: z.enum(["table", "view"]),
-	columnCount: z.number().int().nonnegative(),
+	/**
+	 * Column count, when cheaply known. Omitted by the lazy listing path (which reads table
+	 * names only): materializing every column of every table to count them is exactly the
+	 * cost the lazy introspection exists to avoid on a large catalog. Expand a table
+	 * (`db.describe`) to get its columns.
+	 */
+	columnCount: z.number().int().nonnegative().optional(),
 });
 export type RuntimeDbTableSummary = z.infer<typeof runtimeDbTableSummarySchema>;
 
@@ -2448,6 +2454,23 @@ export const runtimeDbQueryResponseSchema = z.object({
 	}),
 });
 export type RuntimeDbQueryResponse = z.infer<typeof runtimeDbQueryResponseSchema>;
+
+export const runtimeDbBrowseRequestSchema = z.object({
+	connId: z.string().min(1),
+	/** Schema/namespace the table lives in. */
+	schema: z.string().min(1),
+	/** Table or view name to browse. */
+	table: z.string().min(1),
+	/** Page size; clamped by the core's hard row cap. */
+	pageSize: z.number().int().positive().optional(),
+	/** Opaque next-page cursor returned by a prior browse (keyset or offset-fallback). */
+	cursor: z.string().nullable().optional(),
+});
+export type RuntimeDbBrowseRequest = z.infer<typeof runtimeDbBrowseRequestSchema>;
+
+/** Browse reuses the query response shape (a bounded, paginated read of one table). */
+export const runtimeDbBrowseResponseSchema = runtimeDbQueryResponseSchema;
+export type RuntimeDbBrowseResponse = z.infer<typeof runtimeDbBrowseResponseSchema>;
 
 export const runtimeHookEventSchema = z.enum(["to_review", "to_in_progress", "activity"]);
 export type RuntimeHookEvent = z.infer<typeof runtimeHookEventSchema>;

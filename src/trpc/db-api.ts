@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 
 import type {
+	RuntimeDbBrowseResponse,
 	RuntimeDbConnection,
 	RuntimeDbConnectionAddRequest,
 	RuntimeDbConnectionAddResponse,
@@ -17,7 +18,6 @@ import { QueryExecutionError, QueryExecutor } from "../db/execution";
 import { PoolManager } from "../db/pool/pool-manager";
 import type { ConnectionRecord, DbCredential } from "../db/registry/connection-store";
 import { normalizeConnId } from "../db/registry/connection-store";
-import type { TableInfo } from "../db/types";
 import { createLogger } from "../logging";
 import {
 	loadDbCredential,
@@ -72,15 +72,29 @@ function toConnectionWire(record: ConnectionRecord, hasCredential: boolean): Run
 	};
 }
 
-function tableMatches(table: TableInfo, name: string, schema?: string): boolean {
-	const nameMatches = table.name.toLowerCase() === name.toLowerCase();
-	if (!nameMatches) {
-		return false;
+/**
+ * Resolve a (case-insensitive) table name to its exact `{schema, name}` using the lazy,
+ * cached name listings — so `db.describe` reads one table's detail instead of introspecting
+ * the whole catalog. An optional schema qualifier is matched case-insensitively too.
+ */
+async function locateTable(
+	service: DatabaseService,
+	connId: string,
+	table: string,
+	schema?: string,
+): Promise<{ schema: string; name: string } | null> {
+	const schemas = await service.listSchemas({ connId, caller: "cli" });
+	const schemaFilter = schema?.trim().toLowerCase();
+	const candidates = schemaFilter ? schemas.filter((s) => s.name.toLowerCase() === schemaFilter) : schemas;
+	const target = table.toLowerCase();
+	for (const s of candidates) {
+		const tables = await service.listTables({ connId, caller: "cli", schema: s.name });
+		const match = tables.find((t) => t.name.toLowerCase() === target);
+		if (match) {
+			return { schema: match.schema, name: match.name };
+		}
 	}
-	if (schema === undefined || schema.trim() === "") {
-		return true;
-	}
-	return table.schema.toLowerCase() === schema.toLowerCase();
+	return null;
 }
 
 /** Derive a stable, filename-safe connection id from a human label. */
@@ -236,24 +250,22 @@ export function createDbApi(deps: CreateDbApiDependencies = {}): RuntimeTrpcCont
 		listTables: async (scope, input): Promise<RuntimeDbTablesResponse> => {
 			const record = await requireConnection(scope.workspaceId, input.connId);
 			try {
-				const introspection = await buildService(scope.workspaceId).introspect({
-					connId: record.connId,
-					caller: "cli",
-				});
-				const tables = introspection.tables
-					.filter(
-						(table) =>
-							input.schema === undefined ||
-							input.schema.trim() === "" ||
-							table.schema.toLowerCase() === input.schema.toLowerCase(),
-					)
-					.map((table) => ({
-						schema: table.schema,
-						name: table.name,
-						kind: table.kind,
-						columnCount: table.columns.length,
-					}));
-				return { connId: record.connId, engine: introspection.engine, tables };
+				const service = buildService(scope.workspaceId);
+				// Lazy + cached: read the schema list, then table NAMES per schema — never every
+				// column of every table (the eager `introspect()` cost the entry used to pay on
+				// each call). Repeat expansions of an unchanged catalog hit the IntrospectionCache.
+				const schemas = await service.listSchemas({ connId: record.connId, caller: "cli" });
+				const filter = input.schema?.trim().toLowerCase();
+				const wanted = filter ? schemas.filter((s) => s.name.toLowerCase() === filter) : schemas;
+				const perSchema = await Promise.all(
+					wanted.map((s) => service.listTables({ connId: record.connId, caller: "cli", schema: s.name })),
+				);
+				const tables = perSchema.flat().map((table) => ({
+					schema: table.schema,
+					name: table.name,
+					kind: table.kind,
+				}));
+				return { connId: record.connId, engine: record.engine, tables };
 			} catch (error) {
 				throw toTrpcError(error);
 			}
@@ -262,17 +274,54 @@ export function createDbApi(deps: CreateDbApiDependencies = {}): RuntimeTrpcCont
 		describeTable: async (scope, input): Promise<RuntimeDbDescribeResponse> => {
 			const record = await requireConnection(scope.workspaceId, input.connId);
 			try {
-				const introspection = await buildService(scope.workspaceId).introspect({
+				const service = buildService(scope.workspaceId);
+				// Resolve the table to its exact (schema, name) via cached name listings, then read
+				// ONE table's detail — instead of introspecting the whole catalog and filtering.
+				const located = await locateTable(service, record.connId, input.table, input.schema);
+				if (!located) {
+					return { connId: record.connId, engine: record.engine, table: null };
+				}
+				const detail = await service.describeTable({
 					connId: record.connId,
 					caller: "cli",
+					schema: located.schema,
+					table: located.name,
 				});
-				const match = introspection.tables.find((table) => tableMatches(table, input.table, input.schema)) ?? null;
 				return {
 					connId: record.connId,
-					engine: introspection.engine,
-					table: match
-						? { schema: match.schema, name: match.name, kind: match.kind, columns: match.columns }
-						: null,
+					engine: record.engine,
+					table: { schema: detail.schema, name: detail.name, kind: detail.kind, columns: detail.columns },
+				};
+			} catch (error) {
+				throw toTrpcError(error);
+			}
+		},
+
+		browseTable: async (scope, input): Promise<RuntimeDbBrowseResponse> => {
+			const record = await requireConnection(scope.workspaceId, input.connId);
+			try {
+				const result = await buildExecutor(scope.workspaceId).browseTable({
+					connId: record.connId,
+					schema: input.schema,
+					table: input.table,
+					caller: "cli",
+					page:
+						input.pageSize !== undefined || input.cursor !== undefined
+							? { pageSize: input.pageSize, cursor: input.cursor }
+							: undefined,
+				});
+				return {
+					connId: record.connId,
+					columns: result.columns,
+					rows: result.rows,
+					rowCount: result.rowCount,
+					affectedRows: result.affectedRows,
+					classification: result.classification,
+					readOnly: result.readOnly,
+					durationMs: result.durationMs,
+					totalDurationMs: result.totalDurationMs,
+					pagination: result.pagination,
+					truncated: result.truncated,
 				};
 			} catch (error) {
 				throw toTrpcError(error);

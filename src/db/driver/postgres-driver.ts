@@ -20,6 +20,7 @@ import type {
 } from "../types";
 import type { DatabaseDriver } from "./driver";
 import { registerDriver } from "./driver-registry";
+import { serverTimeoutMs } from "./driver-timeout";
 
 const log = createLogger("db:postgres-driver");
 
@@ -114,6 +115,12 @@ export class PostgresDriver implements DatabaseDriver {
 			const client = await pool.connect();
 			try {
 				await client.query("BEGIN TRANSACTION READ ONLY");
+				// Transaction-scoped server-side deadline: Postgres cancels the query itself at the
+				// deadline (SET LOCAL is rolled back with the tx, so it never leaks to the pooled conn).
+				const timeoutMs = serverTimeoutMs(request.timeoutMs);
+				if (timeoutMs > 0) {
+					await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
+				}
 				const result = await client.query(request.sql, params);
 				await client.query("COMMIT");
 				return this.toResult(result, started);

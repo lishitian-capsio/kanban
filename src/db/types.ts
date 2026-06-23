@@ -37,6 +37,14 @@ export interface QueryRequest {
 	sql: string;
 	params?: ReadonlyArray<unknown>;
 	readOnly: boolean;
+	/**
+	 * Server-side execution deadline in ms. When set (> 0), a read-only statement is run under
+	 * an engine-native statement timeout (Postgres `statement_timeout`, MySQL `max_execution_time`)
+	 * so the DATABASE cancels a runaway query at the deadline — not just the in-process timeout,
+	 * which returns control to the runtime but leaves the query consuming server resources. SQLite
+	 * (synchronous) cannot honor it. Absent / ≤ 0 disables it.
+	 */
+	timeoutMs?: number;
 }
 
 export interface FieldInfo {
