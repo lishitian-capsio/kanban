@@ -1,0 +1,19 @@
+{
+  "id": "f5970",
+  "title": "DB: SQLite 驱动从 better-sqlite3 换成内置 bun:sqlite, 移除原生依赖",
+  "prompt": "把 Database 模块的 SQLite 适配器从 better-sqlite3(原生编译模块)换成 Bun 内置的 bun:sqlite,并移除多余依赖。\n\n为什么:\n- runtime 跑在 Bun 上,bun:sqlite 原生自带,零安装成本;\n- better-sqlite3 是 native module(node-gyp/预编译),跨平台脆,尤其 Windows(刚修过 Windows 启动问题,不该再加原生编译依赖);\n- 仓库已有先例:src/agent-sdk/ai/model-cache.ts 和 auth-storage.ts 都用 import { Database } from 'bun:sqlite';\n- 另两个驱动 pg / mysql2 是纯 JS,better-sqlite3 是 DB 模块里唯一的原生编译依赖,去掉后整个 src/db 无需任何 native 编译。\n\n要做:\n- 改 src/db/driver/sqlite-driver.ts:把 import Database from 'better-sqlite3' 换成 import { Database } from 'bun:sqlite',并适配两者 API 差异(prepare/run/all/get、close、参数绑定、PRAGMA、only/expand 等;参考 model-cache.ts / auth-storage.ts 现有 bun:sqlite 用法)。保持 sqlite-driver 对外的 DatabaseDriver 契约不变(仍以同步引擎包进 async driver 契约)。\n- package.json:移除 better-sqlite3 与 @types/better-sqlite3 依赖。\n- 确认 src/db 全模块不再 import better-sqlite3。\n- 测试:SQLite adapter 的测试走 Bun(bun:sqlite 在纯 Node 下不可用),按仓库现有 bun:sqlite 模块的测试方式(如 bun vitest run / Bun 测试)覆盖 connect/query/introspect 关键路径;不要因为驱动切换破坏其它 DB 测试。\n\n注意:src/db 已在 main;另有多个在飞 worktree(75d82/807d8/dce93/eb5cd/7e9d2)带着 better-sqlite3 版的 sqlite-driver,本改动落 main 后它们后续 rebase 时会吸收,改动小、集中在 sqlite-driver.ts + package.json。\n遵循 AGENTS.md:不用 any;统一 logging facade,禁止 console.*;优先 SDK 自带类型。不要提交(除非另有要求)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782196650804,
+  "updatedAt": 1782196650804,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
