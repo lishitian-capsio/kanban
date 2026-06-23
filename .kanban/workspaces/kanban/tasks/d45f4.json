@@ -1,0 +1,19 @@
+{
+  "id": "d45f4",
+  "title": "Task-level model selection driven by capability metadata",
+  "prompt": "FINAL GOAL: let each Kanban task run on a model suited to it, driven by the per-model capability metadata. Depends on the capability metadata layer + the Settings capability UI tasks.\n\nA task should be able to target an appropriate model — at minimum a per-task explicit model override, and ideally a lightweight policy (e.g. cheap/fast model for simple tasks, strong-reasoning/large-context model for hard ones) that picks from the available models using their resolved ModelCapability (context window, reasoning support, cost, speed tier).\n\nRespect existing constraints:\n- Per-agent provider capability still gates which providers/models an agent can use (src/agent-sdk/kanban/provider-protocol.ts) — selection picks WITHIN that, never bypasses it.\n- No cross-agent session sharing (memory 'no-cross-agent-session-sharing').\n- Task agent/provider resolution already flows through agent-provider-resolver.ts and startTaskSession — extend that path, don't fork it.\n\nScope this as: (1) per-task model field on the task spec + wire contract; (2) UI to pick it in the task detail; (3) optional capability-based suggestion. Keep it minimal — no over-engineering (memory 'vault-no-overengineering-agent-rw'). Confirm the exact policy shape before building the auto-routing part.\n\nAcceptance:\n- A task can explicitly select a model; it's persisted on the task shard and used at session start.\n- Selection is constrained to models the task's agent actually supports.\n- web:typecheck + biome clean.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782179528905,
+  "updatedAt": 1782179528905,
+  "column": "backlog",
+  "rank": "Zr",
+  "dependsOn": []
+}
