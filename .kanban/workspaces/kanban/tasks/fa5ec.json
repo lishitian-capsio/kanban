@@ -1,0 +1,19 @@
+{
+  "id": "fa5ec",
+  "title": "Ask-A 核心原语: 向任意会话注入 prompt(tRPC+CLI)+ Commit/PR 重构为预设",
+  "prompt": "为 kanban 的 review 流程加一个新动作『Ask』做地基。本任务只做核心原语,不做 UI。\n\n背景(已查清的现有机制):review 卡片的 Commit / Open PR 不是后端 git 命令,而是『往任务 agent 会话发一段固定模板 prompt』——前端 useReviewAutoActions/runTaskGitAction 通过 sendTaskChatMessage(pi)或 sendTaskSessionInput+Enter(CLI agent)把模板文本发进会话,agent 自己去执行;之后监听 changedFiles===0 把任务移到 done。详见 web-ui/src/hooks/use-git-actions.ts、use-review-auto-actions.ts、git-actions/build-task-git-action-prompt.ts。\n\n要做:\n- 抽出并暴露一个通用原语:『向指定会话注入一段任意 prompt』。会话目标有两类:(1) 某个任务 agent 的会话;(2) 某个 home/kanban-agent 线程的会话。底层复用现成的 sendTaskChatMessage / sendTaskSessionInput,不要重写发送逻辑。\n- 把这个原语暴露成【可编程接口】:tRPC 端点 + CLI 命令(例如 kanban task message --task-id <id> --message \"...\" 之类;命名你定,跟现有 src/commands task 命令同套路、经 runtime endpoint、输出 JSON)。这样不仅 web-ui 能用,kanban/home agent 这种 CLI 侧也能编程调用。\n- 把现有 Commit / Open PR 重构成『此原语 + 固定模板预设』,行为保持不变(仍触发既有的 move-to-done 流程)。不要改变 Commit/PR 的对外行为,只是让它们建立在新原语之上。\n- 注意 commander 嵌套子命令共享父选项的坑(子命令重声明父级 --project-path 时值会路由到父命令,用 this.optsWithGlobals())。\n\n遵循 AGENTS.md:不用 any;统一 logging facade,禁止 console.*(CLI 面向用户输出走 cli-output 的 printLine);web-ui 用 @/utils/logger。这是 Ask 功能的地基(C 依赖它)。不要提交。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782184012983,
+  "updatedAt": 1782184012983,
+  "column": "backlog",
+  "rank": "Zp",
+  "dependsOn": []
+}

@@ -1,0 +1,19 @@
+{
+  "id": "9275d",
+  "title": "设计:IM(飞书/钉钉/企业微信)↔ Kanban agent 桥接",
+  "prompt": "产出一份 IM 桥接设计文档(写到 .plan/docs/im-bridge-design.md),把下面已讨论定稿的模型整理清楚、补齐技术细节与开放问题,并给出分阶段实现拆分建议。本任务只做设计/调研 + 文档,不实现功能、不提交。\n\n## 目标\n让用户能从飞书/钉钉/企业微信里直接和 Kanban 的 agent 对话来管理看板。定位不是'远程命令终端',而是'会主动找你、能一键操作的项目搭档':看板把该用户拍板的事(待审/冲突/失败)主动推到 IM,用户点卡片按钮就闭环。\n\n## 已锁定的设计(请在文档中阐明并补全细节)\n\n1) 角色定位:IM 绑定的 agent 是'调度秘书'——听懂自然语言→调看板操作(建/链/启动任务、报进度),不写代码;真正写代码的是任务 worktree 里的任务 agent。\n\n2) 桥接站在 agent 无关层:复用现有 home thread + 统一广播 task_chat_message + 会话持久化/resume。不要为某个 agent 写死,尤其不要做成 pi 专用。任意 agent(pi/claude/codex/droid/gemini/opencode)都能背一条绑定。\n\n3) 绑定模型:一条 IM 绑定 = { bindingId, 平台, channelKey(外部会话标识), 固定 agentId, sessionThread, 凭证 },存在每个 workspace 的注册表(放 threads.json 旁的 per-workspace 存储)。统一模型,平台只差一条基数策略 maxBindings + 重绑语义:\n   - 飞书 = Feishu-class:满血(入站事件订阅/长连接、出站发消息 API、互动卡片、OA/审批),maxBindings=∞,keyed by chat_id,多条并存;再加同 chat=更新,加新 chat=新增。\n   - 钉钉 = Feishu-class:同上(入站 Stream 长连接或 webhook、应用 access_token 推送、AI/互动卡片、OA 审批),maxBindings=∞。\n   - 微信 = 受限-class:走企业微信自建应用(个人微信无合规机器人/主动推送);单槽位 maxBindings=1;'重新绑定'=原子替换占用者:硬关旧 session(closeTaskSession 停进程/丢内存/清转录)+ 新绑定全新起一段对话,绝不跨 workspace/agent 迁移上下文。\n   - 实现上每平台一个 InboundChatAdapter(收/发两方法),会话/线程/看板逻辑零改动;入站走长连接 vs webhook、卡片/审批字段格式差异都关在适配器内部。\n\n4) 会话/agent 生命周期(关键澄清,务必写清):\n   - 不是每条消息新建 session/agent(会丢多轮指代+每条冷启动,体感最差);也不是一条永生 session(转录无限膨胀)。\n   - 正确档:session 按'一段对话'存在——连续聊时同一条(指代接得上),空闲淡出/压缩,下次消息 resume 回同一条;体感连续。\n   - agent 按绑定固定,不随消息变(换 agent 无收益且破坏连贯)。\n   - 看板是耐久真相源:对话记忆淡了,agent 现读看板照样接着干;丢的只是闲聊记忆不是任务真相。\n   - 消息驱动:懒启动(首条消息才拉起 agent)→ 后续喂进运行中 session(writeInput)→ 重启/断线 resume → 空闲回收;批量唤醒用现有 agent-start 限流(perf8)兜底;空闲回收阈值可配置。\n\n5) 三条腿 + 闭环:\n   - 入站:IM 消息 → 按 channelKey↔binding 映射 → 喂进对应 session(首条=kickoff prompt)。\n   - 出站回复:订阅 task_chat_message → 发回该渠道。\n   - 主动推送(不依赖 agent 在跑):网关订阅看板 runtime 事件(task_sessions_updated 待审/链式启动/失败、board_sync_status_updated 冲突)→ 组装模板互动卡片 → 调平台 send API 推送。\n   - 闭环:卡片按钮(看 diff/开 PR/合并并启动下一个/打回/查看冲突)回调走入站 → 驱动看板动作。状态通知用模板卡片(确定性、即时、零 token);对话回复才用 agent 文本。结合现有 auto-review(commit/pr)+任务链 + 飞书/钉钉审批,做'人在环但只需点一下'的自动流水线。\n   - 降噪:只在需介入时推(待审/冲突/失败/链路卡住),批量,尊重静默时段。\n\n## 文档需补齐/调研的开放问题\n- 各平台入站接入选型(长连接 vs webhook)、鉴权与凭证管理(出站 token、入站校验)、凭证存哪(机器密钥不入库committed)。\n- channelKey 的精确定义与映射存储 schema;Settings 绑定列表 UI 形态(添加/改 agent/重新绑定/解绑;飞书钉钉=新增,微信=已占时变重绑确认)。\n- 互动卡片与审批的能力边界对照(飞书 vs 钉钉 vs 企业微信),哪些北极星动作能落、哪些降级。\n- 会话空闲回收阈值、resume 冷启动开销、转录压缩策略。\n- 分阶段实现拆分建议:inbound 网关抽象 → 飞书适配器+卡片交互 → 审批闭环 → 钉钉适配器 → 企业微信适配器。\n\n## 约束\n遵循 AGENTS.md:不用 any;统一 logging facade(createLogger),禁止 console.*;优先复用现有机制(home-thread-store/registry、session resume、task_chat_message 广播、agent-start 限流),不要重造会话模型。本任务只产出设计文档,不实现、不提交。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782184010230,
+  "updatedAt": 1782184010230,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
