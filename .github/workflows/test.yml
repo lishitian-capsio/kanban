@@ -33,17 +33,9 @@ jobs:
           path: |
             node_modules
             web-ui/node_modules
-            packages/desktop/node_modules
           key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-modules-
-
-      # macOS node-gyp/electron rebuilds can fail with Python 3.12/distutils; pin 3.11.
-      - name: Setup Python (for node-gyp on macOS)
-        if: matrix.os == 'macos-latest'
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
 
       - name: Install dependencies
         run: npm ci || npm install
@@ -51,10 +43,6 @@ jobs:
       - name: Install web-ui dependencies
         run: |
           cd web-ui && (npm ci || npm install)
-
-      - name: Install packages/desktop dependencies
-        run: |
-          cd packages/desktop && (npm ci || npm install)
 
       - name: Build
         run: npm run build
@@ -73,9 +61,3 @@ jobs:
       - name: Web UI tests
         run: |
           cd web-ui && npm run test
-
-      - name: packages/desktop typecheck
-        run: npm --prefix packages/desktop run typecheck
-
-      - name: packages/desktop tests
-        run: npm --prefix packages/desktop test

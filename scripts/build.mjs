@@ -2,13 +2,11 @@ import * as esbuild from "esbuild";
 
 /**
  * Runtime externals.
- * - `node-pty` is a native addon with a compiled binding and a spawn-helper
- *   binary that must live on disk, so it can't be bundled.
  * - `ws` is externalised because Bun's `node:http` upgrade handling does not
  *   work with esbuild's CJS-wrapped `ws` package (WebSocket upgrades hang).
  * - `bun:sqlite` and `bun` are Bun-specific and cannot be bundled.
  */
-const external = ["node-pty", "bun:sqlite", "bun", "ws"];
+const external = ["bun:sqlite", "bun", "ws"];
 
 /** Bake OTEL telemetry env vars into the bundle at build time. */
 const define = {

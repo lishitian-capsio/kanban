@@ -50,12 +50,6 @@ jobs:
       - name: Install web-ui dependencies
         run: cd web-ui && (npm ci || npm install)
 
-      - name: Install desktop dependencies (if exists)
-        run: |
-          if [ -d "packages/desktop" ]; then
-            cd packages/desktop && (npm ci || npm install)
-          fi
-
       - name: Build package
         run: npm run build
         env:

@@ -118,13 +118,6 @@ export function resolveWindowsComSpec(env: NodeJS.ProcessEnv = process.env): str
 	return comSpec || "cmd.exe";
 }
 
-export function buildWindowsCmdArgsCommandLine(binary: string, args: string[]): string {
-	const escapedCommand = escapeWindowsCommand(binary);
-	const escapedArgs = args.map((part) => escapeWindowsArgument(part));
-	const shellCommand = [escapedCommand, ...escapedArgs].join(" ");
-	return `/d /s /c "${shellCommand}"`;
-}
-
 export function buildWindowsCmdArgsArray(binary: string, args: string[]): string[] {
 	const escapedCommand = escapeWindowsCommand(binary);
 	const escapedArgs = args.map((part) => escapeWindowsArgument(part));
