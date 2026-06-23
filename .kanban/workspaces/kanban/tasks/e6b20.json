@@ -1,0 +1,23 @@
+{
+  "id": "e6b20",
+  "title": "优化 Ask 按钮悬浮提示文字 (tooltip)",
+  "prompt": "优化 review 卡片上 Ask（split-button）按钮的鼠标悬浮提示文字（tooltip）。当前 hover 在 Ask 按钮上的提示文案不够清晰/不够好。\n\n要求：\n- 用仓库既有的 Tooltip primitive（@/components/ui/tooltip）。\n- 文案要清楚说明 Ask 的作用，并区分两个选项的含义：『问自己』= 把问题注入该任务自身的 agent 会话继续追问；『问 kanban agent』= 把问题路由回发起该任务的 home 会话/agent。措辞简洁、用户向、中文（与现有 UI 语言一致）。\n- 如果拆分按钮的主体与下拉项各自需要提示，分别给到位的 tooltip。\n- 仅调整提示文案/展示，不改 Ask 的行为逻辑。\n\n注意：本任务与修复任务（恢复 Commit/PR、内联发送、回到发起 agent）改的是同一片组件，已链接为在其之后开工，请基于其改动后的代码进行。\n\n验收：hover Ask 主按钮及各选项时，出现清晰、准确区分两种 Ask 行为的中文提示。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "origin": {
+    "agentId": "claude",
+    "threadId": "f0010289-2e7a-483a-9777-3bb386752ca1"
+  },
+  "baseRef": "main",
+  "createdAt": 1782202067409,
+  "updatedAt": 1782202067409,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
