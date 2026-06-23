@@ -1,0 +1,23 @@
+{
+  "id": "8f627",
+  "title": "测试任务（试用 Ask）",
+  "prompt": "这是一个用于试用看板 Ask 功能的轻量测试任务。请不要改动任何业务代码。\n\n请只做一件无害的小事：在仓库根目录读取 README（或任一已存在文件）后，用一句话总结这个项目是做什么的，并把总结作为你本轮的回复输出。完成后停下，等待 review。\n\n到 review 后用户会通过 Ask 给你追加问题，你直接在会话里回答即可——这正是本任务要演示的流程。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "origin": {
+    "agentId": "claude",
+    "threadId": "f0010289-2e7a-483a-9777-3bb386752ca1"
+  },
+  "baseRef": "main",
+  "createdAt": 1782201240317,
+  "updatedAt": 1782201240317,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
