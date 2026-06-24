@@ -27,13 +27,6 @@
       "name": "network proxy",
       "createdAt": 1782276370603,
       "updatedAt": 1782276370603
-    },
-    {
-      "id": "84f37841-8707-4a7b-8958-f1609634ad5b",
-      "agentId": "claude",
-      "name": "database",
-      "createdAt": 1782279738093,
-      "updatedAt": 1782279738093
     }
   ]
 }
