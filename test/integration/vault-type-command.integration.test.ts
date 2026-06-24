@@ -36,7 +36,7 @@ function parseJson<T>(result: { stdout: string; stderr: string; exitCode: number
 		);
 	}
 	const envelope = JSON.parse(result.stdout) as SuccessEnvelope<T>;
-	expect(envelope.schemaVersion).toBe("1");
+	expect(envelope.schemaVersion).toBe("2");
 	expect(envelope.ok).toBe(true);
 	return envelope.data;
 }
@@ -109,7 +109,8 @@ describe("vault type commands", () => {
 				};
 				expect(missing.ok).toBe(false);
 				expect(missing.error?.message).toContain("not found");
-				expect(missing.errorMessage).toContain("not found");
+				// The legacy `errorMessage` string mirror was removed in P6 (§8/§9).
+				expect(missing.errorMessage).toBeUndefined();
 			} finally {
 				cleanupProject();
 				cleanupHome();

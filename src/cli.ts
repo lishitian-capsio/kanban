@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer as createNetServer } from "node:net";
 import { resolve } from "node:path";
-import { Command, CommanderError, Option } from "commander";
+import { Command, CommanderError } from "commander";
 import ora, { type Ora } from "ora";
 import packageJson from "../package.json" with { type: "json" };
 import { printLine } from "./cli-output";
@@ -90,7 +90,7 @@ interface ShutdownIndicator {
  * Decide whether this CLI invocation should auto-open a browser tab.
  *
  * This uses a positive allowlist for app-launch shapes like `kanban`,
- * `kanban --agent codex`, and `kanban --port 3484`. Any subcommand or
+ * `kanban --host 0.0.0.0`, and `kanban --port 3484`. Any subcommand or
  * unexpected argument is treated as a command-style invocation instead.
  */
 function shouldAutoOpenBrowserTabForInvocation(argv: string[]): boolean {
@@ -112,7 +112,6 @@ function shouldAutoOpenBrowserTabForInvocation(argv: string[]): boolean {
 	const launchOptionsWithValues = new Set([
 		"--host",
 		"--port",
-		"--agent",
 		"--cert",
 		"--key",
 		"--passcode",
@@ -797,7 +796,8 @@ function createProgram(invocationArgs: string[]): Command {
 		.exitOverride()
 		.addHelpText("after", `\nRuntime URL: ${getKanbanRuntimeOrigin()}`);
 
-	program.addOption(new Option("--agent <id>", "Deprecated compatibility flag. Ignored.").hideHelp());
+	// The deprecated root `--agent <id>` flag (hidden+ignored since the P2 redesign) was
+	// removed in P6 (design doc §8/§9) now that its compat window has elapsed.
 
 	registerTaskCommand(program);
 	registerFileCommand(program);
@@ -810,13 +810,6 @@ function createProgram(invocationArgs: string[]): Command {
 	// Registered after the others so it sits alongside them in help; the manifest itself is
 	// built at invocation time from the fully-assembled tree, so registration order is moot.
 	registerSchemaCommand(program, { kanbanVersion: KANBAN_VERSION });
-
-	program
-		.command("mcp")
-		.description("Deprecated compatibility command.")
-		.action(() => {
-			cliLog.warn("Deprecated. Please uninstall Kanban MCP.");
-		});
 
 	program
 		.command("update")

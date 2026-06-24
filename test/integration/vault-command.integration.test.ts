@@ -35,7 +35,7 @@ function parseJson<T>(result: { stdout: string; stderr: string; exitCode: number
 		);
 	}
 	const envelope = JSON.parse(result.stdout) as SuccessEnvelope<T>;
-	expect(envelope.schemaVersion).toBe("1");
+	expect(envelope.schemaVersion).toBe("2");
 	expect(envelope.ok).toBe(true);
 	return envelope.data;
 }
@@ -174,8 +174,8 @@ describe("vault doc commands", () => {
 				const afterDelete = parseJson<{ count: number }>(await runVault(["doc", "list"]));
 				expect(afterDelete.count).toBe(0);
 
-				// Deleting again fails cleanly (not found): structured error object plus the
-				// legacy top-level `errorMessage` string mirror (design doc §4.2 / §8).
+				// Deleting again fails cleanly (not found): a structured error object. The legacy
+				// top-level `errorMessage` string mirror was removed in P6 (design doc §4.2 / §8).
 				const deleteMissing = JSON.parse((await runVault(["doc", "delete", "--id", doc.id])).stdout) as {
 					ok: boolean;
 					error?: { code: string; message: string };
@@ -183,7 +183,7 @@ describe("vault doc commands", () => {
 				};
 				expect(deleteMissing.ok).toBe(false);
 				expect(deleteMissing.error?.message).toContain("not found");
-				expect(deleteMissing.errorMessage).toContain("not found");
+				expect(deleteMissing.errorMessage).toBeUndefined();
 			} finally {
 				cleanupProject();
 				cleanupHome();

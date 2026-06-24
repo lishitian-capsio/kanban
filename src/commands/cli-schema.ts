@@ -222,7 +222,6 @@ const COMMAND_SCHEMA_REGISTRY: Record<string, CommandSchemaMeta> = {
 	passcode: { output: { ref: GENERIC_OUTPUT_REF }, errors: ["passcode_not_set"] },
 	schema: { output: { ref: "#/schemas/CliSchemaManifest" }, errors: ["invalid_argument"] },
 	update: { output: { ref: GENERIC_OUTPUT_REF }, errors: ["internal_error"] },
-	mcp: { output: { ref: GENERIC_OUTPUT_REF }, errors: ["internal_error"] },
 };
 
 /**
@@ -393,8 +392,8 @@ function commandToSchema({ command, path, internal }: DiscoveredCommand): CliCom
 		...(aliases.length > 0 ? { aliases } : {}),
 		...(internal ? { internal: true } : {}),
 		positionals: command.registeredArguments.map(argumentToSchema),
-		// Hidden options (e.g. the deprecated, ignored root `--agent`) are dropped from the
-		// manifest per §8 — an agent should not plan against a no-op flag.
+		// Hidden options are dropped from the manifest per §8 — an agent should not plan against
+		// a no-op/internal flag. (The root `--agent` that motivated this filter was removed in P6.)
 		options: command.options.filter((option) => !option.hidden).map(optionToSchema),
 		output: meta?.output ?? { ref: GENERIC_OUTPUT_REF },
 		errors: meta?.errors ?? DEFAULT_WORKSPACE_ERRORS,

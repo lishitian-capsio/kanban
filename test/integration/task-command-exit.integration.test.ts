@@ -187,7 +187,7 @@ describe("source task commands", () => {
 				for (const [args, expectedOpenCount] of [
 					[[], 1],
 					[["task", "list", "--project-path", projectPath], 1],
-					[["--agent", "codex"], 2],
+					[["--no-color"], 2],
 					[["--port", port], 3],
 				] as const) {
 					const result = await runCliCommandAndCollectOutput({

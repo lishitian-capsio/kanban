@@ -19,7 +19,7 @@ describe("cli-envelope success envelope", () => {
 	it("wraps data in a versioned ok=true envelope", () => {
 		const envelope = buildSuccessEnvelope("task.list", { count: 2, tasks: [] });
 		expect(envelope).toEqual({
-			schemaVersion: "1",
+			schemaVersion: "2",
 			ok: true,
 			command: "task.list",
 			data: { count: 2, tasks: [] },
@@ -27,7 +27,8 @@ describe("cli-envelope success envelope", () => {
 	});
 
 	it("uses the stable schema version constant", () => {
-		expect(CLI_SCHEMA_VERSION).toBe("1");
+		// Bumped to "2" in P6 when the legacy failure `errorMessage` mirror was removed (§8/§9).
+		expect(CLI_SCHEMA_VERSION).toBe("2");
 		expect(buildSuccessEnvelope("file.list", {}).schemaVersion).toBe(CLI_SCHEMA_VERSION);
 	});
 
@@ -45,14 +46,14 @@ describe("cli-envelope success envelope", () => {
 });
 
 describe("cli-envelope failure envelope", () => {
-	it("emits a structured error object plus a legacy top-level string mirror", () => {
-		const envelope = buildFailureEnvelope(
-			"task.update",
-			{ code: "task_not_found", message: 'No task with id "abc".', details: { taskId: "abc" } },
-			'Task command failed at http://127.0.0.1:3484: No task with id "abc".',
-		);
+	it("emits a structured error object with no legacy string mirror (removed in P6)", () => {
+		const envelope = buildFailureEnvelope("task.update", {
+			code: "task_not_found",
+			message: 'No task with id "abc".',
+			details: { taskId: "abc" },
+		});
 		expect(envelope).toEqual({
-			schemaVersion: "1",
+			schemaVersion: "2",
 			ok: false,
 			command: "task.update",
 			error: {
@@ -60,18 +61,21 @@ describe("cli-envelope failure envelope", () => {
 				message: 'No task with id "abc".',
 				details: { taskId: "abc" },
 			},
-			errorMessage: 'Task command failed at http://127.0.0.1:3484: No task with id "abc".',
 		});
+		// The compat `errorMessage` string mirror (§8) was dropped in P6 — consumers read `error`.
+		expect(envelope).not.toHaveProperty("errorMessage");
 	});
 
-	it("keeps the legacy mirror parseable as a string for old readers", () => {
-		const envelope = buildFailureEnvelope(
-			"db.tables",
-			{ code: "internal_error", message: "boom" },
-			"Database command failed at http://127.0.0.1:3484: boom",
-		);
-		expect(typeof envelope.errorMessage).toBe("string");
-		expect(envelope.error.message).toBe("boom");
+	it("forwards warnings into the failure envelope only when provided", () => {
+		const without = buildFailureEnvelope("db.tables", { code: "internal_error", message: "boom" });
+		expect(without).not.toHaveProperty("warnings");
+
+		const withWarnings = buildFailureEnvelope("task.trash", { code: "task_not_found", message: "gone" }, [
+			{ code: "deprecated_alias", message: "`task trash` is deprecated; use `task done`." },
+		]);
+		expect(withWarnings.warnings).toEqual([
+			{ code: "deprecated_alias", message: "`task trash` is deprecated; use `task done`." },
+		]);
 	});
 });
 

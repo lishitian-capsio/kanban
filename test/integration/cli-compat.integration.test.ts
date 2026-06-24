@@ -12,27 +12,31 @@ function resolveTsxLoaderImportSpecifier(): string {
 }
 
 describe("cli compatibility flags", () => {
-	it("accepts the deprecated --agent flag as a no-op", () => {
+	it("rejects the removed --agent flag as an unknown option (dropped in P6)", () => {
+		// The deprecated root `--agent <id>` (hidden+ignored since P2) was removed in P6 (§8/§9).
+		// It is no longer a declared option, so commander reports it as an unknown-option usage
+		// error and exits with the §6.2 usage-error code (2). Asserted on a subcommand so the
+		// parse fails deterministically before any action runs (the bare-`kanban --help` path
+		// would short-circuit to a clean help exit before flagging the unknown option).
 		const result = spawnSync(
 			process.execPath,
 			[
 				"--import",
 				resolveTsxLoaderImportSpecifier(),
 				resolve(process.cwd(), "src/cli.ts"),
+				"task",
+				"list",
 				"--agent",
 				"legacy-alias-value",
-				"--help",
 			],
 			{
 				encoding: "utf8",
 			},
 		);
 
-		expect(result.status).toBe(0);
-		expect(result.stderr).toBe("");
-		expect(result.stdout).toContain("--port");
-		expect(result.stdout).not.toContain("--agent");
-		expect(result.stdout).not.toContain("Agent IDs:");
+		expect(result.status).toBe(2);
+		expect(result.stderr).toContain("unknown option");
+		expect(result.stderr).toContain("--agent");
 	});
 
 	it("emits `schema --json` as a single JSON.parse-able envelope (§7.4)", () => {

@@ -38,7 +38,7 @@ describe("runCliCommand machine mode", () => {
 		const text = capture.output();
 		const parsed = JSON.parse(text);
 		expect(parsed).toMatchObject({
-			schemaVersion: "1",
+			schemaVersion: "2",
 			ok: true,
 			command: "task.list",
 			data: { count: 0, tasks: [] },
@@ -65,8 +65,8 @@ describe("runCliCommand machine mode", () => {
 			message: 'No task with id "abc".',
 			details: { taskId: "abc" },
 		});
-		expect(typeof parsed.errorMessage).toBe("string");
-		expect(parsed.errorMessage).toContain('No task with id "abc".');
+		// The legacy top-level `errorMessage` string mirror was removed in P6 (§8/§9).
+		expect(parsed).not.toHaveProperty("errorMessage");
 		expect(process.exitCode).toBe(3);
 	});
 
@@ -81,7 +81,8 @@ describe("runCliCommand machine mode", () => {
 		}
 		const parsed = JSON.parse(capture.output());
 		expect(parsed.error.code).toBe("internal_error");
-		expect(parsed.errorMessage).toContain("Database command failed");
+		expect(parsed.error.message).toContain("kaboom");
+		expect(parsed).not.toHaveProperty("errorMessage");
 		expect(process.exitCode).toBe(1);
 	});
 

@@ -13,11 +13,13 @@
 import { toErrorMessage } from "./runtime-workspace";
 
 /**
- * Machine-contract schema version (§4.2 / §10 Q2). Starts at `"1"` — this redesign is
- * the first stable contract, so the prior always-JSON shape is not treated as a v0.
- * Additive fields keep this value; a shape/removal change bumps it.
+ * Machine-contract schema version (§4.2 / §10 Q2). Began at `"1"` with the P0 redesign
+ * (the first stable contract; the prior always-JSON shape is not treated as a v0).
+ * Additive fields keep this value; a shape/removal change bumps it. Bumped to `"2"` in P6
+ * (§8/§9 deprecation cleanup) when the legacy top-level `errorMessage` string mirror on the
+ * failure envelope was removed — a field removal that naive readers must be signalled about.
  */
-export const CLI_SCHEMA_VERSION = "1";
+export const CLI_SCHEMA_VERSION = "2";
 
 /**
  * Closed set of structured failure classifications (§6.3). `internal_error` is the
@@ -148,13 +150,6 @@ export interface CliFailureEnvelope {
 	command: string;
 	error: CliEnvelopeError;
 	/**
-	 * Backward-compatibility mirror (§8, last table row). The pre-redesign failure shape
-	 * was `{ ok:false, error:"<string>" }`; the structured object now lives at `error`,
-	 * so the legacy human string is mirrored here for one compat window and dropped at the
-	 * next major. Always a string so naive readers cannot trip over the object at `error`.
-	 */
-	errorMessage: string;
-	/**
 	 * Machine-stable advisories that were already known when the command failed (e.g. a
 	 * deprecated alias / flag was used before the handler threw). Mirrors the success
 	 * envelope's `warnings[]` so an agent sees the same advisory regardless of outcome.
@@ -181,7 +176,6 @@ export function buildSuccessEnvelope(
 export function buildFailureEnvelope(
 	command: string,
 	error: CliEnvelopeError,
-	legacyMirror: string,
 	warnings?: CliWarning[],
 ): CliFailureEnvelope {
 	return {
@@ -189,7 +183,6 @@ export function buildFailureEnvelope(
 		ok: false,
 		command,
 		error,
-		errorMessage: legacyMirror,
 		...(warnings && warnings.length > 0 ? { warnings } : {}),
 	};
 }

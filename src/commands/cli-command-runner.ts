@@ -15,7 +15,6 @@
 import type { Command } from "commander";
 import { renderHumanError, renderHumanSuccess } from "../cli-human-render";
 import { type CliSpinner, printLine, shouldUseColor, startCliSpinner } from "../cli-output";
-import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import {
 	buildFailureEnvelope,
 	buildSuccessEnvelope,
@@ -154,23 +153,6 @@ function toEnvelopeData(result: Record<string, unknown>): Record<string, unknown
 	return rest;
 }
 
-/** Human-readable family label for the legacy `error` string mirror (matches the old prefix). */
-function commandFamilyLabel(commandId: string): string {
-	const family = commandId.split(".")[0] ?? commandId;
-	switch (family) {
-		case "task":
-			return "Task";
-		case "db":
-			return "Database";
-		case "file":
-			return "File";
-		case "vault":
-			return "Vault";
-		default:
-			return family.charAt(0).toUpperCase() + family.slice(1);
-	}
-}
-
 function emit(
 	envelope: CliEnvelope,
 	mode: "json" | "human",
@@ -242,9 +224,8 @@ export async function runCliCommand(
 	} catch (error) {
 		spinner?.fail(options.spinner?.failText);
 		const classified = classifyError(error);
-		const legacyMirror = `${commandFamilyLabel(commandId)} command failed at ${getKanbanRuntimeOrigin()}: ${classified.message}`;
 		emitDeprecationNotesToStderr(options.warnings);
-		emit(buildFailureEnvelope(commandId, classified, legacyMirror, options.warnings), mode, options.globals);
+		emit(buildFailureEnvelope(commandId, classified, options.warnings), mode, options.globals);
 		process.exitCode = exitCodeForErrorCode(classified.code);
 	}
 }

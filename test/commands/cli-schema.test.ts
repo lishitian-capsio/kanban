@@ -12,7 +12,7 @@ import {
 import { registerDbCommand } from "../../src/commands/db";
 import { registerFileCommand } from "../../src/commands/file";
 import { registerHooksCommand } from "../../src/commands/hooks";
-import { registerPasscodeCommand } from "../../src/commands/passcode";
+import { registerPasscodeAliasCommand, registerRemoteCommand } from "../../src/commands/remote";
 import { registerServiceCommand } from "../../src/commands/service";
 import { registerTaskCommand } from "../../src/commands/task";
 import { registerVaultCommand } from "../../src/commands/vault";
@@ -35,7 +35,6 @@ function buildRealManifest(): CliSchemaManifest {
 		.option("--human", "Force human-readable output even when piped.")
 		.option("--no-color", "Disable ANSI color in human output.")
 		.option("--quiet", "Suppress the human summary footer / spinners.");
-	program.addOption(new Option("--agent <id>", "Deprecated compatibility flag. Ignored.").hideHelp());
 
 	registerTaskCommand(program);
 	registerFileCommand(program);
@@ -43,7 +42,8 @@ function buildRealManifest(): CliSchemaManifest {
 	registerDbCommand(program);
 	registerHooksCommand(program);
 	registerServiceCommand(program);
-	registerPasscodeCommand(program);
+	registerRemoteCommand(program);
+	registerPasscodeAliasCommand(program);
 	registerSchemaCommand(program, { kanbanVersion: "9.9.9-test" });
 
 	return buildCliSchema(program, { kanbanVersion: "9.9.9-test" });
@@ -60,8 +60,10 @@ function commandById(manifest: CliSchemaManifest, id: string): CliCommandSchema 
 /** Every leaf verb the CLI exposes (groups like `task`/`db connection` are navigational). */
 const EXPECTED_COMMAND_IDS = [
 	"task.list",
+	"task.show",
 	"task.create",
 	"task.update",
+	"task.done",
 	"task.trash",
 	"task.delete",
 	"task.link",
@@ -101,6 +103,10 @@ const EXPECTED_COMMAND_IDS = [
 	"hooks.codex-hook",
 	"hooks.cleanup",
 	"hooks.codex-wrapper",
+	"remote.status",
+	"remote.passcode.show",
+	"remote.passcode.set",
+	"remote.passcode.disable",
 	"passcode",
 	"schema",
 ];
@@ -184,17 +190,24 @@ describe("buildCliSchema — option & positional shapes", () => {
 
 	it("preserves command aliases and flags hooks as internal", () => {
 		const manifest = buildRealManifest();
-		expect(commandById(manifest, "task.trash").aliases).toEqual(["done"]);
+		// `task done` / `task trash` are two distinct commands (trash is the deprecated one), not a
+		// commander alias pair; the short alias that survives on a leaf verb is `db connection rm`.
+		expect(commandById(manifest, "db.connection.remove").aliases).toEqual(["rm"]);
 		expect(commandById(manifest, "hooks.ingest").internal).toBe(true);
 		// Non-hooks commands are not internal.
 		expect(commandById(manifest, "task.list").internal).toBeUndefined();
 	});
 
-	it("excludes hidden options (the deprecated, ignored root --agent)", () => {
-		const manifest = buildRealManifest();
+	it("excludes hidden options from the manifest", () => {
+		// The deprecated root `--agent` that motivated this filter was removed in P6, so assert
+		// the behavior with a synthetic hidden global option: visible options are emitted, hidden
+		// ones are not (an agent should never plan against an internal/no-op flag).
+		const program = new Command().name("kanban").option("--project-path <path>", "Workspace to operate on.");
+		program.addOption(new Option("--secret-internal <v>", "Hidden internal flag.").hideHelp());
+		const manifest = buildCliSchema(program, { kanbanVersion: "0.0.0" });
 		const names = manifest.globalOptions.map((option) => option.name);
 		expect(names).toContain("project-path");
-		expect(names).not.toContain("agent");
+		expect(names).not.toContain("secret-internal");
 	});
 
 	it("records a negated boolean flag", () => {
