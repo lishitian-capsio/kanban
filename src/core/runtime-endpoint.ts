@@ -59,6 +59,30 @@ export function parseRuntimePort(rawPort: string | undefined): number {
 	return parsed;
 }
 
+/**
+ * Parsed `--port` CLI value: a fixed integer port or the literal `auto` (pick a free
+ * port at boot). This is the single source of truth for the `--port` option shared by
+ * the root `serve` command and `service install` (design doc §6.1, removes I7's divergent
+ * `parseServicePort`).
+ */
+export type RuntimePortOption = { mode: "fixed"; value: number } | { mode: "auto" };
+
+/** Parse a `--port` CLI value: an integer from 1-65535 or the literal `"auto"`. */
+export function parseCliPortOption(rawValue: string): RuntimePortOption {
+	const normalized = rawValue.trim().toLowerCase();
+	if (!normalized) {
+		throw new Error("Missing value for --port.");
+	}
+	if (normalized === "auto") {
+		return { mode: "auto" };
+	}
+	try {
+		return { mode: "fixed", value: parseRuntimePort(normalized) };
+	} catch {
+		throw new Error(`Invalid port value: ${rawValue}. Expected an integer from 1-65535 or "auto".`);
+	}
+}
+
 let runtimePort = parseRuntimePort(process.env.KANBAN_RUNTIME_PORT?.trim());
 
 export function getKanbanRuntimePort(): number {

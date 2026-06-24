@@ -4,8 +4,8 @@ import type { Command } from "commander";
 
 import type { RuntimeFileCategory, RuntimeFileItem } from "../core/api-contract";
 import { FileLibraryStore } from "../files/file-library-store";
+import { readGlobalCliOptions, runCliCommand } from "./cli-command-runner";
 import { createRuntimeTrpcClient, type JsonRecord, resolveRuntimeWorkspace } from "./runtime-workspace";
-import { runCliCommand } from "./cli-command-runner";
 
 const FILE_CATEGORIES = ["image", "document", "audio", "video", "archive", "text", "other"] as const;
 
@@ -153,13 +153,14 @@ export function registerFileCommand(program: Command): void {
 	file
 		.command("list")
 		.description("List files in the library for a workspace.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.option("--category <category>", `Filter by category: ${FILE_CATEGORIES.join(" | ")}.`, parseCategory)
-		.action(async (options: { projectPath?: string; category?: RuntimeFileCategory }) => {
+		.action(async function (this: Command, options: { category?: RuntimeFileCategory }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"file.list",
 				async () =>
-					await listFiles({ cwd: process.cwd(), projectPath: options.projectPath, category: options.category }),
+					await listFiles({ cwd: process.cwd(), projectPath: globals.projectPath, category: options.category }),
+				{ globals },
 			);
 		});
 
@@ -167,11 +168,12 @@ export function registerFileCommand(program: Command): void {
 		.command("show")
 		.description("Show a single file's metadata.")
 		.requiredOption("--id <id>", "File ID.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { id: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { id: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"file.show",
-				async () => await showFile({ cwd: process.cwd(), id: options.id, projectPath: options.projectPath }),
+				async () => await showFile({ cwd: process.cwd(), id: options.id, projectPath: globals.projectPath }),
+				{ globals },
 			);
 		});
 
@@ -181,8 +183,8 @@ export function registerFileCommand(program: Command): void {
 		.requiredOption("--path <path>", "Path to the local file to import.")
 		.option("--name <name>", "Override the stored file name. Defaults to the source file's name.")
 		.option("--mime <mime>", "Override the detected mime type.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { path: string; name?: string; mime?: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { path: string; name?: string; mime?: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"file.add",
 				async () =>
@@ -191,8 +193,9 @@ export function registerFileCommand(program: Command): void {
 						path: options.path,
 						name: options.name,
 						mime: options.mime,
-						projectPath: options.projectPath,
+						projectPath: globals.projectPath,
 					}),
+				{ globals },
 			);
 		});
 
@@ -201,8 +204,8 @@ export function registerFileCommand(program: Command): void {
 		.description("Rename a file in the library.")
 		.requiredOption("--id <id>", "File ID.")
 		.requiredOption("--name <name>", "New file name.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { id: string; name: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { id: string; name: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"file.update",
 				async () =>
@@ -210,8 +213,9 @@ export function registerFileCommand(program: Command): void {
 						cwd: process.cwd(),
 						id: options.id,
 						name: options.name,
-						projectPath: options.projectPath,
+						projectPath: globals.projectPath,
 					}),
+				{ globals },
 			);
 		});
 
@@ -219,11 +223,12 @@ export function registerFileCommand(program: Command): void {
 		.command("delete")
 		.description("Delete a file from the library.")
 		.requiredOption("--id <id>", "File ID.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { id: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { id: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"file.delete",
-				async () => await deleteFile({ cwd: process.cwd(), id: options.id, projectPath: options.projectPath }),
+				async () => await deleteFile({ cwd: process.cwd(), id: options.id, projectPath: globals.projectPath }),
+				{ globals },
 			);
 		});
 
@@ -231,11 +236,12 @@ export function registerFileCommand(program: Command): void {
 		.command("path")
 		.description("Print a file's absolute and repo-relative paths (for agent @ references).")
 		.requiredOption("--id <id>", "File ID.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { id: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { id: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"file.path",
-				async () => await showFilePath({ cwd: process.cwd(), id: options.id, projectPath: options.projectPath }),
+				async () => await showFilePath({ cwd: process.cwd(), id: options.id, projectPath: globals.projectPath }),
+				{ globals },
 			);
 		});
 
@@ -243,11 +249,12 @@ export function registerFileCommand(program: Command): void {
 		.command("bytes")
 		.description("Print a file's content as base64 (for inline agent vision content).")
 		.requiredOption("--id <id>", "File ID.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { id: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { id: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"file.bytes",
-				async () => await showFileBytes({ cwd: process.cwd(), id: options.id, projectPath: options.projectPath }),
+				async () => await showFileBytes({ cwd: process.cwd(), id: options.id, projectPath: globals.projectPath }),
+				{ globals },
 			);
 		});
 }

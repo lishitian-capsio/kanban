@@ -5,6 +5,7 @@ import {
 	DEFAULT_KANBAN_RUNTIME_HOST,
 	DEFAULT_KANBAN_RUNTIME_PORT,
 	isRemoteRuntimeHost,
+	type RuntimePortOption,
 } from "../core/runtime-endpoint";
 import { createLogger } from "../logging";
 import { getPasscodeFilePath, readPersistedPasscode, resolveAndPersistPasscode } from "../security/passcode-store";
@@ -20,8 +21,6 @@ interface ServiceIdentityOptions {
 }
 
 interface ServiceInstallOptions extends ServiceIdentityOptions {
-	host?: string;
-	port?: number;
 	/** Commander stores `--no-passcode` as `false` and `--passcode <value>` as the string. */
 	passcode?: boolean | string;
 	https?: boolean;
@@ -29,12 +28,28 @@ interface ServiceInstallOptions extends ServiceIdentityOptions {
 	key?: string;
 }
 
-function parseServicePort(value: string): number {
-	const port = Number.parseInt(value, 10);
-	if (!Number.isInteger(port) || port < 1 || port > 65535) {
-		throw new Error(`Invalid --port "${value}". Expected an integer between 1 and 65535.`);
+/** The runtime bind target read from the program-level global `--host`/`--port` (§6.1). */
+interface ServiceBindTarget {
+	host?: string;
+	port?: RuntimePortOption;
+}
+
+/**
+ * Resolve the bind port for an installed service from the shared global `--port` option.
+ *
+ * `service install` reuses the program-level `--host`/`--port` (parsed once by
+ * `parseCliPortOption`) instead of a divergent local copy (I7). An installed service needs
+ * a stable, known port baked into its unit file, so `auto` — valid for the foreground
+ * `kanban serve` — is rejected here.
+ */
+function resolveServiceBindPort(port: RuntimePortOption | undefined): number | undefined {
+	if (!port) {
+		return undefined;
 	}
-	return port;
+	if (port.mode === "auto") {
+		throw new Error("`--port auto` is not supported for `service install`. Pick a fixed port (1-65535).");
+	}
+	return port.value;
 }
 
 /** Collect the TLS passthrough flags into the runtime extra-args list. */
@@ -52,11 +67,11 @@ function buildExtraArgs(options: ServiceInstallOptions): string[] {
 	return extra;
 }
 
-function resolveConfig(options: ServiceInstallOptions): ServiceConfig {
+function resolveConfig(options: ServiceInstallOptions, bind: ServiceBindTarget): ServiceConfig {
 	const cliOptions: ServiceCliOptions = {
 		name: options.name,
-		host: options.host,
-		port: options.port,
+		host: bind.host,
+		port: resolveServiceBindPort(bind.port),
 		// commander stores `--no-passcode` as `passcode === false` and `--passcode <value>` as the string.
 		noPasscode: options.passcode === false,
 		extraArgs: buildExtraArgs(options),
@@ -158,15 +173,18 @@ export function registerServiceCommand(program: Command): void {
 		.command("install")
 		.description("Register the runtime as a background service and enable it at login/boot.")
 		.option("--name <name>", 'Service name (default: "kanban").')
-		.option("--host <ip>", "Host IP the runtime binds to (default: 127.0.0.1).")
-		.option("--port <number>", "Runtime port (1-65535).", parseServicePort)
+		// --host/--port come from the program-level globals (§6.1, shared parser); see the
+		// bind target read via optsWithGlobals() below. --passcode/--no-passcode collapse into
+		// one boolean|string field (I8); prefer `kanban remote passcode set/disable` (P4) for
+		// the persistent case.
 		.option("--passcode <value>", "Use a fixed remote-access passcode (persisted; reused on every restart).")
 		.option("--no-passcode", "Disable the auto-generated remote-access passcode.")
 		.option("--https", "Enable HTTPS (requires --cert and --key).")
 		.option("--cert <path>", "Path to a TLS certificate PEM file.")
 		.option("--key <path>", "Path to a TLS private key PEM file.")
-		.action(async (options: ServiceInstallOptions) => {
-			const config = resolveConfig(options);
+		.action(async function (this: Command, options: ServiceInstallOptions) {
+			const bind = this.optsWithGlobals() as ServiceBindTarget;
+			const config = resolveConfig(options, bind);
 			const remoteWithPasscode = isRemoteServiceConfig(config) && config.passcode;
 			const explicit = typeof options.passcode === "string" ? options.passcode : null;
 			// Persist the passcode before the service boots so the running service reuses it.

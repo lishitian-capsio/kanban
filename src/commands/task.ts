@@ -26,6 +26,8 @@ import {
 import { mutateWorkspaceState } from "../state/workspace-state";
 import { KANBAN_SESSION_TASK_ID_ENV } from "../terminal/hook-runtime-context";
 import { readGitUserIdentity } from "../workspace/git-utils";
+import { readGlobalCliOptions, runCliCommand } from "./cli-command-runner";
+import { CliError } from "./cli-envelope";
 import {
 	createRuntimeTrpcClient,
 	ensureRuntimeWorkspace,
@@ -36,8 +38,6 @@ import {
 	toErrorMessage,
 	updateRuntimeWorkspaceState,
 } from "./runtime-workspace";
-import { runCliCommand } from "./cli-command-runner";
-import { CliError } from "./cli-envelope";
 
 const LIST_TASK_COLUMNS = ["backlog", "in_progress", "review", "trash"] as const;
 type ListTaskColumn = (typeof LIST_TASK_COLUMNS)[number];
@@ -525,9 +525,13 @@ async function updateTaskCommand(input: {
 	const updated = await updateRuntimeWorkspaceState(runtimeClient, workspaceRepoPath, (runtimeState) => {
 		const taskRecord = findTaskRecord(runtimeState, input.taskId);
 		if (!taskRecord) {
-			throw new CliError("task_not_found", `Task "${input.taskId}" was not found in workspace ${workspaceRepoPath}.`, {
-				taskId: input.taskId,
-			});
+			throw new CliError(
+				"task_not_found",
+				`Task "${input.taskId}" was not found in workspace ${workspaceRepoPath}.`,
+				{
+					taskId: input.taskId,
+				},
+			);
 		}
 		const nextTaskKanbanSettings = buildTaskAgentSettingsForUpdate(taskRecord.task.agentSettings, {
 			providerId: input.providerId,
@@ -1057,21 +1061,22 @@ export function registerTaskCommand(program: Command): void {
 	task
 		.command("list")
 		.description("List Kanban tasks for a workspace.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.option(
 			"--column <column>",
 			"Filter column: backlog | in_progress | review | done. trash is also accepted.",
 			parseListColumn,
 		)
-		.action(async (options: { projectPath?: string; column?: ListTaskColumn }) => {
+		.action(async function (this: Command, options: { column?: ListTaskColumn }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"task.list",
 				async () =>
 					await listTasks({
 						cwd: process.cwd(),
-						projectPath: options.projectPath,
+						projectPath: globals.projectPath,
 						column: options.column,
 					}),
+				{ globals },
 			);
 		});
 
@@ -1080,7 +1085,6 @@ export function registerTaskCommand(program: Command): void {
 		.description("Create a task in backlog.")
 		.option("--title <text>", "Task title.")
 		.requiredOption("--prompt <text>", "Task prompt text.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.option("--base-ref <branch>", "Task base branch/ref.")
 		.option("--start-in-plan-mode [value]", "Set plan mode (true|false). Flag-only implies true.")
 		.option("--auto-review-enabled [value]", "Enable auto-review behavior (true|false). Flag-only implies true.")
@@ -1096,11 +1100,11 @@ export function registerTaskCommand(program: Command): void {
 		)
 		.option("--model <id>", 'Model override (e.g. claude-sonnet-4-20250514). Use "default" for workspace default.')
 		.option("--reasoning-effort <level>", "Reasoning effort override: default | low | medium | high | xhigh.")
-		.action(
-			async (options: {
+		.action(async function (
+			this: Command,
+			options: {
 				title?: string;
 				prompt: string;
-				projectPath?: string;
 				baseRef?: string;
 				startInPlanMode?: unknown;
 				autoReviewEnabled?: unknown;
@@ -1110,41 +1114,43 @@ export function registerTaskCommand(program: Command): void {
 				provider?: string;
 				model?: string;
 				reasoningEffort?: string;
-			}) => {
-				// Resolve the new task's default agent at the CLI boundary so `createTask`
-				// stays env-free. When no explicit `--agent-id` is given, fall back to the
-				// agent of the calling session: Kanban injects KANBAN_SESSION_TASK_ID into
-				// every agent subprocess, so a task created by an agent chatting in a home
-				// thread defaults to that same agent. See resolveCreateTaskAgentId for the
-				// precedence (explicit > calling home agent > workspace default at start).
-				const callerSessionId = process.env[KANBAN_SESSION_TASK_ID_ENV]?.trim() || undefined;
-				const resolvedAgentId = resolveCreateTaskAgentId({
-					explicitAgentId: parseAgentId(options.agentId),
-					callerSessionId,
-				});
-				await runCliCommand(
-					"task.create",
-					async () =>
-						await createTask({
-							cwd: process.cwd(),
-							title: options.title,
-							prompt: options.prompt,
-							projectPath: options.projectPath,
-							baseRef: options.baseRef,
-							startInPlanMode: parseOptionalBooleanOption(options.startInPlanMode, "--start-in-plan-mode"),
-							autoReviewEnabled: parseOptionalBooleanOption(options.autoReviewEnabled, "--auto-review-enabled"),
-							autoReviewMode: options.autoReviewMode,
-							owner: parseOwner(options.owner) ?? undefined,
-							agentId: resolvedAgentId,
-							agentSettings: buildTaskAgentSettingsForCreate({
-								providerId: parseOptionalStringOrDefault(options.provider) ?? undefined,
-								modelId: parseOptionalStringOrDefault(options.model) ?? undefined,
-								reasoningEffort: parseTaskReasoningEffort(options.reasoningEffort),
-							}),
-						}),
-				);
 			},
-		);
+		) {
+			const globals = readGlobalCliOptions(this);
+			// Resolve the new task's default agent at the CLI boundary so `createTask`
+			// stays env-free. When no explicit `--agent-id` is given, fall back to the
+			// agent of the calling session: Kanban injects KANBAN_SESSION_TASK_ID into
+			// every agent subprocess, so a task created by an agent chatting in a home
+			// thread defaults to that same agent. See resolveCreateTaskAgentId for the
+			// precedence (explicit > calling home agent > workspace default at start).
+			const callerSessionId = process.env[KANBAN_SESSION_TASK_ID_ENV]?.trim() || undefined;
+			const resolvedAgentId = resolveCreateTaskAgentId({
+				explicitAgentId: parseAgentId(options.agentId),
+				callerSessionId,
+			});
+			await runCliCommand(
+				"task.create",
+				async () =>
+					await createTask({
+						cwd: process.cwd(),
+						title: options.title,
+						prompt: options.prompt,
+						projectPath: globals.projectPath,
+						baseRef: options.baseRef,
+						startInPlanMode: parseOptionalBooleanOption(options.startInPlanMode, "--start-in-plan-mode"),
+						autoReviewEnabled: parseOptionalBooleanOption(options.autoReviewEnabled, "--auto-review-enabled"),
+						autoReviewMode: options.autoReviewMode,
+						owner: parseOwner(options.owner) ?? undefined,
+						agentId: resolvedAgentId,
+						agentSettings: buildTaskAgentSettingsForCreate({
+							providerId: parseOptionalStringOrDefault(options.provider) ?? undefined,
+							modelId: parseOptionalStringOrDefault(options.model) ?? undefined,
+							reasoningEffort: parseTaskReasoningEffort(options.reasoningEffort),
+						}),
+					}),
+				{ globals },
+			);
+		});
 
 	task
 		.command("update")
@@ -1152,7 +1158,6 @@ export function registerTaskCommand(program: Command): void {
 		.requiredOption("--task-id <id>", "Task ID.")
 		.option("--title <text>", "Replacement task title.")
 		.option("--prompt <text>", "Replacement task prompt.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.option("--base-ref <branch>", "Replacement base branch/ref.")
 		.option("--start-in-plan-mode [value]", "Set plan mode (true|false). Flag-only implies true.")
 		.option("--auto-review-enabled [value]", "Enable auto-review behavior (true|false). Flag-only implies true.")
@@ -1171,12 +1176,12 @@ export function registerTaskCommand(program: Command): void {
 			"--reasoning-effort <level>",
 			'Reasoning effort override: default | low | medium | high | xhigh. Use "inherit" to clear.',
 		)
-		.action(
-			async (options: {
+		.action(async function (
+			this: Command,
+			options: {
 				taskId: string;
 				title?: string;
 				prompt?: string;
-				projectPath?: string;
 				baseRef?: string;
 				startInPlanMode?: unknown;
 				autoReviewEnabled?: unknown;
@@ -1186,29 +1191,31 @@ export function registerTaskCommand(program: Command): void {
 				provider?: string;
 				model?: string;
 				reasoningEffort?: string;
-			}) => {
-				await runCliCommand(
-					"task.update",
-					async () =>
-						await updateTaskCommand({
-							cwd: process.cwd(),
-							taskId: options.taskId,
-							title: options.title,
-							projectPath: options.projectPath,
-							prompt: options.prompt,
-							baseRef: options.baseRef,
-							startInPlanMode: parseOptionalBooleanOption(options.startInPlanMode, "--start-in-plan-mode"),
-							autoReviewEnabled: parseOptionalBooleanOption(options.autoReviewEnabled, "--auto-review-enabled"),
-							autoReviewMode: options.autoReviewMode,
-							owner: parseOwner(options.owner),
-							agentId: parseAgentId(options.agentId),
-							providerId: parseOptionalStringOrDefault(options.provider),
-							modelId: parseOptionalStringOrDefault(options.model),
-							reasoningEffort: parseTaskReasoningEffort(options.reasoningEffort),
-						}),
-				);
 			},
-		);
+		) {
+			const globals = readGlobalCliOptions(this);
+			await runCliCommand(
+				"task.update",
+				async () =>
+					await updateTaskCommand({
+						cwd: process.cwd(),
+						taskId: options.taskId,
+						title: options.title,
+						projectPath: globals.projectPath,
+						prompt: options.prompt,
+						baseRef: options.baseRef,
+						startInPlanMode: parseOptionalBooleanOption(options.startInPlanMode, "--start-in-plan-mode"),
+						autoReviewEnabled: parseOptionalBooleanOption(options.autoReviewEnabled, "--auto-review-enabled"),
+						autoReviewMode: options.autoReviewMode,
+						owner: parseOwner(options.owner),
+						agentId: parseAgentId(options.agentId),
+						providerId: parseOptionalStringOrDefault(options.provider),
+						modelId: parseOptionalStringOrDefault(options.model),
+						reasoningEffort: parseTaskReasoningEffort(options.reasoningEffort),
+					}),
+				{ globals },
+			);
+		});
 
 	task
 		.command("trash")
@@ -1220,8 +1227,8 @@ export function registerTaskCommand(program: Command): void {
 			"Column to move to done: backlog | in_progress | review | done. trash is also accepted.",
 			parseListColumn,
 		)
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { taskId?: string; column?: ListTaskColumn; projectPath?: string }) => {
+		.action(async function (this: Command, options: { taskId?: string; column?: ListTaskColumn }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"task.trash",
 				async () =>
@@ -1229,8 +1236,9 @@ export function registerTaskCommand(program: Command): void {
 						cwd: process.cwd(),
 						taskId: options.taskId,
 						column: options.column,
-						projectPath: options.projectPath,
+						projectPath: globals.projectPath,
 					}),
+				{ globals },
 			);
 		});
 
@@ -1243,8 +1251,8 @@ export function registerTaskCommand(program: Command): void {
 			"Column to bulk-delete: backlog | in_progress | review | done. trash is also accepted.",
 			parseListColumn,
 		)
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { taskId?: string; column?: ListTaskColumn; projectPath?: string }) => {
+		.action(async function (this: Command, options: { taskId?: string; column?: ListTaskColumn }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"task.delete",
 				async () =>
@@ -1252,8 +1260,9 @@ export function registerTaskCommand(program: Command): void {
 						cwd: process.cwd(),
 						taskId: options.taskId,
 						column: options.column,
-						projectPath: options.projectPath,
+						projectPath: globals.projectPath,
 					}),
+				{ globals },
 			);
 		});
 
@@ -1262,7 +1271,6 @@ export function registerTaskCommand(program: Command): void {
 		.description("Link two tasks so one task waits on another.")
 		.requiredOption("--task-id <id>", "One of the two task IDs to link.")
 		.requiredOption("--linked-task-id <id>", "The other task ID to link.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.addHelpText(
 			"after",
 			[
@@ -1279,7 +1287,8 @@ export function registerTaskCommand(program: Command): void {
 				"",
 			].join("\n"),
 		)
-		.action(async (options: { taskId: string; linkedTaskId: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { taskId: string; linkedTaskId: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"task.link",
 				async () =>
@@ -1287,8 +1296,9 @@ export function registerTaskCommand(program: Command): void {
 						cwd: process.cwd(),
 						taskId: options.taskId,
 						linkedTaskId: options.linkedTaskId,
-						projectPath: options.projectPath,
+						projectPath: globals.projectPath,
 					}),
+				{ globals },
 			);
 		});
 
@@ -1296,16 +1306,17 @@ export function registerTaskCommand(program: Command): void {
 		.command("unlink")
 		.description("Remove an existing dependency link.")
 		.requiredOption("--dependency-id <id>", "Dependency ID.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { dependencyId: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { dependencyId: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"task.unlink",
 				async () =>
 					await unlinkTasks({
 						cwd: process.cwd(),
 						dependencyId: options.dependencyId,
-						projectPath: options.projectPath,
+						projectPath: globals.projectPath,
 					}),
+				{ globals },
 			);
 		});
 
@@ -1313,16 +1324,17 @@ export function registerTaskCommand(program: Command): void {
 		.command("start")
 		.description("Start a task session and move task to in_progress.")
 		.requiredOption("--task-id <id>", "Task ID.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { taskId: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { taskId: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"task.start",
 				async () =>
 					await startTask({
 						cwd: process.cwd(),
 						taskId: options.taskId,
-						projectPath: options.projectPath,
+						projectPath: globals.projectPath,
 					}),
+				{ globals },
 			);
 		});
 }

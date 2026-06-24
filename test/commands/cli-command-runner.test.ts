@@ -1,17 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { CliError } from "../../src/commands/cli-envelope";
 import { runCliCommand } from "../../src/commands/cli-command-runner";
+import { CliError } from "../../src/commands/cli-envelope";
 
 function captureStdout(): { output: () => string; restore: () => void } {
 	let buffer = "";
 	const original = process.stdout.write.bind(process.stdout);
-	const spy = vi
-		.spyOn(process.stdout, "write")
-		.mockImplementation((chunk: string | Uint8Array): boolean => {
-			buffer += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
-			return true;
-		});
+	const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array): boolean => {
+		buffer += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+		return true;
+	});
 	return {
 		output: () => buffer,
 		restore: () => {
@@ -122,5 +119,55 @@ describe("runCliCommand human mode", () => {
 		const text = capture.output().trim();
 		expect(() => JSON.parse(text)).toThrow();
 		expect(text.length).toBeGreaterThan(0);
+	});
+});
+
+describe("runCliCommand global flags (P1)", () => {
+	beforeEach(() => {
+		process.exitCode = undefined;
+	});
+	afterEach(() => {
+		delete process.env.KANBAN_OUTPUT;
+		process.exitCode = undefined;
+	});
+
+	it("globals.json forces machine output even when KANBAN_OUTPUT=human", async () => {
+		process.env.KANBAN_OUTPUT = "human";
+		const capture = captureStdout();
+		try {
+			await runCliCommand("task.list", async () => ({ ok: true, count: 0, tasks: [] }), {
+				globals: { json: true, human: false, color: true, quiet: false },
+			});
+		} finally {
+			capture.restore();
+		}
+		expect(JSON.parse(capture.output())).toMatchObject({ ok: true, command: "task.list" });
+	});
+
+	it("globals.human forces human output even when KANBAN_OUTPUT=json", async () => {
+		process.env.KANBAN_OUTPUT = "json";
+		const capture = captureStdout();
+		try {
+			await runCliCommand("task.list", async () => ({ ok: true, count: 0, tasks: [] }), {
+				globals: { json: false, human: true, color: true, quiet: false },
+			});
+		} finally {
+			capture.restore();
+		}
+		expect(() => JSON.parse(capture.output().trim())).toThrow();
+	});
+
+	it("globals.color=false suppresses ANSI escapes in human output", async () => {
+		process.env.KANBAN_OUTPUT = "human";
+		const capture = captureStdout();
+		try {
+			await runCliCommand("task.list", async () => ({ ok: true, count: 2, tasks: [] }), {
+				globals: { json: false, human: true, color: false, quiet: false },
+			});
+		} finally {
+			capture.restore();
+		}
+		// No ANSI CSI escape (ESC + "[") should appear when color is disabled.
+		expect(capture.output()).not.toContain("\u001b[");
 	});
 });

@@ -14,6 +14,7 @@ import {
 	isKanbanRuntimeHttps,
 	isLoopbackHost,
 	isWildcardBindHost,
+	parseCliPortOption,
 	parseRuntimePort,
 	setKanbanRuntimeHost,
 	setKanbanRuntimePort,
@@ -80,6 +81,22 @@ describe("runtime-endpoint", () => {
 		expect(() => parseRuntimePort("0")).toThrow(/Invalid KANBAN_RUNTIME_PORT value/);
 		expect(() => parseRuntimePort("70000")).toThrow(/Invalid KANBAN_RUNTIME_PORT value/);
 		expect(() => parseRuntimePort("abc")).toThrow(/Invalid KANBAN_RUNTIME_PORT value/);
+	});
+
+	// The single `--port` parser shared by the root `serve` command and `service install`
+	// (design doc §6.1 / I7). The shared behavior is what makes both surfaces consistent.
+	it("parseCliPortOption parses a fixed port and the auto sentinel", () => {
+		expect(parseCliPortOption("4100")).toEqual({ mode: "fixed", value: 4100 });
+		expect(parseCliPortOption("auto")).toEqual({ mode: "auto" });
+		expect(parseCliPortOption("AUTO")).toEqual({ mode: "auto" });
+		expect(parseCliPortOption("  auto ")).toEqual({ mode: "auto" });
+	});
+
+	it("parseCliPortOption rejects non-numeric / out-of-range values", () => {
+		expect(() => parseCliPortOption("abc")).toThrow(/Invalid port value/);
+		expect(() => parseCliPortOption("0")).toThrow(/Invalid port value/);
+		expect(() => parseCliPortOption("70000")).toThrow(/Invalid port value/);
+		expect(() => parseCliPortOption("")).toThrow(/Missing value for --port/);
 	});
 
 	it("updates runtime url builders when port changes", () => {

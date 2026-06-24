@@ -7,13 +7,13 @@ import { Command, CommanderError, Option } from "commander";
 import ora, { type Ora } from "ora";
 import packageJson from "../package.json" with { type: "json" };
 import { printLine } from "./cli-output";
+import { CLI_EXIT_USAGE_ERROR } from "./commands/cli-envelope";
 import { registerDbCommand } from "./commands/db";
 import { registerFileCommand } from "./commands/file";
 import { registerHooksCommand } from "./commands/hooks";
 import { registerPasscodeCommand } from "./commands/passcode";
 import { registerServiceCommand } from "./commands/service";
 import { registerTaskCommand } from "./commands/task";
-import { CLI_EXIT_USAGE_ERROR } from "./commands/cli-envelope";
 import { registerVaultCommand } from "./commands/vault";
 import { buildSubprocessProxyEnv, installProxyFetch } from "./config/proxy-fetch";
 import { loadGlobalRuntimeConfig, loadRuntimeConfig } from "./config/runtime-config";
@@ -32,7 +32,8 @@ import {
 	getKanbanRuntimePort,
 	getRuntimeFetch,
 	isKanbanRemoteHost,
-	parseRuntimePort,
+	parseCliPortOption,
+	type RuntimePortOption,
 	setKanbanRuntimeHost,
 	setKanbanRuntimePort,
 	setKanbanRuntimeTls,
@@ -53,7 +54,7 @@ interface CliOptions {
 	noOpen: boolean;
 	skipShutdownCleanup: boolean;
 	host: string | null;
-	port: { mode: "fixed"; value: number } | { mode: "auto" } | null;
+	port: RuntimePortOption | null;
 	https: boolean;
 	cert: string | null;
 	key: string | null;
@@ -64,24 +65,9 @@ interface CliOptions {
 
 const KANBAN_VERSION = typeof packageJson.version === "string" ? packageJson.version : "0.1.0";
 
-function parseCliPortValue(rawValue: string): { mode: "fixed"; value: number } | { mode: "auto" } {
-	const normalized = rawValue.trim().toLowerCase();
-	if (!normalized) {
-		throw new Error("Missing value for --port.");
-	}
-	if (normalized === "auto") {
-		return { mode: "auto" };
-	}
-	try {
-		return { mode: "fixed", value: parseRuntimePort(normalized) };
-	} catch {
-		throw new Error(`Invalid port value: ${rawValue}. Expected an integer from 1-65535 or "auto".`);
-	}
-}
-
 interface RootCommandOptions {
 	host?: string;
-	port?: { mode: "fixed"; value: number } | { mode: "auto" };
+	port?: RuntimePortOption;
 	open?: boolean;
 	skipShutdownCleanup?: boolean;
 	update?: boolean;
@@ -107,8 +93,30 @@ interface ShutdownIndicator {
  * unexpected argument is treated as a command-style invocation instead.
  */
 function shouldAutoOpenBrowserTabForInvocation(argv: string[]): boolean {
-	const launchFlags = new Set(["--open", "--no-open", "--skip-shutdown-cleanup", "--https", "--no-passcode"]);
-	const launchOptionsWithValues = new Set(["--host", "--port", "--agent", "--cert", "--key", "--passcode"]);
+	// Program-level global flags (§6.1) are valid on the bare `serve` invocation too — they
+	// must not flip this into "command-style" (which would make `run()` exit after parse and
+	// kill the just-started server). `--json`/`--human`/`--quiet`/`--no-color` are inert for
+	// serve but harmless; `--project-path` is ignored by serve (it uses cwd) but still a launch shape.
+	const launchFlags = new Set([
+		"--open",
+		"--no-open",
+		"--skip-shutdown-cleanup",
+		"--https",
+		"--no-passcode",
+		"--json",
+		"--human",
+		"--no-color",
+		"--quiet",
+	]);
+	const launchOptionsWithValues = new Set([
+		"--host",
+		"--port",
+		"--agent",
+		"--cert",
+		"--key",
+		"--passcode",
+		"--project-path",
+	]);
 
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
@@ -744,19 +752,32 @@ function createProgram(invocationArgs: string[]): Command {
 		.name("kanban")
 		.description("Local orchestration board for coding agents.")
 		.version(KANBAN_VERSION, "-v, --version", "Output the version number")
+		// Global flags (design doc §6.1), declared once at program level and read by
+		// subcommand actions via `this.optsWithGlobals()`. `--project-path` replaces the
+		// per-command boilerplate (I6); `--host`/`--port` share one parser with `service
+		// install` (I7). Commander inherits these into every subcommand, so old invocations
+		// like `kanban task list --project-path X` keep working unchanged (§8).
+		.option("--project-path <path>", "Workspace to operate on. Defaults to the current directory workspace.")
 		.option("--host <ip>", "Host IP to bind the server to (default: 127.0.0.1).")
-		.option("--port <number|auto>", "Runtime port (1-65535) or auto.", parseCliPortValue)
+		.option("--port <number|auto>", "Runtime port (1-65535) or auto.", parseCliPortOption)
 		.option("--json", "Emit machine-readable JSON output (overrides KANBAN_OUTPUT and TTY detection).")
 		.option("--human", "Force human-readable output even when piped (escape hatch for KANBAN_OUTPUT/auto).")
+		.option("--no-color", "Disable ANSI color in human output (also honored via NO_COLOR).")
+		.option("--quiet", "Suppress the human summary footer / spinners (no effect on --json).")
 		.option("--no-open", "Do not open browser automatically.")
 		.option("--skip-shutdown-cleanup", "Do not move sessions to done or delete task worktrees on shutdown.")
 		.option("--https", "Enable HTTPS. Requires both --cert and --key.")
 		.option("--cert <path>", "Path to a TLS certificate PEM file (implies HTTPS).")
 		.option("--key <path>", "Path to a TLS private key PEM file (implies HTTPS).")
 		.option("--update", "Update Kanban to the latest published version and exit.")
+		// `--passcode <value>` and `--no-passcode` collapse into one commander field typed
+		// `boolean | string` (I8): `--no-passcode` ⇒ `false`, `--passcode <value>` ⇒ the
+		// string. Kept on `serve` (and `service install`) as a launch-time override; for the
+		// persistent case prefer `kanban remote passcode set/disable` (P4) so these flags stay
+		// rarely-needed (design doc §6.1).
 		.option(
 			"--passcode <value>",
-			"Use a fixed remote-access passcode (persisted; overrides any saved/generated one). Also reads KANBAN_PASSCODE.",
+			"Use a fixed remote-access passcode (persisted; overrides any saved/generated one). Also reads KANBAN_PASSCODE. For a persistent passcode prefer `kanban remote passcode set`.",
 		)
 		.option(
 			"--no-passcode",

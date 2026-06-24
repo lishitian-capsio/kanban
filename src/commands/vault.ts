@@ -6,8 +6,8 @@ import type { RuntimeVaultDocument, RuntimeVaultFrontmatterValue } from "../core
 import { VaultDocumentStore } from "../vault/vault-document-store";
 import { VaultTypeRegistry } from "../vault/vault-type-registry";
 import type { VaultTypeDefinition } from "../vault/vault-types";
+import { readGlobalCliOptions, runCliCommand } from "./cli-command-runner";
 import { createRuntimeTrpcClient, type JsonRecord, resolveRuntimeWorkspace } from "./runtime-workspace";
-import { runCliCommand } from "./cli-command-runner";
 
 function formatDocumentRecord(doc: RuntimeVaultDocument): JsonRecord {
 	return {
@@ -222,11 +222,12 @@ export function registerVaultCommand(program: Command): void {
 	type
 		.command("list")
 		.description("List document types as a light index (name + description + metadata, no authoring prompt).")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { projectPath?: string }) => {
+		.action(async function (this: Command) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"vault.type.list",
-				async () => await listTypes({ cwd: process.cwd(), projectPath: options.projectPath }),
+				async () => await listTypes({ cwd: process.cwd(), projectPath: globals.projectPath }),
+				{ globals },
 			);
 		});
 
@@ -234,11 +235,12 @@ export function registerVaultCommand(program: Command): void {
 		.command("show")
 		.description("Show a type's full definition: metadata + the self-governing authoring prompt (body).")
 		.requiredOption("--type <type>", "Type id (e.g. requirement).")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { type: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { type: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"vault.type.show",
-				async () => await showType({ cwd: process.cwd(), type: options.type, projectPath: options.projectPath }),
+				async () => await showType({ cwd: process.cwd(), type: options.type, projectPath: globals.projectPath }),
+				{ globals },
 			);
 		});
 
@@ -247,23 +249,25 @@ export function registerVaultCommand(program: Command): void {
 	doc.command("list")
 		.description("List vault documents, optionally filtered by type.")
 		.option("--type <type>", "Filter by document type (e.g. requirement).")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { type?: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { type?: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"vault.doc.list",
 				async () =>
-					await listDocuments({ cwd: process.cwd(), type: options.type, projectPath: options.projectPath }),
+					await listDocuments({ cwd: process.cwd(), type: options.type, projectPath: globals.projectPath }),
+				{ globals },
 			);
 		});
 
 	doc.command("show")
 		.description("Show a single vault document (frontmatter + body).")
 		.requiredOption("--id <id>", "Document ID.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { id: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { id: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"vault.doc.show",
-				async () => await showDocument({ cwd: process.cwd(), id: options.id, projectPath: options.projectPath }),
+				async () => await showDocument({ cwd: process.cwd(), id: options.id, projectPath: globals.projectPath }),
+				{ globals },
 			);
 		});
 
@@ -274,31 +278,32 @@ export function registerVaultCommand(program: Command): void {
 		.option("--body <text>", "Markdown body text.")
 		.option("--body-file <path>", "Read the markdown body from a local file.")
 		.option("--set <key=value>", "Set a frontmatter field. Repeatable.", collectSet, [])
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(
-			async (options: {
+		.action(async function (
+			this: Command,
+			options: {
 				type: string;
 				title: string;
 				body?: string;
 				bodyFile?: string;
 				set?: string[];
-				projectPath?: string;
-			}) => {
-				await runCliCommand(
-					"vault.doc.create",
-					async () =>
-						await createDocument({
-							cwd: process.cwd(),
-							type: options.type,
-							title: options.title,
-							body: options.body,
-							bodyFile: options.bodyFile,
-							set: options.set,
-							projectPath: options.projectPath,
-						}),
-				);
 			},
-		);
+		) {
+			const globals = readGlobalCliOptions(this);
+			await runCliCommand(
+				"vault.doc.create",
+				async () =>
+					await createDocument({
+						cwd: process.cwd(),
+						type: options.type,
+						title: options.title,
+						body: options.body,
+						bodyFile: options.bodyFile,
+						set: options.set,
+						projectPath: globals.projectPath,
+					}),
+				{ globals },
+			);
+		});
 
 	doc.command("update")
 		.description("Update a vault document (omitted fields are left unchanged).")
@@ -307,40 +312,42 @@ export function registerVaultCommand(program: Command): void {
 		.option("--body <text>", "Replace the markdown body text.")
 		.option("--body-file <path>", "Replace the markdown body from a local file.")
 		.option("--set <key=value>", "Set a frontmatter field. Repeatable.", collectSet, [])
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(
-			async (options: {
+		.action(async function (
+			this: Command,
+			options: {
 				id: string;
 				title?: string;
 				body?: string;
 				bodyFile?: string;
 				set?: string[];
-				projectPath?: string;
-			}) => {
-				await runCliCommand(
-					"vault.doc.update",
-					async () =>
-						await updateDocument({
-							cwd: process.cwd(),
-							id: options.id,
-							title: options.title,
-							body: options.body,
-							bodyFile: options.bodyFile,
-							set: options.set,
-							projectPath: options.projectPath,
-						}),
-				);
 			},
-		);
+		) {
+			const globals = readGlobalCliOptions(this);
+			await runCliCommand(
+				"vault.doc.update",
+				async () =>
+					await updateDocument({
+						cwd: process.cwd(),
+						id: options.id,
+						title: options.title,
+						body: options.body,
+						bodyFile: options.bodyFile,
+						set: options.set,
+						projectPath: globals.projectPath,
+					}),
+				{ globals },
+			);
+		});
 
 	doc.command("delete")
 		.description("Delete a vault document.")
 		.requiredOption("--id <id>", "Document ID.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { id: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { id: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"vault.doc.delete",
-				async () => await deleteDocument({ cwd: process.cwd(), id: options.id, projectPath: options.projectPath }),
+				async () => await deleteDocument({ cwd: process.cwd(), id: options.id, projectPath: globals.projectPath }),
+				{ globals },
 			);
 		});
 }

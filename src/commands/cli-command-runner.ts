@@ -12,30 +12,78 @@
  * payload with a blanket `exitCode = 1`.
  */
 
-import { printHumanResult } from "../cli-output";
-import { shouldUseColor } from "../cli-output";
+import type { Command } from "commander";
+import { printHumanResult, shouldUseColor } from "../cli-output";
 import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import {
-	type CliEnvelope,
-	type CliWarning,
 	buildFailureEnvelope,
 	buildSuccessEnvelope,
+	type CliEnvelope,
+	type CliWarning,
 	classifyError,
 	exitCodeForErrorCode,
 	resolveOutputMode,
 } from "./cli-envelope";
 
+/**
+ * The program-level global flags (design doc §6.1), resolved for a single subcommand
+ * invocation. Declared once on the root program and inherited by every subcommand; an
+ * action reads them via {@link readGlobalCliOptions} rather than re-declaring per command.
+ */
+export interface GlobalCliOptions {
+	/** `--project-path <path>` — workspace to operate on (undefined ⇒ cwd workspace). */
+	projectPath?: string;
+	/** `--json` — force machine output. */
+	json: boolean;
+	/** `--human` — force human output even when piped. */
+	human: boolean;
+	/** `--color` / `--no-color` (commander stores `--no-color` as `color === false`). */
+	color: boolean;
+	/** `--quiet` — suppress the human summary footer / spinners (no effect on `--json`). */
+	quiet: boolean;
+}
+
+/**
+ * Read the program-level global flags merged onto a subcommand via commander's
+ * `optsWithGlobals()`.
+ *
+ * MUST be called from an action declared as a regular `function` (so `this` is the
+ * Command), not an arrow. This is the documented commander gotcha (AGENTS.md): a value
+ * passed *after* the subcommand (`kanban task list --project-path X`) routes to the
+ * declaring ancestor, so the action's own `options` arg would miss it — only the merged
+ * `optsWithGlobals()` view sees it regardless of position.
+ */
+export function readGlobalCliOptions(command: Command): GlobalCliOptions {
+	const merged = command.optsWithGlobals() as {
+		projectPath?: unknown;
+		json?: unknown;
+		human?: unknown;
+		color?: unknown;
+		quiet?: unknown;
+	};
+	return {
+		projectPath: typeof merged.projectPath === "string" ? merged.projectPath : undefined,
+		json: merged.json === true,
+		human: merged.human === true,
+		// commander defaults `--no-color`'s `color` to `true`; only an explicit `--no-color` flips it.
+		color: merged.color !== false,
+		quiet: merged.quiet === true,
+	};
+}
+
 export interface RunCliCommandOptions {
-	/** Machine-stable advisories surfaced in the success envelope and (TODO P4) human footer. */
+	/** Machine-stable advisories surfaced in the success envelope and (TODO P5) human footer. */
 	warnings?: CliWarning[];
-	/** Argv to scan for `--json` / `--human` (defaults to `process.argv`). */
+	/** Resolved program-level global flags (§6.1) from {@link readGlobalCliOptions}. */
+	globals?: GlobalCliOptions;
+	/** Argv to scan for `--json` / `--human` when {@link globals} is absent (defaults to `process.argv`). */
 	argv?: string[];
 }
 
 /**
- * P0-interim flag detection. The global `--json` / `--human` options are declared once at
- * program level in phase P1 (read via `optsWithGlobals()`); until then we scan argv so the
- * flags work today without per-command plumbing.
+ * Fallback flag detection for callers that do not pass resolved {@link GlobalCliOptions}
+ * (e.g. unit tests, or any seam not yet plumbed through `optsWithGlobals()`). When globals
+ * are available they take precedence — see {@link runCliCommand}.
  */
 export function detectOutputModeFlags(argv: string[]): { jsonFlag: boolean; humanFlag: boolean } {
 	return {
@@ -74,14 +122,16 @@ function commandFamilyLabel(commandId: string): string {
 	}
 }
 
-function emit(envelope: CliEnvelope, mode: "json" | "human"): void {
+function emit(envelope: CliEnvelope, mode: "json" | "human", globals?: GlobalCliOptions): void {
 	if (mode === "json") {
 		// Exactly one JSON document on stdout — keep it pretty (matches the prior `printJson`
 		// output) and `JSON.parse`-able. Never interleave anything else here.
 		process.stdout.write(`${JSON.stringify(envelope, null, 2)}\n`);
 		return;
 	}
-	const useColor = shouldUseColor();
+	// `--no-color` (globals.color === false) forces color off; otherwise fall back to
+	// TTY/NO_COLOR detection in `shouldUseColor`.
+	const useColor = shouldUseColor(globals ? globals.color === false : false);
 	if (envelope.ok) {
 		printHumanResult({ ok: true, command: envelope.command, data: envelope.data, useColor });
 		return;
@@ -100,19 +150,23 @@ export async function runCliCommand(
 	handler: () => Promise<Record<string, unknown>>,
 	options: RunCliCommandOptions = {},
 ): Promise<void> {
+	// Resolved global flags (§6.1) take precedence; fall back to scanning argv for callers
+	// not yet plumbed through `optsWithGlobals()` (e.g. unit tests).
+	const argvFlags = detectOutputModeFlags(options.argv ?? process.argv);
 	const mode = resolveOutputMode({
-		...detectOutputModeFlags(options.argv ?? process.argv),
+		jsonFlag: options.globals?.json ?? argvFlags.jsonFlag,
+		humanFlag: options.globals?.human ?? argvFlags.humanFlag,
 		envValue: process.env.KANBAN_OUTPUT,
 		stdoutIsTTY: Boolean(process.stdout?.isTTY),
 	});
 
 	try {
 		const result = await handler();
-		emit(buildSuccessEnvelope(commandId, toEnvelopeData(result), options.warnings), mode);
+		emit(buildSuccessEnvelope(commandId, toEnvelopeData(result), options.warnings), mode, options.globals);
 	} catch (error) {
 		const classified = classifyError(error);
 		const legacyMirror = `${commandFamilyLabel(commandId)} command failed at ${getKanbanRuntimeOrigin()}: ${classified.message}`;
-		emit(buildFailureEnvelope(commandId, classified, legacyMirror), mode);
+		emit(buildFailureEnvelope(commandId, classified, legacyMirror), mode, options.globals);
 		process.exitCode = exitCodeForErrorCode(classified.code);
 	}
 }

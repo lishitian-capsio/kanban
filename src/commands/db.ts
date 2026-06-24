@@ -1,13 +1,14 @@
 import type { Command } from "commander";
 
 import type { RuntimeDbConnectionAddRequest, RuntimeDbEngine, RuntimeDbSslConfig } from "../core/api-contract";
+import { readGlobalCliOptions, runCliCommand } from "./cli-command-runner";
+import { CliError } from "./cli-envelope";
 import {
 	createRuntimeTrpcClient,
 	ensureRuntimeWorkspace,
 	type JsonRecord,
 	resolveWorkspaceRepoPath,
 } from "./runtime-workspace";
-import { runCliCommand } from "./cli-command-runner";
 
 const VALID_ENGINES: readonly RuntimeDbEngine[] = ["postgres", "mysql", "sqlite"];
 const VALID_SSL_MODES: ReadonlyArray<RuntimeDbSslConfig["mode"]> = ["disable", "require", "verify-ca", "verify-full"];
@@ -26,6 +27,32 @@ function parsePort(value: string): number {
 		throw new Error(`Invalid --port "${value}". Expected a positive integer.`);
 	}
 	return port;
+}
+
+/**
+ * Normalize the database `--port` for `db connection add`.
+ *
+ * The program-level global `--port <number|auto>` (parsed by `parseCliPortOption`) shadows
+ * this command's own `--port` — commander routes a re-declared option to the ancestor that
+ * also declares it (AGENTS.md), so the value reaches the action as a `RuntimePortOption`
+ * union via `optsWithGlobals()` rather than this command's plain `number`. Collapse it back
+ * to a numeric port; `auto` is meaningless for a database connection and is rejected.
+ */
+function resolveDbConnectionPort(raw: unknown): number | undefined {
+	if (raw === undefined || raw === null) {
+		return undefined;
+	}
+	if (typeof raw === "number") {
+		return raw;
+	}
+	if (typeof raw === "object" && "mode" in (raw as Record<string, unknown>)) {
+		const option = raw as { mode: string; value?: number };
+		if (option.mode === "fixed" && typeof option.value === "number") {
+			return option.value;
+		}
+		throw new CliError("invalid_argument", "`--port auto` is not a valid database port; pass a numeric port.");
+	}
+	return undefined;
 }
 
 function parseSslMode(value: string): RuntimeDbSslConfig["mode"] {
@@ -238,11 +265,12 @@ export function registerDbCommand(program: Command): void {
 	connection
 		.command("list")
 		.description("List database connections registered for a workspace.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { projectPath?: string }) => {
+		.action(async function (this: Command) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"db.connection.list",
-				async () => await listConnections({ cwd: process.cwd(), projectPath: options.projectPath }),
+				async () => await listConnections({ cwd: process.cwd(), projectPath: globals.projectPath }),
+				{ globals },
 			);
 		});
 
@@ -263,14 +291,12 @@ export function registerDbCommand(program: Command): void {
 		.option("--password <secret>", "Connection password (stored machine-locally, never committed).")
 		.option("--ssl-key-pem <pem>", "Client SSL key PEM (stored machine-locally, never committed).")
 		.option("--ssl-cert-pem <pem>", "Client SSL cert PEM (stored machine-locally, never committed).")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(
-			async (options: {
+		.action(async function (
+			this: Command,
+			options: {
 				label: string;
 				engine: RuntimeDbEngine;
 				id?: string;
-				host?: string;
-				port?: number;
 				database?: string;
 				user?: string;
 				filePath?: string;
@@ -280,47 +306,53 @@ export function registerDbCommand(program: Command): void {
 				password?: string;
 				sslKeyPem?: string;
 				sslCertPem?: string;
-				projectPath?: string;
-			}) => {
-				await runCliCommand(
-					"db.connection.add",
-					async () =>
-						await addConnection({
-							cwd: process.cwd(),
-							projectPath: options.projectPath,
-							id: options.id,
-							label: options.label,
-							engine: options.engine,
-							host: options.host,
-							port: options.port,
-							database: options.database,
-							user: options.user,
-							filePath: options.filePath,
-							ssl: buildSslConfig({ sslMode: options.sslMode, sslCa: options.sslCa }),
-							allowWrites: parseBooleanFlag(options.allowWrites, "--allow-writes"),
-							password: options.password,
-							sslKeyPem: options.sslKeyPem,
-							sslCertPem: options.sslCertPem,
-						}),
-				);
 			},
-		);
+		) {
+			const globals = readGlobalCliOptions(this);
+			// `--host`/`--port` here are the DATABASE host/port. They collide with the
+			// program-level runtime globals of the same name, so commander routes them to
+			// the globals — read both from the merged view (port normalized back to a number).
+			const merged = this.optsWithGlobals() as { host?: string; port?: unknown };
+			await runCliCommand(
+				"db.connection.add",
+				async () =>
+					await addConnection({
+						cwd: process.cwd(),
+						projectPath: globals.projectPath,
+						id: options.id,
+						label: options.label,
+						engine: options.engine,
+						host: merged.host,
+						port: resolveDbConnectionPort(merged.port),
+						database: options.database,
+						user: options.user,
+						filePath: options.filePath,
+						ssl: buildSslConfig({ sslMode: options.sslMode, sslCa: options.sslCa }),
+						allowWrites: parseBooleanFlag(options.allowWrites, "--allow-writes"),
+						password: options.password,
+						sslKeyPem: options.sslKeyPem,
+						sslCertPem: options.sslCertPem,
+					}),
+				{ globals },
+			);
+		});
 
 	connection
 		.command("remove")
 		.alias("rm")
 		.description("Remove a database connection and delete its machine-local secret.")
 		.requiredOption("--connection <id>", "Connection id to remove.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { connection: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { connection: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"db.connection.remove",
 				async () =>
 					await removeConnection({
 						cwd: process.cwd(),
-						projectPath: options.projectPath,
+						projectPath: globals.projectPath,
 						connId: options.connection,
 					}),
+				{ globals },
 			);
 		});
 
@@ -328,16 +360,17 @@ export function registerDbCommand(program: Command): void {
 		.command("test")
 		.description("Test connectivity for a registered database connection.")
 		.requiredOption("--connection <id>", "Connection id to test.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { connection: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { connection: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"db.connection.test",
 				async () =>
 					await testConnection({
 						cwd: process.cwd(),
-						projectPath: options.projectPath,
+						projectPath: globals.projectPath,
 						connId: options.connection,
 					}),
+				{ globals },
 			);
 		});
 
@@ -345,17 +378,18 @@ export function registerDbCommand(program: Command): void {
 		.description("List tables/views for a connection (schema introspection).")
 		.requiredOption("--connection <id>", "Connection id.")
 		.option("--schema <schema>", "Filter to a single schema (case-insensitive).")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (options: { connection: string; schema?: string; projectPath?: string }) => {
+		.action(async function (this: Command, options: { connection: string; schema?: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"db.tables",
 				async () =>
 					await listTables({
 						cwd: process.cwd(),
-						projectPath: options.projectPath,
+						projectPath: globals.projectPath,
 						connId: options.connection,
 						schema: options.schema,
 					}),
+				{ globals },
 			);
 		});
 
@@ -364,18 +398,19 @@ export function registerDbCommand(program: Command): void {
 		.description("Show the column structure of a table/view.")
 		.requiredOption("--connection <id>", "Connection id.")
 		.option("--schema <schema>", "Schema qualifier (case-insensitive).")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(async (table: string, options: { connection: string; schema?: string; projectPath?: string }) => {
+		.action(async function (this: Command, table: string, options: { connection: string; schema?: string }) {
+			const globals = readGlobalCliOptions(this);
 			await runCliCommand(
 				"db.describe",
 				async () =>
 					await describeTable({
 						cwd: process.cwd(),
-						projectPath: options.projectPath,
+						projectPath: globals.projectPath,
 						connId: options.connection,
 						table,
 						schema: options.schema,
 					}),
+				{ globals },
 			);
 		});
 
@@ -389,27 +424,27 @@ export function registerDbCommand(program: Command): void {
 		.requiredOption("--schema <schema>", "Schema/namespace the table lives in.")
 		.option("--page-size <n>", "Rows per page (clamped by the core row cap).", parsePort)
 		.option("--cursor <token>", "Opaque next-page cursor returned by a prior browse.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(
-			async (
-				table: string,
-				options: { connection: string; schema: string; pageSize?: number; cursor?: string; projectPath?: string },
-			) => {
-				await runCliCommand(
-					"db.browse",
-					async () =>
-						await browseTable({
-							cwd: process.cwd(),
-							projectPath: options.projectPath,
-							connId: options.connection,
-							table,
-							schema: options.schema,
-							pageSize: options.pageSize,
-							cursor: options.cursor,
-						}),
-				);
-			},
-		);
+		.action(async function (
+			this: Command,
+			table: string,
+			options: { connection: string; schema: string; pageSize?: number; cursor?: string },
+		) {
+			const globals = readGlobalCliOptions(this);
+			await runCliCommand(
+				"db.browse",
+				async () =>
+					await browseTable({
+						cwd: process.cwd(),
+						projectPath: globals.projectPath,
+						connId: options.connection,
+						table,
+						schema: options.schema,
+						pageSize: options.pageSize,
+						cursor: options.cursor,
+					}),
+				{ globals },
+			);
+		});
 
 	db.command("query")
 		.argument("<sql>", "SQL statement to execute.")
@@ -419,24 +454,24 @@ export function registerDbCommand(program: Command): void {
 		.requiredOption("--connection <id>", "Connection id.")
 		.option("--page-size <n>", "Rows per page for reads (clamped by the core row cap).", parsePort)
 		.option("--cursor <token>", "Opaque next-page cursor returned by a prior query.")
-		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
-		.action(
-			async (
-				sql: string,
-				options: { connection: string; pageSize?: number; cursor?: string; projectPath?: string },
-			) => {
-				await runCliCommand(
-					"db.query",
-					async () =>
-						await runQuery({
-							cwd: process.cwd(),
-							projectPath: options.projectPath,
-							connId: options.connection,
-							sql,
-							pageSize: options.pageSize,
-							cursor: options.cursor,
-						}),
-				);
-			},
-		);
+		.action(async function (
+			this: Command,
+			sql: string,
+			options: { connection: string; pageSize?: number; cursor?: string },
+		) {
+			const globals = readGlobalCliOptions(this);
+			await runCliCommand(
+				"db.query",
+				async () =>
+					await runQuery({
+						cwd: process.cwd(),
+						projectPath: globals.projectPath,
+						connId: options.connection,
+						sql,
+						pageSize: options.pageSize,
+						cursor: options.cursor,
+					}),
+				{ globals },
+			);
+		});
 }
