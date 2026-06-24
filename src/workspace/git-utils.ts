@@ -12,6 +12,12 @@ interface GitCommandResult {
 	output: string;
 	error: string | null;
 	exitCode: number;
+	/**
+	 * True when the invocation was killed by the `timeoutMs` wall-clock cap rather than
+	 * exiting on its own. Lets callers distinguish "remote unreachable / stalled" from an
+	 * ordinary non-zero git exit and surface a clearer message.
+	 */
+	timedOut: boolean;
 }
 
 export interface RunGitOptions {
@@ -58,6 +64,7 @@ export async function runGit(cwd: string, args: string[], options: RunGitOptions
 			output: [normalizedStdout, normalizedStderr].filter(Boolean).join("\n"),
 			error: null,
 			exitCode: 0,
+			timedOut: false,
 		};
 	} catch (error) {
 		const candidate = error as {
@@ -65,6 +72,8 @@ export async function runGit(cwd: string, args: string[], options: RunGitOptions
 			stdout?: unknown;
 			stderr?: unknown;
 			message?: unknown;
+			killed?: boolean;
+			signal?: string;
 		};
 		const rawStdout = String(candidate.stdout ?? "");
 		const stdout = options.trimStdout === false ? rawStdout : rawStdout.trim();
@@ -81,6 +90,8 @@ export async function runGit(cwd: string, args: string[], options: RunGitOptions
 			output: [stdout, stderr].filter(Boolean).join("\n"),
 			error: errorMessage,
 			exitCode,
+			// `execFile` sets `killed` when it tears the child down for exceeding `timeout`.
+			timedOut: candidate.killed === true,
 		};
 	}
 }

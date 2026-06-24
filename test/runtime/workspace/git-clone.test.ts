@@ -30,6 +30,7 @@ vi.mock("node:fs/promises", () => ({
 	stat: fsMocks.stat,
 }));
 
+import { setRuntimeProxyState } from "../../../src/config/proxy-fetch";
 import { cloneGitRepository, deriveRepoNameFromUrl, validateCloneDestination } from "../../../src/workspace/git-clone";
 
 describe("deriveRepoNameFromUrl", () => {
@@ -301,5 +302,120 @@ describe("cloneGitRepository", () => {
 
 		expect(separatorIdx).not.toBe(-1);
 		expect(urlIdx).toBeGreaterThan(separatorIdx);
+	});
+
+	it("disables interactive credential prompts and applies a wall-clock timeout", async () => {
+		fsMocks.access.mockRejectedValueOnce(new Error("ENOENT"));
+		fsMocks.mkdir.mockResolvedValueOnce(undefined);
+		childProcessMocks.execFilePromise.mockResolvedValueOnce({ stdout: "", stderr: "" });
+
+		await cloneGitRepository("https://github.com/user/my-repo.git", testCwd);
+
+		const options = childProcessMocks.execFilePromise.mock.calls[0][2];
+		expect(options.env.GIT_TERMINAL_PROMPT).toBe("0");
+		expect(options.timeout).toBeGreaterThan(0);
+		expect(options.killSignal).toBe("SIGKILL");
+	});
+
+	it("maps an authentication / credential failure to actionable guidance", async () => {
+		fsMocks.access.mockRejectedValueOnce(new Error("ENOENT"));
+		fsMocks.mkdir.mockResolvedValueOnce(undefined);
+		const authError = Object.assign(new Error("Command failed"), {
+			code: 128,
+			stdout: "",
+			stderr: "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+		});
+		childProcessMocks.execFilePromise.mockRejectedValueOnce(authError);
+
+		const result = await cloneGitRepository("https://github.com/user/private-repo.git", testCwd);
+
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain("requires credentials");
+		expect(result.error).toContain("gh auth setup-git");
+		// The cryptic raw git error must NOT leak through.
+		expect(result.error).not.toContain("terminal prompts disabled");
+	});
+
+	it("maps a clone timeout to a clear unreachable-remote error", async () => {
+		fsMocks.access.mockRejectedValueOnce(new Error("ENOENT"));
+		fsMocks.mkdir.mockResolvedValueOnce(undefined);
+		const timeoutError = Object.assign(new Error("Command failed"), {
+			code: null,
+			killed: true,
+			signal: "SIGKILL",
+			stdout: "",
+			stderr: "",
+		});
+		childProcessMocks.execFilePromise.mockRejectedValueOnce(timeoutError);
+
+		const result = await cloneGitRepository("https://github.com/user/unreachable.git", testCwd);
+
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain("timed out");
+		expect(result.error).toContain("unreachable");
+	});
+});
+
+describe("cloneGitRepository proxy env wiring", () => {
+	let testCwd: string;
+	const PROXY_KEYS = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"] as const;
+	const savedProxyEnv: Record<string, string | undefined> = {};
+
+	beforeEach(() => {
+		testCwd = join(tmpdir(), `kanban-test-clone-proxy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+		require("node:fs").mkdirSync(testCwd, { recursive: true });
+		childProcessMocks.execFilePromise.mockReset();
+		fsMocks.access.mockReset();
+		fsMocks.mkdir.mockReset();
+		fsMocks.stat.mockReset();
+		// Neutralize any inherited proxy vars so the assertions are unambiguous: a proxy
+		// var present on the clone env can then only have come from buildSubprocessProxyEnv.
+		for (const key of PROXY_KEYS) {
+			savedProxyEnv[key] = process.env[key];
+			delete process.env[key];
+		}
+	});
+
+	afterEach(() => {
+		rmSync(testCwd, { recursive: true, force: true });
+		setRuntimeProxyState({ enabled: false, proxyUrl: "", noProxy: "" });
+		for (const key of PROXY_KEYS) {
+			if (savedProxyEnv[key] === undefined) delete process.env[key];
+			else process.env[key] = savedProxyEnv[key];
+		}
+	});
+
+	async function cloneOnce(): Promise<Record<string, string>> {
+		fsMocks.access.mockRejectedValueOnce(new Error("ENOENT"));
+		fsMocks.mkdir.mockResolvedValueOnce(undefined);
+		childProcessMocks.execFilePromise.mockResolvedValueOnce({ stdout: "", stderr: "" });
+		await cloneGitRepository("https://github.com/user/my-repo.git", testCwd);
+		return childProcessMocks.execFilePromise.mock.calls[0][2].env as Record<string, string>;
+	}
+
+	it("injects the configured proxy into the clone env when the proxy is enabled", async () => {
+		setRuntimeProxyState({
+			enabled: true,
+			proxyUrl: "http://proxy.example:8080",
+			noProxy: "localhost,127.0.0.1",
+		});
+
+		const env = await cloneOnce();
+
+		expect(env.HTTP_PROXY).toBe("http://proxy.example:8080");
+		expect(env.HTTPS_PROXY).toBe("http://proxy.example:8080");
+		expect(env.http_proxy).toBe("http://proxy.example:8080");
+		expect(env.https_proxy).toBe("http://proxy.example:8080");
+		expect(env.NO_PROXY).toBe("localhost,127.0.0.1");
+	});
+
+	it("leaves the clone env free of proxy vars when the proxy is disabled", async () => {
+		setRuntimeProxyState({ enabled: false, proxyUrl: "", noProxy: "" });
+
+		const env = await cloneOnce();
+
+		for (const key of PROXY_KEYS) {
+			expect(env[key]).toBeUndefined();
+		}
 	});
 });
