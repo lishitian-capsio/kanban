@@ -3,7 +3,7 @@
   "title": "passcode 持久化 + 可查看 (Bug 4 + 找不到口令 + CLI 完善)",
   "prompt": "远程访问 passcode 有两个相关问题:无法持久化、且没有命令查看当前口令。\n\nBug 4 (🔴): passcode 每次重启重新生成,无持久化。passcodeState = { value, issuedAt: Date.now() } 只存在内存,没有落盘。配合 systemd Restart=on-failure,每次崩溃/重启都会悄悄换口令(实测两次重启 M9vnfZhG → efaZGT83)。影响:已分享的链接/口令、所有已登录远程会话在一次重启后全部失效,且无法固定口令。\n修复:支持持久化 passcode——可通过配置文件落盘,并支持 env 或 --passcode <value> 显式指定固定口令;若未显式指定,至少在重启时复用上次落盘的值,而非每次重新生成。落盘位置要遵循 secrets 留在 machine-home(~/.kanban,不进 repo)的约定,且不可被提交。\n\n找不到口令 + CLI 完善: 目前用户在远程模式下根本没有可靠途径拿到当前 passcode(只能翻日志)。需要补一个 CLI 命令来查看当前生效的 passcode(例如 kanban service status 输出含口令,或新增 kanban passcode/查看子命令),并在 service install 绑定到远程 host 时,直接在成功输出里打印 passcode 与访问 URL,方便用户分享。注意:passcode 是敏感信息,打印走 cli-output 的 printLine(干净 stdout,不要进 log 文件)。\n\n涉及:passcode 内存状态所在文件(runtime-server / runtime-endpoint 附近)、service 命令、CLI 输出。补单元测试覆盖'显式 --passcode 优先 > 落盘复用 > 新生成'的优先级。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782269270315,
-  "updatedAt": 1782269270315,
+  "updatedAt": 1782269315878,
   "column": "backlog",
   "rank": "Zo",
   "dependsOn": []

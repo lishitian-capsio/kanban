@@ -3,7 +3,7 @@
   "title": "service install 幂等性: 已存在时静默不重写配置 (Bug 2)",
   "prompt": "kanban service install 不幂等:服务已存在时重新 install 会返回 {ok:true, action:'install', message:'Installed and started'},但生成的 unit 文件 ExecStart 里没有用户新传的 --host/--port,实际配置没变。源码 buildServiceLaunchArgs (src/service/service-launch.ts) 明明会拼 --host/--port,所以问题在上层 install 流程:检测到服务已存在时不重写 unit/ExecStart 却照样报成功。\n\n复现:先 kanban service install --host 0.0.0.0,再改参数重新 install,被告知成功但 ExecStart 仍是旧的(甚至缺 --host),极难排查。\n\n修复建议(择一或组合):install 检测到已存在服务时,要么重新生成 unit(覆盖 ExecStart 并 reload/restart 守护进程使新 host/port 生效),要么明确返回 'already exists, use reinstall/update' 让用户知道没有生效。无论哪种,返回的 message/action 必须如实反映是否真正重写了配置,不能在没改动时谎报 'Installed'。\n\n涉及 src/commands/service.ts、src/service/service-config.ts、src/service/service-launch.ts 及各平台(systemd/launchd/schtasks)的 unit 写入逻辑。覆盖三平台行为一致。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782269259769,
-  "updatedAt": 1782269259769,
+  "updatedAt": 1782269312587,
   "column": "backlog",
   "rank": "Zp",
   "dependsOn": []
