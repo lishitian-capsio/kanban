@@ -1,3 +1,4 @@
+import { networkInterfaces } from "node:os";
 import { rootCertificates } from "node:tls";
 import { Agent } from "undici";
 import { LOOPBACK_NO_PROXY_HOSTS, mergeNoProxyEntries } from "../config/proxy-env";
@@ -7,6 +8,7 @@ export const DEFAULT_KANBAN_RUNTIME_HOST = "127.0.0.1";
 export const DEFAULT_KANBAN_RUNTIME_PORT = 3484;
 const KANBAN_RUNTIME_HTTPS_ENV = "KANBAN_RUNTIME_HTTPS";
 const KANBAN_RUNTIME_TLS_CA_ENV = "KANBAN_RUNTIME_TLS_CA";
+const KANBAN_RUNTIME_ALLOWED_HOSTS_ENV = "KANBAN_RUNTIME_ALLOWED_HOSTS";
 
 let runtimeHost: string = process.env.KANBAN_RUNTIME_HOST?.trim() || DEFAULT_KANBAN_RUNTIME_HOST;
 
@@ -122,11 +124,81 @@ export function isKanbanRuntimeHttps(): boolean {
 const LOCALHOST_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
 /**
+ * The IPv4/IPv6 "any address" bind targets. These are *bind* addresses, never
+ * values a client sends in a `Host` header, so they must never be used as a
+ * Host/Origin allowlist entry on their own — doing so self-locks the server
+ * (the browser reaches it via a concrete NIC IP, which would be rejected).
+ */
+const WILDCARD_BIND_HOSTS = new Set(["0.0.0.0", "::", ""]);
+
+/**
+ * True when `host` is one of the loopback aliases (always reachable over self).
+ */
+export function isLoopbackHost(host: string): boolean {
+	return LOCALHOST_HOSTS.has(host.trim().toLowerCase());
+}
+
+/**
+ * True when `host` is a wildcard ("any address") bind target (`0.0.0.0`, `::`,
+ * or empty). The runtime listens on every interface but clients connect via a
+ * concrete address, so allowlists must enumerate the real NIC IPs instead.
+ */
+export function isWildcardBindHost(host: string): boolean {
+	return WILDCARD_BIND_HOSTS.has(host.trim().toLowerCase());
+}
+
+/**
  * Returns true when Kanban is bound to a non-localhost host, meaning it is
  * accessible to other machines on the network and passcode auth is required.
  */
 export function isKanbanRemoteHost(): boolean {
 	return !LOCALHOST_HOSTS.has(runtimeHost);
+}
+
+/**
+ * Operator-configured extra hosts (comma-separated `KANBAN_RUNTIME_ALLOWED_HOSTS`)
+ * to accept in the `Host`/`Origin` allowlist — e.g. a domain name or an
+ * additional IP that resolves to this machine. Entries are bare hostnames/IPs;
+ * the runtime port is appended when building the allowlist.
+ */
+export function getKanbanRuntimeAllowedHosts(): string[] {
+	const raw = process.env[KANBAN_RUNTIME_ALLOWED_HOSTS_ENV];
+	if (!raw) {
+		return [];
+	}
+	return raw
+		.split(",")
+		.map((host) => host.trim().toLowerCase())
+		.filter((host) => host.length > 0);
+}
+
+/**
+ * Enumerates this machine's non-internal network interface addresses (IPv4 and
+ * IPv6, de-duplicated, lowercased, with any IPv6 zone id stripped). Used to
+ * populate the Host/Origin allowlist when bound to a wildcard address so a
+ * browser hitting the box via its LAN IP is accepted instead of self-locked.
+ */
+export function getLocalNetworkHosts(): string[] {
+	const hosts: string[] = [];
+	const seen = new Set<string>();
+	for (const addresses of Object.values(networkInterfaces())) {
+		if (!addresses) {
+			continue;
+		}
+		for (const info of addresses) {
+			if (info.internal) {
+				continue;
+			}
+			const zoneIndex = info.address.indexOf("%");
+			const address = (zoneIndex === -1 ? info.address : info.address.slice(0, zoneIndex)).toLowerCase();
+			if (!address || seen.has(address)) {
+				continue;
+			}
+			seen.add(address);
+			hosts.push(address);
+		}
+	}
+	return hosts;
 }
 
 export function getKanbanRuntimeOrigin(): string {

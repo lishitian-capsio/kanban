@@ -1,10 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import {
+	getKanbanRuntimeAllowedHosts,
 	getKanbanRuntimeHost,
-	getKanbanRuntimeOrigin,
 	getKanbanRuntimePort,
-	isKanbanRemoteHost,
+	getLocalNetworkHosts,
+	isKanbanRuntimeHttps,
+	isLoopbackHost,
+	isWildcardBindHost,
 } from "../core/runtime-endpoint";
 
 export type CorsDecision =
@@ -15,7 +18,7 @@ export type CorsDecision =
 export interface CorsGateInput {
 	method: string | undefined;
 	originHeader: string | undefined;
-	allowedOrigin: string;
+	allowedOrigins: ReadonlySet<string>;
 }
 
 const isDev = process.env.NODE_ENV === "development";
@@ -28,9 +31,7 @@ export function evaluateCors(input: CorsGateInput): CorsDecision {
 		return { kind: "allow", origin: null };
 	}
 
-	const isDevServer = isDev && (origin === "http://localhost:4173" || origin === "http://127.0.0.1:4173");
-
-	if (origin !== input.allowedOrigin && !isDevServer) {
+	if (!input.allowedOrigins.has(origin.toLowerCase())) {
 		return { kind: "reject", origin };
 	}
 
@@ -60,27 +61,94 @@ export function evaluateHost(input: HostGateInput): HostDecision {
 	return { kind: "allow" };
 }
 
-export function getAllowedHostHeaders(): ReadonlySet<string> {
-	const port = getKanbanRuntimePort();
-	const boundHost = getKanbanRuntimeHost().toLowerCase();
+export interface AllowedHostsInput {
+	/** The bound host, already lowercased. */
+	boundHost: string;
+	port: number;
+	isDev: boolean;
+	/** Concrete NIC addresses to allow when `boundHost` is a wildcard bind. */
+	localNetworkHosts: readonly string[];
+	/** Operator-configured extra hostnames/IPs (`KANBAN_RUNTIME_ALLOWED_HOSTS`). */
+	configuredHosts: readonly string[];
+}
+
+/** Formats a `Host`-header authority, bracketing IPv6 literals (`[::1]:3484`). */
+function formatHostPort(host: string, port: number): string {
+	return host.includes(":") ? `[${host}]:${port}` : `${host}:${port}`;
+}
+
+/**
+ * Builds the set of accepted `Host` header authorities. Pure (no global reads)
+ * so the wildcard/remote/loopback matrix is unit-testable.
+ *
+ * The loopback aliases are ALWAYS included — even on a remote/wildcard bind —
+ * so local CLI tooling and `localhost` browser access keep working. A wildcard
+ * bind (`0.0.0.0`/`::`) enumerates the real NIC IPs rather than the literal
+ * "any address" (which no client ever sends as a Host), preventing a 100%
+ * self-lock. Operator-configured hosts (domains, extra IPs) are always added.
+ */
+export function buildAllowedHostHeaders(input: AllowedHostsInput): Set<string> {
+	const { boundHost, port, localNetworkHosts, configuredHosts } = input;
 	const allowed = new Set<string>();
-	const addHostPort = (host: string) => {
-		allowed.add(`${host}:${port}`);
+	const add = (host: string) => {
+		const normalized = host.trim().toLowerCase();
+		if (normalized) {
+			allowed.add(formatHostPort(normalized, port));
+		}
 	};
 
-	if (isKanbanRemoteHost()) {
-		addHostPort(boundHost);
-		return allowed;
-	}
-
-	addHostPort("localhost");
-	addHostPort("127.0.0.1");
-	if (isDev) {
-		// Vite's default dev server host:port
+	// Loopback is always reachable over self, regardless of the bind address.
+	add("localhost");
+	add("127.0.0.1");
+	if (input.isDev) {
+		// Vite's default dev server host:port.
 		allowed.add("localhost:4173");
 		allowed.add("127.0.0.1:4173");
 	}
+
+	if (!isLoopbackHost(boundHost)) {
+		if (isWildcardBindHost(boundHost)) {
+			for (const ip of localNetworkHosts) {
+				add(ip);
+			}
+		} else {
+			add(boundHost);
+		}
+	}
+
+	for (const host of configuredHosts) {
+		add(host);
+	}
+
 	return allowed;
+}
+
+/** Derives the allowed CORS origins from the Host allowlist + runtime scheme. */
+export function buildAllowedOrigins(hostHeaders: ReadonlySet<string>, scheme: "http" | "https"): Set<string> {
+	const origins = new Set<string>();
+	for (const hostPort of hostHeaders) {
+		origins.add(`${scheme}://${hostPort}`);
+	}
+	return origins;
+}
+
+export function getAllowedHostHeaders(): ReadonlySet<string> {
+	const boundHost = getKanbanRuntimeHost().toLowerCase();
+	return buildAllowedHostHeaders({
+		boundHost,
+		port: getKanbanRuntimePort(),
+		isDev,
+		localNetworkHosts: isWildcardBindHost(boundHost) ? getLocalNetworkHosts() : [],
+		configuredHosts: getKanbanRuntimeAllowedHosts(),
+	});
+}
+
+/**
+ * The allowed CORS origins, kept consistent with {@link getAllowedHostHeaders}
+ * so a LAN-IP / wildcard bind that accepts a Host also accepts its Origin.
+ */
+export function getAllowedOrigins(): ReadonlySet<string> {
+	return buildAllowedOrigins(getAllowedHostHeaders(), isKanbanRuntimeHttps() ? "https" : "http");
 }
 
 const ALLOWED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].join(", ");
@@ -120,7 +188,7 @@ export function handleHttpRequest(req: IncomingMessage, res: ServerResponse): { 
 	const corsDecision = evaluateCors({
 		method: req.method,
 		originHeader: req.headers.origin,
-		allowedOrigin: getKanbanRuntimeOrigin(),
+		allowedOrigins: getAllowedOrigins(),
 	});
 
 	switch (corsDecision.kind) {
@@ -157,7 +225,7 @@ export function handleSocketUpgrade(request: IncomingMessage, socket: Duplex): {
 	const corsDecision = evaluateCors({
 		method: request.method,
 		originHeader: request.headers.origin,
-		allowedOrigin: getKanbanRuntimeOrigin(),
+		allowedOrigins: getAllowedOrigins(),
 	});
 	if (corsDecision.kind === "reject") {
 		return rejectSocket(socket);

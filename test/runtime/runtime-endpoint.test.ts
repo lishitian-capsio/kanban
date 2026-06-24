@@ -5,11 +5,15 @@ import {
 	buildKanbanRuntimeWsUrl,
 	clearKanbanRuntimeTls,
 	DEFAULT_KANBAN_RUNTIME_PORT,
+	getKanbanRuntimeAllowedHosts,
 	getKanbanRuntimeHost,
 	getKanbanRuntimeNoProxyHosts,
 	getKanbanRuntimePort,
+	getLocalNetworkHosts,
 	getRuntimeFetch,
 	isKanbanRuntimeHttps,
+	isLoopbackHost,
+	isWildcardBindHost,
 	parseRuntimePort,
 	setKanbanRuntimeHost,
 	setKanbanRuntimePort,
@@ -24,6 +28,7 @@ const originalEnvHttps = process.env.KANBAN_RUNTIME_HTTPS;
 const originalEnvTlsCa = process.env.KANBAN_RUNTIME_TLS_CA;
 const originalEnvNoProxy = process.env.NO_PROXY;
 const originalEnvNoProxyLower = process.env.no_proxy;
+const originalEnvAllowedHosts = process.env.KANBAN_RUNTIME_ALLOWED_HOSTS;
 
 afterEach(() => {
 	setKanbanRuntimePort(originalRuntimePort);
@@ -58,6 +63,11 @@ afterEach(() => {
 		delete process.env.KANBAN_RUNTIME_TLS_CA;
 	} else {
 		process.env.KANBAN_RUNTIME_TLS_CA = originalEnvTlsCa;
+	}
+	if (originalEnvAllowedHosts === undefined) {
+		delete process.env.KANBAN_RUNTIME_ALLOWED_HOSTS;
+	} else {
+		process.env.KANBAN_RUNTIME_ALLOWED_HOSTS = originalEnvAllowedHosts;
 	}
 });
 
@@ -145,5 +155,63 @@ describe("runtime-endpoint", () => {
 			ca: "test-cert",
 		});
 		expect(await getRuntimeFetch()).not.toBe(globalThis.fetch);
+	});
+});
+
+describe("isLoopbackHost", () => {
+	it("recognises the loopback aliases regardless of casing", () => {
+		expect(isLoopbackHost("127.0.0.1")).toBe(true);
+		expect(isLoopbackHost("localhost")).toBe(true);
+		expect(isLoopbackHost("LOCALHOST")).toBe(true);
+		expect(isLoopbackHost("::1")).toBe(true);
+	});
+
+	it("does not treat a wildcard bind or a LAN IP as loopback", () => {
+		expect(isLoopbackHost("0.0.0.0")).toBe(false);
+		expect(isLoopbackHost("::")).toBe(false);
+		expect(isLoopbackHost("192.168.50.203")).toBe(false);
+	});
+});
+
+describe("isWildcardBindHost", () => {
+	it("recognises the IPv4/IPv6 wildcard bind addresses and the empty host", () => {
+		expect(isWildcardBindHost("0.0.0.0")).toBe(true);
+		expect(isWildcardBindHost("::")).toBe(true);
+		expect(isWildcardBindHost("")).toBe(true);
+		expect(isWildcardBindHost("  ")).toBe(true);
+	});
+
+	it("does not treat loopback or a concrete LAN IP as a wildcard bind", () => {
+		expect(isWildcardBindHost("127.0.0.1")).toBe(false);
+		expect(isWildcardBindHost("localhost")).toBe(false);
+		expect(isWildcardBindHost("192.168.50.203")).toBe(false);
+	});
+});
+
+describe("getKanbanRuntimeAllowedHosts", () => {
+	it("returns an empty list when the env var is unset or blank", () => {
+		delete process.env.KANBAN_RUNTIME_ALLOWED_HOSTS;
+		expect(getKanbanRuntimeAllowedHosts()).toEqual([]);
+		process.env.KANBAN_RUNTIME_ALLOWED_HOSTS = "  ,  ";
+		expect(getKanbanRuntimeAllowedHosts()).toEqual([]);
+	});
+
+	it("parses a comma-separated list, trimming and lowercasing entries", () => {
+		process.env.KANBAN_RUNTIME_ALLOWED_HOSTS = " Kanban.Local , 192.168.50.203 ,, board.example.com ";
+		expect(getKanbanRuntimeAllowedHosts()).toEqual(["kanban.local", "192.168.50.203", "board.example.com"]);
+	});
+});
+
+describe("getLocalNetworkHosts", () => {
+	it("returns a de-duplicated list of non-loopback, non-wildcard host strings", () => {
+		const hosts = getLocalNetworkHosts();
+		expect(Array.isArray(hosts)).toBe(true);
+		expect(new Set(hosts).size).toBe(hosts.length);
+		for (const host of hosts) {
+			expect(typeof host).toBe("string");
+			expect(host.length).toBeGreaterThan(0);
+			expect(isLoopbackHost(host)).toBe(false);
+			expect(isWildcardBindHost(host)).toBe(false);
+		}
 	});
 });
