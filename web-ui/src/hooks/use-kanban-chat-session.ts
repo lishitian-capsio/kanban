@@ -23,6 +23,11 @@ interface UseKanbanChatSessionInput {
 interface UseKanbanChatSessionResult {
 	messages: KanbanChatMessage[];
 	isSending: boolean;
+	// True only while the initial `onLoadMessages` history fetch is in flight.
+	// Exposed distinctly from `isSending` (which still folds it in for the
+	// composer's busy state) so surfaces can show a history-loading skeleton
+	// without confusing it with an in-progress send/stream.
+	isLoadingHistory: boolean;
 	isCanceling: boolean;
 	error: string | null;
 	sendMessage: (
@@ -230,6 +235,7 @@ export function useKanbanChatSession({
 	return {
 		messages,
 		isSending: isSending || isLoading,
+		isLoadingHistory: isLoading,
 		isCanceling,
 		error,
 		sendMessage,

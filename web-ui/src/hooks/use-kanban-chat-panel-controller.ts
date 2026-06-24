@@ -35,6 +35,7 @@ interface UseKanbanChatPanelControllerResult {
 	messages: KanbanChatMessage[];
 	error: string | null;
 	isSending: boolean;
+	isLoadingHistory: boolean;
 	isCanceling: boolean;
 	canSend: boolean;
 	canCancel: boolean;
@@ -65,7 +66,7 @@ export function useKanbanChatPanelController({
 }: UseKanbanChatPanelControllerInput): UseKanbanChatPanelControllerResult {
 	const [draft, setDraft] = useState("");
 	const reviewWorkspaceSnapshot = useTaskWorkspaceSnapshotValue(taskId);
-	const { messages, isSending, isCanceling, error, sendMessage, cancelTurn } = useKanbanChatSession({
+	const { messages, isSending, isLoadingHistory, isCanceling, error, sendMessage, cancelTurn } = useKanbanChatSession({
 		taskId,
 		onSendMessage,
 		onCancelTurn,
@@ -120,6 +121,7 @@ export function useKanbanChatPanelController({
 		messages,
 		error,
 		isSending,
+		isLoadingHistory,
 		isCanceling,
 		canSend,
 		canCancel,

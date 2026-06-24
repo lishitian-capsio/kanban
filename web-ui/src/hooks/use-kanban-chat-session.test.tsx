@@ -11,6 +11,7 @@ interface HookSnapshot {
 	lastMessageHookEvent: string | null;
 	error: string | null;
 	isSending: boolean;
+	isLoadingHistory: boolean;
 	sendMessage: (
 		text: string,
 		options?: { mode?: RuntimeTaskSessionMode; images?: RuntimeTaskImage[] },
@@ -66,9 +67,10 @@ function HookHarness({
 			lastMessageHookEvent: lastMessage?.meta?.hookEventName ?? null,
 			error: state.error,
 			isSending: state.isSending,
+			isLoadingHistory: state.isLoadingHistory,
 			sendMessage: state.sendMessage,
 		});
-	}, [onSnapshot, state.error, state.isSending, state.messages, state.sendMessage]);
+	}, [onSnapshot, state.error, state.isLoadingHistory, state.isSending, state.messages, state.sendMessage]);
 
 	return null;
 }
@@ -380,6 +382,40 @@ describe("useKanbanChatSession", () => {
 
 		expect(snapshots.at(-1)?.messageIds).toEqual(["loaded-1", "streamed-1"]);
 		expect(snapshots.at(-1)?.lastMessageContent).toBe("Streaming first");
+	});
+
+	it("flags isLoadingHistory while the initial history load is pending and clears it after", async () => {
+		const deferredLoad = createDeferred<KanbanChatMessage[] | null>();
+		const snapshots: HookSnapshot[] = [];
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					taskId="task-1"
+					onLoadMessages={() => deferredLoad.promise}
+					onSnapshot={(snapshot) => snapshots.push(snapshot)}
+				/>,
+			);
+			await Promise.resolve();
+		});
+
+		expect(snapshots.at(-1)?.isLoadingHistory).toBe(true);
+
+		await act(async () => {
+			deferredLoad.resolve([
+				{
+					id: "loaded-1",
+					role: "assistant",
+					content: "Loaded history",
+					createdAt: 1,
+				},
+			]);
+			await deferredLoad.promise;
+			await Promise.resolve();
+		});
+
+		expect(snapshots.at(-1)?.isLoadingHistory).toBe(false);
+		expect(snapshots.at(-1)?.messageIds).toEqual(["loaded-1"]);
 	});
 
 	it("clears stale messages when switching to another task", async () => {

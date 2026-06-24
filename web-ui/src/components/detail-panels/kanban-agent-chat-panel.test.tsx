@@ -101,6 +101,29 @@ describe("KanbanAgentChatPanel", () => {
 		}
 	});
 
+	it("shows a history-loading skeleton until the initial history resolves", async () => {
+		let resolveLoad: (messages: KanbanChatMessage[]) => void = () => {};
+		const loadPromise = new Promise<KanbanChatMessage[]>((resolve) => {
+			resolveLoad = resolve;
+		});
+
+		await act(async () => {
+			renderPanel(root, <KanbanAgentChatPanel taskId="task-1" summary={null} onLoadMessages={() => loadPromise} />);
+			await Promise.resolve();
+		});
+
+		expect(container.querySelector('[aria-label="Loading conversation history"]')).toBeInstanceOf(HTMLElement);
+
+		await act(async () => {
+			resolveLoad([{ id: "assistant-1", role: "assistant", content: "Loaded reply", createdAt: 1 }]);
+			await loadPromise;
+			await Promise.resolve();
+		});
+
+		expect(container.querySelector('[aria-label="Loading conversation history"]')).toBeNull();
+		expect(container.textContent).toContain("Loaded reply");
+	});
+
 	it("renders reasoning and tool messages with specialized UI", async () => {
 		const messages: KanbanChatMessage[] = [
 			{

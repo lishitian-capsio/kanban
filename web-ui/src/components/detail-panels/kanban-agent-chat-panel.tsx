@@ -14,6 +14,7 @@ import React, {
 import { type Components as VirtuosoComponents, Virtuoso } from "react-virtuoso";
 
 import { KanbanChatComposer } from "@/components/detail-panels/kanban-chat-composer";
+import { KanbanChatHistorySkeleton } from "@/components/detail-panels/kanban-chat-history-skeleton";
 import { KanbanChatMessageItem } from "@/components/detail-panels/kanban-chat-message-item";
 import {
 	buildKanbanAgentModelPickerOptions,
@@ -156,6 +157,7 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 			messages,
 			error,
 			isSending,
+			isLoadingHistory,
 			canSend,
 			canCancel,
 			showReviewActions,
@@ -401,21 +403,31 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 			persistKanbanModelSettings,
 		]);
 
+		// Only show the history skeleton on the very first load, before any
+		// message has arrived. Once messages exist (history loaded, streaming, or
+		// freshly sent), the live list — with its own send/stream indicators —
+		// takes over, so the skeleton never flashes mid-conversation.
+		const showHistorySkeleton = isLoadingHistory && messages.length === 0;
+
 		return (
 			<div className="flex min-h-0 min-w-0 flex-1 flex-col">
-				<Virtuoso
-					key={taskId}
-					data={messages}
-					className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto"
-					followOutput="auto"
-					alignToBottom
-					atBottomThreshold={BOTTOM_LOCK_THRESHOLD_PX}
-					initialTopMostItemIndex={Math.max(0, messages.length - 1)}
-					computeItemKey={computeKanbanChatMessageKey}
-					itemContent={renderKanbanChatMessageItem}
-					context={chatListContext}
-					components={KANBAN_CHAT_LIST_COMPONENTS}
-				/>
+				{showHistorySkeleton ? (
+					<KanbanChatHistorySkeleton />
+				) : (
+					<Virtuoso
+						key={taskId}
+						data={messages}
+						className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto"
+						followOutput="auto"
+						alignToBottom
+						atBottomThreshold={BOTTOM_LOCK_THRESHOLD_PX}
+						initialTopMostItemIndex={Math.max(0, messages.length - 1)}
+						computeItemKey={computeKanbanChatMessageKey}
+						itemContent={renderKanbanChatMessageItem}
+						context={chatListContext}
+						components={KANBAN_CHAT_LIST_COMPONENTS}
+					/>
+				)}
 				{panelError ? (
 					<div className="border-t border-status-red/30 bg-status-red/10 px-2 py-2 text-xs text-status-red">
 						{panelError}
