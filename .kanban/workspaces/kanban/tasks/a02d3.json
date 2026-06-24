@@ -1,0 +1,19 @@
+{
+  "id": "a02d3",
+  "title": "CLI redesign P6 — deprecation cleanup",
+  "prompt": "实现 .plan/docs/kanban-cli-redesign.md 的 P6 阶段(§8 弃用清理,面向下一个 minor/major)。依赖 P5(整套新表面稳定后再删旧表面)。\n\n做(对照 §8 兼容表):\n1) 删除 `kanban mcp`(已 warn 一轮)。\n2) 删除 root `--agent <id>`(已 hidden+ignored),并从 kanban schema 清单移除。\n3) 删除失败 envelope 旁的 legacy 顶层 error 字符串镜像(P0 引入的兼容字段)。\n4) 按 §8 计划(可选)移除最老的一批 flag 别名(如 --task-id 等已转 positional 的),保留仍在窗口内的。\n5) 同步更新 kanban schema、--help、文档与单测,确保删除项不再出现在自描述清单。\n\n注意:这是破坏性收尾,仅删确已过兼容窗口的项;hooks notify 的 never-fail 契约保持不动。遵守 AGENTS.md。验收:web:typecheck + biome clean;schema 不含已删命令/flag;现有测试更新通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782275337122,
+  "updatedAt": 1782275337122,
+  "column": "backlog",
+  "rank": "Zj",
+  "dependsOn": []
+}
