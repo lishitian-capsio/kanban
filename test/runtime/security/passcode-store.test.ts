@@ -4,8 +4,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+	disablePersistedPasscode,
 	getPasscodeFilePath,
+	isPersistedPasscodeDisabled,
 	readPersistedPasscode,
+	readPersistedPasscodeRecord,
 	resolveAndPersistPasscode,
 	writePersistedPasscode,
 } from "../../../src/security/passcode-store";
@@ -56,6 +59,47 @@ describe("passcode-store persistence", () => {
 		const torn = join(dir, "torn.json");
 		await writeFile(torn, "{ not json", "utf8");
 		expect(await readPersistedPasscode(torn)).toBeNull();
+	});
+});
+
+describe("passcode-store disable state (P4)", () => {
+	let dir: string;
+	let cleanup: () => void;
+	let file: string;
+
+	beforeEach(() => {
+		const tmp = createTempDir();
+		dir = tmp.path;
+		cleanup = tmp.cleanup;
+		file = join(dir, "settings", "passcode.json");
+	});
+	afterEach(() => cleanup());
+
+	it("persists a disable and reports it via readPersistedPasscodeRecord", async () => {
+		await disablePersistedPasscode(file);
+		expect(await readPersistedPasscodeRecord(file)).toEqual({ value: null, disabled: true });
+		expect(await isPersistedPasscodeDisabled(file)).toBe(true);
+		// A disabled record exposes no secret value.
+		expect(await readPersistedPasscode(file)).toBeNull();
+	});
+
+	it("writing a value clears a prior disable (re-enables)", async () => {
+		await disablePersistedPasscode(file);
+		await writePersistedPasscode(file, "REENAB12");
+		expect(await isPersistedPasscodeDisabled(file)).toBe(false);
+		expect(await readPersistedPasscode(file)).toBe("REENAB12");
+	});
+
+	it("resolveAndPersistPasscode with an explicit value re-enables a disabled store", async () => {
+		await disablePersistedPasscode(file);
+		const result = await resolveAndPersistPasscode({ explicit: "EXPLICIT1", filePath: file });
+		expect(result).toEqual({ value: "EXPLICIT1", source: "explicit" });
+		expect(await isPersistedPasscodeDisabled(file)).toBe(false);
+	});
+
+	it("reports not-disabled for a missing file", async () => {
+		expect(await isPersistedPasscodeDisabled(join(dir, "nope.json"))).toBe(false);
+		expect(await readPersistedPasscodeRecord(join(dir, "nope.json"))).toEqual({ value: null, disabled: false });
 	});
 });
 

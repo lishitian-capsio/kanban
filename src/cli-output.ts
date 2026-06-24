@@ -16,6 +16,18 @@ export function printLine(message = ""): void {
 }
 
 /**
+ * Emit a one-line deprecation notice to **stderr** (design doc §8). Kept off stdout so it
+ * never pollutes a `--json` document or a piped human result. Silenced when
+ * `KANBAN_SUPPRESS_DEPRECATION` is set (for known-migrated scripts).
+ */
+export function emitDeprecationWarning(message: string): void {
+	if (process.env.KANBAN_SUPPRESS_DEPRECATION) {
+		return;
+	}
+	process.stderr.write(`⚠️  ${message}\n`);
+}
+
+/**
  * Whether ANSI color should be used for human output. Disabled when stdout is not a
  * TTY, when `NO_COLOR` is set (https://no-color.org), or when explicitly opted out.
  * (The `--no-color` global flag is wired in a later phase; `noColorOverride` is the seam.)

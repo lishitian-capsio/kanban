@@ -13,7 +13,7 @@
  */
 
 import type { Command } from "commander";
-import { printHumanResult, shouldUseColor } from "../cli-output";
+import { printHumanResult, printLine, shouldUseColor } from "../cli-output";
 import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import {
 	buildFailureEnvelope,
@@ -78,6 +78,12 @@ export interface RunCliCommandOptions {
 	globals?: GlobalCliOptions;
 	/** Argv to scan for `--json` / `--human` when {@link globals} is absent (defaults to `process.argv`). */
 	argv?: string[];
+	/**
+	 * Optional custom human renderer for the success `data`. When provided, it replaces the
+	 * generic key/value summary in human mode (e.g. `remote status`'s compact panel); `--json`
+	 * output is unaffected so the two channels still share the one result object.
+	 */
+	renderHuman?: (data: Record<string, unknown>) => string;
 }
 
 /**
@@ -122,7 +128,12 @@ function commandFamilyLabel(commandId: string): string {
 	}
 }
 
-function emit(envelope: CliEnvelope, mode: "json" | "human", globals?: GlobalCliOptions): void {
+function emit(
+	envelope: CliEnvelope,
+	mode: "json" | "human",
+	globals?: GlobalCliOptions,
+	renderHuman?: (data: Record<string, unknown>) => string,
+): void {
 	if (mode === "json") {
 		// Exactly one JSON document on stdout — keep it pretty (matches the prior `printJson`
 		// output) and `JSON.parse`-able. Never interleave anything else here.
@@ -133,6 +144,10 @@ function emit(envelope: CliEnvelope, mode: "json" | "human", globals?: GlobalCli
 	// TTY/NO_COLOR detection in `shouldUseColor`.
 	const useColor = shouldUseColor(globals ? globals.color === false : false);
 	if (envelope.ok) {
+		if (renderHuman) {
+			printLine(renderHuman(envelope.data));
+			return;
+		}
 		printHumanResult({ ok: true, command: envelope.command, data: envelope.data, useColor });
 		return;
 	}
@@ -162,7 +177,12 @@ export async function runCliCommand(
 
 	try {
 		const result = await handler();
-		emit(buildSuccessEnvelope(commandId, toEnvelopeData(result), options.warnings), mode, options.globals);
+		emit(
+			buildSuccessEnvelope(commandId, toEnvelopeData(result), options.warnings),
+			mode,
+			options.globals,
+			options.renderHuman,
+		);
 	} catch (error) {
 		const classified = classifyError(error);
 		const legacyMirror = `${commandFamilyLabel(commandId)} command failed at ${getKanbanRuntimeOrigin()}: ${classified.message}`;

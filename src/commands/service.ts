@@ -106,7 +106,8 @@ function printRemoteAccessInfo(config: ServiceConfig, passcode: string): void {
 	printLine("");
 	printLine(`🔐 Remote access passcode: ${passcode}`);
 	printLine(`   Access URL: ${buildServiceAccessUrl(config)}`);
-	printLine("   Share these with users who need access. View later with `kanban passcode`.");
+	printLine("   Share these with users who need access. View later with `kanban remote passcode show`.");
+	printLine("   Full access status: `kanban remote status`");
 	printLine("");
 }
 
@@ -156,6 +157,11 @@ async function runStatus(config: ServiceConfig): Promise<void> {
 		const passcode = await readPersistedPasscode(getPasscodeFilePath());
 		if (passcode !== null) {
 			printLine(`🔐 Remote access passcode: ${passcode}`);
+		}
+		// Human-only pointer to the cross-cutting access view (§5.3). Gated on a TTY so it
+		// never pollutes a piped/`--json` status document.
+		if (process.stdout.isTTY) {
+			printLine("For access URL + passcode + health, run `kanban remote status`.");
 		}
 	} catch (error) {
 		log.error("service status failed", { error });

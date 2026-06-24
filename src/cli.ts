@@ -11,7 +11,7 @@ import { CLI_EXIT_USAGE_ERROR } from "./commands/cli-envelope";
 import { registerDbCommand } from "./commands/db";
 import { registerFileCommand } from "./commands/file";
 import { registerHooksCommand } from "./commands/hooks";
-import { registerPasscodeCommand } from "./commands/passcode";
+import { registerPasscodeAliasCommand, registerRemoteCommand } from "./commands/remote";
 import { registerServiceCommand } from "./commands/service";
 import { registerTaskCommand } from "./commands/task";
 import { registerVaultCommand } from "./commands/vault";
@@ -40,7 +40,7 @@ import {
 } from "./core/runtime-endpoint";
 import { configureLogging, createLogger } from "./logging";
 import { disablePasscode, generateInternalToken, setPasscode } from "./security/passcode-manager";
-import { resolveAndPersistPasscode } from "./security/passcode-store";
+import { getPasscodeFilePath, isPersistedPasscodeDisabled, resolveAndPersistPasscode } from "./security/passcode-store";
 import { startEventLoopStallWatchdog } from "./server/event-loop-stall-watchdog";
 import { terminateProcessForTimeout } from "./server/process-termination";
 import type { RuntimeStateHub } from "./server/runtime-state-hub";
@@ -626,14 +626,19 @@ async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolea
 	// validation so that an invalid --cert/--key fails before a passcode is
 	// printed (a passcode for a server that never starts is confusing).
 	if (isKanbanRemoteHost()) {
-		if (options.noPasscode) {
+		const explicit = options.passcode ?? process.env.KANBAN_PASSCODE?.trim() ?? null;
+		// An explicit `--passcode`/`KANBAN_PASSCODE` always wins and re-enables auth, even over a
+		// persisted disable; otherwise a persisted `remote passcode disable` keeps auth off.
+		const persistedDisabled = !explicit && (await isPersistedPasscodeDisabled(getPasscodeFilePath()));
+		if (options.noPasscode || persistedDisabled) {
 			disablePasscode();
-			printLine("Passcode authentication disabled (--no-passcode). Ensure you have your own auth layer.");
+			const why = options.noPasscode ? "--no-passcode" : "persisted via `kanban remote passcode disable`";
+			printLine(`Passcode authentication disabled (${why}). Ensure you have your own auth layer.`);
+			printLine("   Re-enable later: `kanban remote passcode set <value>`");
 		} else {
 			// Resolve the effective passcode (explicit > persisted-reuse > generated) and
 			// persist it so an OS-service restart no longer silently rotates it. The
 			// passcode is printed ONLY here via printLine and never stored in logs.
-			const explicit = options.passcode ?? process.env.KANBAN_PASSCODE?.trim() ?? null;
 			const { value, source } = await resolveAndPersistPasscode({ explicit });
 			setPasscode(value);
 			generateInternalToken();
@@ -644,7 +649,8 @@ async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolea
 						? "set from --passcode/KANBAN_PASSCODE"
 						: "newly generated";
 			printLine(
-				`\n🔐 Remote access passcode: ${value}  (${note})\n   Access URL: ${getKanbanRuntimeOrigin()}\n\nShare these with users who need access.\n`,
+				`\n🔐 Remote access passcode: ${value}  (${note})\n   Access URL: ${getKanbanRuntimeOrigin()}\n\nShare these with users who need access.\n` +
+					"   View later: `kanban remote passcode show` · status: `kanban remote status`\n",
 			);
 		}
 	}
@@ -798,7 +804,8 @@ function createProgram(invocationArgs: string[]): Command {
 	registerDbCommand(program);
 	registerHooksCommand(program);
 	registerServiceCommand(program);
-	registerPasscodeCommand(program);
+	registerRemoteCommand(program);
+	registerPasscodeAliasCommand(program);
 
 	program
 		.command("mcp")
