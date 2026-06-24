@@ -1,0 +1,19 @@
+{
+  "id": "875d0",
+  "title": "CLI redesign P2 — naming & tree normalization",
+  "prompt": "实现 .plan/docs/kanban-cli-redesign.md 的 P2 阶段(§3 新命令树 + §3.3 命名规则)。纯加法 + 别名,不破老调用。依赖 P1。\n\n做(对照 §3.2 命令树):\n1) id 提升为 positional,老 flag 作别名:task update <id>(原 --task-id)、task start <id>、task done <id>、task delete <id>、task link <id> <to-id>、task unlink <dependency-id>、db connection remove <id>、file/vault doc 各 show/update/delete <id>。--task-id/--id/--connection/--dependency-id 等在兼容窗口内仍解析(I3 不一致的根除,§8)。\n2) trash→done:done 为 canonical,trash 保留为带 stderr 弃用警告的别名(§3.3 规则5、§8)。\n3) 新增 task show <id>(单任务详情,今天需 list+filter)。\n4) 规整别名/复数:单数为 canonical,复数统一作别名(task↔tasks、file↔files);保留 conn/rm 短别名作 documented alias(§10 Q4 取推荐:保留)。\n5) 弃用项两路提示:stderr 一行警告(人) + --json 的 warnings:[{code:\"deprecated_*\"}](机器),KANBAN_SUPPRESS_DEPRECATION=1 静音。\n\n遵守 AGENTS.md。补单测覆盖 positional 与老 flag 双解析 + 别名弃用警告。验收:web:typecheck + biome clean;新旧两种写法都跑通。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782275273947,
+  "updatedAt": 1782275273947,
+  "column": "backlog",
+  "rank": "Zn",
+  "dependsOn": []
+}
