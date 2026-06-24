@@ -1,39 +1,11 @@
 {
   "threads": [
     {
-      "id": "5dbef149-353c-4512-911b-d35b09cdc5c1",
+      "id": "5bb4f4ff-d153-4646-8251-26319204217f",
       "agentId": "claude",
-      "name": "task",
-      "createdAt": 1782267688901,
-      "updatedAt": 1782267688901
-    },
-    {
-      "id": "d7b7e6a0-cccb-4c61-acf5-261ceb5e41dd",
-      "agentId": "claude",
-      "name": "kanban cli",
-      "createdAt": 1782275063146,
-      "updatedAt": 1782275063146
-    },
-    {
-      "id": "5ff6aff8-f826-47d2-b7ca-af7a7a6d17c4",
-      "agentId": "claude",
-      "name": "卡死",
-      "createdAt": 1782275081536,
-      "updatedAt": 1782275081536
-    },
-    {
-      "id": "be0defac-046b-41b6-8093-300672c9508b",
-      "agentId": "claude",
-      "name": "network proxy",
-      "createdAt": 1782276370603,
-      "updatedAt": 1782276370603
-    },
-    {
-      "id": "cf9ab9e2-75a2-4d5b-ab4d-63d105bf8ae4",
-      "agentId": "claude",
-      "name": "vault",
-      "createdAt": 1782279916658,
-      "updatedAt": 1782279916658
+      "name": "Database",
+      "createdAt": 1782285764364,
+      "updatedAt": 1782285764364
     }
   ]
 }

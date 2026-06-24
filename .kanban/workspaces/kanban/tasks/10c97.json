@@ -1,0 +1,19 @@
+{
+  "id": "10c97",
+  "title": "Fix: 'No agent configured' — service daemon can't detect CLI agents (PATH not in…",
+  "prompt": "BUG: When Kanban is installed/run as an OS daemon via `kanban service` (systemd / launchd / schtasks — see the service command implementation), the UI shows 'No agent configured' and no CLI agents (claude, codex, droid, kiro, gemini, opencode) are detected. Running Kanban directly from an interactive shell detects them fine.\n\nLIKELY ROOT CAUSE: A system daemon does NOT inherit the user's interactive login/shell environment. In particular PATH is minimal (typically just /usr/bin:/bin), so the agent-detection code — which per AGENTS.md deliberately does DIRECT PATH checks / direct process launches (avoiding 'zsh -i' shell fallback on hot paths) — can't find CLI agent binaries that live in user-local install dirs: ~/.bun/bin, ~/.local/bin, npm global prefix, nvm/fnm shims, ~/.cargo/bin, Homebrew (/opt/homebrew/bin, /usr/local/bin), pipx, etc. With those off PATH, every agent probes as 'not installed' → 'No agent configured'.\n\nINVESTIGATE & FIX:\n- Find the agent-detection / PATH-probe code (agent catalog: src/core/agent-catalog.ts and wherever binary availability is resolved) and the service installer (the `service` command — systemd unit / launchd plist / schtasks generation).\n- Decide the right fix layer. Options to weigh:\n  (a) Service installer captures the user's real shell PATH at install time and bakes it into the unit/plist Environment= / EnvironmentFile (and/or sets a sane augmented PATH).\n  (b) Runtime augments PATH at startup with the common user-local bin dirs listed above before doing agent detection (covers the daemon case without relying on install-time capture; resolve dirs relative to the real home, cross-platform).\n  (c) A combination — installer captures + runtime augments as a safety net.\n  Confirm the chosen approach is consistent with the AGENTS.md guidance (no per-task interactive-shell spawning on hot paths; this is about making PATH correct, not about spawning shells).\n- Make it cross-platform (Linux systemd, macOS launchd, Windows schtasks).\n\nACCEPTANCE:\n- After `kanban service` install, installed CLI agents are detected and selectable; 'No agent configured' no longer appears when an agent IS installed.\n- Works for agents installed under the common user-local locations above, on Linux + macOS at minimum.\n- Detection still avoids interactive-shell spawning on hot paths (respect AGENTS.md).\n- Add/adjust tests for the PATH resolution/augmentation logic.\n- typecheck + biome/lint clean.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782286671167,
+  "updatedAt": 1782286671167,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
