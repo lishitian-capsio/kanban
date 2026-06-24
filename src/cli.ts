@@ -10,6 +10,7 @@ import { printLine } from "./cli-output";
 import { registerDbCommand } from "./commands/db";
 import { registerFileCommand } from "./commands/file";
 import { registerHooksCommand } from "./commands/hooks";
+import { registerPasscodeCommand } from "./commands/passcode";
 import { registerServiceCommand } from "./commands/service";
 import { registerTaskCommand } from "./commands/task";
 import { registerVaultCommand } from "./commands/vault";
@@ -36,7 +37,8 @@ import {
 	setKanbanRuntimeTls,
 } from "./core/runtime-endpoint";
 import { configureLogging, createLogger } from "./logging";
-import { disablePasscode, generateInternalToken, generatePasscode } from "./security/passcode-manager";
+import { disablePasscode, generateInternalToken, setPasscode } from "./security/passcode-manager";
+import { resolveAndPersistPasscode } from "./security/passcode-store";
 import { terminateProcessForTimeout } from "./server/process-termination";
 import type { RuntimeStateHub } from "./server/runtime-state-hub";
 import { captureNodeException, flushNodeTelemetry } from "./telemetry/sentry-node.js";
@@ -54,6 +56,8 @@ interface CliOptions {
 	cert: string | null;
 	key: string | null;
 	noPasscode: boolean;
+	/** Explicit passcode from `--passcode <value>` (overrides persisted/generated). */
+	passcode: string | null;
 }
 
 const KANBAN_VERSION = typeof packageJson.version === "string" ? packageJson.version : "0.1.0";
@@ -82,7 +86,8 @@ interface RootCommandOptions {
 	https?: boolean;
 	cert?: string;
 	key?: string;
-	noPasscode?: boolean;
+	/** Commander stores `--no-passcode` as `false` and `--passcode <value>` as the string. */
+	passcode?: boolean | string;
 }
 
 type ShutdownIndicatorResult = "done" | "interrupted" | "failed";
@@ -101,7 +106,7 @@ interface ShutdownIndicator {
  */
 function shouldAutoOpenBrowserTabForInvocation(argv: string[]): boolean {
 	const launchFlags = new Set(["--open", "--no-open", "--skip-shutdown-cleanup", "--https", "--no-passcode"]);
-	const launchOptionsWithValues = new Set(["--host", "--port", "--agent", "--cert", "--key"]);
+	const launchOptionsWithValues = new Set(["--host", "--port", "--agent", "--cert", "--key", "--passcode"]);
 
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
@@ -601,10 +606,22 @@ async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolea
 			disablePasscode();
 			printLine("Passcode authentication disabled (--no-passcode). Ensure you have your own auth layer.");
 		} else {
-			const passcode = generatePasscode();
+			// Resolve the effective passcode (explicit > persisted-reuse > generated) and
+			// persist it so an OS-service restart no longer silently rotates it. The
+			// passcode is printed ONLY here via printLine and never stored in logs.
+			const explicit = options.passcode ?? process.env.KANBAN_PASSCODE?.trim() ?? null;
+			const { value, source } = await resolveAndPersistPasscode({ explicit });
+			setPasscode(value);
 			generateInternalToken();
-			// NOTE: passcode is printed ONLY here and never stored in logs or env.
-			printLine(`\n🔐 Remote access passcode: ${passcode}\n\nShare this with users who need access.\n`);
+			const note =
+				source === "persisted"
+					? "reused from previous run"
+					: source === "explicit"
+						? "set from --passcode/KANBAN_PASSCODE"
+						: "newly generated";
+			printLine(
+				`\n🔐 Remote access passcode: ${value}  (${note})\n   Access URL: ${getKanbanRuntimeOrigin()}\n\nShare these with users who need access.\n`,
+			);
 		}
 	}
 
@@ -720,6 +737,10 @@ function createProgram(invocationArgs: string[]): Command {
 		.option("--key <path>", "Path to a TLS private key PEM file (implies HTTPS).")
 		.option("--update", "Update Kanban to the latest published version and exit.")
 		.option(
+			"--passcode <value>",
+			"Use a fixed remote-access passcode (persisted; overrides any saved/generated one). Also reads KANBAN_PASSCODE.",
+		)
+		.option(
 			"--no-passcode",
 			"Disable auto-generated passcode for remote access (for advanced users behind a reverse proxy).",
 		)
@@ -734,6 +755,7 @@ function createProgram(invocationArgs: string[]): Command {
 	registerDbCommand(program);
 	registerHooksCommand(program);
 	registerServiceCommand(program);
+	registerPasscodeCommand(program);
 
 	program
 		.command("mcp")
@@ -763,7 +785,8 @@ function createProgram(invocationArgs: string[]): Command {
 				https: options.https === true,
 				cert: options.cert ?? null,
 				key: options.key ?? null,
-				noPasscode: options.noPasscode === true,
+				noPasscode: options.passcode === false,
+				passcode: typeof options.passcode === "string" ? options.passcode : null,
 			},
 			shouldAutoOpenBrowser,
 		);

@@ -41,7 +41,13 @@ let internalAuthToken: string | null = null;
 const sessions = new Map<string, SessionEntry>();
 const rateLimitByIp = new Map<string, RateLimitEntry>();
 
-function generateRandomPasscode(): string {
+/**
+ * Generate a cryptographically secure random passcode.
+ *
+ * Exported so the persistence layer can use it as the default generator when
+ * resolving the effective passcode (explicit > persisted > generated).
+ */
+export function generateRandomPasscode(): string {
 	// Exclude visually ambiguous chars: 0/O, 1/I/l
 	const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
 	let result = "";
@@ -65,6 +71,17 @@ function generateRandomPasscode(): string {
  */
 export function generatePasscode(): string {
 	const value = generateRandomPasscode();
+	passcodeState = { value, issuedAt: Date.now() };
+	passcodeEnabled = true;
+	return value;
+}
+
+/**
+ * Activate a known passcode (from explicit `--passcode`/env or a persisted value).
+ * Used at startup once the effective passcode has been resolved off-process.
+ * Returns the value for console display ONLY.
+ */
+export function setPasscode(value: string): string {
 	passcodeState = { value, issuedAt: Date.now() };
 	passcodeEnabled = true;
 	return value;

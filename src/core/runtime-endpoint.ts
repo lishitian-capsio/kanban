@@ -148,11 +148,21 @@ export function isWildcardBindHost(host: string): boolean {
 }
 
 /**
+ * Whether a given bind host is "remote" (non-localhost), meaning the runtime is
+ * reachable by other machines and passcode auth applies. Pure helper so callers
+ * that know a host out-of-band (e.g. `kanban service install --host`) can decide
+ * remoteness without mutating module state.
+ */
+export function isRemoteRuntimeHost(host: string): boolean {
+	return !LOCALHOST_HOSTS.has(host);
+}
+
+/**
  * Returns true when Kanban is bound to a non-localhost host, meaning it is
  * accessible to other machines on the network and passcode auth is required.
  */
 export function isKanbanRemoteHost(): boolean {
-	return !LOCALHOST_HOSTS.has(runtimeHost);
+	return isRemoteRuntimeHost(runtimeHost);
 }
 
 /**
