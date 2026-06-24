@@ -1,0 +1,19 @@
+{
+  "id": "c4658",
+  "title": "修复添加项目 git clone: 注入代理 + 凭据/prompt + 超时",
+  "prompt": "Kanban '添加项目' 的 git clone 流程有三个相关缺陷,根因都在同一处 spawn,放在一起修。\n\n定位:src/workspace/git-clone.ts 的 cloneGitRepository(),clone 在约 L147:\n  const result = await runGit(parentDir, ['clone', '--', gitUrl, clonePath]);\nrunGit 没传 env,默认走 createGitProcessEnv()(src/state/git-process-env.ts,只拷贝 process.env 并剔除 git 内部变量)。而 runtime 启动时 stripInheritedProxyEnv()(src/config/proxy-fetch.ts:96)已把 HTTP_PROXY/HTTPS_PROXY/http_proxy/https_proxy 置为 ''。所以这个 clone 子进程拿到的是被清空代理的环境。\n\n要修的三点:\n\n1) 不走代理(主诉求): 给 clone 的 spawn 合并 buildSubprocessProxyEnv()(定义在 src/config/proxy-fetch.ts,返回 HTTP(S)_PROXY/http(s)_proxy/NO_PROXY/no_proxy)。对照 self-update(src/update/update.ts)和 shortcut spawn(src/cli.ts)已经用了 buildSubprocessProxyEnv,唯独添加项目的 clone 漏了。改成类似:\n  env: { ...createGitProcessEnv(), ...buildSubprocessProxyEnv() }\n让用户在 Kanban 设置里配的出站代理对添加项目的 clone 生效。注意保持代理禁用时行为不变(buildSubprocessProxyEnv 在禁用时应返回空/直连)。\n\n2) 凭据/prompt 处理: clone 当前没设 GIT_TERMINAL_PROMPT=0。私有库要认证时 git 会交互式问用户名,在非交互 runtime 下报出诡异的 'could not read Username for https://github.com: No such device or address'。设 GIT_TERMINAL_PROMPT=0 让它快速失败,并把失败映射成清晰的面向用户的错误(提示'需要为该 Git 主机配置凭据,例如 gh auth setup-git / PAT / SSH'),而不是把底层 git 报错原样抛出。\n\n3) 超时: clone 没传 timeoutMs,远端不可达会无限挂起。参考 src/workspace/initialize-repo.ts:93 的 { timeoutMs: ... } 用法,给 clone 加一个合理超时,超时给清晰报错。\n\n要求:复用现有 helper,不要重复造代理/env 逻辑;为'代理启用时 clone env 含代理变量、禁用时不含'补单元测试(可对 buildSubprocessProxyEnv 合并后的 env 断言);行号以实际源码为准。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782274864590,
+  "updatedAt": 1782274864590,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
