@@ -62,9 +62,55 @@ describe("LinuxSystemdManager.install", () => {
 
 		const commands = calls.map((c) => `${c.command} ${c.args.join(" ")}`);
 		expect(commands).toContain("systemctl --user daemon-reload");
-		expect(commands).toContain("systemctl --user enable --now kanban.service");
+		expect(commands).toContain("systemctl --user enable kanban.service");
+		// restart (not just start) so a reconfigure applies the new ExecStart to a running unit
+		expect(commands).toContain("systemctl --user restart kanban.service");
 		// surfaces the linger hint for boot persistence
 		expect(result.hints?.some((h) => h.includes("enable-linger"))).toBe(true);
+	});
+
+	it("rewrites the unit and restarts when reinstalling with a changed config", async () => {
+		const homeDir = tempHome();
+		const unitPath = join(homeDir, ".config", "systemd", "user", "kanban.service");
+
+		const first = makeRunner(() => ok);
+		await new LinuxSystemdManager({ homeDir, runner: first.runner }).install(config({ port: 7777 }));
+		expect(readFileSync(unitPath, "utf8")).toContain("--port 7777");
+
+		const second = makeRunner(() => ok);
+		const result = await new LinuxSystemdManager({ homeDir, runner: second.runner }).install(
+			config({ host: "0.0.0.0", port: 8888 }),
+		);
+
+		// the on-disk unit reflects the NEW host/port
+		const unit = readFileSync(unitPath, "utf8");
+		expect(unit).toContain("--host 0.0.0.0");
+		expect(unit).toContain("--port 8888");
+		expect(unit).not.toContain("--port 7777");
+
+		// and the running unit was restarted so the new ExecStart is live
+		const commands = second.calls.map((c) => `${c.command} ${c.args.join(" ")}`);
+		expect(commands).toContain("systemctl --user restart kanban.service");
+		expect(result.ok).toBe(true);
+		// the message honestly reflects this was a reconfigure, not a first install
+		expect(result.message.toLowerCase()).toContain("reconfigured");
+	});
+
+	it("does not rewrite or restart when reinstalling with an identical config", async () => {
+		const homeDir = tempHome();
+
+		const first = makeRunner(() => ok);
+		await new LinuxSystemdManager({ homeDir, runner: first.runner }).install(config({ port: 7777 }));
+
+		const second = makeRunner(() => ok);
+		const result = await new LinuxSystemdManager({ homeDir, runner: second.runner }).install(config({ port: 7777 }));
+
+		const commands = second.calls.map((c) => `${c.command} ${c.args.join(" ")}`);
+		expect(commands).not.toContain("systemctl --user restart kanban.service");
+		expect(commands).not.toContain("systemctl --user daemon-reload");
+		expect(result.ok).toBe(true);
+		// honest: it did not pretend to (re)install — it reports the config was unchanged
+		expect(result.message.toLowerCase()).toContain("unchanged");
 	});
 
 	it("reports failure when systemctl fails", async () => {

@@ -9,7 +9,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -50,11 +50,39 @@ export class MacosLaunchdManager implements ServiceManager {
 		return this.runner("launchctl", args);
 	}
 
+	/**
+	 * Install is **idempotent**: re-running it with new `--host`/`--port` rewrites
+	 * the plist AND `unload`s/`load`s the agent so the new `ProgramArguments` take
+	 * effect (a bare second `load -w` is a no-op against an already-loaded agent,
+	 * leaving it on the old command). The message honestly reflects first install
+	 * vs reconfigure vs no-op — it never reports "Installed" when nothing changed.
+	 */
 	async install(config: ServiceConfig): Promise<ServiceActionResult> {
 		const plistPath = this.plistPath(config);
+		const label = buildLaunchdLabel(config.name);
+		const nextPlist = buildLaunchdPlist(config);
+		const previousPlist = existsSync(plistPath) ? await readFile(plistPath, "utf8") : null;
+		const wasInstalled = previousPlist !== null;
+		const hints = [`Logs: ${join(config.logDir, `${config.name}.out.log`)} / ${config.name}.err.log`];
+
+		// Config unchanged: don't rewrite or bounce the agent.
+		if (wasInstalled && previousPlist === nextPlist) {
+			return {
+				ok: true,
+				message: `Agent "${label}" is already installed with this configuration (unchanged).`,
+				artifactPath: plistPath,
+				hints,
+			};
+		}
+
 		await mkdir(this.launchAgentsDir(), { recursive: true });
 		await mkdir(config.logDir, { recursive: true });
-		await writeFile(plistPath, buildLaunchdPlist(config), "utf8");
+		// Unload the old definition before overwriting so the reload picks up the
+		// new plist (launchd caches the loaded job; a second `load` alone no-ops).
+		if (wasInstalled) {
+			this.launchctl("unload", "-w", plistPath);
+		}
+		await writeFile(plistPath, nextPlist, "utf8");
 
 		const load = this.launchctl("load", "-w", plistPath);
 		if (load.code !== 0) {
@@ -62,9 +90,11 @@ export class MacosLaunchdManager implements ServiceManager {
 		}
 		return {
 			ok: true,
-			message: `Installed and started launchd agent "${buildLaunchdLabel(config.name)}".`,
+			message: wasInstalled
+				? `Reconfigured and reloaded launchd agent "${label}".`
+				: `Installed and started launchd agent "${label}".`,
 			artifactPath: plistPath,
-			hints: [`Logs: ${join(config.logDir, `${config.name}.out.log`)} / ${config.name}.err.log`],
+			hints,
 		};
 	}
 

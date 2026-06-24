@@ -46,14 +46,37 @@ export class WindowsSchtasksManager implements ServiceManager {
 		return this.schtasks(buildSchtasksQueryArgs(config.name)).code === 0;
 	}
 
+	/**
+	 * Install is **idempotent**: `/Create /F` force-overwrites the task definition
+	 * with the new command, so a reinstall with new `--host`/`--port` updates the
+	 * stored config. The ONLOGON task is not auto-restarted by `/Create`, so if it
+	 * was already running we `/End` + `/Run` it to make the new command live. The
+	 * message honestly distinguishes a first install from a reinstall.
+	 *
+	 * (Unlike systemd/launchd there is no on-disk artifact to diff, so a reinstall
+	 * with an identical config still recreates the task; it just never falsely
+	 * reports a first-time "Installed".)
+	 */
 	async install(config: ServiceConfig): Promise<ServiceActionResult> {
+		const before = await this.status(config);
+
 		const create = this.schtasks(buildSchtasksCreateArgs(config));
 		if (create.code !== 0) {
 			return { ok: false, message: `schtasks /Create failed: ${create.stderr.trim() || create.stdout.trim()}` };
 		}
+
+		// Bounce a running instance so it picks up the recreated command.
+		if (before.running) {
+			this.schtasks(buildSchtasksEndArgs(config.name));
+			this.schtasks(buildSchtasksRunArgs(config.name));
+		}
+
+		const message = before.installed
+			? `Reinstalled scheduled task "${config.name}" with updated configuration${before.running ? " and restarted it" : ""}.`
+			: `Installed scheduled task "${config.name}" (runs at logon).`;
 		return {
 			ok: true,
-			message: `Installed scheduled task "${config.name}" (runs at logon).`,
+			message,
 			hints: [
 				`Logs are written to ${config.logDir} (set KANBAN_LOG_FILE).`,
 				"For an always-on Windows Service (starts before login), wrap this command with NSSM — see the README.",

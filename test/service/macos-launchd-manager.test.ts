@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -53,6 +53,51 @@ describe("MacosLaunchdManager.install", () => {
 
 		const commands = calls.map((c) => `${c.command} ${c.args.join(" ")}`);
 		expect(commands).toContain(`launchctl load -w ${plistPath(homeDir)}`);
+	});
+
+	it("unloads, rewrites the plist and reloads when reinstalling with a changed config", async () => {
+		const homeDir = tempHome();
+
+		const first = makeRunner(() => ok);
+		await new MacosLaunchdManager({ homeDir, runner: first.runner }).install(config(homeDir, { port: 7777 }));
+		expect(readFileSync(plistPath(homeDir), "utf8")).toContain("--port");
+
+		const second = makeRunner(() => ok);
+		const result = await new MacosLaunchdManager({ homeDir, runner: second.runner }).install(
+			config(homeDir, { host: "0.0.0.0", port: 8888 }),
+		);
+
+		const plist = readFileSync(plistPath(homeDir), "utf8");
+		expect(plist).toContain("0.0.0.0");
+		expect(plist).toContain("8888");
+		expect(plist).not.toContain("7777");
+
+		// the agent is unloaded then reloaded so the new ProgramArguments take effect
+		const commands = second.calls.map((c) => `${c.command} ${c.args.join(" ")}`);
+		expect(commands).toContain(`launchctl unload -w ${plistPath(homeDir)}`);
+		expect(commands).toContain(`launchctl load -w ${plistPath(homeDir)}`);
+		expect(commands.indexOf(`launchctl unload -w ${plistPath(homeDir)}`)).toBeLessThan(
+			commands.indexOf(`launchctl load -w ${plistPath(homeDir)}`),
+		);
+		expect(result.ok).toBe(true);
+		expect(result.message.toLowerCase()).toContain("reconfigured");
+	});
+
+	it("does not reload when reinstalling with an identical config", async () => {
+		const homeDir = tempHome();
+
+		const first = makeRunner(() => ok);
+		await new MacosLaunchdManager({ homeDir, runner: first.runner }).install(config(homeDir, { port: 7777 }));
+
+		const second = makeRunner(() => ok);
+		const result = await new MacosLaunchdManager({ homeDir, runner: second.runner }).install(
+			config(homeDir, { port: 7777 }),
+		);
+
+		const commands = second.calls.map((c) => `${c.command} ${c.args.join(" ")}`);
+		expect(commands).not.toContain(`launchctl unload -w ${plistPath(homeDir)}`);
+		expect(result.ok).toBe(true);
+		expect(result.message.toLowerCase()).toContain("unchanged");
 	});
 
 	it("creates the log directory", async () => {

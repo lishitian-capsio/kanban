@@ -28,12 +28,46 @@ function makeRunner(responder: (command: string, args: string[]) => CommandResul
 
 describe("WindowsSchtasksManager.install", () => {
 	it("creates a scheduled task via schtasks", async () => {
-		const { calls, runner } = makeRunner(() => ok);
+		// Fresh install: /Query reports not-installed, so this is a first-time create.
+		const { calls, runner } = makeRunner((_command, args) =>
+			args.includes("/Query") ? { code: 1, stdout: "", stderr: "ERROR: cannot find" } : ok,
+		);
 		const result = await new WindowsSchtasksManager({ runner }).install(config());
 		expect(result.ok).toBe(true);
-		expect(calls[0].command).toBe("schtasks");
-		expect(calls[0].args).toContain("/Create");
-		expect(calls[0].args).toContain("ONLOGON");
+		const create = calls.find((c) => c.args.includes("/Create"));
+		expect(create?.command).toBe("schtasks");
+		expect(create?.args).toContain("ONLOGON");
+	});
+
+	it("recreates the task and restarts it when reinstalling over a running task", async () => {
+		// /Query succeeds (already installed) and reports the task as Running.
+		const { calls, runner } = makeRunner((_command, args) =>
+			args.includes("/Query")
+				? { code: 0, stdout: "Status: Running\r\nScheduled Task State: Enabled\r\n", stderr: "" }
+				: ok,
+		);
+		const result = await new WindowsSchtasksManager({ runner }).install(config());
+
+		const verbs = calls.flatMap((c) => c.args).filter((a) => ["/Create", "/End", "/Run"].includes(a));
+		// recreate (force-overwrite), then bounce the running instance so the new command is live
+		expect(verbs).toEqual(["/Create", "/End", "/Run"]);
+		expect(result.ok).toBe(true);
+		// honest: it reports a reinstall, not a first-time install
+		expect(result.message.toLowerCase()).toContain("reinstall");
+	});
+
+	it("recreates without restarting when reinstalling over a non-running task", async () => {
+		const { calls, runner } = makeRunner((_command, args) =>
+			args.includes("/Query")
+				? { code: 0, stdout: "Status: Ready\r\nScheduled Task State: Enabled\r\n", stderr: "" }
+				: ok,
+		);
+		const result = await new WindowsSchtasksManager({ runner }).install(config());
+
+		const verbs = calls.flatMap((c) => c.args).filter((a) => ["/Create", "/End", "/Run"].includes(a));
+		expect(verbs).toEqual(["/Create"]);
+		expect(result.ok).toBe(true);
+		expect(result.message.toLowerCase()).toContain("reinstall");
 	});
 
 	it("reports failure when schtasks create fails", async () => {

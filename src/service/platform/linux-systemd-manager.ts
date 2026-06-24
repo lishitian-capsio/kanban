@@ -9,7 +9,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -54,10 +54,46 @@ export class LinuxSystemdManager implements ServiceManager {
 		return this.runner("systemctl", ["--user", ...args]);
 	}
 
+	/**
+	 * Install is **idempotent**: re-running it with new `--host`/`--port` rewrites
+	 * the unit AND `restart`s the running daemon so the new `ExecStart` actually
+	 * takes effect (a bare `enable --now` would leave a running unit on the old
+	 * command). The returned message honestly reflects whether this was a first
+	 * install, a reconfigure, or a no-op (config unchanged) — it never reports
+	 * "Installed" when nothing was applied.
+	 */
 	async install(config: ServiceConfig): Promise<ServiceActionResult> {
 		const unitPath = this.unitPath(config.name);
+		const unitFile = this.unitFileName(config.name);
+		const nextUnit = buildSystemdUnit(config);
+		const previousUnit = existsSync(unitPath) ? await readFile(unitPath, "utf8") : null;
+		const wasInstalled = previousUnit !== null;
+		const hints = [
+			`Run "loginctl enable-linger ${this.currentUser()}" to keep the service running at boot and after logout.`,
+			`View logs with "journalctl --user -u ${config.name} -f".`,
+		];
+
+		// Config unchanged: don't rewrite or bounce the daemon — just make sure it
+		// is enabled and running, and say so truthfully.
+		if (wasInstalled && previousUnit === nextUnit) {
+			const enable = this.systemctl("enable", "--now", unitFile);
+			if (enable.code !== 0) {
+				return {
+					ok: false,
+					message: `systemctl enable --now failed: ${enable.stderr.trim()}`,
+					artifactPath: unitPath,
+				};
+			}
+			return {
+				ok: true,
+				message: `Service "${config.name}" is already installed with this configuration (unchanged); left enabled and running.`,
+				artifactPath: unitPath,
+				hints,
+			};
+		}
+
 		await mkdir(this.unitDir(), { recursive: true });
-		await writeFile(unitPath, buildSystemdUnit(config), "utf8");
+		await writeFile(unitPath, nextUnit, "utf8");
 
 		const reload = this.systemctl("daemon-reload");
 		if (reload.code !== 0) {
@@ -67,22 +103,23 @@ export class LinuxSystemdManager implements ServiceManager {
 				artifactPath: unitPath,
 			};
 		}
-		const enable = this.systemctl("enable", "--now", this.unitFileName(config.name));
+		const enable = this.systemctl("enable", unitFile);
 		if (enable.code !== 0) {
-			return {
-				ok: false,
-				message: `systemctl enable --now failed: ${enable.stderr.trim()}`,
-				artifactPath: unitPath,
-			};
+			return { ok: false, message: `systemctl enable failed: ${enable.stderr.trim()}`, artifactPath: unitPath };
+		}
+		// `restart` (not `start`) so a reconfigure of an already-running unit picks
+		// up the new ExecStart; on a fresh install it simply starts the unit.
+		const restart = this.systemctl("restart", unitFile);
+		if (restart.code !== 0) {
+			return { ok: false, message: `systemctl restart failed: ${restart.stderr.trim()}`, artifactPath: unitPath };
 		}
 		return {
 			ok: true,
-			message: `Installed and started systemd user service "${config.name}".`,
+			message: wasInstalled
+				? `Reconfigured and restarted systemd user service "${config.name}".`
+				: `Installed and started systemd user service "${config.name}".`,
 			artifactPath: unitPath,
-			hints: [
-				`Run "loginctl enable-linger ${this.currentUser()}" to keep the service running at boot and after logout.`,
-				`View logs with "journalctl --user -u ${config.name} -f".`,
-			],
+			hints,
 		};
 	}
 
