@@ -4,6 +4,7 @@ import type {
 	RuntimeBoardSyncStatus,
 } from "../core/api-contract";
 import { createLogger } from "../logging";
+import { markStall } from "../server/event-loop-stall-watchdog";
 import {
 	BOARD_REF_VERSION,
 	DEFAULT_BOARD_BRANCH,
@@ -194,6 +195,10 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 		if (!isBoardDecouplingActive(target.repoPath)) {
 			return;
 		}
+		// Breadcrumb for the stall watchdog: the debounced board commit runs the
+		// `git add -A` + `git commit` on the board worktree outside any tRPC call, so
+		// if it hangs the loop the watchdog can still attribute it.
+		markStall("board-sync:commit", target.repoPath);
 		inFlightByRepo.add(target.repoPath);
 		try {
 			await commitBoardWorktree(target.repoPath, BOARD_SYNC_COMMIT_MESSAGE);

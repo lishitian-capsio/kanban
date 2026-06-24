@@ -49,6 +49,7 @@ import { createRuntimeApi } from "../trpc/runtime-api";
 import { type BoardSyncApi, createWorkspaceApi } from "../trpc/workspace-api";
 import { type BoardSyncService, createBoardSyncService } from "../workspace/board-sync";
 import { getWebUiDir, normalizeRequestPath, readAsset } from "./assets";
+import { markStall } from "./event-loop-stall-watchdog";
 import { handleHttpRequest, handleSocketUpgrade } from "./middleware";
 import type { RuntimeStateHub } from "./runtime-state-hub";
 import type { WorkspaceRegistry } from "./workspace-registry";
@@ -503,6 +504,9 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				return;
 			}
 			if (pathname.startsWith("/api/trpc")) {
+				// Breadcrumb for the stall watchdog: if a tRPC handler hangs the event
+				// loop, the watchdog report names the procedure path.
+				markStall("trpc", pathname.slice("/api/trpc/".length) || pathname);
 				await trpcHttpHandler(req, res);
 				return;
 			}

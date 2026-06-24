@@ -24,6 +24,7 @@ import type {
 } from "../core/api-contract";
 import type { SessionMessage } from "../session/session-message";
 import type { TerminalSessionManager } from "../terminal/session-manager";
+import { markStall } from "./event-loop-stall-watchdog";
 import { createWorkspaceMetadataMonitor } from "./workspace-metadata-monitor";
 import type { ResolvedWorkspaceStreamTarget, WorkspaceRegistry } from "./workspace-registry";
 
@@ -333,6 +334,9 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			return;
 		}
 		try {
+			// Breadcrumb for the stall watchdog: assembling the board snapshot + the
+			// metadata refresh fan out across tasks here on every broadcast.
+			markStall("broadcast:workspace-state", workspaceId);
 			const workspaceState = await deps.workspaceRegistry.buildWorkspaceStateSnapshot(workspaceId, workspacePath);
 			const payload: RuntimeStateStreamWorkspaceStateMessage = {
 				type: "workspace_state_updated",

@@ -40,6 +40,7 @@ import {
 import { configureLogging, createLogger } from "./logging";
 import { disablePasscode, generateInternalToken, setPasscode } from "./security/passcode-manager";
 import { resolveAndPersistPasscode } from "./security/passcode-store";
+import { startEventLoopStallWatchdog } from "./server/event-loop-stall-watchdog";
 import { terminateProcessForTimeout } from "./server/process-termination";
 import type { RuntimeStateHub } from "./server/runtime-state-hub";
 import { captureNodeException, flushNodeTelemetry } from "./telemetry/sentry-node.js";
@@ -401,6 +402,19 @@ async function startServer(): Promise<{
 	const strippedProxy = installProxyFetch();
 	const proxyLog = createLogger("proxy-fetch");
 	proxyLog.info("installed global fetch proxy interceptor");
+
+	// Start the event-loop stall watchdog before the server stack loads so a
+	// synchronous hang anywhere in the runtime (e.g. the move-to-done freeze under
+	// investigation) is observed from a second thread and attributed to the hot
+	// path via breadcrumbs. Default-on; set KANBAN_STALL_WATCHDOG=0 to disable.
+	const stallWatchdog =
+		process.env.KANBAN_STALL_WATCHDOG === "0"
+			? null
+			: startEventLoopStallWatchdog(
+					process.env.KANBAN_STALL_WATCHDOG_THRESHOLD_MS
+						? { thresholdMs: Number(process.env.KANBAN_STALL_WATCHDOG_THRESHOLD_MS) }
+						: undefined,
+				);
 	if (strippedProxy.https || strippedProxy.http) {
 		proxyLog.info("cleared inherited proxy env; in-process routing now follows Kanban proxy settings", {
 			clearedProxy: strippedProxy.https ?? strippedProxy.http,
@@ -549,6 +563,7 @@ async function startServer(): Promise<{
 			skipSessionCleanup: options?.skipSessionCleanup ?? false,
 		});
 		await stopNetworkBridge();
+		await stallWatchdog?.stop();
 	};
 
 	return {
