@@ -20,6 +20,13 @@
       "name": "卡死",
       "createdAt": 1782275081536,
       "updatedAt": 1782275081536
+    },
+    {
+      "id": "be0defac-046b-41b6-8093-300672c9508b",
+      "agentId": "claude",
+      "name": "network proxy",
+      "createdAt": 1782276370603,
+      "updatedAt": 1782276370603
     }
   ]
 }
