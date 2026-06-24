@@ -67,6 +67,7 @@ import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-pro
 import { limitAgentStart } from "../server/agent-start-limiter";
 import { openInBrowser } from "../server/browser";
 import type { HomeThreadStore } from "../session/home-thread-store";
+import { capChatMessagesForTransport } from "../session/session-message-display-cap";
 import { getSelectedCommittedProvider } from "../state/committed-provider-store";
 import { loadWorkspaceCommittedProviders } from "../state/workspace-state";
 import { buildRuntimeConfigResponse, resolveAgentCommand } from "../terminal/agent-registry";
@@ -476,7 +477,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					if (terminalSummary || terminalMessages.length > 0) {
 						return {
 							ok: true,
-							messages: terminalMessages,
+							messages: capChatMessagesForTransport(terminalMessages),
 						};
 					}
 					return {
@@ -487,7 +488,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				}
 				return {
 					ok: true,
-					messages,
+					messages: capChatMessagesForTransport(messages),
 				};
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);

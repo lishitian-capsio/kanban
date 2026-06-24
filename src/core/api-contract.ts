@@ -1998,6 +1998,11 @@ export const runtimeTaskChatMessageSchema = z.object({
 			messageKind: z.string().nullable().optional(),
 			displayRole: z.string().nullable().optional(),
 			reason: z.string().nullable().optional(),
+			// Set when an oversized message's content was truncated for transport
+			// (see session-message-display-cap.ts). `originalContentLength` is the
+			// pre-truncation character count, so a surface can show how much was elided.
+			contentTruncated: z.boolean().nullable().optional(),
+			originalContentLength: z.number().nullable().optional(),
 		})
 		.nullable()
 		.optional(),
