@@ -3,7 +3,7 @@
   "title": "CLI redesign P1 — global flags",
   "prompt": "实现 .plan/docs/kanban-cli-redesign.md 的 P1 阶段(§6.1 全局 flag)。依赖 P0 的 envelope/渲染接缝。\n\n做:\n1) 在 program 顶层一次性声明全局 flag:--project-path、--json/--human、--no-color、--quiet、--host <ip>、--port <n|auto>(§6.1 表)。\n2) 子命令 action 通过 this.optsWithGlobals() 读取(用普通 function 不用箭头函数——AGENTS.md 记录的 commander gotcha:子命令重复声明父级选项会被路由到父命令)。\n3) 统一 host/port 解析器:复用支持 auto 的 parseCliPortValue,root 与 service install 共用同一 parser,消除 I7 的双份解析(parseServicePort)。\n4) 保持每个子命令的 --project-path 仍可用(commander 继承),老调用不破(§8)。\n5) --passcode/--no-passcode 仍保留在 serve 与 service install,文档化其 boolean|string 收敛(I8),持久场景引导用 P4 的 remote passcode set/disable。\n\n遵守 AGENTS.md。补/调单测。验收:web:typecheck + biome clean;`kanban --project-path X task list` 与 `kanban task list --project-path X` 都工作;--host/--port 单一 parser 两处行为一致。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782275258407,
-  "updatedAt": 1782275258407,
+  "updatedAt": 1782276139433,
   "column": "backlog",
   "rank": "Zo",
   "dependsOn": [

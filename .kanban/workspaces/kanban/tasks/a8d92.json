@@ -3,7 +3,7 @@
   "title": "CLI redesign P0 — output/error foundation",
   "prompt": "实现 .plan/docs/kanban-cli-redesign.md 的 P0 阶段(§4 输出契约 + §6.2 退出码 + §6.3 error.code 枚举)。这是基础层,不改任何命令名/命令树。\n\n做:\n1) 引入 result-object + 双渲染器接缝:每个命令先算出一份 result object,再经「人类渲染器」或「机器渲染器」输出(§4.1)。\n2) 机器侧统一 envelope:成功 {schemaVersion:\"1\", ok:true, command, data, warnings?};失败 {schemaVersion:\"1\", ok:false, command, error:{code,message,details?}}(§4.2)。schemaVersion 起始值 \"1\"(§10 Q2 取推荐)。\n3) 闭合的 error.code 枚举(§6.3)+ 退出码分级 0/1/2/3/4/5(§6.2),code→exit 确定性映射。\n4) 模式选择优先级:--json/--human flag > KANBAN_OUTPUT 环境变量 > auto(非 TTY→机器, TTY→人类)(§4.4, §10 Q1 取推荐:非 TTY 自动转 json,保留 KANBAN_OUTPUT=human 逃生舱)。\n5) 把现有所有 run*Command 接到该 envelope 上(命令名保持不变)。--json 时 stdout 必须是单一 JSON 文档,诊断日志走 stderr(§7.3)。\n6) 兼容窗口:失败时在 error 对象旁同时镜像一个顶层 error 字符串(§8 表最后一行),老读取方不破。\n\n主要触及:src/commands/runtime-workspace.ts(printJson→envelope)、src/cli-output.ts(人类渲染 helper)、各 run*Command 包装。遵守 AGENTS.md(无 any、SDK 类型优先、logging 走 src/logging facade 不用 console.*)。补单测覆盖 envelope 形状 + code↔exit 映射 + 模式选择优先级。验收:web:typecheck + biome clean,现有 task/db/file/vault 命令的 --json 输出仍可 JSON.parse。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782275245652,
-  "updatedAt": 1782275245652,
+  "updatedAt": 1782276138085,
   "column": "backlog",
   "rank": "Zp",
   "dependsOn": []

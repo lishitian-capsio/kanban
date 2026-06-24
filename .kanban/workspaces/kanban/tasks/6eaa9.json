@@ -3,7 +3,7 @@
   "title": "CLI redesign P4 — remote/service consolidation",
   "prompt": "实现 .plan/docs/kanban-cli-redesign.md 的 P4 阶段(§5 远程/service 子系统)。依赖 P1。§10 Q3 取推荐:独立 remote 名词(因 remote 访问也适用于 bare `kanban --host …` 启动,不止已安装的 service)。\n\n做:\n1) 新增 `kanban remote status`(枢纽,§5.1):一屏/一份 --json data 给出 bind{host,port,https}、accessUrls[](枚举 NIC,总含 loopback)、remoteMode、passcode{required,set,source,viewCommand}(--json 永不含口令明文)、health{reachable,checkedUrl,latencyMs}、allowedHosts[](镜像 Host/CORS gate)、service{installed,running,platform,name}。\n2) 新增 `kanban remote passcode show|set <v>|disable`(§5.2):show=复用持久口令读取(仅人类通道,never --json value);set=wraps resolveAndPersistPasscode({explicit});disable=持久化 --no-passcode 等价。\n3) 顶层 `kanban passcode` 变为 remote passcode show 的弃用别名。\n4) service status 行为不变,人类渲染加指针「access URL + passcode 见 kanban remote status」;remote status 内含 service 子对象。\n5) bind-time 引导(§5.4):绑定非 loopback host 时(isKanbanRemoteHost,cli.ts:604 附近)启动 banner 保留口令+URL,并加一行「view later: kanban remote passcode show · status: kanban remote status」。allowedHosts 在 remote status 暴露以便自诊断。\n\n承接近期 host/CORS/passcode/install 幂等系列修复,口令绝不进机器通道/日志(保 service.ts 现有不变量)。遵守 AGENTS.md。补单测。验收:web:typecheck + biome clean;remote status --json 不含口令明文;passcode 别名带弃用警告。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782275306379,
-  "updatedAt": 1782275306379,
+  "updatedAt": 1782276143372,
   "column": "backlog",
   "rank": "Zl",
   "dependsOn": [

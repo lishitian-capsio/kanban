@@ -3,7 +3,7 @@
   "title": "CLI redesign P3 — kanban schema manifest",
   "prompt": "实现 .plan/docs/kanban-cli-redesign.md 的 P3 阶段(§7.4 自描述清单 kanban schema)。依赖 P1。\n\n做:\n1) 新增 `kanban schema [command]`:从 commander 已持有的命令/选项定义 + 一个小的 per-command 输出-schema 注册表 生成机器可读能力清单(§7.4 示例形状):{schemaVersion, kanbanVersion, commands:[{id,path,summary,positionals,options,output:{ref},errors}], schemas, errorCodes}。\n2) 清单从单一来源(commander 定义)生成,保证与实际行为不漂移。\n3) `kanban schema task.create` 可窄化到单条命令。\n4) errorCodes 段带 §6.3 枚举 + §6.2 exit-code 映射。\n5) 默认 --json(本命令面向 agent),也提供人类可读概览。\n\n遵守 AGENTS.md(无 any、SDK/commander 类型优先)。补单测:清单含全部命令、option 类型/必填/enum values 正确、errorCodes↔exit 映射齐全。验收:web:typecheck + biome clean;`kanban schema --json` 单一 JSON.parse 通过。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782275287983,
-  "updatedAt": 1782275287983,
+  "updatedAt": 1782276142007,
   "column": "backlog",
   "rank": "Zm",
   "dependsOn": [

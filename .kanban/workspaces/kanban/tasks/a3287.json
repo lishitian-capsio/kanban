@@ -3,7 +3,7 @@
   "title": "CLI redesign P5 — human rendering polish",
   "prompt": "实现 .plan/docs/kanban-cli-redesign.md 的 P5 阶段(§4.3 人类渲染)。依赖 P2/P3/P4(命令树/schema/remote 均就位后再做整体人类视图打磨)。\n\n做:\n1) list 动词→对齐表格 + 彩色表头 + 末尾摘要(如「12 tasks · 3 in_progress · 2 review」),宽单元格截断,完整值经 --json 或 show 取(§4.3)。\n2) show/create/update→key/value 摘要块,高亮受影响 id,成功打绿色 ✓ 状态行。\n3) 长任务(task start、service install、server boot)→ora spinner + 终态 ✓/✗(复用 createShutdownIndicator 既有模式)。\n4) 错误→红色 ✗ <message> + dim (code: <error.code>) + 适用时一行 hint。\n5) 颜色在非 TTY / --no-color / NO_COLOR 时自动关闭。\n6) 依赖选型:优先选小而维护良好的 table/format 第三方包(AGENTS.md「先评估第三方」),颜色用现有工具链,不引重框架。\n\n遵守 AGENTS.md。补/调单测(渲染纯函数 over result object)。验收:web:typecheck + biome clean;TTY 下人类视图美观,管道/--json 行为不受影响。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782275323145,
-  "updatedAt": 1782275323145,
+  "updatedAt": 1782276144694,
   "column": "backlog",
   "rank": "Zk",
   "dependsOn": [
