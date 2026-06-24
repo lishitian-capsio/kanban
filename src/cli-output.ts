@@ -10,6 +10,8 @@
  * `createLogger` from `./logging` instead.
  */
 
+import ora from "ora";
+
 /** Print a line of user-facing CLI output to stdout. */
 export function printLine(message = ""): void {
 	process.stdout.write(`${message}\n`);
@@ -42,67 +44,68 @@ export function shouldUseColor(noColorOverride = false): boolean {
 	return Boolean(process.stdout?.isTTY);
 }
 
-type AnsiStyle = "green" | "red" | "dim" | "bold";
+export type AnsiStyle = "green" | "red" | "dim" | "bold" | "cyan" | "yellow";
 
 const ANSI_CODES: Record<AnsiStyle, string> = {
 	green: "32",
 	red: "31",
 	dim: "2",
 	bold: "1",
+	cyan: "36",
+	yellow: "33",
 };
 
-function paint(text: string, style: AnsiStyle, useColor: boolean): string {
+/**
+ * Wrap `text` in the ANSI escape for `style`, or return it unchanged when `useColor` is
+ * false (so the same render code path serves both the colored TTY view and the plain
+ * `--no-color`/non-TTY view — see {@link shouldUseColor}). Exported so the richer human
+ * renderers in `cli-human-render.ts` share this single source of color truth.
+ */
+export function paint(text: string, style: AnsiStyle, useColor: boolean): string {
 	if (!useColor) {
 		return text;
 	}
 	return `[${ANSI_CODES[style]}m${text}[0m`;
 }
 
-function formatHumanValue(value: unknown): string {
-	if (value === null || value === undefined) {
-		return String(value);
-	}
-	if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-		return String(value);
-	}
-	if (Array.isArray(value)) {
-		return `[${value.length} item${value.length === 1 ? "" : "s"}]`;
-	}
-	return JSON.stringify(value);
+/**
+ * A started progress spinner with a terminal success/failure transition (design doc §4.3,
+ * "long-running"). Mirrors the `createShutdownIndicator` pattern in `cli.ts`: a real `ora`
+ * spinner on a TTY, a plain one-line fallback when the stream is not a TTY.
+ */
+export interface CliSpinner {
+	succeed(text?: string): void;
+	fail(text?: string): void;
 }
 
 /**
- * Minimal human renderer for the result object (design doc §4.3). This phase keeps the
- * rendering intentionally plain — a status line plus a key/value summary; the richer
- * tables/spinners are a later phase. Importantly, it shares the exact same result object
- * as the machine envelope so the two channels cannot drift.
+ * Start a spinner on `stream` (stderr by default, so it never pollutes the stdout result
+ * document) and return its terminal-transition handle. Callers gate on output mode/`--quiet`
+ * before calling — this helper only handles the TTY-vs-plain rendering split.
  */
-export interface HumanRenderInputs {
-	ok: boolean;
-	command: string;
-	data?: Record<string, unknown>;
-	errorMessage?: string;
-	errorCode?: string;
-	useColor: boolean;
-}
-
-export function renderHumanResult(inputs: HumanRenderInputs): string {
-	const lines: string[] = [];
-	if (inputs.ok) {
-		lines.push(`${paint("✓", "green", inputs.useColor)} ${paint(inputs.command, "bold", inputs.useColor)}`);
-		for (const [key, value] of Object.entries(inputs.data ?? {})) {
-			lines.push(`  ${paint(key, "dim", inputs.useColor)}: ${formatHumanValue(value)}`);
-		}
-	} else {
-		lines.push(`${paint("✗", "red", inputs.useColor)} ${inputs.errorMessage ?? "Command failed."}`);
-		if (inputs.errorCode) {
-			lines.push(paint(`  (code: ${inputs.errorCode})`, "dim", inputs.useColor));
-		}
+export function startCliSpinner(text: string, stream: NodeJS.WriteStream = process.stderr): CliSpinner {
+	if (!stream.isTTY) {
+		stream.write(`${text}\n`);
+		return {
+			succeed(done) {
+				if (done) {
+					stream.write(`${done}\n`);
+				}
+			},
+			fail(failure) {
+				if (failure) {
+					stream.write(`${failure}\n`);
+				}
+			},
+		};
 	}
-	return lines.join("\n");
-}
-
-/** Print the human-rendered result to stdout. */
-export function printHumanResult(inputs: HumanRenderInputs): void {
-	printLine(renderHumanResult(inputs));
+	const spinner = ora({ text, stream }).start();
+	return {
+		succeed(done) {
+			spinner.succeed(done ?? text);
+		},
+		fail(failure) {
+			spinner.fail(failure ?? text);
+		},
+	};
 }

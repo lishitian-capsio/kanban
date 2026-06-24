@@ -221,6 +221,38 @@ describe("runCliCommand human mode", () => {
 		expect(() => JSON.parse(text)).toThrow();
 		expect(text.length).toBeGreaterThan(0);
 	});
+
+	it("renders a list result as a table with a trailing summary footer", async () => {
+		const capture = captureStdout();
+		try {
+			await runCliCommand("task.list", async () => ({
+				ok: true,
+				count: 1,
+				tasks: [{ id: "abc", column: "review", session: null, prompt: "Hello" }],
+			}));
+		} finally {
+			capture.restore();
+		}
+		const text = capture.output();
+		expect(text).toContain("abc");
+		expect(text).toContain("1 task · 1 review");
+	});
+
+	it("keeps the human stdout result clean — a deprecation note never lands on stdout", async () => {
+		const capture = captureStdout();
+		try {
+			await runCliCommand("task.done", async () => ({ ok: true, id: "abc" }), {
+				warnings: [{ code: "deprecated_alias", message: "`task trash` is deprecated; use `task done`." }],
+			});
+		} finally {
+			capture.restore();
+		}
+		// The deprecation note is a human-channel stderr line (covered above); stdout must stay
+		// a single clean result (the warning text is not duplicated there).
+		const text = capture.output();
+		expect(text).toContain("abc");
+		expect(text).not.toContain("deprecated");
+	});
 });
 
 describe("runCliCommand global flags (P1)", () => {

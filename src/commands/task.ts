@@ -1474,6 +1474,9 @@ export function registerTaskCommand(program: Command): void {
 		.action(async function (this: Command, idArg: string | undefined, options: { taskId?: string }) {
 			const globals = readGlobalCliOptions(this);
 			const warnings: CliWarning[] = [];
+			// The id is resolved inside the handler (so a missing id becomes a structured failure),
+			// but the spinner text is built here from the best-available label before the handler runs.
+			const idLabel = idArg ?? options.taskId ?? "task";
 			await runCliCommand(
 				"task.start",
 				async () => {
@@ -1492,7 +1495,15 @@ export function registerTaskCommand(program: Command): void {
 						projectPath: globals.projectPath,
 					});
 				},
-				{ globals, warnings },
+				{
+					globals,
+					warnings,
+					spinner: {
+						text: `Starting task agent for ${idLabel}…`,
+						succeedText: () => `Task agent started for ${idLabel}`,
+						failText: `Failed to start task agent for ${idLabel}`,
+					},
+				},
 			);
 		});
 }

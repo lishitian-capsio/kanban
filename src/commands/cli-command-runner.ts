@@ -13,7 +13,8 @@
  */
 
 import type { Command } from "commander";
-import { printHumanResult, printLine, shouldUseColor } from "../cli-output";
+import { renderHumanError, renderHumanSuccess } from "../cli-human-render";
+import { type CliSpinner, printLine, shouldUseColor, startCliSpinner } from "../cli-output";
 import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import {
 	buildFailureEnvelope,
@@ -101,7 +102,7 @@ export function readGlobalCliOptions(command: Command): GlobalCliOptions {
 }
 
 export interface RunCliCommandOptions {
-	/** Machine-stable advisories surfaced in the success envelope and (TODO P5) human footer. */
+	/** Machine-stable advisories surfaced in the success envelope and the human footer (dim ⚠ lines). */
 	warnings?: CliWarning[];
 	/** Resolved program-level global flags (§6.1) from {@link readGlobalCliOptions}. */
 	globals?: GlobalCliOptions;
@@ -113,6 +114,19 @@ export interface RunCliCommandOptions {
 	 * output is unaffected so the two channels still share the one result object.
 	 */
 	renderHuman?: (data: Record<string, unknown>) => string;
+	/**
+	 * Optional progress spinner for a long-running handler (design doc §4.3). Shown only in
+	 * human mode and only when not `--quiet`; renders on stderr (never stdout), so the
+	 * machine channel stays a single clean JSON document. Resolves to a terminal ✓/✗.
+	 */
+	spinner?: {
+		/** In-progress spinner text. */
+		text: string;
+		/** Success line (defaults to `text`). Receives the handler's result data. */
+		succeedText?: (data: Record<string, unknown>) => string;
+		/** Failure line (defaults to `text`). */
+		failText?: string;
+	};
 }
 
 /**
@@ -173,20 +187,21 @@ function emit(
 	// TTY/NO_COLOR detection in `shouldUseColor`.
 	const useColor = shouldUseColor(globals ? globals.color === false : false);
 	if (envelope.ok) {
-		if (renderHuman) {
-			printLine(renderHuman(envelope.data));
-			return;
-		}
-		printHumanResult({ ok: true, command: envelope.command, data: envelope.data, useColor });
+		printLine(
+			renderHuman ? renderHuman(envelope.data) : renderHumanSuccess(envelope.command, envelope.data, { useColor }),
+		);
+		// Human-channel deprecation notes are emitted to stderr by `emitDeprecationNotesToStderr`
+		// (design doc §8), so the stdout result stays a single clean document; nothing to add here.
 		return;
 	}
-	printHumanResult({
-		ok: false,
-		command: envelope.command,
-		errorMessage: envelope.error.message,
-		errorCode: envelope.error.code,
-		useColor,
-	});
+	printLine(
+		renderHumanError({
+			command: envelope.command,
+			message: envelope.error.message,
+			code: envelope.error.code,
+			useColor,
+		}),
+	);
 }
 
 export async function runCliCommand(
@@ -204,6 +219,11 @@ export async function runCliCommand(
 		stdoutIsTTY: Boolean(process.stdout?.isTTY),
 	});
 
+	// A progress spinner is human-only (stderr) and suppressed by `--quiet`; in `--json` mode
+	// it must never run, or it would risk interleaving with the single stdout document.
+	const spinner: CliSpinner | null =
+		options.spinner && mode === "human" && !options.globals?.quiet ? startCliSpinner(options.spinner.text) : null;
+
 	// `options.warnings` may be a mutable array the handler pushes into while it runs (e.g. a
 	// `deprecated_flag` warning is only known after the id is resolved *inside* the handler, so
 	// that a missing-id `CliError` thrown during resolution still becomes a structured failure
@@ -211,6 +231,7 @@ export async function runCliCommand(
 	// machine-channel `warnings[]` are therefore both surfaced *after* the handler settles.
 	try {
 		const result = await handler();
+		spinner?.succeed(options.spinner?.succeedText?.(result));
 		emitDeprecationNotesToStderr(options.warnings);
 		emit(
 			buildSuccessEnvelope(commandId, toEnvelopeData(result), options.warnings),
@@ -219,6 +240,7 @@ export async function runCliCommand(
 			options.renderHuman,
 		);
 	} catch (error) {
+		spinner?.fail(options.spinner?.failText);
 		const classified = classifyError(error);
 		const legacyMirror = `${commandFamilyLabel(commandId)} command failed at ${getKanbanRuntimeOrigin()}: ${classified.message}`;
 		emitDeprecationNotesToStderr(options.warnings);
