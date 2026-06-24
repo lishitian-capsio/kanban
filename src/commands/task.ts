@@ -12,7 +12,6 @@ import type {
 } from "../core/api-contract";
 import { runtimeAgentIdSchema, runtimeReasoningEffortSchema } from "../core/api-contract";
 import { resolveCreateTaskAgentId } from "../core/default-task-agent";
-import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import {
 	addTaskDependency,
 	addTaskToColumn,
@@ -32,12 +31,13 @@ import {
 	ensureRuntimeWorkspace,
 	type JsonRecord,
 	notifyRuntimeWorkspaceStateUpdated,
-	printJson,
 	resolveRuntimeWorkspace,
 	resolveWorkspaceRepoPath,
 	toErrorMessage,
 	updateRuntimeWorkspaceState,
 } from "./runtime-workspace";
+import { runCliCommand } from "./cli-command-runner";
+import { CliError } from "./cli-envelope";
 
 const LIST_TASK_COLUMNS = ["backlog", "in_progress", "review", "trash"] as const;
 type ListTaskColumn = (typeof LIST_TASK_COLUMNS)[number];
@@ -525,7 +525,9 @@ async function updateTaskCommand(input: {
 	const updated = await updateRuntimeWorkspaceState(runtimeClient, workspaceRepoPath, (runtimeState) => {
 		const taskRecord = findTaskRecord(runtimeState, input.taskId);
 		if (!taskRecord) {
-			throw new Error(`Task "${input.taskId}" was not found in workspace ${workspaceRepoPath}.`);
+			throw new CliError("task_not_found", `Task "${input.taskId}" was not found in workspace ${workspaceRepoPath}.`, {
+				taskId: input.taskId,
+			});
 		}
 		const nextTaskKanbanSettings = buildTaskAgentSettingsForUpdate(taskRecord.task.agentSettings, {
 			providerId: input.providerId,
@@ -636,7 +638,9 @@ async function startTask(input: { cwd: string; taskId: string; projectPath?: str
 	const runtimeState = await runtimeClient.workspace.getState.query();
 	const fromColumnId = getTaskColumnId(runtimeState.board, input.taskId);
 	if (!fromColumnId) {
-		throw new Error(`Task "${input.taskId}" was not found in workspace ${workspaceRepoPath}.`);
+		throw new CliError("task_not_found", `Task "${input.taskId}" was not found in workspace ${workspaceRepoPath}.`, {
+			taskId: input.taskId,
+		});
 	}
 
 	if (fromColumnId !== "backlog" && fromColumnId !== "in_progress") {
@@ -750,7 +754,11 @@ async function trashTaskById(input: {
 	const mutation = await mutateWorkspaceState<TrashTaskMutationValue>(input.workspaceRepoPath, (latestState) => {
 		const latestRecord = findTaskRecord(latestState, input.taskId);
 		if (!latestRecord) {
-			throw new Error(`Task "${input.taskId}" was not found in workspace ${input.workspaceRepoPath}.`);
+			throw new CliError(
+				"task_not_found",
+				`Task "${input.taskId}" was not found in workspace ${input.workspaceRepoPath}.`,
+				{ taskId: input.taskId },
+			);
 		}
 		if (latestRecord.columnId === "trash") {
 			return {
@@ -934,7 +942,11 @@ async function deleteTaskCommand(input: {
 				? (() => {
 						const record = findTaskRecord(latestState, target.taskId);
 						if (!record) {
-							throw new Error(`Task "${target.taskId}" was not found in workspace ${workspaceRepoPath}.`);
+							throw new CliError(
+								"task_not_found",
+								`Task "${target.taskId}" was not found in workspace ${workspaceRepoPath}.`,
+								{ taskId: target.taskId },
+							);
 						}
 						return [record];
 					})()
@@ -1039,18 +1051,6 @@ function parseOptionalBooleanOption(value: unknown, flagName: string): boolean |
 	throw new Error(`Invalid boolean value for ${flagName}: "${value}". Use true or false.`);
 }
 
-async function runTaskCommand(handler: () => Promise<JsonRecord>): Promise<void> {
-	try {
-		printJson(await handler());
-	} catch (error) {
-		printJson({
-			ok: false,
-			error: `Task command failed at ${getKanbanRuntimeOrigin()}: ${toErrorMessage(error)}`,
-		});
-		process.exitCode = 1;
-	}
-}
-
 export function registerTaskCommand(program: Command): void {
 	const task = program.command("task").alias("tasks").description("Manage Kanban board tasks from the CLI.");
 
@@ -1064,7 +1064,8 @@ export function registerTaskCommand(program: Command): void {
 			parseListColumn,
 		)
 		.action(async (options: { projectPath?: string; column?: ListTaskColumn }) => {
-			await runTaskCommand(
+			await runCliCommand(
+				"task.list",
 				async () =>
 					await listTasks({
 						cwd: process.cwd(),
@@ -1121,7 +1122,8 @@ export function registerTaskCommand(program: Command): void {
 					explicitAgentId: parseAgentId(options.agentId),
 					callerSessionId,
 				});
-				await runTaskCommand(
+				await runCliCommand(
+					"task.create",
 					async () =>
 						await createTask({
 							cwd: process.cwd(),
@@ -1185,7 +1187,8 @@ export function registerTaskCommand(program: Command): void {
 				model?: string;
 				reasoningEffort?: string;
 			}) => {
-				await runTaskCommand(
+				await runCliCommand(
+					"task.update",
 					async () =>
 						await updateTaskCommand({
 							cwd: process.cwd(),
@@ -1219,7 +1222,8 @@ export function registerTaskCommand(program: Command): void {
 		)
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { taskId?: string; column?: ListTaskColumn; projectPath?: string }) => {
-			await runTaskCommand(
+			await runCliCommand(
+				"task.trash",
 				async () =>
 					await trashTask({
 						cwd: process.cwd(),
@@ -1241,7 +1245,8 @@ export function registerTaskCommand(program: Command): void {
 		)
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { taskId?: string; column?: ListTaskColumn; projectPath?: string }) => {
-			await runTaskCommand(
+			await runCliCommand(
+				"task.delete",
 				async () =>
 					await deleteTaskCommand({
 						cwd: process.cwd(),
@@ -1275,7 +1280,8 @@ export function registerTaskCommand(program: Command): void {
 			].join("\n"),
 		)
 		.action(async (options: { taskId: string; linkedTaskId: string; projectPath?: string }) => {
-			await runTaskCommand(
+			await runCliCommand(
+				"task.link",
 				async () =>
 					await linkTasks({
 						cwd: process.cwd(),
@@ -1292,7 +1298,8 @@ export function registerTaskCommand(program: Command): void {
 		.requiredOption("--dependency-id <id>", "Dependency ID.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { dependencyId: string; projectPath?: string }) => {
-			await runTaskCommand(
+			await runCliCommand(
+				"task.unlink",
 				async () =>
 					await unlinkTasks({
 						cwd: process.cwd(),
@@ -1308,7 +1315,8 @@ export function registerTaskCommand(program: Command): void {
 		.requiredOption("--task-id <id>", "Task ID.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { taskId: string; projectPath?: string }) => {
-			await runTaskCommand(
+			await runCliCommand(
+				"task.start",
 				async () =>
 					await startTask({
 						cwd: process.cwd(),

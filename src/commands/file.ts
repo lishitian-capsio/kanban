@@ -3,15 +3,9 @@ import { readFile } from "node:fs/promises";
 import type { Command } from "commander";
 
 import type { RuntimeFileCategory, RuntimeFileItem } from "../core/api-contract";
-import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import { FileLibraryStore } from "../files/file-library-store";
-import {
-	createRuntimeTrpcClient,
-	type JsonRecord,
-	printJson,
-	resolveRuntimeWorkspace,
-	toErrorMessage,
-} from "./runtime-workspace";
+import { createRuntimeTrpcClient, type JsonRecord, resolveRuntimeWorkspace } from "./runtime-workspace";
+import { runCliCommand } from "./cli-command-runner";
 
 const FILE_CATEGORIES = ["image", "document", "audio", "video", "archive", "text", "other"] as const;
 
@@ -150,18 +144,6 @@ async function showFileBytes(input: { cwd: string; id: string; projectPath?: str
 	};
 }
 
-async function runFileCommand(handler: () => Promise<JsonRecord>): Promise<void> {
-	try {
-		printJson(await handler());
-	} catch (error) {
-		printJson({
-			ok: false,
-			error: `File command failed at ${getKanbanRuntimeOrigin()}: ${toErrorMessage(error)}`,
-		});
-		process.exitCode = 1;
-	}
-}
-
 export function registerFileCommand(program: Command): void {
 	const file = program
 		.command("file")
@@ -174,7 +156,8 @@ export function registerFileCommand(program: Command): void {
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.option("--category <category>", `Filter by category: ${FILE_CATEGORIES.join(" | ")}.`, parseCategory)
 		.action(async (options: { projectPath?: string; category?: RuntimeFileCategory }) => {
-			await runFileCommand(
+			await runCliCommand(
+				"file.list",
 				async () =>
 					await listFiles({ cwd: process.cwd(), projectPath: options.projectPath, category: options.category }),
 			);
@@ -186,7 +169,8 @@ export function registerFileCommand(program: Command): void {
 		.requiredOption("--id <id>", "File ID.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { id: string; projectPath?: string }) => {
-			await runFileCommand(
+			await runCliCommand(
+				"file.show",
 				async () => await showFile({ cwd: process.cwd(), id: options.id, projectPath: options.projectPath }),
 			);
 		});
@@ -199,7 +183,8 @@ export function registerFileCommand(program: Command): void {
 		.option("--mime <mime>", "Override the detected mime type.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { path: string; name?: string; mime?: string; projectPath?: string }) => {
-			await runFileCommand(
+			await runCliCommand(
+				"file.add",
 				async () =>
 					await addFile({
 						cwd: process.cwd(),
@@ -218,7 +203,8 @@ export function registerFileCommand(program: Command): void {
 		.requiredOption("--name <name>", "New file name.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { id: string; name: string; projectPath?: string }) => {
-			await runFileCommand(
+			await runCliCommand(
+				"file.update",
 				async () =>
 					await updateFile({
 						cwd: process.cwd(),
@@ -235,7 +221,8 @@ export function registerFileCommand(program: Command): void {
 		.requiredOption("--id <id>", "File ID.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { id: string; projectPath?: string }) => {
-			await runFileCommand(
+			await runCliCommand(
+				"file.delete",
 				async () => await deleteFile({ cwd: process.cwd(), id: options.id, projectPath: options.projectPath }),
 			);
 		});
@@ -246,7 +233,8 @@ export function registerFileCommand(program: Command): void {
 		.requiredOption("--id <id>", "File ID.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { id: string; projectPath?: string }) => {
-			await runFileCommand(
+			await runCliCommand(
+				"file.path",
 				async () => await showFilePath({ cwd: process.cwd(), id: options.id, projectPath: options.projectPath }),
 			);
 		});
@@ -257,7 +245,8 @@ export function registerFileCommand(program: Command): void {
 		.requiredOption("--id <id>", "File ID.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { id: string; projectPath?: string }) => {
-			await runFileCommand(
+			await runCliCommand(
+				"file.bytes",
 				async () => await showFileBytes({ cwd: process.cwd(), id: options.id, projectPath: options.projectPath }),
 			);
 		});

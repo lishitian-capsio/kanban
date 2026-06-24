@@ -19,13 +19,25 @@ interface VaultDocumentRecord {
 	updatedAt: number;
 }
 
+interface SuccessEnvelope<T> {
+	schemaVersion: string;
+	ok: true;
+	command: string;
+	data: T;
+}
+
+// Parse the machine envelope (design doc §4.2) and return the unwrapped `data` payload.
+// `--json`/non-TTY output is a single envelope `{ schemaVersion, ok, command, data }`.
 function parseJson<T>(result: { stdout: string; stderr: string; exitCode: number | null }): T {
 	if (result.exitCode !== 0) {
 		throw new Error(
 			`CLI command failed (exit=${String(result.exitCode)}).\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
 		);
 	}
-	return JSON.parse(result.stdout) as T;
+	const envelope = JSON.parse(result.stdout) as SuccessEnvelope<T>;
+	expect(envelope.schemaVersion).toBe("1");
+	expect(envelope.ok).toBe(true);
+	return envelope.data;
 }
 
 describe("vault doc commands", () => {
@@ -51,7 +63,7 @@ describe("vault doc commands", () => {
 					});
 
 				// create — operating directly on disk, no runtime started.
-				const created = parseJson<{ ok: boolean; document: VaultDocumentRecord }>(
+				const created = parseJson<{ document: VaultDocumentRecord }>(
 					await runVault([
 						"doc",
 						"create",
@@ -65,7 +77,6 @@ describe("vault doc commands", () => {
 						"priority=high",
 					]),
 				);
-				expect(created.ok).toBe(true);
 				const doc = created.document;
 				expect(doc.type).toBe("requirement");
 				expect(doc.title).toBe("Rate-limit login endpoint");
@@ -100,27 +111,27 @@ describe("vault doc commands", () => {
 				commitAll(boardWorktree, "add requirement doc");
 
 				// list — finds it, filtered by type.
-				const listed = parseJson<{ ok: boolean; documents: VaultDocumentRecord[]; count: number }>(
+				const listed = parseJson<{ documents: VaultDocumentRecord[]; count: number }>(
 					await runVault(["doc", "list", "--type", "requirement"]),
 				);
 				expect(listed.count).toBe(1);
 				expect(listed.documents[0].id).toBe(doc.id);
 
 				// list with a non-matching type filter returns nothing.
-				const listedOther = parseJson<{ ok: boolean; count: number }>(
+				const listedOther = parseJson<{ count: number }>(
 					await runVault(["doc", "list", "--type", "customer"]),
 				);
 				expect(listedOther.count).toBe(0);
 
 				// show — returns the same content.
-				const shown = parseJson<{ ok: boolean; document: VaultDocumentRecord }>(
+				const shown = parseJson<{ document: VaultDocumentRecord }>(
 					await runVault(["doc", "show", "--id", doc.id]),
 				);
 				expect(shown.document.title).toBe("Rate-limit login endpoint");
 				expect(shown.document.body).toBe("Logins must be throttled per account.");
 
 				// update — change body + a frontmatter field; the file stays the same path.
-				const updated = parseJson<{ ok: boolean; document: VaultDocumentRecord }>(
+				const updated = parseJson<{ document: VaultDocumentRecord }>(
 					await runVault([
 						"doc",
 						"update",
@@ -143,7 +154,7 @@ describe("vault doc commands", () => {
 				expect(diff).toContain("+Logins must be throttled per account and IP.");
 
 				// update with a new title — re-slugs the filename, recording a git rename.
-				const renamed = parseJson<{ ok: boolean; document: VaultDocumentRecord }>(
+				const renamed = parseJson<{ document: VaultDocumentRecord }>(
 					await runVault(["doc", "update", "--id", doc.id, "--title", "Throttle login attempts"]),
 				);
 				expect(renamed.document.relativePath).not.toBe(doc.relativePath);
@@ -156,20 +167,23 @@ describe("vault doc commands", () => {
 				expect(renamed.document.id).toBe(doc.id);
 
 				// delete — removes the file from disk.
-				const deleted = parseJson<{ ok: boolean; deleted: boolean }>(
+				const deleted = parseJson<{ deleted: boolean }>(
 					await runVault(["doc", "delete", "--id", doc.id]),
 				);
 				expect(deleted.deleted).toBe(true);
-				const afterDelete = parseJson<{ ok: boolean; count: number }>(await runVault(["doc", "list"]));
+				const afterDelete = parseJson<{ count: number }>(await runVault(["doc", "list"]));
 				expect(afterDelete.count).toBe(0);
 
-				// Deleting again fails cleanly (not found).
+				// Deleting again fails cleanly (not found): structured error object plus the
+				// legacy top-level `errorMessage` string mirror (design doc §4.2 / §8).
 				const deleteMissing = JSON.parse((await runVault(["doc", "delete", "--id", doc.id])).stdout) as {
 					ok: boolean;
-					error?: string;
+					error?: { code: string; message: string };
+					errorMessage?: string;
 				};
 				expect(deleteMissing.ok).toBe(false);
-				expect(deleteMissing.error).toContain("not found");
+				expect(deleteMissing.error?.message).toContain("not found");
+				expect(deleteMissing.errorMessage).toContain("not found");
 			} finally {
 				cleanupProject();
 				cleanupHome();

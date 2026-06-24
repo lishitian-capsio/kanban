@@ -1,0 +1,126 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { CliError } from "../../src/commands/cli-envelope";
+import { runCliCommand } from "../../src/commands/cli-command-runner";
+
+function captureStdout(): { output: () => string; restore: () => void } {
+	let buffer = "";
+	const original = process.stdout.write.bind(process.stdout);
+	const spy = vi
+		.spyOn(process.stdout, "write")
+		.mockImplementation((chunk: string | Uint8Array): boolean => {
+			buffer += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+			return true;
+		});
+	return {
+		output: () => buffer,
+		restore: () => {
+			spy.mockRestore();
+			void original;
+		},
+	};
+}
+
+describe("runCliCommand machine mode", () => {
+	beforeEach(() => {
+		process.env.KANBAN_OUTPUT = "json";
+		process.exitCode = undefined;
+	});
+	afterEach(() => {
+		delete process.env.KANBAN_OUTPUT;
+		process.exitCode = undefined;
+	});
+
+	it("emits exactly one JSON document with the success envelope", async () => {
+		const capture = captureStdout();
+		try {
+			await runCliCommand("task.list", async () => ({ ok: true, count: 0, tasks: [] }));
+		} finally {
+			capture.restore();
+		}
+		const text = capture.output();
+		const parsed = JSON.parse(text);
+		expect(parsed).toMatchObject({
+			schemaVersion: "1",
+			ok: true,
+			command: "task.list",
+			data: { count: 0, tasks: [] },
+		});
+		// The top-level `ok` from the handler must be absorbed into the envelope, not duplicated in data.
+		expect(parsed.data).not.toHaveProperty("ok");
+		expect(process.exitCode ?? 0).toBe(0);
+	});
+
+	it("renders a CliError as a structured failure envelope and sets the mapped exit code", async () => {
+		const capture = captureStdout();
+		try {
+			await runCliCommand("task.update", async () => {
+				throw new CliError("task_not_found", 'No task with id "abc".', { taskId: "abc" });
+			});
+		} finally {
+			capture.restore();
+		}
+		const parsed = JSON.parse(capture.output());
+		expect(parsed.ok).toBe(false);
+		expect(parsed.command).toBe("task.update");
+		expect(parsed.error).toEqual({
+			code: "task_not_found",
+			message: 'No task with id "abc".',
+			details: { taskId: "abc" },
+		});
+		expect(typeof parsed.errorMessage).toBe("string");
+		expect(parsed.errorMessage).toContain('No task with id "abc".');
+		expect(process.exitCode).toBe(3);
+	});
+
+	it("maps an unclassified handler error to internal_error / exit 1", async () => {
+		const capture = captureStdout();
+		try {
+			await runCliCommand("db.tables", async () => {
+				throw new Error("kaboom");
+			});
+		} finally {
+			capture.restore();
+		}
+		const parsed = JSON.parse(capture.output());
+		expect(parsed.error.code).toBe("internal_error");
+		expect(parsed.errorMessage).toContain("Database command failed");
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("forwards warnings into the success envelope", async () => {
+		const capture = captureStdout();
+		try {
+			await runCliCommand("task.trash", async () => ({ ok: true }), {
+				warnings: [{ code: "deprecated_alias", message: "use `task done`" }],
+			});
+		} finally {
+			capture.restore();
+		}
+		const parsed = JSON.parse(capture.output());
+		expect(parsed.warnings).toEqual([{ code: "deprecated_alias", message: "use `task done`" }]);
+	});
+});
+
+describe("runCliCommand human mode", () => {
+	beforeEach(() => {
+		process.env.KANBAN_OUTPUT = "human";
+		process.exitCode = undefined;
+	});
+	afterEach(() => {
+		delete process.env.KANBAN_OUTPUT;
+		process.exitCode = undefined;
+	});
+
+	it("does not emit machine JSON on stdout in human mode", async () => {
+		const capture = captureStdout();
+		try {
+			await runCliCommand("task.list", async () => ({ ok: true, count: 1, tasks: [] }));
+		} finally {
+			capture.restore();
+		}
+		const text = capture.output().trim();
+		expect(() => JSON.parse(text)).toThrow();
+		expect(text.length).toBeGreaterThan(0);
+	});
+});

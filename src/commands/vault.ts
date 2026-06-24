@@ -3,17 +3,11 @@ import { readFile } from "node:fs/promises";
 import type { Command } from "commander";
 
 import type { RuntimeVaultDocument, RuntimeVaultFrontmatterValue } from "../core/api-contract";
-import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import { VaultDocumentStore } from "../vault/vault-document-store";
 import { VaultTypeRegistry } from "../vault/vault-type-registry";
 import type { VaultTypeDefinition } from "../vault/vault-types";
-import {
-	createRuntimeTrpcClient,
-	type JsonRecord,
-	printJson,
-	resolveRuntimeWorkspace,
-	toErrorMessage,
-} from "./runtime-workspace";
+import { createRuntimeTrpcClient, type JsonRecord, resolveRuntimeWorkspace } from "./runtime-workspace";
+import { runCliCommand } from "./cli-command-runner";
 
 function formatDocumentRecord(doc: RuntimeVaultDocument): JsonRecord {
 	return {
@@ -216,18 +210,6 @@ async function deleteDocument(input: { cwd: string; id: string; projectPath?: st
 	return { ok: true, workspacePath: repoPath, id: input.id, deleted };
 }
 
-async function runVaultCommand(handler: () => Promise<JsonRecord>): Promise<void> {
-	try {
-		printJson(await handler());
-	} catch (error) {
-		printJson({
-			ok: false,
-			error: `Vault command failed at ${getKanbanRuntimeOrigin()}: ${toErrorMessage(error)}`,
-		});
-		process.exitCode = 1;
-	}
-}
-
 export function registerVaultCommand(program: Command): void {
 	const vault = program
 		.command("vault")
@@ -242,7 +224,10 @@ export function registerVaultCommand(program: Command): void {
 		.description("List document types as a light index (name + description + metadata, no authoring prompt).")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { projectPath?: string }) => {
-			await runVaultCommand(async () => await listTypes({ cwd: process.cwd(), projectPath: options.projectPath }));
+			await runCliCommand(
+				"vault.type.list",
+				async () => await listTypes({ cwd: process.cwd(), projectPath: options.projectPath }),
+			);
 		});
 
 	type
@@ -251,7 +236,8 @@ export function registerVaultCommand(program: Command): void {
 		.requiredOption("--type <type>", "Type id (e.g. requirement).")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { type: string; projectPath?: string }) => {
-			await runVaultCommand(
+			await runCliCommand(
+				"vault.type.show",
 				async () => await showType({ cwd: process.cwd(), type: options.type, projectPath: options.projectPath }),
 			);
 		});
@@ -263,7 +249,8 @@ export function registerVaultCommand(program: Command): void {
 		.option("--type <type>", "Filter by document type (e.g. requirement).")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { type?: string; projectPath?: string }) => {
-			await runVaultCommand(
+			await runCliCommand(
+				"vault.doc.list",
 				async () =>
 					await listDocuments({ cwd: process.cwd(), type: options.type, projectPath: options.projectPath }),
 			);
@@ -274,7 +261,8 @@ export function registerVaultCommand(program: Command): void {
 		.requiredOption("--id <id>", "Document ID.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { id: string; projectPath?: string }) => {
-			await runVaultCommand(
+			await runCliCommand(
+				"vault.doc.show",
 				async () => await showDocument({ cwd: process.cwd(), id: options.id, projectPath: options.projectPath }),
 			);
 		});
@@ -296,7 +284,8 @@ export function registerVaultCommand(program: Command): void {
 				set?: string[];
 				projectPath?: string;
 			}) => {
-				await runVaultCommand(
+				await runCliCommand(
+					"vault.doc.create",
 					async () =>
 						await createDocument({
 							cwd: process.cwd(),
@@ -328,7 +317,8 @@ export function registerVaultCommand(program: Command): void {
 				set?: string[];
 				projectPath?: string;
 			}) => {
-				await runVaultCommand(
+				await runCliCommand(
+					"vault.doc.update",
 					async () =>
 						await updateDocument({
 							cwd: process.cwd(),
@@ -348,7 +338,8 @@ export function registerVaultCommand(program: Command): void {
 		.requiredOption("--id <id>", "Document ID.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { id: string; projectPath?: string }) => {
-			await runVaultCommand(
+			await runCliCommand(
+				"vault.doc.delete",
 				async () => await deleteDocument({ cwd: process.cwd(), id: options.id, projectPath: options.projectPath }),
 			);
 		});

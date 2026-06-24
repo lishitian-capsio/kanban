@@ -21,13 +21,24 @@ interface VaultTypeDefinitionRecord extends VaultTypeIndexEntry {
 	body: string;
 }
 
+interface SuccessEnvelope<T> {
+	schemaVersion: string;
+	ok: true;
+	command: string;
+	data: T;
+}
+
+// Parse the machine envelope (design doc §4.2) and return the unwrapped `data` payload.
 function parseJson<T>(result: { stdout: string; stderr: string; exitCode: number | null }): T {
 	if (result.exitCode !== 0) {
 		throw new Error(
 			`CLI command failed (exit=${String(result.exitCode)}).\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
 		);
 	}
-	return JSON.parse(result.stdout) as T;
+	const envelope = JSON.parse(result.stdout) as SuccessEnvelope<T>;
+	expect(envelope.schemaVersion).toBe("1");
+	expect(envelope.ok).toBe(true);
+	return envelope.data;
 }
 
 describe("vault type commands", () => {
@@ -55,12 +66,10 @@ describe("vault type commands", () => {
 
 				// list — light index of the seeded types, NO body (the skill "name/description" tier).
 				const listed = parseJson<{
-					ok: boolean;
 					workspacePath: string;
 					types: VaultTypeIndexEntry[];
 					count: number;
 				}>(await runVault(["type", "list"]));
-				expect(listed.ok).toBe(true);
 				// --project-path resolved to the project workspace, not the cwd (home dir).
 				expect(listed.workspacePath).toContain("kanban-project-vault-type-");
 				expect(listed.count).toBe(4);
@@ -81,11 +90,9 @@ describe("vault type commands", () => {
 
 				// show — the full definition including the authoring prompt (the skill "loaded" tier).
 				const shown = parseJson<{
-					ok: boolean;
 					workspacePath: string;
 					definition: VaultTypeDefinitionRecord;
 				}>(await runVault(["type", "show", "--type", "requirement"]));
-				expect(shown.ok).toBe(true);
 				expect(shown.definition.type).toBe("requirement");
 				expect(shown.definition.label).toBe("Requirement");
 				expect(shown.definition.slugField).toBe("title");
@@ -97,10 +104,12 @@ describe("vault type commands", () => {
 				// show on an unknown type fails cleanly (permissive engine → CLI surfaces "not found").
 				const missing = JSON.parse((await runVault(["type", "show", "--type", "spec"])).stdout) as {
 					ok: boolean;
-					error?: string;
+					error?: { code: string; message: string };
+					errorMessage?: string;
 				};
 				expect(missing.ok).toBe(false);
-				expect(missing.error).toContain("not found");
+				expect(missing.error?.message).toContain("not found");
+				expect(missing.errorMessage).toContain("not found");
 			} finally {
 				cleanupProject();
 				cleanupHome();

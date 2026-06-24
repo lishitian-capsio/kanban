@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer as createNetServer } from "node:net";
 import { resolve } from "node:path";
-import { Command, Option } from "commander";
+import { Command, CommanderError, Option } from "commander";
 import ora, { type Ora } from "ora";
 import packageJson from "../package.json" with { type: "json" };
 import { printLine } from "./cli-output";
@@ -13,6 +13,7 @@ import { registerHooksCommand } from "./commands/hooks";
 import { registerPasscodeCommand } from "./commands/passcode";
 import { registerServiceCommand } from "./commands/service";
 import { registerTaskCommand } from "./commands/task";
+import { CLI_EXIT_USAGE_ERROR } from "./commands/cli-envelope";
 import { registerVaultCommand } from "./commands/vault";
 import { buildSubprocessProxyEnv, installProxyFetch } from "./config/proxy-fetch";
 import { loadGlobalRuntimeConfig, loadRuntimeConfig } from "./config/runtime-config";
@@ -730,6 +731,8 @@ function createProgram(invocationArgs: string[]): Command {
 		.version(KANBAN_VERSION, "-v, --version", "Output the version number")
 		.option("--host <ip>", "Host IP to bind the server to (default: 127.0.0.1).")
 		.option("--port <number|auto>", "Runtime port (1-65535) or auto.", parseCliPortValue)
+		.option("--json", "Emit machine-readable JSON output (overrides KANBAN_OUTPUT and TTY detection).")
+		.option("--human", "Force human-readable output even when piped (escape hatch for KANBAN_OUTPUT/auto).")
 		.option("--no-open", "Do not open browser automatically.")
 		.option("--skip-shutdown-cleanup", "Do not move sessions to done or delete task worktrees on shutdown.")
 		.option("--https", "Enable HTTPS. Requires both --cert and --key.")
@@ -745,6 +748,10 @@ function createProgram(invocationArgs: string[]): Command {
 			"Disable auto-generated passcode for remote access (for advanced users behind a reverse proxy).",
 		)
 		.showHelpAfterError()
+		// Usage/parse failures (unknown command, missing required arg) get exit code 2 (§6.2);
+		// help/version are clean exits (exitCode 0). Commander still writes its human error to
+		// stderr before throwing, so this only reclassifies the exit code (see `run()`).
+		.exitOverride()
 		.addHelpText("after", `\nRuntime URL: ${getKanbanRuntimeOrigin()}`);
 
 	program.addOption(new Option("--agent <id>", "Deprecated compatibility flag. Ignored.").hideHelp());
@@ -799,7 +806,18 @@ async function run(): Promise<void> {
 	configureLogging();
 	const argv = process.argv.slice(2);
 	const program = createProgram(argv);
-	await program.parseAsync(argv, { from: "user" });
+	try {
+		await program.parseAsync(argv, { from: "user" });
+	} catch (error) {
+		// `.exitOverride()` turns commander's process.exit into a throw so we can map the
+		// exit code (§6.2): help/version are clean (exitCode 0); any other parse/usage
+		// failure exits 2. Commander already wrote the human message to stderr.
+		if (error instanceof CommanderError) {
+			await flushNodeTelemetry();
+			process.exit(error.exitCode === 0 ? 0 : CLI_EXIT_USAGE_ERROR);
+		}
+		throw error;
+	}
 	if (!shouldAutoOpenBrowserTabForInvocation(argv)) {
 		await flushNodeTelemetry();
 		process.exit(process.exitCode ?? 0);

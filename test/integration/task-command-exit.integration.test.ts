@@ -269,12 +269,12 @@ describe("source task commands", () => {
 
 					const createdPayload = JSON.parse(created.stdout) as {
 						ok?: boolean;
-						task?: { id?: string };
+						data?: { task?: { id?: string } };
 					};
 					expect(createdPayload.ok).toBe(true);
-					expect(typeof createdPayload.task?.id).toBe("string");
-					if (createdPayload.task?.id) {
-						taskIds.push(createdPayload.task.id);
+					expect(typeof createdPayload.data?.task?.id).toBe("string");
+					if (createdPayload.data?.task?.id) {
+						taskIds.push(createdPayload.data.task.id);
 					}
 				}
 				expect(taskIds).toHaveLength(3);

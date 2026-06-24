@@ -14,3 +14,83 @@
 export function printLine(message = ""): void {
 	process.stdout.write(`${message}\n`);
 }
+
+/**
+ * Whether ANSI color should be used for human output. Disabled when stdout is not a
+ * TTY, when `NO_COLOR` is set (https://no-color.org), or when explicitly opted out.
+ * (The `--no-color` global flag is wired in a later phase; `noColorOverride` is the seam.)
+ */
+export function shouldUseColor(noColorOverride = false): boolean {
+	if (noColorOverride) {
+		return false;
+	}
+	if (process.env.NO_COLOR !== undefined && process.env.NO_COLOR !== "") {
+		return false;
+	}
+	return Boolean(process.stdout?.isTTY);
+}
+
+type AnsiStyle = "green" | "red" | "dim" | "bold";
+
+const ANSI_CODES: Record<AnsiStyle, string> = {
+	green: "32",
+	red: "31",
+	dim: "2",
+	bold: "1",
+};
+
+function paint(text: string, style: AnsiStyle, useColor: boolean): string {
+	if (!useColor) {
+		return text;
+	}
+	return `[${ANSI_CODES[style]}m${text}[0m`;
+}
+
+function formatHumanValue(value: unknown): string {
+	if (value === null || value === undefined) {
+		return String(value);
+	}
+	if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+		return String(value);
+	}
+	if (Array.isArray(value)) {
+		return `[${value.length} item${value.length === 1 ? "" : "s"}]`;
+	}
+	return JSON.stringify(value);
+}
+
+/**
+ * Minimal human renderer for the result object (design doc §4.3). This phase keeps the
+ * rendering intentionally plain — a status line plus a key/value summary; the richer
+ * tables/spinners are a later phase. Importantly, it shares the exact same result object
+ * as the machine envelope so the two channels cannot drift.
+ */
+export interface HumanRenderInputs {
+	ok: boolean;
+	command: string;
+	data?: Record<string, unknown>;
+	errorMessage?: string;
+	errorCode?: string;
+	useColor: boolean;
+}
+
+export function renderHumanResult(inputs: HumanRenderInputs): string {
+	const lines: string[] = [];
+	if (inputs.ok) {
+		lines.push(`${paint("✓", "green", inputs.useColor)} ${paint(inputs.command, "bold", inputs.useColor)}`);
+		for (const [key, value] of Object.entries(inputs.data ?? {})) {
+			lines.push(`  ${paint(key, "dim", inputs.useColor)}: ${formatHumanValue(value)}`);
+		}
+	} else {
+		lines.push(`${paint("✗", "red", inputs.useColor)} ${inputs.errorMessage ?? "Command failed."}`);
+		if (inputs.errorCode) {
+			lines.push(paint(`  (code: ${inputs.errorCode})`, "dim", inputs.useColor));
+		}
+	}
+	return lines.join("\n");
+}
+
+/** Print the human-rendered result to stdout. */
+export function printHumanResult(inputs: HumanRenderInputs): void {
+	printLine(renderHumanResult(inputs));
+}

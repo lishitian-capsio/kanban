@@ -1,15 +1,13 @@
 import type { Command } from "commander";
 
 import type { RuntimeDbConnectionAddRequest, RuntimeDbEngine, RuntimeDbSslConfig } from "../core/api-contract";
-import { getKanbanRuntimeOrigin } from "../core/runtime-endpoint";
 import {
 	createRuntimeTrpcClient,
 	ensureRuntimeWorkspace,
 	type JsonRecord,
-	printJson,
 	resolveWorkspaceRepoPath,
-	toErrorMessage,
 } from "./runtime-workspace";
+import { runCliCommand } from "./cli-command-runner";
 
 const VALID_ENGINES: readonly RuntimeDbEngine[] = ["postgres", "mysql", "sqlite"];
 const VALID_SSL_MODES: ReadonlyArray<RuntimeDbSslConfig["mode"]> = ["disable", "require", "verify-ca", "verify-full"];
@@ -229,18 +227,6 @@ async function runQuery(input: {
 	return { ok: true, workspacePath: repoPath, ...result };
 }
 
-async function runDbCommand(handler: () => Promise<JsonRecord>): Promise<void> {
-	try {
-		printJson(await handler());
-	} catch (error) {
-		printJson({
-			ok: false,
-			error: `Database command failed at ${getKanbanRuntimeOrigin()}: ${toErrorMessage(error)}`,
-		});
-		process.exitCode = 1;
-	}
-}
-
 export function registerDbCommand(program: Command): void {
 	const db = program.command("db").description("Manage database connections and run queries from the CLI.");
 
@@ -254,7 +240,8 @@ export function registerDbCommand(program: Command): void {
 		.description("List database connections registered for a workspace.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { projectPath?: string }) => {
-			await runDbCommand(
+			await runCliCommand(
+				"db.connection.list",
 				async () => await listConnections({ cwd: process.cwd(), projectPath: options.projectPath }),
 			);
 		});
@@ -295,7 +282,8 @@ export function registerDbCommand(program: Command): void {
 				sslCertPem?: string;
 				projectPath?: string;
 			}) => {
-				await runDbCommand(
+				await runCliCommand(
+					"db.connection.add",
 					async () =>
 						await addConnection({
 							cwd: process.cwd(),
@@ -325,7 +313,8 @@ export function registerDbCommand(program: Command): void {
 		.requiredOption("--connection <id>", "Connection id to remove.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { connection: string; projectPath?: string }) => {
-			await runDbCommand(
+			await runCliCommand(
+				"db.connection.remove",
 				async () =>
 					await removeConnection({
 						cwd: process.cwd(),
@@ -341,7 +330,8 @@ export function registerDbCommand(program: Command): void {
 		.requiredOption("--connection <id>", "Connection id to test.")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { connection: string; projectPath?: string }) => {
-			await runDbCommand(
+			await runCliCommand(
+				"db.connection.test",
 				async () =>
 					await testConnection({
 						cwd: process.cwd(),
@@ -357,7 +347,8 @@ export function registerDbCommand(program: Command): void {
 		.option("--schema <schema>", "Filter to a single schema (case-insensitive).")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (options: { connection: string; schema?: string; projectPath?: string }) => {
-			await runDbCommand(
+			await runCliCommand(
+				"db.tables",
 				async () =>
 					await listTables({
 						cwd: process.cwd(),
@@ -375,7 +366,8 @@ export function registerDbCommand(program: Command): void {
 		.option("--schema <schema>", "Schema qualifier (case-insensitive).")
 		.option("--project-path <path>", "Workspace path. Defaults to current directory workspace.")
 		.action(async (table: string, options: { connection: string; schema?: string; projectPath?: string }) => {
-			await runDbCommand(
+			await runCliCommand(
+				"db.describe",
 				async () =>
 					await describeTable({
 						cwd: process.cwd(),
@@ -403,7 +395,8 @@ export function registerDbCommand(program: Command): void {
 				table: string,
 				options: { connection: string; schema: string; pageSize?: number; cursor?: string; projectPath?: string },
 			) => {
-				await runDbCommand(
+				await runCliCommand(
+					"db.browse",
 					async () =>
 						await browseTable({
 							cwd: process.cwd(),
@@ -432,7 +425,8 @@ export function registerDbCommand(program: Command): void {
 				sql: string,
 				options: { connection: string; pageSize?: number; cursor?: string; projectPath?: string },
 			) => {
-				await runDbCommand(
+				await runCliCommand(
+					"db.query",
 					async () =>
 						await runQuery({
 							cwd: process.cwd(),
