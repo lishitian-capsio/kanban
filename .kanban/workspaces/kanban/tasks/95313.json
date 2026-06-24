@@ -1,0 +1,19 @@
+{
+  "id": "95313",
+  "title": "Fix: moving a task to done spikes CPU to 100% and freezes the whole runtime",
+  "prompt": "BUG REPORT: Moving a task to done (observed with task id prefix c39cf) caused the ENTIRE Kanban runtime CPU to spike to 100% and freeze completely (彻底卡死). The board did eventually recover but was hard-locked during the event. Reproduce, root-cause, and fix.\n\nUse systematic-debugging — DO NOT guess-patch. Find the actual busy loop / blocking call before changing code.\n\nThe `task done` path is the suspect surface. Relevant things it does (see CLI reference + src):\n- stops active agent sessions for the task,\n- cleans up the task git worktree (.kanban/worktrees/<taskId>/...),\n- commits+pushes board data on the kanban/board orphan branch (board-sync, debounced commit→push, serialized per-repo),\n- auto-starts any LINKED backlog tasks that become ready when a task is moved to done.\n\nStrong leads from prior tribal knowledge (verify, don't assume):\n- A known 100% CPU busy-wait freeze was per-chunk GC churn in the terminal mirror applyOutput hot path (fixed via micro-batch + scrollback cap to 5k). A done-triggered teardown/flush could re-enter that path. See src/terminal/ (terminal-state-mirror / pty-session) and the 'Bun event-loop busy-wait freeze' history.\n- done is the same terminal bucket as trash (done==trash 终态桶); disk writes land in the trash/done path.\n- board-sync git ops (src/workspace/board-sync.ts, board-worktree.ts) run on done and could spin (e.g. a merge --abort loop, a retry loop, or a synchronous git call holding the event loop).\n- auto-starting linked backlog tasks on done could cascade — confirm it isn't an unbounded/recursive start loop, and that the agent-start limiter (KANBAN_MAX_CONCURRENT_AGENT_STARTS) actually applies here.\n\nINVESTIGATION STEPS:\n1. Reproduce: create a task, run it to review, move it to done; if needed with a linked backlog task and with auto-review enabled. Watch CPU.\n2. Capture where the loop is (CPU profile / strategic logging via the unified logger src/logging — NOT console.*).\n3. Identify whether it's the terminal mirror flush, board-sync git, worktree cleanup, or linked-task auto-start cascade.\n4. Fix the actual root cause; add a regression test where feasible (terminal path is vitest-tested; board-sync is git-ops).\n\nACCEPTANCE:\n- Moving a task to done (including with a linked backlog task and with auto-review) no longer pins CPU or freezes the runtime.\n- Root cause documented in the PR/commit message.\n- Existing test suites pass; biome + web:typecheck clean.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782275169588,
+  "updatedAt": 1782275169588,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
