@@ -27,13 +27,6 @@
       "name": "ｌｉｍｉｔｅｒ",
       "createdAt": 1782184511956,
       "updatedAt": 1782184511956
-    },
-    {
-      "id": "f0010289-2e7a-483a-9777-3bb386752ca1",
-      "agentId": "claude",
-      "name": "install",
-      "createdAt": 1782197360113,
-      "updatedAt": 1782197360113
     }
   ]
 }

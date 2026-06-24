@@ -1,0 +1,19 @@
+{
+  "id": "4d0fb",
+  "title": "Home agent session: loading skeleton while history loads",
+  "prompt": "On opening the page, the Kanban home/sidebar agent session shows a blank gap for a moment, then messages pop in with no transition. Add a proper loading animation (skeleton / spinner) for the 'initial history loading' state.\n\nRoot cause (already traced):\n- web-ui/src/hooks/use-kanban-chat-session.ts computes an internal `isLoading` for the initial `onLoadMessages` fetch, but does NOT expose it distinctly — it folds it into `isSending` (`isSending: isSending || isLoading`). So consumers can't tell 'loading history' from 'sending a turn' or 'idle empty'.\n- web-ui/src/components/home-agent/home-sidebar-agent-panel.tsx only renders a <Spinner> (line ~149) while `runtimeProjectConfig` is missing; during chat-history load the message area is just empty → blank-then-pop.\n\nWhat to do:\n- Expose the initial-load state from useKanbanChatSession (e.g. return `isLoading` distinctly, keeping current behavior intact / not breaking the isSending consumers).\n- In the chat panel / KanbanAgentChatPanel message area, when loading history AND no messages yet, render a loading affordance (skeleton message rows preferred, or a centered spinner) instead of empty space.\n- Don't show the history-loading skeleton during normal send/stream (that already has its own indicator).\n- Follow web-ui stack rules in AGENTS.md (Spinner from @/components/ui/spinner, Tailwind surface tokens, no console.*). Keep it subtle/dark-theme.\n\nAcceptance:\n- Opening a home session shows a skeleton/spinner immediately, replaced by messages when loaded.\n- No regression to send/cancel indicators or empty-idle state.\n- Existing useKanbanChatSession tests updated; web:typecheck + biome clean.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782264277041,
+  "updatedAt": 1782264277041,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
