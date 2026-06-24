@@ -21,9 +21,38 @@ import {
 	type CliEnvelope,
 	type CliWarning,
 	classifyError,
+	DEPRECATION_WARNING_PREFIX,
 	exitCodeForErrorCode,
 	resolveOutputMode,
 } from "./cli-envelope";
+
+/** Env var that silences the human-channel (stderr) deprecation note for migrated scripts (§8). */
+const SUPPRESS_DEPRECATION_ENV = "KANBAN_SUPPRESS_DEPRECATION";
+
+function isTruthyEnv(value: string | undefined): boolean {
+	if (value === undefined) {
+		return false;
+	}
+	const normalized = value.trim().toLowerCase();
+	return normalized !== "" && normalized !== "0" && normalized !== "false" && normalized !== "no";
+}
+
+/**
+ * Surface deprecation warnings on the human channel (§3.3 rule 5 / §8): a one-line note per
+ * `deprecated_*` warning on stderr, so it never pollutes the single JSON document on stdout.
+ * Independent of success/failure and of output mode — the machine channel carries the same
+ * warnings in `warnings[]`. Silenced by {@link SUPPRESS_DEPRECATION_ENV} for migrated scripts.
+ */
+function emitDeprecationNotesToStderr(warnings: CliWarning[] | undefined): void {
+	if (!warnings || warnings.length === 0 || isTruthyEnv(process.env[SUPPRESS_DEPRECATION_ENV])) {
+		return;
+	}
+	for (const warning of warnings) {
+		if (warning.code.startsWith(DEPRECATION_WARNING_PREFIX)) {
+			process.stderr.write(`⚠ ${warning.message}\n`);
+		}
+	}
+}
 
 /**
  * The program-level global flags (design doc §6.1), resolved for a single subcommand
@@ -175,8 +204,14 @@ export async function runCliCommand(
 		stdoutIsTTY: Boolean(process.stdout?.isTTY),
 	});
 
+	// `options.warnings` may be a mutable array the handler pushes into while it runs (e.g. a
+	// `deprecated_flag` warning is only known after the id is resolved *inside* the handler, so
+	// that a missing-id `CliError` thrown during resolution still becomes a structured failure
+	// envelope rather than an uncaught top-level error). The human-channel stderr note and the
+	// machine-channel `warnings[]` are therefore both surfaced *after* the handler settles.
 	try {
 		const result = await handler();
+		emitDeprecationNotesToStderr(options.warnings);
 		emit(
 			buildSuccessEnvelope(commandId, toEnvelopeData(result), options.warnings),
 			mode,
@@ -186,7 +221,8 @@ export async function runCliCommand(
 	} catch (error) {
 		const classified = classifyError(error);
 		const legacyMirror = `${commandFamilyLabel(commandId)} command failed at ${getKanbanRuntimeOrigin()}: ${classified.message}`;
-		emit(buildFailureEnvelope(commandId, classified, legacyMirror), mode, options.globals);
+		emitDeprecationNotesToStderr(options.warnings);
+		emit(buildFailureEnvelope(commandId, classified, legacyMirror, options.warnings), mode, options.globals);
 		process.exitCode = exitCodeForErrorCode(classified.code);
 	}
 }

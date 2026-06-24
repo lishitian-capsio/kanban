@@ -7,6 +7,8 @@ import { VaultDocumentStore } from "../vault/vault-document-store";
 import { VaultTypeRegistry } from "../vault/vault-type-registry";
 import type { VaultTypeDefinition } from "../vault/vault-types";
 import { readGlobalCliOptions, runCliCommand } from "./cli-command-runner";
+import type { CliWarning } from "./cli-envelope";
+import { resolveRequiredId } from "./cli-positional-args";
 import { createRuntimeTrpcClient, type JsonRecord, resolveRuntimeWorkspace } from "./runtime-workspace";
 
 function formatDocumentRecord(doc: RuntimeVaultDocument): JsonRecord {
@@ -234,13 +236,27 @@ export function registerVaultCommand(program: Command): void {
 	type
 		.command("show")
 		.description("Show a type's full definition: metadata + the self-governing authoring prompt (body).")
-		.requiredOption("--type <type>", "Type id (e.g. requirement).")
-		.action(async function (this: Command, options: { type: string }) {
+		.argument("[type]", "Type id, e.g. requirement (positional, preferred over --type).")
+		.option("--type <type>", "Deprecated: pass the type id as the positional <type> instead.")
+		.action(async function (this: Command, typeArg: string | undefined, options: { type?: string }) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"vault.type.show",
-				async () => await showType({ cwd: process.cwd(), type: options.type, projectPath: globals.projectPath }),
-				{ globals },
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: typeArg,
+						legacyFlagValue: options.type,
+						legacyFlagName: "--type",
+						positionalLabel: "<type>",
+						missingMessage: "vault type show requires a type id. Pass it as the positional <type> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await showType({ cwd: process.cwd(), type: resolved.id, projectPath: globals.projectPath });
+				},
+				{ globals, warnings },
 			);
 		});
 
@@ -261,13 +277,26 @@ export function registerVaultCommand(program: Command): void {
 
 	doc.command("show")
 		.description("Show a single vault document (frontmatter + body).")
-		.requiredOption("--id <id>", "Document ID.")
-		.action(async function (this: Command, options: { id: string }) {
+		.argument("[id]", "Document ID (positional, preferred over --id).")
+		.option("--id <id>", "Deprecated: pass the document ID as the positional <id> instead.")
+		.action(async function (this: Command, idArg: string | undefined, options: { id?: string }) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"vault.doc.show",
-				async () => await showDocument({ cwd: process.cwd(), id: options.id, projectPath: globals.projectPath }),
-				{ globals },
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.id,
+						legacyFlagName: "--id",
+						missingMessage: "vault doc show requires a document id. Pass it as the positional <id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await showDocument({ cwd: process.cwd(), id: resolved.id, projectPath: globals.projectPath });
+				},
+				{ globals, warnings },
 			);
 		});
 
@@ -307,15 +336,17 @@ export function registerVaultCommand(program: Command): void {
 
 	doc.command("update")
 		.description("Update a vault document (omitted fields are left unchanged).")
-		.requiredOption("--id <id>", "Document ID.")
+		.argument("[id]", "Document ID (positional, preferred over --id).")
+		.option("--id <id>", "Deprecated: pass the document ID as the positional <id> instead.")
 		.option("--title <title>", "New title (re-slugs the filename, recording a git rename).")
 		.option("--body <text>", "Replace the markdown body text.")
 		.option("--body-file <path>", "Replace the markdown body from a local file.")
 		.option("--set <key=value>", "Set a frontmatter field. Repeatable.", collectSet, [])
 		.action(async function (
 			this: Command,
+			idArg: string | undefined,
 			options: {
-				id: string;
+				id?: string;
 				title?: string;
 				body?: string;
 				bodyFile?: string;
@@ -323,31 +354,55 @@ export function registerVaultCommand(program: Command): void {
 			},
 		) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"vault.doc.update",
-				async () =>
-					await updateDocument({
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.id,
+						legacyFlagName: "--id",
+						missingMessage: "vault doc update requires a document id. Pass it as the positional <id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await updateDocument({
 						cwd: process.cwd(),
-						id: options.id,
+						id: resolved.id,
 						title: options.title,
 						body: options.body,
 						bodyFile: options.bodyFile,
 						set: options.set,
 						projectPath: globals.projectPath,
-					}),
-				{ globals },
+					});
+				},
+				{ globals, warnings },
 			);
 		});
 
 	doc.command("delete")
 		.description("Delete a vault document.")
-		.requiredOption("--id <id>", "Document ID.")
-		.action(async function (this: Command, options: { id: string }) {
+		.argument("[id]", "Document ID (positional, preferred over --id).")
+		.option("--id <id>", "Deprecated: pass the document ID as the positional <id> instead.")
+		.action(async function (this: Command, idArg: string | undefined, options: { id?: string }) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"vault.doc.delete",
-				async () => await deleteDocument({ cwd: process.cwd(), id: options.id, projectPath: globals.projectPath }),
-				{ globals },
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.id,
+						legacyFlagName: "--id",
+						missingMessage: "vault doc delete requires a document id. Pass it as the positional <id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await deleteDocument({ cwd: process.cwd(), id: resolved.id, projectPath: globals.projectPath });
+				},
+				{ globals, warnings },
 			);
 		});
 }

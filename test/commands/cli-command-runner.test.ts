@@ -87,15 +87,116 @@ describe("runCliCommand machine mode", () => {
 
 	it("forwards warnings into the success envelope", async () => {
 		const capture = captureStdout();
+		const err = captureStderr();
 		try {
 			await runCliCommand("task.trash", async () => ({ ok: true }), {
 				warnings: [{ code: "deprecated_alias", message: "use `task done`" }],
 			});
 		} finally {
+			err.restore();
 			capture.restore();
 		}
 		const parsed = JSON.parse(capture.output());
 		expect(parsed.warnings).toEqual([{ code: "deprecated_alias", message: "use `task done`" }]);
+	});
+});
+
+function captureStderr(): { output: () => string; restore: () => void } {
+	let buffer = "";
+	const original = process.stderr.write.bind(process.stderr);
+	const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array): boolean => {
+		buffer += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+		return true;
+	});
+	return {
+		output: () => buffer,
+		restore: () => {
+			spy.mockRestore();
+			void original;
+		},
+	};
+}
+
+describe("runCliCommand deprecation warnings (two channels, P2)", () => {
+	beforeEach(() => {
+		process.env.KANBAN_OUTPUT = "json";
+		process.exitCode = undefined;
+		delete process.env.KANBAN_SUPPRESS_DEPRECATION;
+	});
+	afterEach(() => {
+		delete process.env.KANBAN_OUTPUT;
+		delete process.env.KANBAN_SUPPRESS_DEPRECATION;
+		process.exitCode = undefined;
+	});
+
+	it("writes a one-line deprecation note to stderr (human channel)", async () => {
+		const out = captureStdout();
+		const err = captureStderr();
+		try {
+			await runCliCommand("task.done", async () => ({ ok: true }), {
+				warnings: [{ code: "deprecated_alias", message: "`task trash` is deprecated; use `task done`." }],
+			});
+		} finally {
+			err.restore();
+			out.restore();
+		}
+		expect(err.output()).toContain("`task trash` is deprecated; use `task done`.");
+		// The machine channel (stdout JSON) must NOT be polluted by the stderr note.
+		expect(JSON.parse(out.output()).warnings).toEqual([
+			{ code: "deprecated_alias", message: "`task trash` is deprecated; use `task done`." },
+		]);
+	});
+
+	it("silences the stderr note under KANBAN_SUPPRESS_DEPRECATION=1 but keeps warnings[] in JSON", async () => {
+		process.env.KANBAN_SUPPRESS_DEPRECATION = "1";
+		const out = captureStdout();
+		const err = captureStderr();
+		try {
+			await runCliCommand("task.update", async () => ({ ok: true }), {
+				warnings: [{ code: "deprecated_flag", message: "`--task-id` is deprecated; pass `<id>` instead." }],
+			});
+		} finally {
+			err.restore();
+			out.restore();
+		}
+		expect(err.output()).toBe("");
+		expect(JSON.parse(out.output()).warnings).toEqual([
+			{ code: "deprecated_flag", message: "`--task-id` is deprecated; pass `<id>` instead." },
+		]);
+	});
+
+	it("does not write non-deprecation warnings to stderr", async () => {
+		const out = captureStdout();
+		const err = captureStderr();
+		try {
+			await runCliCommand("task.list", async () => ({ ok: true }), {
+				warnings: [{ code: "rate_limited", message: "slow down" }],
+			});
+		} finally {
+			err.restore();
+			out.restore();
+		}
+		expect(err.output()).toBe("");
+	});
+
+	it("emits the stderr note even when the command fails (deprecation is independent of outcome)", async () => {
+		const out = captureStdout();
+		const err = captureStderr();
+		try {
+			await runCliCommand(
+				"task.done",
+				async () => {
+					throw new CliError("task_not_found", "nope", { taskId: "x" });
+				},
+				{ warnings: [{ code: "deprecated_alias", message: "`task trash` is deprecated; use `task done`." }] },
+			);
+		} finally {
+			err.restore();
+			out.restore();
+		}
+		expect(err.output()).toContain("`task trash` is deprecated");
+		expect(JSON.parse(out.output()).ok).toBe(false);
+		expect(process.exitCode).toBe(3);
 	});
 });
 

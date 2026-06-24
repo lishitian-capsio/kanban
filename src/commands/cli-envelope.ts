@@ -104,6 +104,36 @@ export interface CliWarning {
 	message: string;
 }
 
+/**
+ * Prefix shared by every deprecation warning code (§8). The stderr deprecation note
+ * (`cli-command-runner.ts`) keys off this prefix, so a `KANBAN_SUPPRESS_DEPRECATION=1`
+ * silence only ever hides deprecation advisories, never other warning kinds.
+ */
+export const DEPRECATION_WARNING_PREFIX = "deprecated_";
+
+/**
+ * Build the warning emitted when a deprecated command alias was used (e.g. `task trash`,
+ * which now runs `task done`). Surfaced as `warnings:[{code:"deprecated_alias"}]` in `--json`
+ * and as a one-line stderr note for humans (design doc §3.3 rule 5 / §8).
+ */
+export function deprecatedAliasWarning(oldForm: string, newForm: string): CliWarning {
+	return {
+		code: "deprecated_alias",
+		message: `\`${oldForm}\` is deprecated; use \`${newForm}\`.`,
+	};
+}
+
+/**
+ * Build the warning emitted when a deprecated flag supplied a value that is now a positional
+ * argument (e.g. `--task-id` → `<id>`; design doc §3.3 rule 3 / §8).
+ */
+export function deprecatedFlagWarning(legacyFlagName: string, positionalLabel: string): CliWarning {
+	return {
+		code: "deprecated_flag",
+		message: `\`${legacyFlagName}\` is deprecated; pass the ID as the positional \`${positionalLabel}\` instead.`,
+	};
+}
+
 export interface CliSuccessEnvelope {
 	schemaVersion: string;
 	ok: true;
@@ -124,6 +154,12 @@ export interface CliFailureEnvelope {
 	 * next major. Always a string so naive readers cannot trip over the object at `error`.
 	 */
 	errorMessage: string;
+	/**
+	 * Machine-stable advisories that were already known when the command failed (e.g. a
+	 * deprecated alias / flag was used before the handler threw). Mirrors the success
+	 * envelope's `warnings[]` so an agent sees the same advisory regardless of outcome.
+	 */
+	warnings?: CliWarning[];
 }
 
 export type CliEnvelope = CliSuccessEnvelope | CliFailureEnvelope;
@@ -146,6 +182,7 @@ export function buildFailureEnvelope(
 	command: string,
 	error: CliEnvelopeError,
 	legacyMirror: string,
+	warnings?: CliWarning[],
 ): CliFailureEnvelope {
 	return {
 		schemaVersion: CLI_SCHEMA_VERSION,
@@ -153,6 +190,7 @@ export function buildFailureEnvelope(
 		command,
 		error,
 		errorMessage: legacyMirror,
+		...(warnings && warnings.length > 0 ? { warnings } : {}),
 	};
 }
 

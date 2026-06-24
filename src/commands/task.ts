@@ -27,7 +27,8 @@ import { mutateWorkspaceState } from "../state/workspace-state";
 import { KANBAN_SESSION_TASK_ID_ENV } from "../terminal/hook-runtime-context";
 import { readGitUserIdentity } from "../workspace/git-utils";
 import { readGlobalCliOptions, runCliCommand } from "./cli-command-runner";
-import { CliError } from "./cli-envelope";
+import { CliError, type CliWarning, deprecatedAliasWarning } from "./cli-envelope";
+import { resolveOptionalId, resolveRequiredId } from "./cli-positional-args";
 import {
 	createRuntimeTrpcClient,
 	ensureRuntimeWorkspace,
@@ -247,7 +248,7 @@ function resolveTaskCommandTarget(input: TaskCommandTarget, commandName: string)
 	const taskId = input.taskId?.trim();
 	const column = input.column;
 	if (taskId && column) {
-		throw new Error(`${commandName} accepts exactly one of --task-id or --column.`);
+		throw new CliError("invalid_argument", `${commandName} accepts exactly one of a task <id> or --column.`);
 	}
 	if (taskId) {
 		return {
@@ -261,7 +262,7 @@ function resolveTaskCommandTarget(input: TaskCommandTarget, commandName: string)
 			column,
 		};
 	}
-	throw new Error(`${commandName} requires either --task-id or --column.`);
+	throw new CliError("invalid_argument", `${commandName} requires either a task <id> or --column.`);
 }
 
 function resolveTaskBaseRef(state: RuntimeWorkspaceStateResponse): string {
@@ -386,6 +387,25 @@ async function listTasks(input: { cwd: string; projectPath?: string; column?: Li
 		tasks,
 		dependencies: state.board.dependencies.map((dependency) => formatDependencyRecord(state, dependency)),
 		count: tasks.length,
+	};
+}
+
+async function showTask(input: { cwd: string; taskId: string; projectPath?: string }): Promise<JsonRecord> {
+	const workspace = await resolveRuntimeWorkspace(input.projectPath, input.cwd, {
+		autoCreateIfMissing: false,
+	});
+	const runtimeClient = createRuntimeTrpcClient(workspace.workspaceId);
+	const state = await runtimeClient.workspace.getState.query();
+	const record = findTaskRecord(state, input.taskId);
+	if (!record) {
+		throw new CliError("task_not_found", `Task "${input.taskId}" was not found in workspace ${workspace.repoPath}.`, {
+			taskId: input.taskId,
+		});
+	}
+	return {
+		ok: true,
+		workspacePath: workspace.repoPath,
+		task: formatTaskRecord(state, record.task, record.columnId),
 	};
 }
 
@@ -1081,6 +1101,32 @@ export function registerTaskCommand(program: Command): void {
 		});
 
 	task
+		.command("show")
+		.description("Show a single task's details (column, session state, agent settings).")
+		.argument("[id]", "Task ID (positional, preferred over --task-id).")
+		.option("--task-id <id>", "Deprecated: pass the task ID as the positional <id> instead.")
+		.action(async function (this: Command, idArg: string | undefined, options: { taskId?: string }) {
+			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
+			await runCliCommand(
+				"task.show",
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.taskId,
+						legacyFlagName: "--task-id",
+						missingMessage: "task show requires a task id. Pass it as the positional <id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await showTask({ cwd: process.cwd(), taskId: resolved.id, projectPath: globals.projectPath });
+				},
+				{ globals, warnings },
+			);
+		});
+
+	task
 		.command("create")
 		.description("Create a task in backlog.")
 		.option("--title <text>", "Task title.")
@@ -1155,7 +1201,8 @@ export function registerTaskCommand(program: Command): void {
 	task
 		.command("update")
 		.description("Update an existing task.")
-		.requiredOption("--task-id <id>", "Task ID.")
+		.argument("[id]", "Task ID (positional, preferred over --task-id).")
+		.option("--task-id <id>", "Deprecated: pass the task ID as the positional <id> instead.")
 		.option("--title <text>", "Replacement task title.")
 		.option("--prompt <text>", "Replacement task prompt.")
 		.option("--base-ref <branch>", "Replacement base branch/ref.")
@@ -1178,8 +1225,9 @@ export function registerTaskCommand(program: Command): void {
 		)
 		.action(async function (
 			this: Command,
+			idArg: string | undefined,
 			options: {
-				taskId: string;
+				taskId?: string;
 				title?: string;
 				prompt?: string;
 				baseRef?: string;
@@ -1194,12 +1242,22 @@ export function registerTaskCommand(program: Command): void {
 			},
 		) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"task.update",
-				async () =>
-					await updateTaskCommand({
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.taskId,
+						legacyFlagName: "--task-id",
+						missingMessage: "task update requires a task id. Pass it as the positional <id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await updateTaskCommand({
 						cwd: process.cwd(),
-						taskId: options.taskId,
+						taskId: resolved.id,
 						title: options.title,
 						projectPath: globals.projectPath,
 						prompt: options.prompt,
@@ -1212,65 +1270,114 @@ export function registerTaskCommand(program: Command): void {
 						providerId: parseOptionalStringOrDefault(options.provider),
 						modelId: parseOptionalStringOrDefault(options.model),
 						reasoningEffort: parseTaskReasoningEffort(options.reasoningEffort),
-					}),
-				{ globals },
+					});
+				},
+				{ globals, warnings },
 			);
 		});
 
-	task
-		.command("trash")
-		.alias("done")
-		.description("Move a task or an entire column to done and clean up task workspaces.")
-		.option("--task-id <id>", "Task ID.")
-		.option(
-			"--column <column>",
-			"Column to move to done: backlog | in_progress | review | done. trash is also accepted.",
-			parseListColumn,
-		)
-		.action(async function (this: Command, options: { taskId?: string; column?: ListTaskColumn }) {
-			const globals = readGlobalCliOptions(this);
-			await runCliCommand(
-				"task.trash",
-				async () =>
-					await trashTask({
-						cwd: process.cwd(),
-						taskId: options.taskId,
-						column: options.column,
-						projectPath: globals.projectPath,
-					}),
-				{ globals },
-			);
-		});
+	// `done` is the canonical command (§3.3 rule 5); `trash` is registered below as a
+	// deprecated alias that runs the same handler with an extra `deprecated_alias` warning.
+	// Both accept the id as a positional `<id>` (preferred) or the legacy `--task-id` flag,
+	// or target a whole `--column`.
+	function configureDoneLikeCommand(name: "done" | "trash"): void {
+		const deprecated = name === "trash";
+		task
+			.command(name)
+			.description(
+				deprecated
+					? "Deprecated alias for `task done`. Move a task or an entire column to done."
+					: "Move a task or an entire column to done and clean up task workspaces.",
+			)
+			.argument("[id]", "Task ID to move to done (positional, preferred over --task-id).")
+			.option("--task-id <id>", "Deprecated: pass the task ID as the positional <id> instead.")
+			.option(
+				"--column <column>",
+				"Column to move to done: backlog | in_progress | review | done. trash is also accepted.",
+				parseListColumn,
+			)
+			.action(async function (
+				this: Command,
+				idArg: string | undefined,
+				options: { taskId?: string; column?: ListTaskColumn },
+			) {
+				const globals = readGlobalCliOptions(this);
+				const warnings: CliWarning[] = [];
+				if (deprecated) {
+					warnings.push(deprecatedAliasWarning("task trash", "task done"));
+				}
+				await runCliCommand(
+					"task.done",
+					async () => {
+						const resolved = resolveOptionalId({
+							positional: idArg,
+							legacyFlagValue: options.taskId,
+							legacyFlagName: "--task-id",
+						});
+						if (resolved.warning) {
+							warnings.push(resolved.warning);
+						}
+						return await trashTask({
+							cwd: process.cwd(),
+							taskId: resolved.id,
+							column: options.column,
+							projectPath: globals.projectPath,
+						});
+					},
+					{ globals, warnings },
+				);
+			});
+	}
+
+	configureDoneLikeCommand("done");
+	configureDoneLikeCommand("trash");
 
 	task
 		.command("delete")
 		.description("Permanently delete a task or every task in a column.")
-		.option("--task-id <id>", "Task ID to permanently delete.")
+		.argument("[id]", "Task ID to permanently delete (positional, preferred over --task-id).")
+		.option("--task-id <id>", "Deprecated: pass the task ID as the positional <id> instead.")
 		.option(
 			"--column <column>",
 			"Column to bulk-delete: backlog | in_progress | review | done. trash is also accepted.",
 			parseListColumn,
 		)
-		.action(async function (this: Command, options: { taskId?: string; column?: ListTaskColumn }) {
+		.action(async function (
+			this: Command,
+			idArg: string | undefined,
+			options: { taskId?: string; column?: ListTaskColumn },
+		) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"task.delete",
-				async () =>
-					await deleteTaskCommand({
+				async () => {
+					const resolved = resolveOptionalId({
+						positional: idArg,
+						legacyFlagValue: options.taskId,
+						legacyFlagName: "--task-id",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await deleteTaskCommand({
 						cwd: process.cwd(),
-						taskId: options.taskId,
+						taskId: resolved.id,
 						column: options.column,
 						projectPath: globals.projectPath,
-					}),
-				{ globals },
+					});
+				},
+				{ globals, warnings },
 			);
 		});
 
 	task
 		.command("link")
 		.description("Link two tasks so one task waits on another.")
-		.requiredOption("--task-id <id>", "One of the two task IDs to link.")
-		.requiredOption("--linked-task-id <id>", "The other task ID to link.")
+		.argument("[id]", "One of the two task IDs to link (positional, preferred over --task-id).")
+		.argument("[to-id]", "The other task ID to link (positional, preferred over --linked-task-id).")
+		.option("--task-id <id>", "Deprecated: pass the first task ID as the positional <id> instead.")
+		.option("--linked-task-id <id>", "Deprecated: pass the second task ID as the positional <to-id> instead.")
 		.addHelpText(
 			"after",
 			[
@@ -1287,54 +1394,105 @@ export function registerTaskCommand(program: Command): void {
 				"",
 			].join("\n"),
 		)
-		.action(async function (this: Command, options: { taskId: string; linkedTaskId: string }) {
+		.action(async function (
+			this: Command,
+			idArg: string | undefined,
+			toIdArg: string | undefined,
+			options: { taskId?: string; linkedTaskId?: string },
+		) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"task.link",
-				async () =>
-					await linkTasks({
+				async () => {
+					const first = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.taskId,
+						legacyFlagName: "--task-id",
+						missingMessage: "task link requires two task ids. Pass them as positional <id> <to-id> arguments.",
+					});
+					const second = resolveRequiredId({
+						positional: toIdArg,
+						legacyFlagValue: options.linkedTaskId,
+						legacyFlagName: "--linked-task-id",
+						positionalLabel: "<to-id>",
+						missingMessage: "task link requires two task ids. Pass them as positional <id> <to-id> arguments.",
+					});
+					for (const warning of [first.warning, second.warning]) {
+						if (warning) {
+							warnings.push(warning);
+						}
+					}
+					return await linkTasks({
 						cwd: process.cwd(),
-						taskId: options.taskId,
-						linkedTaskId: options.linkedTaskId,
+						taskId: first.id,
+						linkedTaskId: second.id,
 						projectPath: globals.projectPath,
-					}),
-				{ globals },
+					});
+				},
+				{ globals, warnings },
 			);
 		});
 
 	task
 		.command("unlink")
 		.description("Remove an existing dependency link.")
-		.requiredOption("--dependency-id <id>", "Dependency ID.")
-		.action(async function (this: Command, options: { dependencyId: string }) {
+		.argument("[dependency-id]", "Dependency ID (positional, preferred over --dependency-id).")
+		.option("--dependency-id <id>", "Deprecated: pass the dependency ID as the positional <dependency-id> instead.")
+		.action(async function (this: Command, dependencyIdArg: string | undefined, options: { dependencyId?: string }) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"task.unlink",
-				async () =>
-					await unlinkTasks({
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: dependencyIdArg,
+						legacyFlagValue: options.dependencyId,
+						legacyFlagName: "--dependency-id",
+						positionalLabel: "<dependency-id>",
+						missingMessage:
+							"task unlink requires a dependency id. Pass it as the positional <dependency-id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await unlinkTasks({
 						cwd: process.cwd(),
-						dependencyId: options.dependencyId,
+						dependencyId: resolved.id,
 						projectPath: globals.projectPath,
-					}),
-				{ globals },
+					});
+				},
+				{ globals, warnings },
 			);
 		});
 
 	task
 		.command("start")
 		.description("Start a task session and move task to in_progress.")
-		.requiredOption("--task-id <id>", "Task ID.")
-		.action(async function (this: Command, options: { taskId: string }) {
+		.argument("[id]", "Task ID (positional, preferred over --task-id).")
+		.option("--task-id <id>", "Deprecated: pass the task ID as the positional <id> instead.")
+		.action(async function (this: Command, idArg: string | undefined, options: { taskId?: string }) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"task.start",
-				async () =>
-					await startTask({
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.taskId,
+						legacyFlagName: "--task-id",
+						missingMessage: "task start requires a task id. Pass it as the positional <id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await startTask({
 						cwd: process.cwd(),
-						taskId: options.taskId,
+						taskId: resolved.id,
 						projectPath: globals.projectPath,
-					}),
-				{ globals },
+					});
+				},
+				{ globals, warnings },
 			);
 		});
 }

@@ -5,6 +5,8 @@ import type { Command } from "commander";
 import type { RuntimeFileCategory, RuntimeFileItem } from "../core/api-contract";
 import { FileLibraryStore } from "../files/file-library-store";
 import { readGlobalCliOptions, runCliCommand } from "./cli-command-runner";
+import type { CliWarning } from "./cli-envelope";
+import { resolveRequiredId } from "./cli-positional-args";
 import { createRuntimeTrpcClient, type JsonRecord, resolveRuntimeWorkspace } from "./runtime-workspace";
 
 const FILE_CATEGORIES = ["image", "document", "audio", "video", "archive", "text", "other"] as const;
@@ -167,94 +169,175 @@ export function registerFileCommand(program: Command): void {
 	file
 		.command("show")
 		.description("Show a single file's metadata.")
-		.requiredOption("--id <id>", "File ID.")
-		.action(async function (this: Command, options: { id: string }) {
+		.argument("[id]", "File ID (positional, preferred over --id).")
+		.option("--id <id>", "Deprecated: pass the file ID as the positional <id> instead.")
+		.action(async function (this: Command, idArg: string | undefined, options: { id?: string }) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"file.show",
-				async () => await showFile({ cwd: process.cwd(), id: options.id, projectPath: globals.projectPath }),
-				{ globals },
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.id,
+						legacyFlagName: "--id",
+						missingMessage: "file show requires a file id. Pass it as the positional <id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await showFile({ cwd: process.cwd(), id: resolved.id, projectPath: globals.projectPath });
+				},
+				{ globals, warnings },
 			);
 		});
 
 	file
 		.command("add")
 		.description("Add a local file to the library.")
-		.requiredOption("--path <path>", "Path to the local file to import.")
+		.argument("[path]", "Path to the local file to import (positional, preferred over --path).")
+		.option("--path <path>", "Deprecated: pass the file path as the positional <path> instead.")
 		.option("--name <name>", "Override the stored file name. Defaults to the source file's name.")
 		.option("--mime <mime>", "Override the detected mime type.")
-		.action(async function (this: Command, options: { path: string; name?: string; mime?: string }) {
+		.action(async function (
+			this: Command,
+			pathArg: string | undefined,
+			options: { path?: string; name?: string; mime?: string },
+		) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"file.add",
-				async () =>
-					await addFile({
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: pathArg,
+						legacyFlagValue: options.path,
+						legacyFlagName: "--path",
+						positionalLabel: "<path>",
+						missingMessage: "file add requires a file path. Pass it as the positional <path> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await addFile({
 						cwd: process.cwd(),
-						path: options.path,
+						path: resolved.id,
 						name: options.name,
 						mime: options.mime,
 						projectPath: globals.projectPath,
-					}),
-				{ globals },
+					});
+				},
+				{ globals, warnings },
 			);
 		});
 
 	file
 		.command("update")
 		.description("Rename a file in the library.")
-		.requiredOption("--id <id>", "File ID.")
+		.argument("[id]", "File ID (positional, preferred over --id).")
+		.option("--id <id>", "Deprecated: pass the file ID as the positional <id> instead.")
 		.requiredOption("--name <name>", "New file name.")
-		.action(async function (this: Command, options: { id: string; name: string }) {
+		.action(async function (this: Command, idArg: string | undefined, options: { id?: string; name: string }) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"file.update",
-				async () =>
-					await updateFile({
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.id,
+						legacyFlagName: "--id",
+						missingMessage: "file update requires a file id. Pass it as the positional <id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await updateFile({
 						cwd: process.cwd(),
-						id: options.id,
+						id: resolved.id,
 						name: options.name,
 						projectPath: globals.projectPath,
-					}),
-				{ globals },
+					});
+				},
+				{ globals, warnings },
 			);
 		});
 
 	file
 		.command("delete")
 		.description("Delete a file from the library.")
-		.requiredOption("--id <id>", "File ID.")
-		.action(async function (this: Command, options: { id: string }) {
+		.argument("[id]", "File ID (positional, preferred over --id).")
+		.option("--id <id>", "Deprecated: pass the file ID as the positional <id> instead.")
+		.action(async function (this: Command, idArg: string | undefined, options: { id?: string }) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"file.delete",
-				async () => await deleteFile({ cwd: process.cwd(), id: options.id, projectPath: globals.projectPath }),
-				{ globals },
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.id,
+						legacyFlagName: "--id",
+						missingMessage: "file delete requires a file id. Pass it as the positional <id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await deleteFile({ cwd: process.cwd(), id: resolved.id, projectPath: globals.projectPath });
+				},
+				{ globals, warnings },
 			);
 		});
 
 	file
 		.command("path")
 		.description("Print a file's absolute and repo-relative paths (for agent @ references).")
-		.requiredOption("--id <id>", "File ID.")
-		.action(async function (this: Command, options: { id: string }) {
+		.argument("[id]", "File ID (positional, preferred over --id).")
+		.option("--id <id>", "Deprecated: pass the file ID as the positional <id> instead.")
+		.action(async function (this: Command, idArg: string | undefined, options: { id?: string }) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"file.path",
-				async () => await showFilePath({ cwd: process.cwd(), id: options.id, projectPath: globals.projectPath }),
-				{ globals },
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.id,
+						legacyFlagName: "--id",
+						missingMessage: "file path requires a file id. Pass it as the positional <id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await showFilePath({ cwd: process.cwd(), id: resolved.id, projectPath: globals.projectPath });
+				},
+				{ globals, warnings },
 			);
 		});
 
 	file
 		.command("bytes")
 		.description("Print a file's content as base64 (for inline agent vision content).")
-		.requiredOption("--id <id>", "File ID.")
-		.action(async function (this: Command, options: { id: string }) {
+		.argument("[id]", "File ID (positional, preferred over --id).")
+		.option("--id <id>", "Deprecated: pass the file ID as the positional <id> instead.")
+		.action(async function (this: Command, idArg: string | undefined, options: { id?: string }) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"file.bytes",
-				async () => await showFileBytes({ cwd: process.cwd(), id: options.id, projectPath: globals.projectPath }),
-				{ globals },
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.id,
+						legacyFlagName: "--id",
+						missingMessage: "file bytes requires a file id. Pass it as the positional <id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await showFileBytes({ cwd: process.cwd(), id: resolved.id, projectPath: globals.projectPath });
+				},
+				{ globals, warnings },
 			);
 		});
 }

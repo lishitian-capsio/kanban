@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	buildFailureEnvelope,
+	buildSuccessEnvelope,
 	CLI_ERROR_CODES,
 	CLI_EXIT_CONFLICT,
 	CLI_EXIT_NOT_FOUND,
@@ -8,8 +10,6 @@ import {
 	CLI_EXIT_RUNTIME_UNREACHABLE,
 	CLI_SCHEMA_VERSION,
 	CliError,
-	buildFailureEnvelope,
-	buildSuccessEnvelope,
 	classifyError,
 	exitCodeForErrorCode,
 	resolveOutputMode,
@@ -142,15 +142,15 @@ describe("classifyError", () => {
 
 describe("resolveOutputMode precedence", () => {
 	it("prefers an explicit --json flag over everything else", () => {
-		expect(
-			resolveOutputMode({ jsonFlag: true, humanFlag: false, envValue: "human", stdoutIsTTY: true }),
-		).toBe("json");
+		expect(resolveOutputMode({ jsonFlag: true, humanFlag: false, envValue: "human", stdoutIsTTY: true })).toBe(
+			"json",
+		);
 	});
 
 	it("prefers an explicit --human flag over env and tty", () => {
-		expect(
-			resolveOutputMode({ jsonFlag: false, humanFlag: true, envValue: "json", stdoutIsTTY: false }),
-		).toBe("human");
+		expect(resolveOutputMode({ jsonFlag: false, humanFlag: true, envValue: "json", stdoutIsTTY: false })).toBe(
+			"human",
+		);
 	});
 
 	it("honors KANBAN_OUTPUT when no flag is set", () => {

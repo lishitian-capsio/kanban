@@ -2,7 +2,8 @@ import type { Command } from "commander";
 
 import type { RuntimeDbConnectionAddRequest, RuntimeDbEngine, RuntimeDbSslConfig } from "../core/api-contract";
 import { readGlobalCliOptions, runCliCommand } from "./cli-command-runner";
-import { CliError } from "./cli-envelope";
+import { CliError, type CliWarning } from "./cli-envelope";
+import { resolveRequiredId } from "./cli-positional-args";
 import {
 	createRuntimeTrpcClient,
 	ensureRuntimeWorkspace,
@@ -341,36 +342,62 @@ export function registerDbCommand(program: Command): void {
 		.command("remove")
 		.alias("rm")
 		.description("Remove a database connection and delete its machine-local secret.")
-		.requiredOption("--connection <id>", "Connection id to remove.")
-		.action(async function (this: Command, options: { connection: string }) {
+		.argument("[id]", "Connection id to remove (positional, preferred over --connection).")
+		.option("--connection <id>", "Deprecated: pass the connection id as the positional <id> instead.")
+		.action(async function (this: Command, idArg: string | undefined, options: { connection?: string }) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"db.connection.remove",
-				async () =>
-					await removeConnection({
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.connection,
+						legacyFlagName: "--connection",
+						missingMessage:
+							"db connection remove requires a connection id. Pass it as the positional <id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await removeConnection({
 						cwd: process.cwd(),
 						projectPath: globals.projectPath,
-						connId: options.connection,
-					}),
-				{ globals },
+						connId: resolved.id,
+					});
+				},
+				{ globals, warnings },
 			);
 		});
 
 	connection
 		.command("test")
 		.description("Test connectivity for a registered database connection.")
-		.requiredOption("--connection <id>", "Connection id to test.")
-		.action(async function (this: Command, options: { connection: string }) {
+		.argument("[id]", "Connection id to test (positional, preferred over --connection).")
+		.option("--connection <id>", "Deprecated: pass the connection id as the positional <id> instead.")
+		.action(async function (this: Command, idArg: string | undefined, options: { connection?: string }) {
 			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
 			await runCliCommand(
 				"db.connection.test",
-				async () =>
-					await testConnection({
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.connection,
+						legacyFlagName: "--connection",
+						missingMessage:
+							"db connection test requires a connection id. Pass it as the positional <id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await testConnection({
 						cwd: process.cwd(),
 						projectPath: globals.projectPath,
-						connId: options.connection,
-					}),
-				{ globals },
+						connId: resolved.id,
+					});
+				},
+				{ globals, warnings },
 			);
 		});
 
