@@ -1,11 +1,3 @@
 {
-  "threads": [
-    {
-      "id": "5bb4f4ff-d153-4646-8251-26319204217f",
-      "agentId": "claude",
-      "name": "Database",
-      "createdAt": 1782285764364,
-      "updatedAt": 1782285764364
-    }
-  ]
+  "threads": []
 }
