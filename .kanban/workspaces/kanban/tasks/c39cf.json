@@ -1,0 +1,19 @@
+{
+  "id": "c39cf",
+  "title": "kanban CLI 全面重设计方案 (设计文档)",
+  "prompt": "目标:为整个 kanban CLI 产出一份重设计方案文档(写到 .plan/docs/kanban-cli-redesign.md),只做设计与论证,不改动现有命令实现。这是设计阶段,完成后停在 review 等人审,审核通过后再拆分独立实现任务。\n\n第一步——现状盘点:通读 src/cli.ts 及 src/commands/* 全部子命令,列出当前完整命令树(task create/list/update/done/delete/link/unlink/start、service install/uninstall/status、passcode、mcp-db-server、根级 flag 如 --host/--port/--project-path/--skip-shutdown-cleanup/--no-open 等)。整理每个命令的:动词/名词层级、参数、默认值、输出形态、退出码。把不一致点显式列成表。\n\n设计需覆盖以下维度(均为用户明确要求):\n\n1) 命令结构:动词/名词层级不统一(task create vs service install vs 顶层 passcode)。提出统一的 <noun> <verb> 或 <verb> <noun> 规范、命令分组、别名与弃用迁移策略,并给出完整的新命令树。\n\n2) 输出格式:目前几乎全是 JSON。设计'人类可读默认输出 + --json 机器输出'双轨:默认带颜色/表格/进度/清晰摘要(走 cli-output.ts 的 printLine,遵守 TTY 检测),--json 给稳定 schema。两种模式都要定义。\n\n3) 远程 / service 体验:承接近期 host/CORS/passcode/install 幂等一系列 bug,设计 install/status/passcode/host 这条链路的端到端可用性与可发现性——例如 status 应展示 bind host、有效 passcode、访问 URL、健康状态;绑定远程 host 时引导用户拿到口令。\n\n4) 参数与一致性:统一 --project-path 默认行为、全局 flag、错误信息结构、退出码约定(0/非0)、--help 文案风格。给出横切规范。\n\n5) AI 可读性(重点):CLI 要让编码 agent / LLM 能稳定解析与调用。设计要点:稳定的机器可读输出契约(--json 的 schema 版本化)、确定性的错误对象({ok:false,error:{code,message}})、可被 --help 或 'kanban schema/describe' 自描述的命令清单、避免靠自然语言措辞传达状态。考虑是否提供一个机器可发现的命令/能力清单端点。\n\n文档结构建议:现状盘点表 → 设计原则 → 新命令树 → 输出契约(human+json)→ 远程/service 子系统 → 横切规范(参数/错误/退出码)→ AI 可读性契约 → 向后兼容与迁移路线 → 分阶段落地建议(便于后续拆任务)。\n\n注意:这是纯设计文档任务,不要重构或修改任何命令实现代码,只写 .plan/docs 下的 markdown。行号引用以实际源码为准。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782272806935,
+  "updatedAt": 1782272806935,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
