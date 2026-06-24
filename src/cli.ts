@@ -8,6 +8,7 @@ import ora, { type Ora } from "ora";
 import packageJson from "../package.json" with { type: "json" };
 import { printLine } from "./cli-output";
 import { CLI_EXIT_USAGE_ERROR } from "./commands/cli-envelope";
+import { registerSchemaCommand } from "./commands/cli-schema";
 import { registerDbCommand } from "./commands/db";
 import { registerFileCommand } from "./commands/file";
 import { registerHooksCommand } from "./commands/hooks";
@@ -806,6 +807,9 @@ function createProgram(invocationArgs: string[]): Command {
 	registerServiceCommand(program);
 	registerRemoteCommand(program);
 	registerPasscodeAliasCommand(program);
+	// Registered after the others so it sits alongside them in help; the manifest itself is
+	// built at invocation time from the fully-assembled tree, so registration order is moot.
+	registerSchemaCommand(program, { kanbanVersion: KANBAN_VERSION });
 
 	program
 		.command("mcp")
