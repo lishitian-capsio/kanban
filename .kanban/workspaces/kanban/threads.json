@@ -27,6 +27,13 @@
       "name": "network proxy",
       "createdAt": 1782276370603,
       "updatedAt": 1782276370603
+    },
+    {
+      "id": "cf9ab9e2-75a2-4d5b-ab4d-63d105bf8ae4",
+      "agentId": "claude",
+      "name": "vault",
+      "createdAt": 1782279916658,
+      "updatedAt": 1782279916658
     }
   ]
 }
