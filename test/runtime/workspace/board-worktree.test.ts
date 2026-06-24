@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -228,6 +228,65 @@ describe("setupBoardWorktree clone bootstrap", () => {
 		} finally {
 			cleanupClone();
 			cleanupOrigin();
+		}
+	});
+
+	it("attaches from a pre-existing local board branch when the remote is unreachable", async () => {
+		// The field case: an earlier run created (and seeded) a LOCAL board branch but never
+		// pushed it; later the board worktree directory is gone and the remote is unreachable.
+		// The data is safe on the local branch, so setup must attach from it — never refuse with
+		// "could not fetch ... refusing to initialize an empty board" (that guard is only for the
+		// genuinely ambiguous no-local-branch case).
+		const { repoPath: origin, cleanup: cleanupOrigin } = initRepo("kanban-board-origin-");
+		const { path: cloneParent, cleanup: cleanupClone } = createTempDir("kanban-board-clone-");
+		try {
+			const clonePath = join(cloneParent, "clone");
+			git(cloneParent, ["clone", "-q", origin, clonePath]);
+
+			// First run orphans + seeds a local board branch (origin has none yet), then is "shut down":
+			// the worktree directory is removed but the branch ref (with the data) stays.
+			await setupBoardWorktree(clonePath, "kanban/board");
+			writeFileEnsuringDir(dataFile(clonePath, "real.txt"), "board-data");
+			await commitBoardWorktree(clonePath, "board: seed");
+			rmSync(getBoardWorktreePath(clonePath), { recursive: true, force: true });
+
+			// Now the remote is unreachable.
+			git(clonePath, ["remote", "set-url", "origin", join(cloneParent, "does-not-exist")]);
+
+			const result = await setupBoardWorktree(clonePath, "kanban/board");
+			expect(result.ok).toBe(true);
+			expect(existsSync(getBoardWorktreePath(clonePath))).toBe(true);
+			// The data came back from the local branch — no empty board was orphaned over it.
+			expect(existsSync(dataFile(clonePath, "real.txt"))).toBe(true);
+			expect(git(getBoardWorktreePath(clonePath), ["symbolic-ref", "--short", "HEAD"])).toBe("kanban/board");
+		} finally {
+			cleanupClone();
+			cleanupOrigin();
+		}
+	});
+
+	it("reclaims a stale/broken board worktree directory and re-attaches from the local branch", async () => {
+		// A leftover board worktree directory whose gitlink is broken (interrupted setup, a moved
+		// repo, a partially-removed worktree) makes `isGitWorktree` false while the directory still
+		// blocks a fresh `git worktree add` with "already exists". Setup must reclaim it and
+		// re-attach from the local branch rather than leaving the board permanently unattachable.
+		const { repoPath, cleanup } = initRepo("kanban-board-stale-");
+		try {
+			await setupBoardWorktree(repoPath, "kanban/board");
+			writeFileEnsuringDir(dataFile(repoPath, "real.txt"), "board-data");
+			await commitBoardWorktree(repoPath, "board: seed");
+
+			// Break the gitlink: the directory stays (so prune won't clear it) but is no longer a
+			// healthy worktree.
+			const worktreePath = getBoardWorktreePath(repoPath);
+			writeFileSync(join(worktreePath, ".git"), "gitdir: /nonexistent/broken\n", "utf8");
+
+			const result = await setupBoardWorktree(repoPath, "kanban/board");
+			expect(result.ok).toBe(true);
+			expect(existsSync(dataFile(repoPath, "real.txt"))).toBe(true);
+			expect(git(getBoardWorktreePath(repoPath), ["symbolic-ref", "--short", "HEAD"])).toBe("kanban/board");
+		} finally {
+			cleanup();
 		}
 	});
 

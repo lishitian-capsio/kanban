@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 
@@ -548,11 +548,42 @@ export async function createOrphanBranchViaPlumbing(repoPath: string, branch: st
 	}
 }
 
-async function createBoardWorktree(repoPath: string, worktreePath: string, branch: string): Promise<void> {
-	await mkdir(dirname(worktreePath), { recursive: true });
+async function pathExists(path: string): Promise<boolean> {
+	try {
+		await access(path);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Reclaim anything stale left at the board worktree path so the subsequent
+ * `git worktree add` can't fail. We only get here after `isGitWorktree(worktreePath)`
+ * already returned false, so any directory or registration still at this path is a
+ * dead leftover — a crashed/interrupted setup, a moved repo with a broken gitlink, or
+ * a removed-but-not-pruned entry. The board worktree is runtime-exclusive (no human
+ * edits to preserve), so force-removing it is always safe. Without this, a leftover
+ * *directory* makes `git worktree add` abort with "already exists" (prune can't clear
+ * it because the directory is present) and the board stays permanently unattached,
+ * even though its data is safe on the branch. Mirrors the hardened task-worktree path.
+ */
+async function reclaimStaleBoardWorktree(repoPath: string, worktreePath: string): Promise<void> {
+	if (await pathExists(worktreePath)) {
+		const removed = await runGit(repoPath, ["worktree", "remove", "--force", worktreePath]);
+		if (!removed.ok) {
+			// A broken worktree can't be removed via git; drop the directory directly.
+			await rm(worktreePath, { recursive: true, force: true });
+		}
+	}
 	// Clear stale registrations a crashed/removed worktree can leave behind, or
 	// `git worktree add` refuses with "missing but already registered".
 	await runGit(repoPath, ["worktree", "prune"]);
+}
+
+async function createBoardWorktree(repoPath: string, worktreePath: string, branch: string): Promise<void> {
+	await mkdir(dirname(worktreePath), { recursive: true });
+	await reclaimStaleBoardWorktree(repoPath, worktreePath);
 
 	if (await branchExists(repoPath, branch)) {
 		await addWorktreeOnExistingBranch(repoPath, worktreePath, branch);
