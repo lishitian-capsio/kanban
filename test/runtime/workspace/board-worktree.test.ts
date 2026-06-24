@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { writeBoardRef } from "../../../src/state/board-ref";
 import {
+	adoptRemoteBoardIfPending,
 	boardWorktreeHasCommittedData,
 	commitBoardWorktree,
 	createOrphanBranchViaPlumbing,
@@ -14,6 +15,7 @@ import {
 	getBoardWorktreeAheadBehind,
 	getBoardWorktreeDataHome,
 	getBoardWorktreePath,
+	isBoardAdoptPending,
 	pullBoardWorktree,
 	pushBoardWorktree,
 	renameBoardBranch,
@@ -290,12 +292,12 @@ describe("setupBoardWorktree clone bootstrap", () => {
 		}
 	});
 
-	it("fails clearly instead of orphaning an empty board when the remote is unreachable", async () => {
+	it("opens a provisional empty board and marks adopt-pending when the remote is unreachable", async () => {
 		// A cold clone whose board branch lives on a remote we can't reach (offline / slow /
-		// timed out). The fetch fails with a non-"missing ref" error; silently orphaning an
-		// empty branch here would mask the real board data on the remote, so setup must fail
-		// loudly (and the next boot retries) rather than emptying the board. A timeout SIGKILL
-		// produces the same failure class, so this also stands in for the timeout exit.
+		// timed out). The project must NOT be hidden behind a hard failure: it opens on a
+		// provisional EMPTY local board (nothing is invented that could later clobber the
+		// remote's data on a push) and records the degraded "adopt the remote later" state so
+		// the background reconcile can pull the real board in once origin is reachable again.
 		const { repoPath: origin, cleanup: cleanupOrigin } = initRepo("kanban-board-origin-");
 		const { path: cloneParent, cleanup: cleanupClone } = createTempDir("kanban-board-clone-");
 		try {
@@ -306,14 +308,123 @@ describe("setupBoardWorktree clone bootstrap", () => {
 			git(clonePath, ["remote", "set-url", "origin", join(cloneParent, "does-not-exist")]);
 
 			const result = await setupBoardWorktree(clonePath, "kanban/board");
-			expect(result.ok).toBe(false);
-			expect(result.error).toBeTruthy();
-			// Crucially, no divergent empty board branch was orphaned over the remote's data...
-			expect(
-				spawnSync("git", ["-C", clonePath, "rev-parse", "--verify", "refs/heads/kanban/board"]).status,
-			).not.toBe(0);
-			// ...and no worktree was left behind.
-			expect(existsSync(getBoardWorktreePath(clonePath))).toBe(false);
+			// The project opens locally rather than failing + vanishing.
+			expect(result.ok).toBe(true);
+			expect(existsSync(getBoardWorktreePath(clonePath))).toBe(true);
+			expect(git(getBoardWorktreePath(clonePath), ["symbolic-ref", "--short", "HEAD"])).toBe("kanban/board");
+			// The provisional board is EMPTY — no data was invented over the (unreachable) remote's.
+			expect(await boardWorktreeHasCommittedData(clonePath)).toBe(false);
+			// The degraded state is recorded so the background reconcile adopts the remote later.
+			expect(isBoardAdoptPending(clonePath)).toBe(true);
+		} finally {
+			cleanupClone();
+			cleanupOrigin();
+		}
+	});
+
+	it("never contacts the remote when adoption is disabled (the seed-local migration path)", async () => {
+		// The decouple migration seeds the board branch from LOCAL committed data and must do
+		// zero blocking remote requests on the open path — even when a remote is configured but
+		// unreachable. It orphans locally and never enters the degraded adopt-pending state
+		// (there is nothing on the remote to adopt: this repo has never published a board branch).
+		const { repoPath: origin, cleanup: cleanupOrigin } = initRepo("kanban-board-origin-");
+		const { path: cloneParent, cleanup: cleanupClone } = createTempDir("kanban-board-clone-");
+		try {
+			const clonePath = join(cloneParent, "clone");
+			git(cloneParent, ["clone", "-q", origin, clonePath]);
+			git(clonePath, ["remote", "set-url", "origin", join(cloneParent, "does-not-exist")]);
+
+			const result = await setupBoardWorktree(clonePath, "kanban/board", { allowRemoteAdopt: false });
+			expect(result.ok).toBe(true);
+			expect(result.created).toBe(true);
+			expect(await boardWorktreeHasCommittedData(clonePath)).toBe(false);
+			expect(isBoardAdoptPending(clonePath)).toBe(false);
+		} finally {
+			cleanupClone();
+			cleanupOrigin();
+		}
+	});
+});
+
+describe("adoptRemoteBoardIfPending", () => {
+	function dataFileFor(repoPath: string, name: string): string {
+		return join(getBoardWorktreeDataHome(repoPath), "files", name);
+	}
+
+	it("adopts the real remote board once origin is reachable while the local board is pristine", async () => {
+		const { cloneA, cloneB, cleanups } = makeRemoteAndClones("kanban-board-adopt-");
+		try {
+			// cloneA publishes a real board branch (with data) to the shared remote.
+			await setupBoardWorktree(cloneA, "kanban/board");
+			writeFileEnsuringDir(dataFileFor(cloneA, "real.txt"), "from-A");
+			await commitBoardWorktree(cloneA, "board: seed");
+			expect((await pushBoardWorktree(cloneA, "kanban/board")).status).toBe("pushed");
+
+			// cloneB opens while origin is unreachable → provisional empty board + adopt-pending.
+			const origUrl = git(cloneB, ["config", "remote.origin.url"]);
+			git(cloneB, ["remote", "set-url", "origin", "/nonexistent/kanban-remote.git"]);
+			const degraded = await setupBoardWorktree(cloneB, "kanban/board");
+			expect(degraded.ok).toBe(true);
+			expect(isBoardAdoptPending(cloneB)).toBe(true);
+			expect(existsSync(dataFileFor(cloneB, "real.txt"))).toBe(false);
+
+			// Origin is reachable again → the reconcile adopts the remote board cleanly.
+			git(cloneB, ["remote", "set-url", "origin", origUrl]);
+			const adopt = await adoptRemoteBoardIfPending(cloneB, "kanban/board");
+			expect(adopt.status).toBe("adopted");
+			expect(adopt.pulledChanges).toBe(true);
+			expect(existsSync(dataFileFor(cloneB, "real.txt"))).toBe(true);
+			expect(isBoardAdoptPending(cloneB)).toBe(false);
+		} finally {
+			for (const cleanup of cleanups) {
+				cleanup();
+			}
+		}
+	});
+
+	it("surfaces a conflict instead of clobbering offline edits when the local board diverged", async () => {
+		const { cloneA, cloneB, cleanups } = makeRemoteAndClones("kanban-board-diverge-");
+		try {
+			await setupBoardWorktree(cloneA, "kanban/board");
+			writeFileEnsuringDir(dataFileFor(cloneA, "real.txt"), "from-A");
+			await commitBoardWorktree(cloneA, "board: seed");
+			expect((await pushBoardWorktree(cloneA, "kanban/board")).status).toBe("pushed");
+
+			const origUrl = git(cloneB, ["config", "remote.origin.url"]);
+			git(cloneB, ["remote", "set-url", "origin", "/nonexistent/kanban-remote.git"]);
+			await setupBoardWorktree(cloneB, "kanban/board");
+			// Offline work commits real data onto the provisional board — it is no longer pristine.
+			writeFileEnsuringDir(dataFileFor(cloneB, "local-only.txt"), "offline-edit");
+			await commitBoardWorktree(cloneB, "board: offline work");
+
+			git(cloneB, ["remote", "set-url", "origin", origUrl]);
+			const adopt = await adoptRemoteBoardIfPending(cloneB, "kanban/board");
+			// A real divergence is surfaced, never auto-resolved — the offline edit survives.
+			expect(adopt.status).toBe("diverged");
+			expect(existsSync(dataFileFor(cloneB, "local-only.txt"))).toBe(true);
+			// The marker is cleared so the normal ahead/behind status takes over (badge shows diverged).
+			expect(isBoardAdoptPending(cloneB)).toBe(false);
+		} finally {
+			for (const cleanup of cleanups) {
+				cleanup();
+			}
+		}
+	});
+
+	it("stays pending when origin is still unreachable", async () => {
+		const { repoPath: origin, cleanup: cleanupOrigin } = initRepo("kanban-board-origin-");
+		const { path: cloneParent, cleanup: cleanupClone } = createTempDir("kanban-board-clone-");
+		try {
+			const clonePath = join(cloneParent, "clone");
+			git(cloneParent, ["clone", "-q", origin, clonePath]);
+			git(clonePath, ["remote", "set-url", "origin", join(cloneParent, "does-not-exist")]);
+			await setupBoardWorktree(clonePath, "kanban/board");
+			expect(isBoardAdoptPending(clonePath)).toBe(true);
+
+			const adopt = await adoptRemoteBoardIfPending(clonePath, "kanban/board");
+			expect(adopt.status).toBe("still-unreachable");
+			// Still degraded — the next backed-off attempt will retry.
+			expect(isBoardAdoptPending(clonePath)).toBe(true);
 		} finally {
 			cleanupClone();
 			cleanupOrigin();

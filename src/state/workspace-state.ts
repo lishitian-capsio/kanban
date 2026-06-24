@@ -1322,7 +1322,12 @@ async function migrateDecoupleBoardToBranch(repoPath: string, workspaceId: strin
 		}
 		const branch = DEFAULT_BOARD_BRANCH;
 		try {
-			const setup = await setupBoardWorktree(repoPath, branch);
+			// Seed-local: this migration builds the board branch from the repo's own committed
+			// `.kanban` data, so it must never reach the network. Disabling adoption keeps adding
+			// a brand-new (or existing) project free of any blocking remote git op on the open
+			// path, even when a remote is configured but unreachable. The cold-clone adopt path
+			// runs separately via `ensureBoardWorktree` (which keeps `allowRemoteAdopt` on).
+			const setup = await setupBoardWorktree(repoPath, branch, { allowRemoteAdopt: false });
 			if (!setup.ok || !setup.path) {
 				log.error("board decoupling: could not set up the board worktree; leaving data on the code branch", {
 					repoPath,

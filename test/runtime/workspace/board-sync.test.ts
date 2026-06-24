@@ -10,6 +10,7 @@ import {
 	commitBoardWorktree,
 	getBoardWorktreeDataHome,
 	getBoardWorktreePath,
+	isBoardAdoptPending,
 	pushBoardWorktree,
 	setupBoardWorktree,
 } from "../../../src/workspace/board-worktree";
@@ -335,6 +336,74 @@ describe("createBoardSyncService status + controls", () => {
 			await service.dispose();
 		} finally {
 			cleanup();
+		}
+	});
+
+	it("reports a degraded (error) status with a clear message while a board is adopt-pending", async () => {
+		const { repoPath, cleanup } = await makeDecoupledRepo("kanban-board-degraded-");
+		try {
+			// Simulate the provisional state a cold clone enters when its remote is unreachable.
+			writeFileSync(
+				join(repoPath, ".kanban", "board-adopt-pending"),
+				JSON.stringify({ branch: "kanban/board" }),
+				"utf8",
+			);
+			// A far-future reconcile delay keeps the background adopt from firing during the test.
+			const service = createBoardSyncService({
+				broadcastWorkspaceState: vi.fn(),
+				reconcileDelaysMs: [10 * 60 * 1000],
+			});
+			const status = await service.getStatus(target(repoPath));
+			expect(status.decoupled).toBe(true);
+			expect(status.state).toBe("error");
+			expect(status.lastError).toBeTruthy();
+			await service.dispose();
+		} finally {
+			cleanup();
+		}
+	});
+
+	it("adopts the remote board in the background once origin becomes reachable", async () => {
+		const { cloneA, cloneB, cleanups } = makeRemoteDecoupledClones("kanban-board-bg-adopt-");
+		try {
+			// cloneA publishes a real board (with data) to the shared remote.
+			await writeBoardRef(cloneA, { version: 1, branch: "kanban/board" });
+			await setupBoardWorktree(cloneA, "kanban/board");
+			writeData(cloneA, "real.txt", "from-A");
+			await commitBoardWorktree(cloneA, "board: seed");
+			expect((await pushBoardWorktree(cloneA, "kanban/board")).status).toBe("pushed");
+
+			// cloneB opens while origin is unreachable → provisional empty board + adopt-pending.
+			await writeBoardRef(cloneB, { version: 1, branch: "kanban/board" });
+			const origUrl = git(cloneB, ["config", "remote.origin.url"]);
+			git(cloneB, ["remote", "set-url", "origin", "/nonexistent/kanban-remote.git"]);
+			await setupBoardWorktree(cloneB, "kanban/board");
+			expect(isBoardAdoptPending(cloneB)).toBe(true);
+
+			const broadcast = vi.fn();
+			const service = createBoardSyncService({
+				broadcastWorkspaceState: broadcast,
+				debounceMs: 10,
+				reconcileDelaysMs: [10],
+			});
+
+			// Kick off the background reconcile loop, as the badge mount / status broadcast would.
+			// (The degraded `error` status mapping is covered by the dedicated test above.)
+			await service.getStatus(target(cloneB));
+
+			// Origin returns → the next background reconcile tick adopts the real remote board.
+			git(cloneB, ["remote", "set-url", "origin", origUrl]);
+			await waitFor(() => !isBoardAdoptPending(cloneB), 5_000);
+			await waitFor(() => broadcast.mock.calls.length > 0, 5_000);
+			expect(existsSync(join(getBoardWorktreeDataHome(cloneB), "files", "real.txt"))).toBe(true);
+
+			const synced = await service.getStatus(target(cloneB));
+			expect(synced.state).toBe("synced");
+			await service.dispose();
+		} finally {
+			for (const cleanup of cleanups) {
+				cleanup();
+			}
 		}
 	});
 });

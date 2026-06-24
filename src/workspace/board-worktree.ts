@@ -1,4 +1,5 @@
-import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 
@@ -39,6 +40,15 @@ const ROOT_GITIGNORE_FILENAME = ".gitignore";
 /** `.kanban/board-ref`, the single code-branch-tracked artifact kept across the flip. */
 const BOARD_REF_REPO_RELATIVE_PATH = `${KANBAN_RUNTIME_HOME_DIR_NAME}/${BOARD_REF_FILENAME}`;
 
+/**
+ * Machine-local marker recording that a cold clone opened on a PROVISIONAL empty board
+ * because its remote was unreachable: the real board data may still live on the remote,
+ * so the background reconcile must adopt it once origin comes back. Lives in the runtime
+ * (gitignored) `.kanban` root — never committed, never travels with a clone. Its mere
+ * presence is the degraded-state gate (read synchronously by the status badge path).
+ */
+const BOARD_ADOPT_PENDING_FILENAME = "board-adopt-pending";
+
 const DECOUPLE_COMMIT_MESSAGE = "chore(kanban): decouple board data to its own branch";
 
 const BOARD_REF_UPDATE_COMMIT_MESSAGE = "chore(kanban): point board-ref at the renamed board branch";
@@ -71,6 +81,40 @@ export function getBoardWorktreePath(repoPath: string): string {
  */
 export function getBoardWorktreeDataHome(repoPath: string): string {
 	return join(getBoardWorktreePath(repoPath), KANBAN_RUNTIME_HOME_DIR_NAME);
+}
+
+/** Absolute path of the adopt-pending marker: `<repo>/.kanban/board-adopt-pending`. */
+function getBoardAdoptPendingPath(repoPath: string): string {
+	return join(repoPath, KANBAN_RUNTIME_HOME_DIR_NAME, BOARD_ADOPT_PENDING_FILENAME);
+}
+
+/**
+ * Synchronous degraded-state gate: is this repo's board a provisional empty board
+ * awaiting adoption of an unreachable remote's data? Kept sync so the board sync status
+ * path (`buildStatus`) can consult it without an async hop, mirroring {@link
+ * import("../state/board-ref").isBoardDecouplingActive}.
+ */
+export function isBoardAdoptPending(repoPath: string): boolean {
+	return existsSync(getBoardAdoptPendingPath(repoPath));
+}
+
+/** Read the adopt-pending marker (the board branch awaiting adoption), or null when absent/invalid. */
+export async function readBoardAdoptPending(repoPath: string): Promise<{ branch: string } | null> {
+	try {
+		const raw = await readFile(getBoardAdoptPendingPath(repoPath), "utf8");
+		const parsed = JSON.parse(raw) as { branch?: unknown };
+		return typeof parsed.branch === "string" && parsed.branch.trim() ? { branch: parsed.branch } : null;
+	} catch {
+		return null;
+	}
+}
+
+async function writeBoardAdoptPending(repoPath: string, branch: string): Promise<void> {
+	await lockedFileSystem.writeJsonFileAtomic(getBoardAdoptPendingPath(repoPath), { branch });
+}
+
+async function clearBoardAdoptPending(repoPath: string): Promise<void> {
+	await rm(getBoardAdoptPendingPath(repoPath), { force: true });
 }
 
 function buildBoardCommitEnv(): NodeJS.ProcessEnv {
@@ -399,6 +443,91 @@ export async function pullBoardWorktree(repoPath: string, branch: string): Promi
 	return { status: "pulled", pulledChanges: true };
 }
 
+/** Outcome of a background attempt to adopt the remote board for a provisional board. */
+export type BoardAdoptStatus =
+	/** Remote was reachable and its board was adopted cleanly (provisional board was pristine). */
+	| "adopted"
+	/** Local provisional board had real offline edits → unrelated-history divergence, surfaced not auto-resolved. */
+	| "diverged"
+	/** Remote is reachable but genuinely has no board branch; the provisional local board is the authority now. */
+	| "remote-empty"
+	/** Remote still can't be reached; stays pending for the next backed-off retry. */
+	| "still-unreachable"
+	/** The repo's remote was removed since going pending; nothing to adopt. */
+	| "no-remote"
+	/** No adopt-pending marker (nothing to do). */
+	| "not-pending";
+
+export interface BoardAdoptResult {
+	status: BoardAdoptStatus;
+	/** True when adoption changed the local worktree (callers reload + rebroadcast). */
+	pulledChanges: boolean;
+	error?: string;
+}
+
+/**
+ * Background reconcile for a board opened in the degraded "provisional empty board"
+ * state (see {@link setupBoardWorktree}): once origin is reachable, adopt the real
+ * remote board so the project stops showing an empty board. A no-op when no
+ * {@link isBoardAdoptPending} marker is set.
+ *
+ * The provisional board branch is an orphan with a history unrelated to the remote's,
+ * so a merge would refuse — adoption is therefore a `reset --hard` onto the remote tip,
+ * which is ancestry-agnostic. We only do that while the provisional board is **pristine**
+ * (no committed board data): if the user did offline work on it, that is a genuine
+ * divergence which we **surface, never auto-resolve** (the marker is cleared so the
+ * normal diverged status + manual Pull take over, leaving the offline data intact).
+ */
+export async function adoptRemoteBoardIfPending(repoPath: string, branch: string): Promise<BoardAdoptResult> {
+	const pending = await readBoardAdoptPending(repoPath);
+	if (!pending) {
+		return { status: "not-pending", pulledChanges: false };
+	}
+	const worktreePath = getBoardWorktreePath(repoPath);
+	if (!(await isGitWorktree(worktreePath))) {
+		// The worktree isn't materialized yet (rare race with a load); let a later load
+		// re-create it. Stay pending so the next attempt retries.
+		return { status: "still-unreachable", pulledChanges: false };
+	}
+	const remote = await getDefaultRemote(repoPath);
+	if (!remote) {
+		// The remote was removed since we went pending — there is nothing to adopt; the
+		// local board becomes the local-only authority. Clear the marker.
+		await clearBoardAdoptPending(repoPath);
+		return { status: "no-remote", pulledChanges: false };
+	}
+	if (!(await fetchBoardBranchIntoTrackingRef(worktreePath, remote, branch))) {
+		return { status: "still-unreachable", pulledChanges: false };
+	}
+	if (!(await remoteBranchExists(repoPath, remote, branch))) {
+		// Origin is reachable but genuinely has no board branch (the other side never
+		// published one). The provisional local board is the legitimate authority now.
+		await clearBoardAdoptPending(repoPath);
+		return { status: "remote-empty", pulledChanges: false };
+	}
+	const remoteRef = `refs/remotes/${remote}/${branch}`;
+	if (await boardWorktreeHasCommittedData(repoPath)) {
+		// The user did offline work on the provisional board → real, unrelated-history
+		// divergence. Surface it (clearing the marker so the normal diverged status takes
+		// over); never reset/merge over the user's offline edits.
+		await clearBoardAdoptPending(repoPath);
+		log.warn("provisional board diverged from the now-reachable remote; surfacing for manual resolution", {
+			repoPath,
+			remote,
+			branch,
+		});
+		return { status: "diverged", pulledChanges: false };
+	}
+	const reset = await runGit(worktreePath, ["reset", "--hard", remoteRef], { env: buildBoardCommitEnv() });
+	if (!reset.ok) {
+		return { status: "still-unreachable", pulledChanges: false, error: reset.error ?? reset.output };
+	}
+	// Wire the branch to track the remote so ahead/behind and future pushes are correct.
+	await runGit(worktreePath, ["branch", `--set-upstream-to=${remoteRef}`, branch], { env: buildBoardCommitEnv() });
+	await clearBoardAdoptPending(repoPath);
+	return { status: "adopted", pulledChanges: true };
+}
+
 export interface RenameBoardBranchResult {
 	ok: boolean;
 	/** Archive tag left as a rollback anchor for the old branch, when created. */
@@ -581,7 +710,12 @@ async function reclaimStaleBoardWorktree(repoPath: string, worktreePath: string)
 	await runGit(repoPath, ["worktree", "prune"]);
 }
 
-async function createBoardWorktree(repoPath: string, worktreePath: string, branch: string): Promise<void> {
+async function createBoardWorktree(
+	repoPath: string,
+	worktreePath: string,
+	branch: string,
+	allowRemoteAdopt: boolean,
+): Promise<void> {
 	await mkdir(dirname(worktreePath), { recursive: true });
 	await reclaimStaleBoardWorktree(repoPath, worktreePath);
 
@@ -590,9 +724,13 @@ async function createBoardWorktree(repoPath: string, worktreePath: string, branc
 		return;
 	}
 
-	// No local branch yet. A clone carries the board branch on its remote, so
-	// fetch + track it instead of orphaning a fresh (empty) branch over the data.
-	const remote = await getDefaultRemote(repoPath);
+	// No local branch yet. On the cold-clone path a clone carries the board branch on its
+	// remote, so fetch + track it instead of orphaning a fresh (empty) branch over the data.
+	// The seed-local decouple migration disables adoption entirely (`allowRemoteAdopt: false`):
+	// it builds the board branch from LOCAL committed data, so it must never block the open
+	// path on a remote request — that keeps adding a brand-new project free of any blocking
+	// remote git op even when a remote is configured.
+	const remote = allowRemoteAdopt ? await getDefaultRemote(repoPath) : null;
 	if (remote) {
 		// This is the cold-clone boot path. Bound the fetch with the network timeout so a
 		// stalled connection / credential prompt / unreachable remote can't hang startup
@@ -617,20 +755,25 @@ async function createBoardWorktree(repoPath: string, worktreePath: string, branc
 			}
 			return;
 		}
-		// The remote ref is absent. Two very different causes, and conflating them is
-		// dangerous: a remote that genuinely lacks the branch (brand-new project on the
-		// other side) is the legitimate degradation — orphan a fresh empty branch. But a
-		// fetch that failed for a network reason (offline / unreachable / timed out) leaves
-		// the real board data sitting on the remote, so orphaning an empty branch over it
-		// would mask that data behind a divergent local board. Surface a clear error in that
-		// case instead — setup reports failure (boot continues; the next load retries).
+		// The remote ref is absent. Two very different causes: a remote that genuinely lacks
+		// the branch (brand-new project on the other side) is the legitimate degradation —
+		// orphan a fresh empty branch and carry on. But a fetch that failed for a network
+		// reason (offline / unreachable / timed out) leaves the real board data sitting on the
+		// remote. Refusing to open would hide the project and spin a retry loop; instead we
+		// open a PROVISIONAL empty board locally so the project is immediately usable, and
+		// record `board-adopt-pending` so the background reconcile pulls the real data in once
+		// origin is reachable. This never clobbers the remote: board sync only ever *commits*
+		// locally (push is an explicit, user-only action), so the empty board is never pushed
+		// over the remote's data while we are in this degraded state.
 		if (!fetchResult.ok && !isMissingRemoteRefError(fetchResult.output)) {
-			throw new Error(
-				`Could not fetch the board branch '${branch}' from '${remote}' (the remote may be unreachable or slow). ` +
-					`Refusing to initialize an empty board over data that may live on the remote. ${
-						fetchResult.error ?? fetchResult.output
-					}`,
+			log.warn(
+				"board branch remote unreachable; opening a provisional empty board (will adopt the remote in the background)",
+				{ repoPath, remote, branch, output: fetchResult.output },
 			);
+			await createOrphanBranchViaPlumbing(repoPath, branch);
+			await addWorktreeOnExistingBranch(repoPath, worktreePath, branch);
+			await writeBoardAdoptPending(repoPath, branch);
+			return;
 		}
 		log.warn("board-ref present but remote has no board branch; initializing an empty board branch", {
 			repoPath,
@@ -670,6 +813,17 @@ export async function ensureBoardWorktree(repoPath: string): Promise<EnsureBoard
 	return await setupBoardWorktree(repoPath, branch);
 }
 
+export interface SetupBoardWorktreeOptions {
+	/**
+	 * Whether setup may reach the network to adopt an existing remote board branch (the
+	 * cold-clone path). The seed-local decouple migration passes `false`: it builds the
+	 * board branch from local committed data, so it must never block the open path on a
+	 * remote request — that is what keeps adding a brand-new project free of any blocking
+	 * remote git op. Defaults to `true` (the load/clone path).
+	 */
+	allowRemoteAdopt?: boolean;
+}
+
 /**
  * Ensure the board worktree exists on `branch`, creating the orphan branch (or, in a
  * clone, fetching + tracking the remote one) on first run. The board-ref-gated
@@ -677,8 +831,18 @@ export async function ensureBoardWorktree(repoPath: string): Promise<EnsureBoard
  * migration calls this directly because it must seed the worktree *before* writing
  * the pointer that activates decoupling. Idempotent and serialized by a
  * git-common-dir lock (mirroring task-worktree setup).
+ *
+ * Never throws-and-hides the project over a remote being unreachable: when a cold clone
+ * has no local board branch and the remote can't be reached, it opens a provisional
+ * empty board and records {@link isBoardAdoptPending} so {@link adoptRemoteBoardIfPending}
+ * can pull the real data in the background once origin returns.
  */
-export async function setupBoardWorktree(repoPath: string, branch: string): Promise<EnsureBoardWorktreeResult> {
+export async function setupBoardWorktree(
+	repoPath: string,
+	branch: string,
+	options: SetupBoardWorktreeOptions = {},
+): Promise<EnsureBoardWorktreeResult> {
+	const allowRemoteAdopt = options.allowRemoteAdopt ?? true;
 	const worktreePath = getBoardWorktreePath(repoPath);
 
 	if (await isGitWorktree(worktreePath)) {
@@ -690,7 +854,7 @@ export async function setupBoardWorktree(repoPath: string, branch: string): Prom
 			return { ok: true, path: worktreePath, branch, created: false };
 		}
 		try {
-			await createBoardWorktree(repoPath, worktreePath, branch);
+			await createBoardWorktree(repoPath, worktreePath, branch, allowRemoteAdopt);
 			return { ok: true, path: worktreePath, branch, created: true };
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);

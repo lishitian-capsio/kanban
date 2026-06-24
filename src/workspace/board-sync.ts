@@ -13,10 +13,13 @@ import {
 	writeBoardRef,
 } from "../state/board-ref";
 import {
+	adoptRemoteBoardIfPending,
+	type BoardAdoptResult,
 	commitBoardRefUpdate,
 	commitBoardWorktree,
 	getBoardWorktreeAheadBehind,
 	getBoardWorktreePath,
+	isBoardAdoptPending,
 	pullBoardWorktree,
 	pushBoardWorktree,
 	renameBoardBranch,
@@ -27,10 +30,23 @@ const log = createLogger("board-sync");
 /** Default debounce window coalescing a burst of board writes into one local commit. */
 const DEFAULT_BOARD_SYNC_DEBOUNCE_MS = 5_000;
 
+/**
+ * Backed-off delays (ms) between background attempts to adopt the remote board for a
+ * repo that opened on a provisional empty board because its remote was unreachable.
+ * Each entry is the wait before the next attempt; the last entry repeats. Deliberately
+ * gentle (no 30s ERROR-log spam) — adoption is a best-effort, rate-limited retry, not a
+ * hot loop. The attempt is silent until it succeeds or surfaces a genuine divergence.
+ */
+const DEFAULT_BOARD_ADOPT_RETRY_DELAYS_MS = [15_000, 30_000, 60_000, 120_000, 300_000];
+
 const BOARD_SYNC_COMMIT_MESSAGE = "board: sync runtime state";
 
 const CONFLICT_MESSAGE =
 	"The board branch diverged from the remote with a content conflict. Local data is intact; resolve and retry.";
+
+/** Degraded-state message shown on the badge while a board awaits adoption of an unreachable remote. */
+const ADOPT_PENDING_MESSAGE =
+	"The board's remote is unreachable — working on a local board for now. Kanban will adopt the remote board automatically once it's reachable again.";
 
 /** Identifies the workspace whose board changed (workspacePath is the repo root). */
 export interface BoardSyncTarget {
@@ -55,6 +71,11 @@ export interface CreateBoardSyncServiceDependencies {
 	onStatusChanged?: (target: BoardSyncTarget, status: RuntimeBoardSyncStatus) => Promise<void> | void;
 	/** Debounce window in ms (default {@link DEFAULT_BOARD_SYNC_DEBOUNCE_MS}); injectable for tests. */
 	debounceMs?: number;
+	/**
+	 * Backed-off delays (ms) between background remote-adoption attempts for a provisional
+	 * board (default {@link DEFAULT_BOARD_ADOPT_RETRY_DELAYS_MS}); injectable for tests.
+	 */
+	reconcileDelaysMs?: number[];
 }
 
 export interface BoardSyncService {
@@ -90,7 +111,15 @@ interface BoardSyncLastResult {
 
 export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies): BoardSyncService {
 	const debounceMs = deps.debounceMs ?? DEFAULT_BOARD_SYNC_DEBOUNCE_MS;
+	const reconcileDelaysMs =
+		deps.reconcileDelaysMs && deps.reconcileDelaysMs.length > 0
+			? deps.reconcileDelaysMs
+			: DEFAULT_BOARD_ADOPT_RETRY_DELAYS_MS;
 	const timersByRepo = new Map<string, NodeJS.Timeout>();
+	// Background remote-adoption retry timers + per-repo attempt counter (drives the backoff
+	// index). Only ever set while a repo's board is in the provisional adopt-pending state.
+	const reconcileTimersByRepo = new Map<string, NodeJS.Timeout>();
+	const reconcileAttemptByRepo = new Map<string, number>();
 	const latestTargetByRepo = new Map<string, BoardSyncTarget>();
 	// Serializes all git work for a given repo so a debounced commit, a manual push/pull,
 	// and a shutdown flush never run concurrently against the same worktree.
@@ -137,12 +166,20 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 		const ab = await getBoardWorktreeAheadBehind(repoPath, branch);
 		const autoSyncPaused = autoSyncPausedByRepo.has(repoPath);
 		const last = lastResultByRepo.get(repoPath);
+		// A board opened on a provisional empty board because its remote was unreachable: the
+		// real data may live on the (still-unreachable) remote, so report a degraded state with
+		// a clear message rather than a falsely-clean "synced". Mapped onto the existing `error`
+		// state (closest fit: "last sync failed e.g. offline; retries on the next sync"), so the
+		// badge surfaces it as clickable with the explanation — no new wire state needed.
+		const adoptPending = isBoardAdoptPending(repoPath);
 
 		let state: RuntimeBoardSyncStatus["state"];
 		if (inFlightByRepo.has(repoPath)) {
 			state = "syncing";
 		} else if (last?.conflict) {
 			state = "conflict";
+		} else if (adoptPending) {
+			state = "error";
 		} else if (last?.error) {
 			state = "error";
 		} else if (!ab.hasRemote) {
@@ -165,7 +202,11 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 			aheadCount: ab.aheadCount,
 			behindCount: ab.behindCount,
 			autoSyncPaused,
-			lastError: last?.conflict ? (last.error ?? CONFLICT_MESSAGE) : (last?.error ?? null),
+			lastError: last?.conflict
+				? (last.error ?? CONFLICT_MESSAGE)
+				: adoptPending
+					? ADOPT_PENDING_MESSAGE
+					: (last?.error ?? null),
 			worktreePath: getBoardWorktreePath(repoPath),
 		};
 	};
@@ -212,11 +253,90 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 		await emitStatus(target);
 	};
 
+	/**
+	 * Background, backed-off adoption of the real remote board for a repo that opened on a
+	 * provisional empty board (its remote was unreachable at setup — see
+	 * {@link import("./board-worktree").setupBoardWorktree}). Self-stopping: it reschedules
+	 * ONLY while still pending and unreachable, and clears itself the moment the remote is
+	 * adopted or a genuine divergence is surfaced. Serialized on the per-repo queue so it
+	 * never races a commit/push/pull, and rate-limited via {@link reconcileDelaysMs} — no hot
+	 * loop, no ERROR-log spam. This is the ONLY background network touch; it exists solely to
+	 * recover the degraded state, never to push (push stays an explicit, user-only action).
+	 */
+	const runReconcile = async (target: BoardSyncTarget): Promise<void> => {
+		const { repoPath } = target;
+		if (!isBoardDecouplingActive(repoPath) || !isBoardAdoptPending(repoPath)) {
+			reconcileAttemptByRepo.delete(repoPath);
+			return;
+		}
+		const branch = await resolveBranch(repoPath);
+		markStall("board-sync:reconcile", repoPath);
+		inFlightByRepo.add(repoPath);
+		let result: BoardAdoptResult;
+		try {
+			result = await adoptRemoteBoardIfPending(repoPath, branch);
+		} catch (error) {
+			log.warn("board adopt reconcile failed", { repoPath, error });
+			result = { status: "still-unreachable", pulledChanges: false };
+		} finally {
+			inFlightByRepo.delete(repoPath);
+		}
+		if (result.pulledChanges) {
+			await deps.broadcastWorkspaceState(target.workspaceId, target.workspacePath);
+		}
+		if (result.status === "still-unreachable") {
+			// Still offline — back off and retry later (the badge stays degraded meanwhile).
+			reconcileAttemptByRepo.set(repoPath, (reconcileAttemptByRepo.get(repoPath) ?? 0) + 1);
+			await emitStatus(target);
+			scheduleReconcileTimer(target);
+			return;
+		}
+		// Adopted / diverged / remote-empty / no-remote / not-pending: the marker is cleared, so
+		// we stop retrying. Clear any stale error so the normal ahead/behind status (synced or,
+		// for a real divergence, diverged) takes over and the user can resolve via Pull.
+		reconcileAttemptByRepo.delete(repoPath);
+		recordResult(repoPath, { conflict: false, error: null });
+		await emitStatus(target);
+	};
+
+	const scheduleReconcileTimer = (target: BoardSyncTarget): void => {
+		const { repoPath } = target;
+		const existing = reconcileTimersByRepo.get(repoPath);
+		if (existing) {
+			clearTimeout(existing);
+		}
+		const attempt = reconcileAttemptByRepo.get(repoPath) ?? 0;
+		const delay =
+			reconcileDelaysMs[Math.min(attempt, reconcileDelaysMs.length - 1)] ?? reconcileDelaysMs[0] ?? 30_000;
+		const timer = setTimeout(() => {
+			reconcileTimersByRepo.delete(repoPath);
+			void enqueue(repoPath, () => runReconcile(latestTargetByRepo.get(repoPath) ?? target));
+		}, delay);
+		timer.unref();
+		reconcileTimersByRepo.set(repoPath, timer);
+	};
+
+	/**
+	 * Start (or keep running) the background adoption retry when a repo is in the provisional
+	 * state and no timer is already pending. Idempotent — calling it on every scheduleSync /
+	 * getStatus never stacks timers. A no-op for any repo that isn't adopt-pending.
+	 */
+	const maybeScheduleReconcile = (target: BoardSyncTarget): void => {
+		if (!isBoardAdoptPending(target.repoPath)) {
+			return;
+		}
+		if (reconcileTimersByRepo.has(target.repoPath)) {
+			return;
+		}
+		scheduleReconcileTimer(target);
+	};
+
 	const scheduleSync = (target: BoardSyncTarget): void => {
 		if (!isBoardDecouplingActive(target.repoPath)) {
 			return;
 		}
 		latestTargetByRepo.set(target.repoPath, target);
+		maybeScheduleReconcile(target);
 		const existing = timersByRepo.get(target.repoPath);
 		if (existing) {
 			clearTimeout(existing);
@@ -238,6 +358,9 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 
 	const getStatus = async (target: BoardSyncTarget): Promise<RuntimeBoardSyncStatus> => {
 		latestTargetByRepo.set(target.repoPath, target);
+		// The badge mount / status broadcast is a natural place to (re)start the background
+		// adoption retry for a provisional board, so a degraded repo recovers even while idle.
+		maybeScheduleReconcile(target);
 		return await buildStatus(target);
 	};
 
@@ -420,6 +543,11 @@ export function createBoardSyncService(deps: CreateBoardSyncServiceDependencies)
 			clearTimeout(timer);
 		}
 		timersByRepo.clear();
+		for (const timer of reconcileTimersByRepo.values()) {
+			clearTimeout(timer);
+		}
+		reconcileTimersByRepo.clear();
+		reconcileAttemptByRepo.clear();
 		// Final **local commit** (no push) for every workspace touched this session so the
 		// last writes — including the shutdown coordinator's interrupted-session save — are
 		// captured on the board branch. Unpushed commits stay durable locally and the user
