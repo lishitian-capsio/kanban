@@ -6,6 +6,20 @@
       "name": "task",
       "createdAt": 1782267688901,
       "updatedAt": 1782267688901
+    },
+    {
+      "id": "d7b7e6a0-cccb-4c61-acf5-261ceb5e41dd",
+      "agentId": "claude",
+      "name": "kanban cli",
+      "createdAt": 1782275063146,
+      "updatedAt": 1782275063146
+    },
+    {
+      "id": "5ff6aff8-f826-47d2-b7ca-af7a7a6d17c4",
+      "agentId": "claude",
+      "name": "卡死",
+      "createdAt": 1782275081536,
+      "updatedAt": 1782275081536
     }
   ]
 }
