@@ -1,0 +1,19 @@
+{
+  "id": "b05cd",
+  "title": "Optimize home agent session first-paint latency",
+  "prompt": "The Kanban home/sidebar agent session takes a noticeable moment to appear every time the page opens. Profile and reduce that first-paint latency.\n\nBackground (already traced):\n- Each open calls loadTaskChatMessages → backend getTaskChatMessages / loadTaskSessionMessages, which reads the persisted JSONL transcript from disk (~/.kanban or board worktree sessions/<taskId>/messages.jsonl) and mergeSessionMessages(persisted, live). perf16 (commit c7852) memoized the MERGE per task, but the FIRST open still pays the disk read + the tRPC/ws round-trip before anything renders.\n- Relevant: web-ui/src/hooks/use-kanban-chat-session.ts (initial onLoadMessages effect), the home panel load path, and the backend session-message journal read.\n\nStep 1 — PROFILE first, don't guess: measure where the wait actually is (backend disk read+parse vs transport vs client render) for a home session with a realistic transcript. Report findings before optimizing.\n\nThen optimize the dominant cost. Candidate directions (pick based on profiling, keep it minimal — no over-engineering):\n- Client-side cache the last-rendered transcript per home session and render it INSTANTLY on open, then revalidate/merge fresh data in the background (stale-while-revalidate).\n- Warm/prefetch the current home session's messages on connection (before the panel mounts) so the fetch is already in flight / cached.\n- Tail-first load: fetch only the most recent N messages for first paint, lazy-load older history on scroll-up.\n\nConstraints:\n- Don't break the existing getTaskChatMessages merge/journal contract or the perf16 merge cache.\n- Keep the wire contract stable if possible.\n- web:typecheck + biome clean; no console.* (use the logger facade).\n\nAcceptance:\n- A profiling note identifying the dominant latency source.\n- A measurable reduction in time-to-first-message on page open for an existing home session.\n- No regression to message correctness, streaming, or restart-history persistence.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782264293909,
+  "updatedAt": 1782264293909,
+  "column": "backlog",
+  "rank": "Zp",
+  "dependsOn": []
+}
