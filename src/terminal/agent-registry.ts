@@ -3,8 +3,8 @@ import { getRuntimeLaunchSupportedAgentCatalog, RUNTIME_AGENT_CATALOG } from "..
 import type {
 	RuntimeAgentDefinition,
 	RuntimeAgentId,
-	RuntimeKanbanProviderSettings,
 	RuntimeConfigResponse,
+	RuntimeKanbanProviderSettings,
 } from "../core/api-contract";
 import { isBinaryAvailableOnPath } from "./command-discovery";
 
@@ -14,6 +14,27 @@ export interface ResolvedAgentCommand {
 	command: string;
 	binary: string;
 	args: string[];
+}
+
+/**
+ * Resolves a per-agent absolute executable-path override (machine-local), or a
+ * falsy value when the agent should fall back to discovering its catalog binary
+ * on `$PATH`. Injected so resolution stays pure and testable; callers supply the
+ * store-backed lookup (`getAgentExecutablePath`).
+ */
+export type AgentExecutablePathResolver = (agentId: RuntimeAgentId) => string | null | undefined;
+
+/**
+ * The effective binary for an agent: its explicit override when one is set, else
+ * the catalog default discovered on `$PATH`.
+ */
+function resolveEffectiveBinary(
+	agentId: RuntimeAgentId,
+	catalogBinary: string,
+	getExecutablePath?: AgentExecutablePathResolver,
+): string {
+	const override = getExecutablePath?.(agentId)?.trim();
+	return override || catalogBinary;
 }
 
 function getDefaultArgs(agentId: RuntimeAgentId): string[] {
@@ -61,16 +82,26 @@ export function detectInstalledCommands(): string[] {
 	return detected;
 }
 
-function getCuratedDefinitions(runtimeConfig: RuntimeConfigState, detected: string[]): RuntimeAgentDefinition[] {
+function getCuratedDefinitions(
+	runtimeConfig: RuntimeConfigState,
+	detected: string[],
+	getExecutablePath?: AgentExecutablePathResolver,
+): RuntimeAgentDefinition[] {
 	const detectedSet = new Set(detected);
 	return getRuntimeLaunchSupportedAgentCatalog().map((entry) => {
 		const defaultArgs = getDefaultArgs(entry.id);
-		const command = joinCommand(entry.binary, defaultArgs);
-		const isInstalled = entry.id === "pi" ? true : detectedSet.has(entry.binary);
+		const override = getExecutablePath?.(entry.id)?.trim();
+		const effectiveBinary = override || entry.binary;
+		const command = joinCommand(effectiveBinary, defaultArgs);
+		// An override is detected by probing its absolute path directly (the daemon
+		// case where the catalog binary is not on `$PATH`); otherwise fall back to
+		// the `$PATH` scan captured in `detected`.
+		const isInstalled =
+			entry.id === "pi" ? true : override ? isBinaryAvailableOnPath(override) : detectedSet.has(entry.binary);
 		return {
 			id: entry.id,
 			label: entry.label,
-			binary: entry.binary,
+			binary: effectiveBinary,
 			command,
 			defaultArgs,
 			installed: isInstalled,
@@ -79,19 +110,23 @@ function getCuratedDefinitions(runtimeConfig: RuntimeConfigState, detected: stri
 	});
 }
 
-export function resolveAgentCommand(runtimeConfig: RuntimeConfigState): ResolvedAgentCommand | null {
+export function resolveAgentCommand(
+	runtimeConfig: RuntimeConfigState,
+	getExecutablePath?: AgentExecutablePathResolver,
+): ResolvedAgentCommand | null {
 	const selected = getRuntimeLaunchSupportedAgentCatalog().find((entry) => entry.id === runtimeConfig.selectedAgentId);
 	if (!selected) {
 		return null;
 	}
 	const defaultArgs = getDefaultArgs(selected.id);
-	const command = joinCommand(selected.binary, defaultArgs);
-	if (isBinaryAvailableOnPath(selected.binary)) {
+	const effectiveBinary = resolveEffectiveBinary(selected.id, selected.binary, getExecutablePath);
+	const command = joinCommand(effectiveBinary, defaultArgs);
+	if (isBinaryAvailableOnPath(effectiveBinary)) {
 		return {
 			agentId: selected.id,
 			label: selected.label,
 			command,
-			binary: selected.binary,
+			binary: effectiveBinary,
 			args: defaultArgs,
 		};
 	}
@@ -101,10 +136,11 @@ export function resolveAgentCommand(runtimeConfig: RuntimeConfigState): Resolved
 export function buildRuntimeConfigResponse(
 	runtimeConfig: RuntimeConfigState,
 	kanbanProviderSettings: RuntimeKanbanProviderSettings,
+	getExecutablePath?: AgentExecutablePathResolver,
 ): RuntimeConfigResponse {
 	const detectedCommands = detectInstalledCommands();
-	const agents = getCuratedDefinitions(runtimeConfig, detectedCommands);
-	const resolved = resolveAgentCommand(runtimeConfig);
+	const agents = getCuratedDefinitions(runtimeConfig, detectedCommands, getExecutablePath);
+	const resolved = resolveAgentCommand(runtimeConfig, getExecutablePath);
 	const effectiveCommand = resolved ? joinCommand(resolved.binary, resolved.args) : null;
 
 	return {

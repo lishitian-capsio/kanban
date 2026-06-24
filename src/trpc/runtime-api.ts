@@ -10,11 +10,13 @@ import { TRPCError } from "@trpc/server";
 import {
 	type AgentProviderConfig,
 	deleteAgentProvider,
+	getAgentExecutablePath,
 	getAgentProviderConfig,
 	getAllAgentProviderConfigs,
 	getAllAgentProviderSets,
 	redactAgentProviderSets,
 	saveAgentProvider,
+	setAgentExecutablePath,
 	setDefaultAgentProvider,
 } from "../agent-sdk/kanban/agent-provider-config";
 import type { CommittedProviderLayer } from "../agent-sdk/kanban/agent-provider-resolver";
@@ -28,7 +30,10 @@ import { isKanbanClearSlashCommand, KANBAN_BUILTIN_SLASH_COMMANDS } from "../age
 import { setRuntimeProxyStateFromConfig } from "../config/proxy-fetch";
 import type { RuntimeConfigState } from "../config/runtime-config";
 import { updateGlobalRuntimeConfig, updateRuntimeConfig } from "../config/runtime-config";
+import { getRuntimeAgentCatalogEntry } from "../core/agent-catalog";
 import type {
+	RuntimeAgentExecutablePathResponse,
+	RuntimeAgentExecutablePathSaveRequest,
 	RuntimeAgentId,
 	RuntimeAgentProviderConfigListResponse,
 	RuntimeAgentProviderConfigSaveRequest,
@@ -71,6 +76,7 @@ import { capChatMessagesForTransport } from "../session/session-message-display-
 import { getSelectedCommittedProvider } from "../state/committed-provider-store";
 import { loadWorkspaceCommittedProviders } from "../state/workspace-state";
 import { buildRuntimeConfigResponse, resolveAgentCommand } from "../terminal/agent-registry";
+import { isBinaryAvailableOnPath } from "../terminal/command-discovery";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { resolveTaskCwd } from "../workspace/task-worktree";
 import { captureTaskTurnCheckpoint } from "../workspace/turn-checkpoints";
@@ -171,7 +177,11 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 	const debugResetTargetPaths = [join(homedir(), ".kanban")] as const;
 
 	const buildConfigResponse = (runtimeConfig: RuntimeConfigState) =>
-		buildRuntimeConfigResponse(runtimeConfig, agentProviderService.getAgentProviderSummary("pi"));
+		buildRuntimeConfigResponse(
+			runtimeConfig,
+			agentProviderService.getAgentProviderSummary("pi"),
+			getAgentExecutablePath,
+		);
 
 	const callTaskSessionService = async <T>(
 		workspaceScope: RuntimeTrpcWorkspaceScope,
@@ -332,7 +342,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					effectiveAgentId !== scopedRuntimeConfig.selectedAgentId
 						? { ...scopedRuntimeConfig, selectedAgentId: effectiveAgentId }
 						: scopedRuntimeConfig;
-				const resolved = resolveAgentCommand(resolvedConfig);
+				const resolved = resolveAgentCommand(resolvedConfig, getAgentExecutablePath);
 				if (!resolved) {
 					return {
 						ok: false,
@@ -962,6 +972,23 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			// Set the agent's default provider.
 			await setDefaultAgentProvider(input.agentId, input.providerId);
 			return { ok: true, config: getAgentProviderConfig(input.agentId) ?? undefined };
+		},
+		setAgentExecutablePath: async (
+			input: RuntimeAgentExecutablePathSaveRequest,
+		): Promise<RuntimeAgentExecutablePathResponse> => {
+			// Persist (or clear, with an empty string) the agent's absolute
+			// executable-path override, then report whether the effective binary —
+			// the override when set, else the catalog binary on `$PATH` — resolves.
+			await setAgentExecutablePath(input.agentId, input.executablePath);
+			const persisted = getAgentExecutablePath(input.agentId);
+			const catalogBinary = getRuntimeAgentCatalogEntry(input.agentId as RuntimeAgentId)?.binary;
+			const effectiveBinary = persisted ?? catalogBinary;
+			return {
+				ok: true,
+				agentId: input.agentId,
+				executablePath: persisted ?? null,
+				available: effectiveBinary ? isBinaryAvailableOnPath(effectiveBinary) : false,
+			};
 		},
 	};
 }

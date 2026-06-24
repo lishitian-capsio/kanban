@@ -100,6 +100,16 @@ export interface AgentProviderSet {
 	providers: AgentProviderConfig[];
 	/** Provider id (normalized provider name) of the default selection, if any. */
 	defaultProviderId?: string;
+	/**
+	 * Optional absolute path to the agent's executable. When set, Kanban uses
+	 * this path for BOTH detection and launch instead of discovering the catalog
+	 * binary on `$PATH`. Machine-local (this store lives outside the committed
+	 * board data), since an absolute path is specific to one machine — the fix
+	 * for daemons whose `$PATH` omits user-local install dirs. Empty/unset keeps
+	 * the default `$PATH`-discovery behavior. Orthogonal to providers, so it
+	 * survives even when the agent has no provider set (e.g. official login).
+	 */
+	executablePath?: string;
 }
 
 interface AgentProvidersFile {
@@ -236,17 +246,18 @@ function validateSet(agentId: string, value: unknown): AgentProviderSet | null {
 		return null;
 	}
 	const raw = value as Record<string, unknown>;
+	const executablePath = typeof raw.executablePath === "string" ? raw.executablePath.trim() || undefined : undefined;
 	if (Array.isArray(raw.providers)) {
 		const providers = raw.providers
 			.filter((p): p is Record<string, unknown> => Boolean(p) && typeof p === "object")
 			.map((p) => validateConfig(agentId, p));
 		const defaultProviderId =
 			typeof raw.defaultProviderId === "string" ? normalizeProviderId(raw.defaultProviderId) : undefined;
-		return reconcileSet({ agentId, providers, defaultProviderId });
+		return reconcileSet({ agentId, providers, defaultProviderId, executablePath });
 	}
 	// Legacy single-config shape.
 	const legacy = validateConfig(agentId, raw);
-	return reconcileSet({ agentId, providers: [legacy], defaultProviderId: providerIdOf(legacy) });
+	return reconcileSet({ agentId, providers: [legacy], defaultProviderId: providerIdOf(legacy), executablePath });
 }
 
 function readStore(path: string): AgentProvidersFile {
@@ -313,9 +324,10 @@ function providerIdOf(config: AgentProviderConfig): string {
  * point `defaultProviderId` at an existing provider (the first when unset/stale).
  */
 function reconcileSet(set: AgentProviderSet): AgentProviderSet {
+	const executablePath = set.executablePath?.trim() || undefined;
 	const providers = set.providers;
 	if (providers.length === 0) {
-		return { agentId: set.agentId, providers: [], defaultProviderId: undefined };
+		return { agentId: set.agentId, providers: [], defaultProviderId: undefined, executablePath };
 	}
 	const ids = providers.map(providerIdOf);
 	// The official-login sentinel is a valid default even though no provider
@@ -324,7 +336,7 @@ function reconcileSet(set: AgentProviderSet): AgentProviderSet {
 		set.defaultProviderId && (isOfficialLoginProviderId(set.defaultProviderId) || ids.includes(set.defaultProviderId))
 			? set.defaultProviderId
 			: ids[0];
-	return { agentId: set.agentId, providers, defaultProviderId };
+	return { agentId: set.agentId, providers, defaultProviderId, executablePath };
 }
 
 /** Trim/normalize a provider config's string fields prior to persistence. */
@@ -467,7 +479,12 @@ export async function saveAgentProvider(agentId: string, config: AgentProviderCo
 	providers.push(cleaned);
 	const defaultProviderId = existing?.defaultProviderId ?? cleanedId;
 
-	state.agents[id] = reconcileSet({ agentId: id, providers, defaultProviderId });
+	state.agents[id] = reconcileSet({
+		agentId: id,
+		providers,
+		defaultProviderId,
+		executablePath: existing?.executablePath,
+	});
 	await writeStore(state);
 }
 
@@ -495,10 +512,17 @@ export async function deleteAgentProvider(agentId: string, providerId?: string):
 	const targetId = normalizeProviderId(providerId);
 	const providers = existing.providers.filter((p) => providerIdOf(p) !== targetId);
 	const defaultProviderId = existing.defaultProviderId === targetId ? undefined : existing.defaultProviderId;
-	if (providers.length === 0) {
+	if (providers.length === 0 && !existing.executablePath) {
 		delete state.agents[id];
 	} else {
-		state.agents[id] = reconcileSet({ agentId: id, providers, defaultProviderId });
+		// Removing the last provider must not wipe an executable-path override — it
+		// is orthogonal to providers and keeps the (otherwise empty) set alive.
+		state.agents[id] = reconcileSet({
+			agentId: id,
+			providers,
+			defaultProviderId,
+			executablePath: existing.executablePath,
+		});
 	}
 	await writeStore(state);
 }
@@ -518,6 +542,42 @@ export async function setDefaultAgentProvider(agentId: string, providerId: strin
 		return;
 	}
 	state.agents[id] = reconcileSet({ ...existing, defaultProviderId: targetId });
+	await writeStore(state);
+}
+
+/**
+ * Get the explicit executable-path override for an agent, or `undefined` when
+ * none is configured (the agent's binary is discovered on `$PATH`).
+ */
+export function getAgentExecutablePath(agentId: string): string | undefined {
+	return getAgentProviderSet(agentId)?.executablePath;
+}
+
+/**
+ * Set (or clear, when passed an empty/whitespace value) the absolute
+ * executable-path override for an agent. The override is independent of the
+ * agent's providers, so it persists even when the agent has none and is dropped
+ * from the store only when both the override and the provider list are empty.
+ */
+export async function setAgentExecutablePath(agentId: string, executablePath: string | undefined): Promise<void> {
+	const state = loadState();
+	const id = normalizeAgentId(agentId);
+	const trimmed = executablePath?.trim() || undefined;
+	const existing = state.agents[id];
+	if (!trimmed && (!existing || existing.providers.length === 0)) {
+		// Clearing the override on a set with no providers leaves nothing to keep.
+		if (existing) {
+			delete state.agents[id];
+		}
+		await writeStore(state);
+		return;
+	}
+	state.agents[id] = reconcileSet({
+		agentId: id,
+		providers: existing?.providers ?? [],
+		defaultProviderId: existing?.defaultProviderId,
+		executablePath: trimmed,
+	});
 	await writeStore(state);
 }
 

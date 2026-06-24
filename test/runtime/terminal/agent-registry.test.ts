@@ -63,6 +63,39 @@ describe("agent-registry", () => {
 
 		expect(resolved).toBeNull();
 	});
+
+	it("resolves the overridden absolute path when the catalog binary is not on PATH", () => {
+		// The daemon case: `claude` is not discoverable on PATH, but the user pinned
+		// an absolute executable path for it.
+		commandDiscoveryMocks.isBinaryAvailableOnPath.mockImplementation(
+			(binary: string) => binary === "/home/dev/.local/bin/claude",
+		);
+
+		const resolved = resolveAgentCommand(createRuntimeConfigState({ selectedAgentId: "claude" }), (agentId) =>
+			agentId === "claude" ? "/home/dev/.local/bin/claude" : undefined,
+		);
+
+		expect(resolved).not.toBeNull();
+		expect(resolved?.binary).toBe("/home/dev/.local/bin/claude");
+		expect(resolved?.command).toBe("/home/dev/.local/bin/claude");
+		expect(commandDiscoveryMocks.isBinaryAvailableOnPath).toHaveBeenCalledWith("/home/dev/.local/bin/claude");
+	});
+
+	it("falls back to the catalog binary on PATH when no override is set", () => {
+		commandDiscoveryMocks.isBinaryAvailableOnPath.mockImplementation((binary: string) => binary === "claude");
+
+		const resolved = resolveAgentCommand(createRuntimeConfigState({ selectedAgentId: "claude" }), () => undefined);
+
+		expect(resolved?.binary).toBe("claude");
+	});
+
+	it("ignores a blank override and resolves the catalog binary", () => {
+		commandDiscoveryMocks.isBinaryAvailableOnPath.mockImplementation((binary: string) => binary === "claude");
+
+		const resolved = resolveAgentCommand(createRuntimeConfigState({ selectedAgentId: "claude" }), () => "   ");
+
+		expect(resolved?.binary).toBe("claude");
+	});
 });
 
 describe("buildRuntimeConfigResponse", () => {
@@ -123,6 +156,36 @@ describe("buildRuntimeConfigResponse", () => {
 		expect(response.agents.find((agent) => agent.id === "codex")?.command).toBe("codex");
 		expect(response.agents.find((agent) => agent.id === "droid")?.command).toBe("droid");
 		expect(response.agents.find((agent) => agent.id === "kiro")?.command).toBe("kiro-cli chat");
+	});
+
+	it("marks an agent installed via its overridden absolute path", () => {
+		// `claude` is not on PATH, only the pinned absolute path is executable.
+		commandDiscoveryMocks.isBinaryAvailableOnPath.mockImplementation(
+			(binary: string) => binary === "/opt/tools/claude",
+		);
+
+		const response = buildRuntimeConfigResponse(
+			createRuntimeConfigState({ selectedAgentId: "claude" }),
+			{
+				providerId: null,
+				modelId: null,
+				baseUrl: null,
+				apiKeyConfigured: false,
+				oauthProvider: null,
+				oauthAccessTokenConfigured: false,
+				oauthRefreshTokenConfigured: false,
+				oauthAccountId: null,
+				oauthExpiresAt: null,
+			},
+			(agentId) => (agentId === "claude" ? "/opt/tools/claude" : undefined),
+		);
+
+		const claude = response.agents.find((agent) => agent.id === "claude");
+		expect(claude?.installed).toBe(true);
+		expect(claude?.binary).toBe("/opt/tools/claude");
+		expect(claude?.command).toBe("/opt/tools/claude");
+		// An agent without an override stays driven by PATH discovery (here: not found).
+		expect(response.agents.find((agent) => agent.id === "codex")?.installed).toBe(false);
 	});
 
 	it("sets debug mode from runtime environment variables", () => {

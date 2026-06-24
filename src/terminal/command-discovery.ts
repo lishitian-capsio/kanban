@@ -1,5 +1,5 @@
 import { accessSync, constants } from "node:fs";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 
 function canAccessPath(path: string): boolean {
 	try {
@@ -75,4 +75,32 @@ export function isBinaryAvailableOnPath(binary: string): boolean {
 		}
 	}
 	return false;
+}
+
+/**
+ * When an agent is launched via an explicit absolute executable path (the
+ * per-agent override), the spawned process may itself be a wrapper with a
+ * `#!/usr/bin/env node`-style shebang and so still needs its colocated tooling
+ * (e.g. `node`) discoverable on PATH. Prepending the override binary's own
+ * directory to PATH covers the common install layout where the wrapper and its
+ * interpreter live side by side (nvm/volta shim dirs, `~/.local/bin`).
+ *
+ * Returns the original PATH unchanged for a bare binary name (nothing to add)
+ * or when the directory is already present, so it is safe to apply on every
+ * launch.
+ */
+export function buildPathWithBinaryDir(binary: string, currentPath: string | undefined): string | undefined {
+	const trimmed = binary.trim();
+	if (!trimmed.includes("/") && !trimmed.includes("\\")) {
+		return currentPath;
+	}
+	const dir = dirname(trimmed);
+	if (!dir || dir === "." || dir === trimmed) {
+		return currentPath;
+	}
+	const entries = (currentPath ?? "").split(delimiter).filter(Boolean);
+	if (entries.includes(dir)) {
+		return currentPath;
+	}
+	return [dir, ...entries].join(delimiter);
 }

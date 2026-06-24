@@ -1736,6 +1736,13 @@ export const runtimeAgentProviderSetSchema = z.object({
 	agentId: z.string(),
 	providers: z.array(runtimeAgentProviderConfigSchema),
 	defaultProviderId: z.string().optional(),
+	/**
+	 * Optional absolute path to the agent's executable. When set, Kanban uses it
+	 * for both detection and launch instead of discovering the catalog binary on
+	 * `$PATH` — the fix for daemons whose `$PATH` omits user-local install dirs.
+	 * Machine-local; empty/unset preserves `$PATH`-discovery behavior.
+	 */
+	executablePath: z.string().optional(),
 });
 export type RuntimeAgentProviderSet = z.infer<typeof runtimeAgentProviderSetSchema>;
 
@@ -1767,6 +1774,27 @@ export const runtimeAgentProviderMutationResponseSchema = z.object({
 	error: z.string().optional(),
 });
 export type RuntimeAgentProviderMutationResponse = z.infer<typeof runtimeAgentProviderMutationResponseSchema>;
+
+// Set (or clear, with an empty string) an agent's absolute executable-path override.
+export const runtimeAgentExecutablePathSaveRequestSchema = z.object({
+	agentId: z.string(),
+	executablePath: z.string(),
+});
+export type RuntimeAgentExecutablePathSaveRequest = z.infer<typeof runtimeAgentExecutablePathSaveRequestSchema>;
+
+export const runtimeAgentExecutablePathResponseSchema = z.object({
+	ok: z.boolean(),
+	agentId: z.string(),
+	/** The persisted override after the mutation; `null` when cleared. */
+	executablePath: z.string().nullable(),
+	/**
+	 * Whether the effective binary (the override when set, else the catalog binary
+	 * discovered on `$PATH`) is currently executable. Drives the inline
+	 * "not found / not executable" hint in Settings.
+	 */
+	available: z.boolean(),
+});
+export type RuntimeAgentExecutablePathResponse = z.infer<typeof runtimeAgentExecutablePathResponseSchema>;
 
 const runtimeKanbanMcpServerBaseSchema = z.object({
 	name: z.string(),

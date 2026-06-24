@@ -3,6 +3,8 @@
 // on state orchestration instead of transport plumbing.
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type {
+	RuntimeAgentExecutablePathResponse,
+	RuntimeAgentExecutablePathSaveRequest,
 	RuntimeAgentId,
 	RuntimeAgentProviderConfig,
 	RuntimeAgentProviderConfigListResponse,
@@ -163,6 +165,14 @@ export async function selectAgentProvider(
 ): Promise<RuntimeAgentProviderMutationResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
 	return await trpcClient.runtime.selectAgentProvider.mutate(input);
+}
+
+export async function setAgentExecutablePath(
+	workspaceId: string | null,
+	input: RuntimeAgentExecutablePathSaveRequest,
+): Promise<RuntimeAgentExecutablePathResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.runtime.setAgentExecutablePath.mutate(input);
 }
 
 // ── Remote model fetching ──────────────────────────────────────────────────

@@ -34,12 +34,14 @@ vi.mock("../../../src/fs/locked-file-system", () => ({
 
 import {
 	deleteAgentProvider,
+	getAgentExecutablePath,
 	getAgentProviderConfig,
 	getAgentProviderSet,
 	getAllAgentProviderConfigs,
 	getAllAgentProviderSets,
 	resetAgentProviderConfigCache,
 	saveAgentProvider,
+	setAgentExecutablePath,
 	setDefaultAgentProvider,
 } from "../../../src/agent-sdk/kanban/agent-provider-config";
 
@@ -671,5 +673,56 @@ describe("agent-provider-config", () => {
 
 		expect(getAgentProviderConfig("pi")).toBeNull();
 		expect(warnMock).toHaveBeenCalled();
+	});
+
+	describe("executablePath override", () => {
+		it("returns undefined when no override is configured", () => {
+			expect(getAgentExecutablePath("claude")).toBeUndefined();
+		});
+
+		it("persists an override for an agent that has no providers", async () => {
+			await setAgentExecutablePath("claude", "/home/dev/.local/bin/claude");
+			resetAgentProviderConfigCache();
+
+			expect(getAgentExecutablePath("claude")).toBe("/home/dev/.local/bin/claude");
+			// The override survives even though the agent has no provider set.
+			const set = getAgentProviderSet("claude");
+			expect(set?.executablePath).toBe("/home/dev/.local/bin/claude");
+			expect(set?.providers).toEqual([]);
+		});
+
+		it("trims the override and clears it when set to an empty string", async () => {
+			await setAgentExecutablePath("claude", "  /opt/claude  ");
+			resetAgentProviderConfigCache();
+			expect(getAgentExecutablePath("claude")).toBe("/opt/claude");
+
+			await setAgentExecutablePath("claude", "   ");
+			resetAgentProviderConfigCache();
+			expect(getAgentExecutablePath("claude")).toBeUndefined();
+		});
+
+		it("preserves the override when adding and deleting a provider", async () => {
+			await setAgentExecutablePath("claude", "/opt/claude");
+			await saveAgentProvider("claude", {
+				agentId: "claude",
+				provider: "anthropic",
+				apiKey: "sk-1",
+			});
+			resetAgentProviderConfigCache();
+			expect(getAgentExecutablePath("claude")).toBe("/opt/claude");
+
+			await deleteAgentProvider("claude", "anthropic");
+			resetAgentProviderConfigCache();
+			// Removing the last provider must not wipe the executable path override.
+			expect(getAgentExecutablePath("claude")).toBe("/opt/claude");
+			expect(getAgentProviderSet("claude")?.providers).toEqual([]);
+		});
+
+		it("exposes the override through the redacted set list", async () => {
+			await setAgentExecutablePath("claude", "/opt/claude");
+			resetAgentProviderConfigCache();
+			const sets = getAllAgentProviderSets();
+			expect(sets.claude?.executablePath).toBe("/opt/claude");
+		});
 	});
 });

@@ -32,6 +32,7 @@ import {
 	WORKSPACE_TRUST_CONFIRM_DELAY_MS,
 } from "./claude-workspace-trust";
 import { hasCodexWorkspaceTrustPrompt, shouldAutoConfirmCodexWorkspaceTrust } from "./codex-workspace-trust";
+import { buildPathWithBinaryDir } from "./command-discovery";
 import { stripAnsi } from "./output-utils";
 import { PtySession } from "./pty-session";
 import { reduceSessionTransition, type SessionTransitionEvent } from "./session-state-machine";
@@ -496,7 +497,20 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			model: agentProviderEnv.resolvedModelId,
 		});
 
-		const env = buildTerminalEnvironment(request.env, launch.env, agentProviderEnv.env, buildBridgeProxyEnvVars());
+		// When the agent is launched via an explicit absolute executable path
+		// (the per-agent override), prepend that binary's own directory to PATH so a
+		// `#!/usr/bin/env node`-style wrapper can still find its colocated interpreter
+		// even when the runtime's PATH (e.g. a systemd daemon's) omits it. No-op for
+		// a bare binary name discovered on PATH.
+		const launchPath = buildPathWithBinaryDir(request.binary, process.env.PATH);
+		const binaryDirPathEnv = launchPath && launchPath !== process.env.PATH ? { PATH: launchPath } : undefined;
+		const env = buildTerminalEnvironment(
+			request.env,
+			launch.env,
+			agentProviderEnv.env,
+			buildBridgeProxyEnvVars(),
+			binaryDirPathEnv,
+		);
 
 		// Adapters can wrap the configured agent binary when they need extra runtime wiring
 		// (for example, Codex uses a wrapper script to watch session logs for hook transitions).

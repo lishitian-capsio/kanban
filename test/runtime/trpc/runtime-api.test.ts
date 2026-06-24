@@ -46,6 +46,8 @@ const agentProviderConfigMocks = vi.hoisted(() => ({
 	saveAgentProvider: vi.fn(),
 	deleteAgentProvider: vi.fn(),
 	setDefaultAgentProvider: vi.fn(),
+	getAgentExecutablePath: vi.fn(() => undefined),
+	setAgentExecutablePath: vi.fn(),
 }));
 
 const llmsModelMocks = vi.hoisted(() => ({
@@ -168,6 +170,9 @@ vi.mock("../../../src/agent-sdk/kanban/agent-provider-config.js", () => ({
 		agentProviderConfigMocks.deleteAgentProvider(agentId, providerId),
 	setDefaultAgentProvider: (agentId: string, providerId: string) =>
 		agentProviderConfigMocks.setDefaultAgentProvider(agentId, providerId),
+	getAgentExecutablePath: (agentId: string) => agentProviderConfigMocks.getAgentExecutablePath(agentId),
+	setAgentExecutablePath: (agentId: string, executablePath: string | undefined) =>
+		agentProviderConfigMocks.setAgentExecutablePath(agentId, executablePath),
 	redactAgentProviderSets: (
 		sets: Record<string, { agentId: string; providers: Array<Record<string, unknown>>; defaultProviderId?: string }>,
 	) => {
@@ -639,8 +644,10 @@ describe("createRuntimeApi startTaskSession", () => {
 
 		expect(response.ok).toBe(true);
 		// Resolved against the thread's claude agent, not the global pi agent.
+		// The second argument is the per-agent executable-path resolver.
 		expect(agentRegistryMocks.resolveAgentCommand).toHaveBeenCalledWith(
 			expect.objectContaining({ selectedAgentId: "claude" }),
+			expect.any(Function),
 		);
 		expect(terminalManager.startTaskSession).toHaveBeenCalledWith(
 			expect.objectContaining({ taskId: homeTaskId, agentId: "claude", cwd: "/tmp/repo" }),

@@ -61,8 +61,10 @@ import {
 	openFileOnHost,
 	removeProviderFromAgent,
 	selectAgentProvider,
+	setAgentExecutablePath,
 } from "@/runtime/runtime-config-query";
 import type {
+	RuntimeAgentExecutablePathResponse,
 	RuntimeAgentId,
 	RuntimeAgentProviderConfig,
 	RuntimeAgentProviderSet,
@@ -115,14 +117,7 @@ export type RuntimeSettingsSection = "shortcuts";
 
 const SETTINGS_AGENT_ORDER: readonly RuntimeAgentId[] = ["pi", "claude", "codex", "droid", "kiro"];
 
-type SettingsNavId =
-	| "general"
-	| "providers"
-	| "proxy"
-	| "git-prompts"
-	| "notifications"
-	| "appearance"
-	| "project";
+type SettingsNavId = "general" | "providers" | "proxy" | "git-prompts" | "notifications" | "appearance" | "project";
 
 const SETTINGS_NAV_ITEMS: ReadonlyArray<{
 	id: SettingsNavId;
@@ -390,7 +385,13 @@ export function RuntimeSettingsDialog({
 	onSaved?: () => void;
 	initialSection?: RuntimeSettingsSection | null;
 }): React.ReactElement {
-	const { config, isLoading, isSaving, save } = useRuntimeConfig(open, workspaceId, initialConfig);
+	const {
+		config,
+		isLoading,
+		isSaving,
+		refresh: refreshConfig,
+		save,
+	} = useRuntimeConfig(open, workspaceId, initialConfig);
 	const { resetLayoutCustomizations } = useLayoutCustomizations();
 	const [agentAutonomousModeEnabled, setAgentAutonomousModeEnabled] = useState(true);
 	const [readyForReviewNotificationsEnabled, setReadyForReviewNotificationsEnabled] = useState(true);
@@ -475,6 +476,40 @@ export function RuntimeSettingsDialog({
 	const selectedAgentSet = providerSetsByAgent[providersAgentId] ?? null;
 	const selectedAgentProviders = selectedAgentSet?.providers ?? [];
 	const selectedAgentDefaultId = selectedAgentSet?.defaultProviderId ?? null;
+
+	// ── Per-agent executable-path override ────────────────────────────────────
+	// An absolute path Kanban uses for both detection and launch instead of
+	// discovering the agent's binary on $PATH (fixes the daemon case where $PATH
+	// omits user-local install dirs). pi is launched in-process, so the override
+	// is offered for external CLI agents only.
+	const selectedAgentSupportsExecutablePath = providersAgentId !== "pi";
+	const persistedExecutablePath = selectedAgentSet?.executablePath ?? "";
+	const [executablePathDraft, setExecutablePathDraft] = useState("");
+	const [executablePathSaving, setExecutablePathSaving] = useState(false);
+	const [executablePathResult, setExecutablePathResult] = useState<RuntimeAgentExecutablePathResponse | null>(null);
+	// Reset the draft (and clear the last save feedback) whenever the selected
+	// agent or its persisted override changes.
+	useEffect(() => {
+		setExecutablePathDraft(persistedExecutablePath);
+		setExecutablePathResult(null);
+	}, [providersAgentId, persistedExecutablePath]);
+	const executablePathDirty = executablePathDraft.trim() !== persistedExecutablePath.trim();
+	const handleSaveExecutablePath = useCallback(async () => {
+		setExecutablePathSaving(true);
+		try {
+			const result = await setAgentExecutablePath(workspaceId, {
+				agentId: providersAgentId,
+				executablePath: executablePathDraft.trim(),
+			});
+			setExecutablePathResult(result);
+			reloadProviderSets();
+			// Refresh the runtime config so the agent's "installed" badge reflects the
+			// override that was just applied.
+			refreshConfig();
+		} finally {
+			setExecutablePathSaving(false);
+		}
+	}, [executablePathDraft, providersAgentId, refreshConfig, reloadProviderSets, workspaceId]);
 	// CLI agents offer "official login" (their own native account, no override) as
 	// a first-class, always-present option that is the default when no custom
 	// provider is the default.
@@ -953,6 +988,61 @@ export function RuntimeSettingsDialog({
 								</button>
 							))}
 						</div>
+						{selectedAgentSupportsExecutablePath ? (
+							<div className="mb-3 rounded-md border border-border bg-surface-1 px-3 py-2.5">
+								<label
+									htmlFor="agent-executable-path"
+									className="block text-[12px] font-medium text-text-primary mb-1"
+								>
+									Executable path
+								</label>
+								<div className="flex items-center gap-2">
+									<input
+										id="agent-executable-path"
+										type="text"
+										value={executablePathDraft}
+										onChange={(event) => setExecutablePathDraft(event.target.value)}
+										onKeyDown={(event) => {
+											if (event.key === "Enter" && executablePathDirty && !executablePathSaving) {
+												void handleSaveExecutablePath();
+											}
+										}}
+										placeholder={`Auto-detect on $PATH (e.g. /home/you/.local/bin/${providersAgentId})`}
+										spellCheck={false}
+										autoCapitalize="off"
+										autoCorrect="off"
+										className="flex-1 h-8 rounded-md border border-border bg-surface-2 px-2.5 font-mono text-[12px] text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-border-focus"
+									/>
+									<Button
+										size="sm"
+										onClick={() => void handleSaveExecutablePath()}
+										disabled={!executablePathDirty || executablePathSaving}
+									>
+										{executablePathSaving ? "Saving…" : "Save"}
+									</Button>
+								</div>
+								{!executablePathDirty && persistedExecutablePath.trim().length > 0 ? (
+									(executablePathResult?.available ??
+									displayedAgents.find((agent) => agent.id === providersAgentId)?.installed) ? (
+										<p className="text-status-green text-[11px] mt-1.5 m-0">
+											Detected — Kanban will launch this path.
+										</p>
+									) : (
+										<p className="text-status-red text-[11px] mt-1.5 m-0">
+											Not found or not executable at this path.
+										</p>
+									)
+								) : null}
+								<p className="text-text-tertiary text-[11px] mt-1.5 m-0 leading-relaxed">
+									Leave blank to discover <code className="text-text-secondary">{providersAgentId}</code> on{" "}
+									<code className="text-text-secondary">$PATH</code>. Set an absolute path when Kanban
+									can&apos;t find the CLI — e.g. running as a service whose PATH omits user-local install dirs.
+									Note: a wrapper with a <code className="text-text-secondary">#!/usr/bin/env node</code>{" "}
+									shebang still needs <code className="text-text-secondary">node</code> on PATH to run, so
+									launch can still fail even once the path is pinned.
+								</p>
+							</div>
+						) : null}
 						<div className="flex flex-col gap-1">
 							{selectedAgentSupportsOfficial ? (
 								<div className="flex items-center justify-between gap-3 py-2 px-2 rounded hover:bg-surface-1">

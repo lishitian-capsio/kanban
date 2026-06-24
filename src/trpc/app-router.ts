@@ -4,10 +4,9 @@
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
-
-import type { WorkspaceDbApi } from "./workspace-db-api";
-
 import type {
+	RuntimeAgentExecutablePathResponse,
+	RuntimeAgentExecutablePathSaveRequest,
 	RuntimeAgentProviderConfigListResponse,
 	RuntimeAgentProviderConfigSaveRequest,
 	RuntimeAgentProviderMutationRequest,
@@ -28,9 +27,9 @@ import type {
 	RuntimeCommandRunResponse,
 	RuntimeConfigResponse,
 	RuntimeConfigSaveRequest,
-	RuntimeDbConnectionAddRequest,
 	RuntimeDbBrowseRequest,
 	RuntimeDbBrowseResponse,
+	RuntimeDbConnectionAddRequest,
 	RuntimeDbConnectionAddResponse,
 	RuntimeDbConnectionListResponse,
 	RuntimeDbConnectionRemoveRequest,
@@ -166,6 +165,8 @@ import type {
 import {
 	runtimeAgentProviderConfigListResponseSchema,
 	runtimeAgentProviderConfigSaveRequestSchema,
+	runtimeAgentExecutablePathResponseSchema,
+	runtimeAgentExecutablePathSaveRequestSchema,
 	runtimeAgentProviderMutationRequestSchema,
 	runtimeAgentProviderMutationResponseSchema,
 	runtimeAgentProviderSetListResponseSchema,
@@ -186,19 +187,34 @@ import {
 	runtimeConfigSaveRequestSchema,
 	runtimeDbBrowseRequestSchema,
 	runtimeDbBrowseResponseSchema,
+	runtimeDbBrowseTableRequestSchema,
+	runtimeDbBrowseTableResponseSchema,
 	runtimeDbConnectionAddRequestSchema,
 	runtimeDbConnectionAddResponseSchema,
 	runtimeDbConnectionListResponseSchema,
 	runtimeDbConnectionRemoveRequestSchema,
 	runtimeDbConnectionRemoveResponseSchema,
+	runtimeDbConnectionsListResponseSchema,
 	runtimeDbConnectionTestRequestSchema,
 	runtimeDbConnectionTestResponseSchema,
+	runtimeDbDeleteConnectionRequestSchema,
+	runtimeDbDeleteConnectionResponseSchema,
+	runtimeDbDeleteRowRequestSchema,
 	runtimeDbDescribeRequestSchema,
 	runtimeDbDescribeResponseSchema,
+	runtimeDbInsertRowRequestSchema,
+	runtimeDbIntrospectRequestSchema,
+	runtimeDbIntrospectResponseSchema,
 	runtimeDbQueryRequestSchema,
 	runtimeDbQueryResponseSchema,
 	runtimeDbTablesRequestSchema,
 	runtimeDbTablesResponseSchema,
+	runtimeDbTestConnectionRequestSchema,
+	runtimeDbTestConnectionResponseSchema,
+	runtimeDbUpdateRowRequestSchema,
+	runtimeDbUpsertConnectionRequestSchema,
+	runtimeDbUpsertConnectionResponseSchema,
+	runtimeDbWriteResponseSchema,
 	runtimeDebugResetAllStateResponseSchema,
 	runtimeDirectoryListRequestSchema,
 	runtimeDirectoryListResponseSchema,
@@ -318,22 +334,8 @@ import {
 	runtimeWorktreeDeleteResponseSchema,
 	runtimeWorktreeEnsureRequestSchema,
 	runtimeWorktreeEnsureResponseSchema,
-	runtimeDbBrowseTableRequestSchema,
-	runtimeDbBrowseTableResponseSchema,
-	runtimeDbConnectionsListResponseSchema,
-	runtimeDbDeleteConnectionRequestSchema,
-	runtimeDbDeleteConnectionResponseSchema,
-	runtimeDbDeleteRowRequestSchema,
-	runtimeDbInsertRowRequestSchema,
-	runtimeDbIntrospectRequestSchema,
-	runtimeDbIntrospectResponseSchema,
-	runtimeDbTestConnectionRequestSchema,
-	runtimeDbTestConnectionResponseSchema,
-	runtimeDbUpdateRowRequestSchema,
-	runtimeDbUpsertConnectionRequestSchema,
-	runtimeDbUpsertConnectionResponseSchema,
-	runtimeDbWriteResponseSchema,
 } from "../core/api-contract";
+import type { WorkspaceDbApi } from "./workspace-db-api";
 
 export interface RuntimeTrpcWorkspaceScope {
 	workspaceId: string;
@@ -442,6 +444,9 @@ export interface RuntimeTrpcContext {
 		selectAgentProvider: (
 			input: RuntimeAgentProviderMutationRequest,
 		) => Promise<RuntimeAgentProviderMutationResponse>;
+		setAgentExecutablePath: (
+			input: RuntimeAgentExecutablePathSaveRequest,
+		) => Promise<RuntimeAgentExecutablePathResponse>;
 	};
 	workspaceApi: {
 		loadGitSummary: (
@@ -619,7 +624,10 @@ export interface RuntimeTrpcContext {
 			input: RuntimeDbDescribeRequest,
 		) => Promise<RuntimeDbDescribeResponse>;
 		runQuery: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeDbQueryRequest) => Promise<RuntimeDbQueryResponse>;
-		browseTable: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeDbBrowseRequest) => Promise<RuntimeDbBrowseResponse>;
+		browseTable: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeDbBrowseRequest,
+		) => Promise<RuntimeDbBrowseResponse>;
 	};
 	projectsApi: {
 		listProjects: (preferredWorkspaceId: string | null) => Promise<RuntimeProjectsResponse>;
@@ -872,6 +880,12 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeAgentProviderMutationResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.selectAgentProvider(input);
+			}),
+		setAgentExecutablePath: t.procedure
+			.input(runtimeAgentExecutablePathSaveRequestSchema)
+			.output(runtimeAgentExecutablePathResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.setAgentExecutablePath(input);
 			}),
 	}),
 	workspace: t.router({
@@ -1217,11 +1231,9 @@ export const runtimeAppRouter = t.router({
 			}),
 	}),
 	database: t.router({
-		listConnections: workspaceProcedure
-			.output(runtimeDbConnectionsListResponseSchema)
-			.query(async ({ ctx }) => {
-				return await ctx.workspaceApi.listConnections(ctx.workspaceScope);
-			}),
+		listConnections: workspaceProcedure.output(runtimeDbConnectionsListResponseSchema).query(async ({ ctx }) => {
+			return await ctx.workspaceApi.listConnections(ctx.workspaceScope);
+		}),
 		upsertConnection: workspaceProcedure
 			.input(runtimeDbUpsertConnectionRequestSchema)
 			.output(runtimeDbUpsertConnectionResponseSchema)
