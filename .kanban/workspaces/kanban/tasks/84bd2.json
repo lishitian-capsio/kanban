@@ -1,0 +1,19 @@
+{
+  "id": "84bd2",
+  "title": "让 git 子进程复用 Kanban 代理设置（统一网络）",
+  "prompt": "目标：让 Kanban 执行的 git 网络操作（clone/fetch/push/ls-remote 等）复用 Kanban 在 Settings → Proxy 里配置的代理，做到统一网络。当前 git 完全不走 Kanban 代理。\n\n## 背景 / 现状（务必先读）\n- 所有 git 命令经 src/workspace/git-utils.ts 的 runGit() 用 execFile(\"git\", …) 启动，env 来自 src/core/git-process-env.ts 的 createGitProcessEnv()，该函数只是复制 process.env 并剔除 GIT_DIR 等仓库定位变量，不注入任何代理。\n- Kanban 的代理子系统只覆盖：(1) 进程内 globalThis.fetch 的 monkey-patch；(2) 少数显式 merge 代理 env 的子进程（终端 CLI agent 走 network-bridge、自更新 update.ts、快捷方式 spawn 用 buildSubprocessProxyEnv）。runGit 不在其中。\n- 运行时按设计把自己 process.env 里的 HTTP_PROXY/HTTPS_PROXY 清成空串（stripInheritedProxyEnv），所以 git 继承到的是空代理 = 直连。\n\n## 现成积木\n- src/config/proxy-fetch.ts 的 buildSubprocessProxyEnv()：代理启用时返回 {HTTP_PROXY, HTTPS_PROXY, http_proxy, https_proxy, NO_PROXY...}，禁用时返回 {} —— 天然 no-op。git 对 http(s) remote 原生识别这些变量及 NO_PROXY 绕过。\n\n## 范围（第一版）\n- 让 runGit（git-utils.ts）在构造子进程 env 时 merge buildSubprocessProxyEnv() 的结果（代理禁用时为空对象，行为不变；启用时注入代理）。注意层次：proxy-fetch 在 src/config，git-utils 在 src/workspace 可以直接 import；不要让 src/core/git-process-env.ts 反向依赖 config 层（保持它是 leaf util）。优先在 runGit 内（或其 env 组装处）做 merge，而不是改 createGitProcessEnv 的签名语义。\n- 覆盖所有经 runGit 的网络 git 命令：git-clone.ts、board-worktree.ts 的 fetch/push、turn-checkpoints.ts 等。对纯本地命令（config/rev-parse）注入代理是无害的，无需特判。\n- NO_PROXY / loopback 绕过沿用 buildSubprocessProxyEnv 内已合并的 noProxy（git 原生识别 NO_PROXY），不要重复造轮子。\n\n## 明确不在本版范围（在 prompt 里注明为后续增强即可）\n- SSH 协议的 remote 不认 HTTP_PROXY，需要 GIT_SSH_COMMAND / ssh ProxyCommand 才能走代理 —— 第一版只做 http(s) remote 的代理，SSH 留作后续任务。\n\n## 约束\n- 不要把代理 URL 写进运行时自身的 process.env（会重新 latch Bun 的 fetch，破坏 disable/switch）。只在 git 子进程的 per-spawn env 里注入。\n- 日志走 src/logging facade，不要 console.*。\n- 加单元测试：覆盖 (a) 代理启用时 runGit 的 env 含 HTTP_PROXY/HTTPS_PROXY；(b) 代理禁用时不含、行为与现状一致。参考现有 git-utils / proxy 相关测试风格。\n- 不要 commit（除非另有要求）。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782351827756,
+  "updatedAt": 1782351827756,
+  "column": "backlog",
+  "rank": "Zo",
+  "dependsOn": []
+}
