@@ -1,21 +1,16 @@
-// Dock controls shown at the top of the home chat panel.
+// Dock controls for the home chat panel header.
 //
+// A right-aligned cluster of buttons that lives inline on the sidebar header
+// row (the project selector carries the "Kanban Agent" identity to its left).
 // Three independent target-state buttons (no cycle): dock-left, dock-right,
 // float. The button matching the current dock position is highlighted. While
 // docked, two extra controls appear: collapse (shrink to the edge strip) and
 // hide (remove the panel, reopen from the top bar). In the floating state an
-// extra close button returns the panel to its last docked side, and the title
-// region carries the drag-handle class so react-rnd can use it (the buttons sit
-// outside that region and never start a drag).
-import {
-	GripVertical,
-	PanelLeft,
-	PanelLeftClose,
-	PanelRight,
-	PanelRightClose,
-	PictureInPicture2,
-	X,
-} from "lucide-react";
+// extra close button returns the panel to its last docked side.
+//
+// The drag-handle (react-rnd) is rendered by the panel, not here, so these
+// buttons always stay clickable and never start a window drag.
+import { PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, PictureInPicture2, X } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/components/ui/cn";
@@ -25,7 +20,7 @@ import type { ChatDockPosition } from "./chat-dock-state";
 
 export const CHAT_DOCK_DRAG_HANDLE_CLASS = "kb-chat-dock-drag-handle";
 
-interface ChatDockHeaderProps {
+interface ChatDockControlsProps {
 	position: ChatDockPosition;
 	onDockLeft: () => void;
 	onDockRight: () => void;
@@ -66,7 +61,7 @@ function DockButton({
 	);
 }
 
-export function ChatDockHeader({
+export function ChatDockControls({
 	position,
 	onDockLeft,
 	onDockRight,
@@ -74,47 +69,36 @@ export function ChatDockHeader({
 	onClose,
 	onCollapse,
 	onHide,
-}: ChatDockHeaderProps): React.ReactElement {
+}: ChatDockControlsProps): React.ReactElement {
 	const floating = position === "float";
 	// Collapse folds the panel toward whichever edge it is docked against.
 	const CollapseIcon = position === "left" ? PanelLeftClose : PanelRightClose;
 	return (
-		<div className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-surface-2 p-1">
-			<div
-				className={cn(
-					"flex min-w-0 flex-1 items-center gap-1.5 px-1 text-text-secondary",
-					floating ? `${CHAT_DOCK_DRAG_HANDLE_CLASS} cursor-move` : null,
-				)}
-			>
-				{floating ? <GripVertical size={14} className="shrink-0" /> : null}
-				<span className="truncate text-xs font-medium">Kanban Agent</span>
-			</div>
-			<div className="flex shrink-0 items-center gap-0.5">
-				{!floating && onCollapse ? (
-					<DockButton active={false} label="Collapse to edge" onClick={onCollapse}>
-						<CollapseIcon size={14} />
-					</DockButton>
-				) : null}
-				<DockButton active={position === "left"} label="Dock to left" onClick={onDockLeft}>
-					<PanelLeft size={14} />
+		<div className="flex shrink-0 items-center gap-0.5">
+			{!floating && onCollapse ? (
+				<DockButton active={false} label="Collapse to edge" onClick={onCollapse}>
+					<CollapseIcon size={14} />
 				</DockButton>
-				<DockButton active={position === "right"} label="Dock to right" onClick={onDockRight}>
-					<PanelRight size={14} />
+			) : null}
+			<DockButton active={position === "left"} label="Dock to left" onClick={onDockLeft}>
+				<PanelLeft size={14} />
+			</DockButton>
+			<DockButton active={position === "right"} label="Dock to right" onClick={onDockRight}>
+				<PanelRight size={14} />
+			</DockButton>
+			<DockButton active={floating} label="Detach as floating window" onClick={onFloat}>
+				<PictureInPicture2 size={14} />
+			</DockButton>
+			{floating && onClose ? (
+				<DockButton active={false} label="Close floating window" onClick={onClose}>
+					<X size={14} />
 				</DockButton>
-				<DockButton active={floating} label="Detach as floating window" onClick={onFloat}>
-					<PictureInPicture2 size={14} />
+			) : null}
+			{!floating && onHide ? (
+				<DockButton active={false} label="Hide panel" onClick={onHide}>
+					<X size={14} />
 				</DockButton>
-				{floating && onClose ? (
-					<DockButton active={false} label="Close floating window" onClick={onClose}>
-						<X size={14} />
-					</DockButton>
-				) : null}
-				{!floating && onHide ? (
-					<DockButton active={false} label="Hide panel" onClick={onHide}>
-						<X size={14} />
-					</DockButton>
-				) : null}
-			</div>
+			) : null}
 		</div>
 	);
 }

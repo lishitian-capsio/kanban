@@ -12,12 +12,13 @@
 // hidden (`open === false`) state is handled by the caller, which simply stops
 // rendering this component (reopen lives in the top bar).
 //
-// This is the single unified "cockpit" sidebar: a `projectSwitcher` slot sits in
-// the header (project navigation folded in here, no longer a separate column)
-// and a fixed bottom ops status-bar seam travels with the panel. Both are inside
+// This is the single unified "cockpit" sidebar: the header is ONE row — the
+// `projectSwitcher` slot (carrying the "Kanban Agent" identity) grows on the
+// left while the dock controls sit right-aligned beside it — and a fixed bottom
+// ops status-bar seam travels with the panel. Both are inside
 // `DockHeaderWithChildren`, so they follow the panel when docked/floated and
 // disappear when it collapses to the edge strip — by construction.
-import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
+import { GripVertical, PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { Rnd } from "react-rnd";
 
 import { cn } from "@/components/ui/cn";
@@ -25,7 +26,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import type { UseChatDockResult } from "@/hooks/use-chat-dock";
 import { useHorizontalResize } from "@/hooks/use-horizontal-resize";
 
-import { CHAT_DOCK_DRAG_HANDLE_CLASS, ChatDockHeader } from "./chat-dock-header";
+import { CHAT_DOCK_DRAG_HANDLE_CLASS, ChatDockControls } from "./chat-dock-header";
 import {
 	CHAT_DOCK_COLLAPSED_WIDTH,
 	MAX_CHAT_DOCK_WIDTH,
@@ -44,18 +45,33 @@ interface DockableChatPanelProps {
 }
 
 function DockHeaderWithChildren({ dock, projectSwitcher, children }: DockableChatPanelProps): React.ReactElement {
+	const floating = dock.position === "float";
 	return (
 		<div className="flex h-full min-h-0 w-full flex-col gap-2 p-2">
-			<ChatDockHeader
-				position={dock.position}
-				onDockLeft={dock.dockLeft}
-				onDockRight={dock.dockRight}
-				onFloat={dock.floatPanel}
-				onClose={dock.closeFloat}
-				onCollapse={dock.collapse}
-				onHide={dock.hide}
-			/>
-			{projectSwitcher}
+			{/* Single header row: project selector (with "Kanban Agent" identity) left, dock controls right. */}
+			<div className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-surface-2 p-1">
+				{floating ? (
+					<div
+						className={cn(
+							CHAT_DOCK_DRAG_HANDLE_CLASS,
+							"flex shrink-0 cursor-move items-center px-0.5 text-text-secondary",
+						)}
+						aria-hidden="true"
+					>
+						<GripVertical size={14} className="shrink-0" />
+					</div>
+				) : null}
+				{projectSwitcher}
+				<ChatDockControls
+					position={dock.position}
+					onDockLeft={dock.dockLeft}
+					onDockRight={dock.dockRight}
+					onFloat={dock.floatPanel}
+					onClose={dock.closeFloat}
+					onCollapse={dock.collapse}
+					onHide={dock.hide}
+				/>
+			</div>
 			<div className="flex min-h-0 flex-1 [&>*]:w-full [&>*]:self-stretch">{children}</div>
 			<SidebarOpsStatusBar />
 		</div>

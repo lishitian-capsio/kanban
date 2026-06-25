@@ -12,7 +12,7 @@
 // responsibilities are now owned by the dock/float chrome of the agent sidebar.
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as RadixPopover from "@radix-ui/react-popover";
-import { ChevronDown, Ellipsis, FolderOpen, Plus } from "lucide-react";
+import { Bot, ChevronDown, Ellipsis, Plus } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -66,16 +66,20 @@ export function SidebarProjectSwitcher({
 		: 0;
 
 	return (
-		<div className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-surface-2 p-1">
+		<div className="flex min-w-0 flex-1 items-center gap-1">
 			<RadixPopover.Root open={isOpen} onOpenChange={setIsOpen}>
 				<RadixPopover.Trigger asChild>
 					<button
 						type="button"
-						aria-label="Switch project"
-						className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-1 text-left text-text-primary outline-none hover:bg-surface-3 data-[state=open]:bg-surface-3"
+						aria-label="Kanban Agent — switch project"
+						className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-1 text-left outline-none hover:bg-surface-3 data-[state=open]:bg-surface-3"
 					>
-						<FolderOpen size={14} className="shrink-0 text-text-secondary" />
-						<span className="min-w-0 flex-1 truncate text-[13px] font-medium">{triggerLabel}</span>
+						<Bot size={14} className="shrink-0 text-text-secondary" />
+						<span className="shrink-0 text-[13px] font-medium text-text-primary">Kanban Agent</span>
+						<span aria-hidden="true" className="shrink-0 text-text-tertiary">
+							·
+						</span>
+						<span className="min-w-0 flex-1 truncate text-[13px] text-text-secondary">{triggerLabel}</span>
 						<ChevronDown size={14} className="shrink-0 text-text-secondary" />
 					</button>
 				</RadixPopover.Trigger>
