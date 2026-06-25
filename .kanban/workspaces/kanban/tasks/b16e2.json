@@ -1,0 +1,19 @@
+{
+  "id": "b16e2",
+  "title": "Home thread: description-input dialog + auto-title UI (web-ui)",
+  "prompt": "GOAL: Update the web-ui so creating a home (sidebar) chat thread asks for a DESCRIPTION instead of a name, and the thread shows an AUTO-SUMMARIZED title that updates as the conversation evolves. Manual rename stays available as an override. Depends on the backend/contract task (description input + auto/pending title state).\n\nCONTEXT (read first):\n- web-ui/src/components/home-agent/home-thread-create-dialog.tsx — currently a 'name' text input (placeholder 'e.g. Debugging') + agent picker.\n- web-ui/src/hooks/use-home-threads.ts — createThread({ name, agentId }), DEFAULT_THREAD_NAME = 'Default', buildDefaultThread; calls runtime.createHomeThread.mutate.\n- web-ui/src/components/home-agent/home-thread-bar.tsx (thread switcher / title rendering), home-thread-rename-dialog.tsx (keep manual rename).\n- Follow AGENTS.md web-ui stack/styling rules (Tailwind v4, Radix, lucide, surface tokens, src/components/ui primitives). Subscribe high-frequency slices in leaf components (memory: perf10 runtime store selectors).\n\nREQUIRED BEHAVIOR:\n1. Create dialog: replace the single-line 'name' input with a multi-line DESCRIPTION textarea (this becomes the thread's kickoff prompt). Keep the agent picker. Submit sends the description to the new createHomeThread contract; no manual title needed. Placeholder like 'Describe what you want to work on…'.\n2. Thread bar / switcher: render the auto-generated title. While the title is still being summarized, show the provisional/placeholder state (e.g. 'Summarizing…' or the truncated description) gracefully, and update live when the backend broadcasts the new title.\n3. Keep the manual rename dialog working; renaming pins the title (per backend titleAuto flag).\n4. Default thread keeps its existing 'Default' label and remains non-renamable/closable.\n\nACCEPTANCE:\n- Adding a session = typing a description; a summarized title appears shortly after and refreshes as the chat continues.\n- Manual rename still works and stops auto-updates.\n- web:typecheck + biome clean. No any types.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782349848748,
+  "updatedAt": 1782349848748,
+  "column": "backlog",
+  "rank": "Zp",
+  "dependsOn": []
+}
