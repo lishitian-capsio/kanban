@@ -134,12 +134,22 @@ vi.mock("@/runtime/use-runtime-config", () => ({
 	}),
 }));
 
+const setAgentExecutablePathMock = vi.hoisted(() =>
+	vi.fn(async (_workspaceId: string | null, input: { agentId: string; executablePath: string }) => ({
+		ok: true,
+		agentId: input.agentId,
+		executablePath: input.executablePath.length > 0 ? input.executablePath : null,
+		available: true,
+	})),
+);
+
 vi.mock("@/runtime/runtime-config-query", () => ({
 	openFileOnHost: vi.fn(async () => undefined),
 	fetchKanbanProviderCatalog: vi.fn(async () => []),
 	fetchAgentProviderSets: vi.fn(async () => ({ agents: {} })),
 	removeProviderFromAgent: vi.fn(async () => ({ ok: true })),
 	selectAgentProvider: vi.fn(async () => ({ ok: true })),
+	setAgentExecutablePath: setAgentExecutablePathMock,
 }));
 
 vi.mock("@/utils/notification-permission", () => ({
@@ -214,6 +224,7 @@ describe("RuntimeSettingsDialog", () => {
 			Element.prototype.scrollTo = () => {};
 		}
 		resetLayoutCustomizationsMock.mockReset();
+		setAgentExecutablePathMock.mockClear();
 		window.localStorage.clear();
 		document.documentElement.removeAttribute("data-theme");
 		previousActEnvironment = (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
@@ -407,6 +418,57 @@ describe("RuntimeSettingsDialog", () => {
 		});
 
 		expect(claudeTab?.className).toContain("border-border-bright");
+	});
+
+	it("edits an agent's executable path from the General → Agent subsection, not Providers", async () => {
+		await act(async () => {
+			root.render(
+				<RuntimeSettingsDialog
+					open={true}
+					workspaceId={"workspace-1"}
+					initialConfig={savedKanbanConfig}
+					onOpenChange={() => {}}
+				/>,
+			);
+		});
+
+		// The executable-path editor moved out of the Providers tab. The old fixed
+		// id no longer exists anywhere; pi (in-process) has no editor, and each CLI
+		// agent (claude here) gets exactly one collapsible "Executable path" entry.
+		expect(document.getElementById("agent-executable-path")).toBeNull();
+		const triggers = Array.from(document.body.querySelectorAll("button")).filter((button) =>
+			button.textContent?.includes("Executable path"),
+		);
+		expect(triggers.length).toBe(1);
+		expect(document.getElementById("agent-executable-path-pi")).toBeNull();
+
+		// Collapsed by default — expand it to reveal the input.
+		await act(async () => {
+			triggers[0]?.click();
+		});
+
+		const input = document.getElementById("agent-executable-path-claude") as HTMLInputElement | null;
+		expect(input).toBeInstanceOf(HTMLInputElement);
+
+		const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+		await act(async () => {
+			nativeInputValueSetter?.call(input, "/home/me/.local/bin/claude");
+			input?.dispatchEvent(new Event("input", { bubbles: true }));
+		});
+
+		// The Save button sits next to the input inside the collapsible content.
+		const saveButton = input?.closest("div")?.querySelector("button") as HTMLButtonElement | null;
+		expect(saveButton).toBeInstanceOf(HTMLButtonElement);
+		expect(saveButton?.disabled).toBe(false);
+
+		await act(async () => {
+			saveButton?.click();
+		});
+
+		expect(setAgentExecutablePathMock).toHaveBeenCalledWith("workspace-1", {
+			agentId: "claude",
+			executablePath: "/home/me/.local/bin/claude",
+		});
 	});
 });
 
