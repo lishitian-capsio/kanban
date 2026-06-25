@@ -1,0 +1,19 @@
+{
+  "id": "3e759",
+  "title": "GitHub OAuth 统一 git 认证(后端)",
+  "prompt": "目标:让 Kanban 托管 GitHub OAuth,使所有 git 网络操作统一认证,不再依赖用户机器上的环境 git 配置(对无头/远程 Linux 部署尤其重要——那种场景下没有系统 credential helper 就会卡住或失败)。\n\n背景(代码事实):当前所有 git 子进程都走单一出口 src/workspace/git-utils.ts 的 runGit / getGitStdout,该出口刻意 '从不碰认证',凭证完全委托给系统 credential helper / ssh-agent;它已经在那里统一合并了代理 env(buildSubprocessProxyEnv / buildGitSshProxyEnv)。这正是注入 OAuth 凭证的理想唯一切入点。\n\n范围:\n1. 新增一个独立的 GitHub OAuth device-flow 登录(device code 流程,适合无头环境)。可参考 src/agent-sdk/ai/utils/oauth/ 下既有的 device-flow 实现(github-copilot.ts、openai-codex.ts 的 device 流程)作为写法参考,但这是一条用于【git 远程认证】的全新、独立流程,务必与 pi/omp 的 agent 模型 OAuth 存储彼此隔离,不要混用。\n2. token 仅存机器本地(放 ~/.kanban/settings/ 下,0600 权限),绝不写入 <repo>/.kanban、绝不提交到 git;完全照搬 agent provider API key 现有的密钥处理规则。处理 token 刷新/过期。\n3. 在 git-utils.ts 的 runGit 单一出口注入 token 到所有 GitHub HTTPS 操作。优先用 GIT_ASKPASS 或临时的、仅作用于 github.com 的 credential helper,使 token 绝不落到 repo config 或磁盘上的 remote URL。必须覆盖:代码分支 push/pull(git-sync.ts)、板分支 push/fetch(board-worktree.ts / board-sync.ts)、clone(git-clone.ts)、task worktree 操作。仅对 github.com 的 HTTPS 远程生效;SSH 与其他 host 不变;未登录时完全透传、保持今天的行为不变。\n4. 暴露 tRPC 与 CLI 的状态接口(已登录账号、login、logout),供后续 UI 任务消费;并提供一个可在无头环境用的 CLI 登录命令。\n\n约束:遵循 AGENTS.md(禁止 any、日志走 createLogger、SDK 类型优先等)。不要改动 per-agent 的模型 provider OAuth(pi/omp)——本任务只做 git 远程认证。补充测试。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782365167397,
+  "updatedAt": 1782365167397,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
