@@ -22,7 +22,8 @@
       "name": "provider",
       "titleSource": "manual",
       "createdAt": 1782351351870,
-      "updatedAt": 1782351351870
+      "updatedAt": 1782351351870,
+      "pendingNextStep": "Start task fe7bb"
     },
     {
       "id": "36d434f5-e136-4d04-bf80-bfa331510e10",
