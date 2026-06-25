@@ -188,6 +188,57 @@ async function applyGitConfigField(cwd: string, key: string, value: string): Pro
 	}
 }
 
+/**
+ * Basic shape check for a git remote URL — not a full parser, just enough to reject
+ * obvious garbage (empty, internal whitespace) before handing the value to git. Accepts
+ * the forms git itself supports: a `scheme://…` URL (https/http/ssh/git/file/…), the
+ * scp-like `user@host:path` SSH syntax, and a local filesystem path (`/`, `.`, `~`).
+ * Kept in sync with the `runtimeSetGitRemoteRequestSchema` refinement in api-contract.ts.
+ */
+export function isLikelyGitRemoteUrl(value: string): boolean {
+	const trimmed = value.trim();
+	if (trimmed === "") {
+		return false;
+	}
+	return /^(?:[a-zA-Z][a-zA-Z0-9+.-]*:\/\/\S+|[^@\s]+@[^:\s]+:\S+|[./~]\S*)$/.test(trimmed);
+}
+
+/**
+ * Read the `origin` remote URL for the repository at `cwd` via `git remote get-url
+ * origin`. Returns `null` when no `origin` remote is configured (git exits non-zero) —
+ * the common case for a repo Kanban `git init`-ed locally — rather than throwing, so the
+ * caller can present an empty "not configured yet" state.
+ */
+export async function readGitRemoteUrl(cwd: string): Promise<string | null> {
+	const result = await runGit(cwd, ["remote", "get-url", "origin"]);
+	if (!result.ok) {
+		return null;
+	}
+	const url = result.stdout.trim();
+	return url === "" ? null : url;
+}
+
+/**
+ * Set the `origin` remote URL for the repository at `cwd`. Adds the remote when it does
+ * not exist yet (`git remote add origin <url>`) and rewrites it otherwise (`git remote
+ * set-url origin <url>`), matching the requested behavior. Validates the URL shape first
+ * with {@link isLikelyGitRemoteUrl} and never touches authentication — credentials stay
+ * with the system git credential helper / SSH agent. Throws with the git error on
+ * failure (e.g. when `cwd` is not a git repository).
+ */
+export async function writeGitRemoteUrl(cwd: string, url: string): Promise<void> {
+	const trimmed = url.trim();
+	if (!isLikelyGitRemoteUrl(trimmed)) {
+		throw new Error("Enter a valid git remote URL.");
+	}
+	const existing = await readGitRemoteUrl(cwd);
+	const args = existing === null ? ["remote", "add", "origin", trimmed] : ["remote", "set-url", "origin", trimmed];
+	const result = await runGit(cwd, args);
+	if (!result.ok) {
+		throw new Error(result.error || "Failed to set the git remote URL.");
+	}
+}
+
 export function getGitCommandErrorMessage(error: unknown): string {
 	if (error && typeof error === "object" && "stderr" in error) {
 		const stderr = (error as { stderr?: unknown }).stderr;

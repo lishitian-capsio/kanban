@@ -71,6 +71,7 @@ import type {
 	RuntimeGitSummaryResponse,
 	RuntimeGitSyncAction,
 	RuntimeGitSyncResponse,
+	RuntimeGitRemoteResponse,
 	RuntimeGitUserIdentityResponse,
 	RuntimeHomeChatThreadCloseRequest,
 	RuntimeHomeChatThreadCreateRequest,
@@ -97,6 +98,8 @@ import type {
 	RuntimeProjectRemoveResponse,
 	RuntimeProjectsResponse,
 	RuntimeRunUpdateResponse,
+	RuntimeSetGitRemoteRequest,
+	RuntimeSetGitRemoteResponse,
 	RuntimeSetGitUserIdentityRequest,
 	RuntimeSetGitUserIdentityResponse,
 	RuntimeShellSessionStartRequest,
@@ -244,6 +247,7 @@ import {
 	runtimeGitSummaryResponseSchema,
 	runtimeGitSyncActionSchema,
 	runtimeGitSyncResponseSchema,
+	runtimeGitRemoteResponseSchema,
 	runtimeGitUserIdentityResponseSchema,
 	runtimeHomeChatThreadCloseRequestSchema,
 	runtimeHomeChatThreadCreateRequestSchema,
@@ -271,6 +275,8 @@ import {
 	runtimeProjectsResponseSchema,
 	runtimeRunUpdateResponseSchema,
 	runtimeSetGitUserIdentityRequestSchema,
+	runtimeSetGitRemoteRequestSchema,
+	runtimeSetGitRemoteResponseSchema,
 	runtimeSetGitUserIdentityResponseSchema,
 	runtimeShellSessionStartRequestSchema,
 	runtimeShellSessionStartResponseSchema,
@@ -571,6 +577,11 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeSetGitUserIdentityRequest,
 		) => Promise<RuntimeSetGitUserIdentityResponse>;
+		getGitRemote: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeGitRemoteResponse>;
+		setGitRemote: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeSetGitRemoteRequest,
+		) => Promise<RuntimeSetGitRemoteResponse>;
 		updateVaultSettings: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeVaultSettingsUpdateRequest,
@@ -1086,6 +1097,15 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeSetGitUserIdentityResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.setGitUserIdentity(ctx.workspaceScope, input);
+			}),
+		getGitRemote: workspaceProcedure.output(runtimeGitRemoteResponseSchema).query(async ({ ctx }) => {
+			return await ctx.workspaceApi.getGitRemote(ctx.workspaceScope);
+		}),
+		setGitRemote: workspaceProcedure
+			.input(runtimeSetGitRemoteRequestSchema)
+			.output(runtimeSetGitRemoteResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.setGitRemote(ctx.workspaceScope, input);
 			}),
 		updateVaultSettings: workspaceProcedure
 			.input(runtimeVaultSettingsUpdateRequestSchema)

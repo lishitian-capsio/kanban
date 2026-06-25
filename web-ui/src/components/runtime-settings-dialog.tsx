@@ -33,6 +33,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BoardBranchSetting } from "@/components/board-branch-setting";
 import { GitIdentitySetting } from "@/components/git-identity-setting";
+import { GitRemoteSetting } from "@/components/git-remote-setting";
 import {
 	KanbanAddProviderDialog,
 	type KanbanProviderDialogInitialValues,
@@ -1467,6 +1468,7 @@ export function RuntimeSettingsDialog({
 					</p>
 					<BoardBranchSetting workspaceId={workspaceId} />
 					<GitIdentitySetting workspaceId={workspaceId} />
+					<GitRemoteSetting workspaceId={workspaceId} />
 					<div className="rounded-lg border border-border bg-surface-0 px-4 py-3 mb-4">
 						<div className="flex items-center justify-between mb-2">
 							<h6

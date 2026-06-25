@@ -198,6 +198,33 @@ export const runtimeSetGitUserIdentityResponseSchema = z.object({
 });
 export type RuntimeSetGitUserIdentityResponse = z.infer<typeof runtimeSetGitUserIdentityResponseSchema>;
 
+// The workspace repo's `origin` remote URL, or null when no `origin` is configured (the
+// common case for a repo Kanban `git init`-ed locally). The web-ui reads this to show and
+// edit where the code repo pushes; authentication is never part of this — credentials stay
+// with the system git credential helper / SSH agent.
+export const runtimeGitRemoteResponseSchema = z.object({
+	url: z.string().nullable(),
+});
+export type RuntimeGitRemoteResponse = z.infer<typeof runtimeGitRemoteResponseSchema>;
+
+// Set the workspace repo's `origin` remote URL (the real `git remote`, not a Kanban-only
+// setting). The URL must look like a git remote: a `scheme://…` URL, the scp-like
+// `user@host:path` SSH form, or a local path. Kept in sync with `isLikelyGitRemoteUrl` in
+// src/workspace/git-utils.ts.
+export const runtimeSetGitRemoteRequestSchema = z.object({
+	url: z
+		.string()
+		.refine((value) => /^(?:[a-zA-Z][a-zA-Z0-9+.-]*:\/\/\S+|[^@\s]+@[^:\s]+:\S+|[./~]\S*)$/.test(value.trim()), {
+			message: "Enter a valid git remote URL.",
+		}),
+});
+export type RuntimeSetGitRemoteRequest = z.infer<typeof runtimeSetGitRemoteRequestSchema>;
+
+export const runtimeSetGitRemoteResponseSchema = z.object({
+	url: z.string().nullable(),
+});
+export type RuntimeSetGitRemoteResponse = z.infer<typeof runtimeSetGitRemoteResponseSchema>;
+
 // Durable task spec fields, pre-title-resolution. Exported so the on-disk sharded
 // task store (src/state/task-shard-store.ts) can extend this exact shape with its
 // storage-only fields (column, rank, dependsOn) instead of redefining the columns.

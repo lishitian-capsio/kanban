@@ -13,7 +13,14 @@ vi.mock("node:child_process", () => ({
 	}),
 }));
 
-import { readGitUserIdentity, runGit, writeGitUserIdentity } from "../../src/workspace/git-utils";
+import {
+	isLikelyGitRemoteUrl,
+	readGitRemoteUrl,
+	readGitUserIdentity,
+	runGit,
+	writeGitRemoteUrl,
+	writeGitUserIdentity,
+} from "../../src/workspace/git-utils";
 
 function createExecError(options: {
 	code: string | number;
@@ -165,6 +172,111 @@ describe("writeGitUserIdentity", () => {
 
 		await expect(writeGitUserIdentity("/repo", { name: "Ada Lovelace", email: "" })).rejects.toThrow(
 			/not in a git directory/,
+		);
+	});
+});
+
+describe("isLikelyGitRemoteUrl", () => {
+	it("accepts common https and scp-like ssh remotes", () => {
+		expect(isLikelyGitRemoteUrl("https://github.com/owner/repo.git")).toBe(true);
+		expect(isLikelyGitRemoteUrl("git@github.com:owner/repo.git")).toBe(true);
+		expect(isLikelyGitRemoteUrl("ssh://git@host:22/owner/repo.git")).toBe(true);
+		expect(isLikelyGitRemoteUrl("git://host/owner/repo.git")).toBe(true);
+		expect(isLikelyGitRemoteUrl("file:///srv/git/repo.git")).toBe(true);
+		expect(isLikelyGitRemoteUrl("/srv/git/repo.git")).toBe(true);
+	});
+
+	it("tolerates surrounding whitespace", () => {
+		expect(isLikelyGitRemoteUrl("  https://github.com/owner/repo.git  ")).toBe(true);
+	});
+
+	it("rejects empty, whitespace-only, and malformed values", () => {
+		expect(isLikelyGitRemoteUrl("")).toBe(false);
+		expect(isLikelyGitRemoteUrl("   ")).toBe(false);
+		expect(isLikelyGitRemoteUrl("not a url")).toBe(false);
+		expect(isLikelyGitRemoteUrl("ftp//bad")).toBe(false);
+	});
+});
+
+describe("readGitRemoteUrl", () => {
+	beforeEach(() => {
+		childProcessMocks.execFile.mockReset();
+		childProcessMocks.execFilePromise.mockReset();
+	});
+
+	it("returns the trimmed origin url when configured", async () => {
+		childProcessMocks.execFilePromise.mockResolvedValue({
+			stdout: "https://github.com/owner/repo.git\n",
+			stderr: "",
+		});
+		const url = await readGitRemoteUrl("/repo");
+		expect(url).toBe("https://github.com/owner/repo.git");
+	});
+
+	it("returns null when origin is not configured", async () => {
+		childProcessMocks.execFilePromise.mockRejectedValue(
+			createExecError({ code: 2, stdout: "", stderr: "error: No such remote 'origin'" }),
+		);
+		const url = await readGitRemoteUrl("/repo");
+		expect(url).toBeNull();
+	});
+});
+
+describe("writeGitRemoteUrl", () => {
+	beforeEach(() => {
+		childProcessMocks.execFile.mockReset();
+		childProcessMocks.execFilePromise.mockReset();
+	});
+
+	function recordedGitArgs(): string[][] {
+		return childProcessMocks.execFilePromise.mock.calls.map(([, args]) =>
+			(args as string[]).filter((arg) => arg !== "-c" && arg !== "core.quotepath=false"),
+		);
+	}
+
+	it("adds origin when it does not exist yet", async () => {
+		childProcessMocks.execFilePromise.mockImplementation(async (_cmd, args: string[]) => {
+			if (args.includes("get-url")) {
+				throw createExecError({ code: 2, stdout: "", stderr: "error: No such remote 'origin'" });
+			}
+			return { stdout: "", stderr: "" };
+		});
+
+		await writeGitRemoteUrl("/repo", "  https://github.com/owner/repo.git  ");
+
+		expect(recordedGitArgs()).toContainEqual(["remote", "add", "origin", "https://github.com/owner/repo.git"]);
+	});
+
+	it("updates origin via set-url when it already exists", async () => {
+		childProcessMocks.execFilePromise.mockImplementation(async (_cmd, args: string[]) => {
+			if (args.includes("get-url")) {
+				return { stdout: "https://old.example.com/repo.git\n", stderr: "" };
+			}
+			return { stdout: "", stderr: "" };
+		});
+
+		await writeGitRemoteUrl("/repo", "git@github.com:owner/repo.git");
+
+		const calls = recordedGitArgs();
+		expect(calls).toContainEqual(["remote", "set-url", "origin", "git@github.com:owner/repo.git"]);
+		expect(calls).not.toContainEqual(["remote", "add", "origin", "git@github.com:owner/repo.git"]);
+	});
+
+	it("rejects a malformed url without touching git", async () => {
+		await expect(writeGitRemoteUrl("/repo", "not a url")).rejects.toThrow();
+		expect(childProcessMocks.execFilePromise).not.toHaveBeenCalled();
+	});
+
+	it("throws with the git error when the write fails", async () => {
+		childProcessMocks.execFilePromise.mockImplementation(async (_cmd, args: string[]) => {
+			if (args.includes("get-url")) {
+				throw createExecError({ code: 2, stdout: "", stderr: "error: No such remote 'origin'" });
+			}
+			throw createExecError({ code: 128, stdout: "", stderr: "fatal: not a git repository" });
+		});
+
+		await expect(writeGitRemoteUrl("/repo", "https://github.com/owner/repo.git")).rejects.toThrow(
+			/not a git repository/,
 		);
 	});
 });

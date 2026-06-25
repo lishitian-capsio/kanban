@@ -39,7 +39,7 @@ import {
 } from "../workspace/get-workspace-changes";
 import { getCommitDiff, getGitLog, getGitRefs } from "../workspace/git-history";
 import { discardGitChanges, getGitSyncSummary, runGitCheckoutAction, runGitSyncAction } from "../workspace/git-sync";
-import { readGitUserIdentity, writeGitUserIdentity } from "../workspace/git-utils";
+import { readGitRemoteUrl, readGitUserIdentity, writeGitRemoteUrl, writeGitUserIdentity } from "../workspace/git-utils";
 import { searchWorkspaceFiles } from "../workspace/search-workspace-files";
 import {
 	deleteTaskWorktree,
@@ -564,6 +564,15 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 			const identity = await readGitUserIdentity(workspaceScope.workspacePath);
 			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
 			return { identity };
+		},
+		getGitRemote: async (workspaceScope) => {
+			const url = await readGitRemoteUrl(workspaceScope.workspacePath);
+			return { url };
+		},
+		setGitRemote: async (workspaceScope, input) => {
+			await writeGitRemoteUrl(workspaceScope.workspacePath, input.url);
+			const url = await readGitRemoteUrl(workspaceScope.workspacePath);
+			return { url };
 		},
 		updateVaultSettings: async (workspaceScope, input) => {
 			const settings = await new VaultSettingsStore(workspaceScope.workspacePath).set({
