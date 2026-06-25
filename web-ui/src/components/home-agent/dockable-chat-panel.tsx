@@ -11,6 +11,12 @@
 // only job is a one-click expand back to the previous width and side. The fully
 // hidden (`open === false`) state is handled by the caller, which simply stops
 // rendering this component (reopen lives in the top bar).
+//
+// This is the single unified "cockpit" sidebar: a `projectSwitcher` slot sits in
+// the header (project navigation folded in here, no longer a separate column)
+// and a fixed bottom ops status-bar seam travels with the panel. Both are inside
+// `DockHeaderWithChildren`, so they follow the panel when docked/floated and
+// disappear when it collapses to the edge strip — by construction.
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { Rnd } from "react-rnd";
 
@@ -27,13 +33,17 @@ import {
 	MIN_CHAT_FLOAT_HEIGHT,
 	MIN_CHAT_FLOAT_WIDTH,
 } from "./chat-dock-state";
+import { SidebarOpsStatusBar } from "./sidebar-ops-status-bar";
 
 interface DockableChatPanelProps {
 	dock: UseChatDockResult;
+	// Project navigation, folded into the sidebar header (the old standalone
+	// `ProjectNavigationPanel` column). Rendered just below the dock controls.
+	projectSwitcher?: React.ReactNode;
 	children: React.ReactNode;
 }
 
-function DockHeaderWithChildren({ dock, children }: DockableChatPanelProps): React.ReactElement {
+function DockHeaderWithChildren({ dock, projectSwitcher, children }: DockableChatPanelProps): React.ReactElement {
 	return (
 		<div className="flex h-full min-h-0 w-full flex-col gap-2 p-2">
 			<ChatDockHeader
@@ -45,7 +55,9 @@ function DockHeaderWithChildren({ dock, children }: DockableChatPanelProps): Rea
 				onCollapse={dock.collapse}
 				onHide={dock.hide}
 			/>
+			{projectSwitcher}
 			<div className="flex min-h-0 flex-1 [&>*]:w-full [&>*]:self-stretch">{children}</div>
+			<SidebarOpsStatusBar />
 		</div>
 	);
 }
@@ -76,7 +88,7 @@ function CollapsedChatStrip({ dock }: { dock: UseChatDockResult }): React.ReactE
 	);
 }
 
-export function DockableChatPanel({ dock, children }: DockableChatPanelProps): React.ReactElement {
+export function DockableChatPanel({ dock, projectSwitcher, children }: DockableChatPanelProps): React.ReactElement {
 	const isLeft = dock.position === "left";
 	const { isResizing, startResize } = useHorizontalResize({
 		width: dock.width,
@@ -109,7 +121,9 @@ export function DockableChatPanel({ dock, children }: DockableChatPanelProps): R
 					}}
 				>
 					<div className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-border bg-surface-1 shadow-2xl">
-						<DockHeaderWithChildren dock={dock}>{children}</DockHeaderWithChildren>
+						<DockHeaderWithChildren dock={dock} projectSwitcher={projectSwitcher}>
+							{children}
+						</DockHeaderWithChildren>
 					</div>
 				</Rnd>
 			</div>
@@ -141,7 +155,9 @@ export function DockableChatPanel({ dock, children }: DockableChatPanelProps): R
 					isResizing ? "bg-border-focus/40" : "hover:bg-border-bright/40",
 				)}
 			/>
-			<DockHeaderWithChildren dock={dock}>{children}</DockHeaderWithChildren>
+			<DockHeaderWithChildren dock={dock} projectSwitcher={projectSwitcher}>
+				{children}
+			</DockHeaderWithChildren>
 		</aside>
 	);
 }

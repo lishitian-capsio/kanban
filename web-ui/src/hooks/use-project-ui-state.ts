@@ -1,10 +1,9 @@
-import type { ComponentProps } from "react";
 import { useMemo } from "react";
-import type { ProjectNavigationPanel } from "@/components/project-navigation-panel";
 import { countTasksByColumn } from "@/hooks/app-utils";
+import type { RuntimeProjectSummary } from "@/runtime/types";
 import type { BoardData } from "@/types";
 
-type ProjectSummaries = ComponentProps<typeof ProjectNavigationPanel>["projects"];
+type ProjectSummaries = RuntimeProjectSummary[];
 
 interface UseProjectUiStateInput {
 	board: BoardData;

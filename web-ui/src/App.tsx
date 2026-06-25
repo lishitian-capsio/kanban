@@ -14,8 +14,8 @@ import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-pa
 import { GitHistoryView } from "@/components/git-history-view";
 import { DockableChatPanel } from "@/components/home-agent/dockable-chat-panel";
 import { HomeSidebarAgentPanel } from "@/components/home-agent/home-sidebar-agent-panel";
+import { SidebarProjectSwitcher } from "@/components/home-agent/project-switcher";
 import { KanbanBoard } from "@/components/kanban-board";
-import { ProjectNavigationPanel } from "@/components/project-navigation-panel";
 import { RuntimeSettingsDialog, type RuntimeSettingsSection } from "@/components/runtime-settings-dialog";
 import { StartupOnboardingDialog } from "@/components/startup-onboarding-dialog";
 import { TaskCreateDialog } from "@/components/task-create-dialog";
@@ -60,7 +60,6 @@ import { useTerminalPanels } from "@/hooks/use-terminal-panels";
 import { useWorkspaceSync } from "@/hooks/use-workspace-sync";
 import { LayoutCustomizationsProvider } from "@/resize/layout-customizations";
 import { ResizableBottomPane } from "@/resize/resizable-bottom-pane";
-import { useProjectNavigationLayout } from "@/resize/use-project-navigation-layout";
 import { getTaskAgentNavbarHint, isTaskAgentSetupSatisfied } from "@/runtime/native-agent";
 import type { RuntimeReasoningEffort, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useRuntimeProjectConfig } from "@/runtime/use-runtime-project-config";
@@ -712,11 +711,6 @@ export default function App(): ReactElement {
 		return undefined;
 	}, [selectedCard]);
 
-	const sidebarLayout = useProjectNavigationLayout();
-	const handleToggleSidebar = useCallback(() => {
-		sidebarLayout.setSidebarCollapsed(!sidebarLayout.isCollapsed);
-	}, [sidebarLayout]);
-
 	const navbarWorkspacePath = hasNoProjects ? undefined : activeWorkspacePath;
 	const navbarWorkspaceHint = hasNoProjects ? undefined : activeWorkspaceHint;
 	const navbarRuntimeHint = hasNoProjects ? undefined : runtimeHint;
@@ -820,27 +814,25 @@ export default function App(): ReactElement {
 	return (
 		<LayoutCustomizationsProvider onResetBottomTerminalLayoutCustomizations={resetBottomTerminalLayoutCustomizations}>
 			<div className="flex h-[100svh] min-w-0 overflow-hidden">
-				{!selectedCard ? (
-					<ProjectNavigationPanel
-						projects={displayedProjects}
-						isLoadingProjects={isProjectListLoading}
-						currentProjectId={navigationCurrentProjectId}
-						removingProjectId={removingProjectId}
-						onSelectProject={(projectId) => {
-							void handleSelectProject(projectId);
-						}}
-						onRemoveProject={handleRemoveProject}
-						onAddProject={() => {
-							void handleAddProject();
-						}}
-						sidebarWidth={sidebarLayout.sidebarWidth}
-						setExpandedSidebarWidth={sidebarLayout.setExpandedSidebarWidth}
-						isCollapsed={sidebarLayout.isCollapsed}
-						setSidebarCollapsed={sidebarLayout.setSidebarCollapsed}
-					/>
-				) : null}
 				{isHomeChatAvailable && chatDock.open ? (
-					<DockableChatPanel dock={chatDock}>
+					<DockableChatPanel
+						dock={chatDock}
+						projectSwitcher={
+							<SidebarProjectSwitcher
+								projects={displayedProjects}
+								isLoadingProjects={isProjectListLoading}
+								currentProjectId={navigationCurrentProjectId}
+								removingProjectId={removingProjectId}
+								onSelectProject={(projectId) => {
+									void handleSelectProject(projectId);
+								}}
+								onRemoveProject={handleRemoveProject}
+								onAddProject={() => {
+									void handleAddProject();
+								}}
+							/>
+						}
+					>
 						<HomeSidebarAgentPanel
 							currentProjectId={currentProjectId}
 							hasNoProjects={hasNoProjects}
@@ -853,7 +845,6 @@ export default function App(): ReactElement {
 				) : null}
 				<div className="order-2 flex flex-col flex-1 min-w-0 overflow-hidden">
 					<TopBar
-						onToggleSidebar={!selectedCard ? handleToggleSidebar : undefined}
 						onBack={selectedCard ? handleBack : undefined}
 						workspacePath={navbarWorkspacePath}
 						isWorkspacePathLoading={shouldShowProjectLoadingState}
