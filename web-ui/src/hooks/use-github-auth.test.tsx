@@ -6,6 +6,7 @@ import type {
 	RuntimeGithubAuthStatus,
 	RuntimeGithubBeginLoginResponse,
 	RuntimeGithubLogoutResponse,
+	RuntimeGithubPendingLoginResponse,
 	RuntimeGithubPollLoginResponse,
 } from "@/runtime/types";
 import { type UseGithubAuthResult, useGithubAuth } from "./use-github-auth";
@@ -13,15 +14,18 @@ import { type UseGithubAuthResult, useGithubAuth } from "./use-github-auth";
 const queryMocks = vi.hoisted(() => ({
 	fetchGithubAuthStatus: vi.fn<(workspaceId: string | null) => Promise<RuntimeGithubAuthStatus>>(),
 	beginGithubLogin: vi.fn<(workspaceId: string | null) => Promise<RuntimeGithubBeginLoginResponse>>(),
-	pollGithubLogin:
-		vi.fn<(workspaceId: string | null, deviceCode: string) => Promise<RuntimeGithubPollLoginResponse>>(),
+	fetchGithubPendingLogin: vi.fn<(workspaceId: string | null) => Promise<RuntimeGithubPendingLoginResponse>>(),
+	pollGithubLogin: vi.fn<(workspaceId: string | null) => Promise<RuntimeGithubPollLoginResponse>>(),
+	cancelGithubLogin: vi.fn<(workspaceId: string | null) => Promise<void>>(),
 	logoutGithub: vi.fn<(workspaceId: string | null) => Promise<RuntimeGithubLogoutResponse>>(),
 }));
 
 vi.mock("@/runtime/runtime-config-query", () => ({
 	fetchGithubAuthStatus: queryMocks.fetchGithubAuthStatus,
 	beginGithubLogin: queryMocks.beginGithubLogin,
+	fetchGithubPendingLogin: queryMocks.fetchGithubPendingLogin,
 	pollGithubLogin: queryMocks.pollGithubLogin,
+	cancelGithubLogin: queryMocks.cancelGithubLogin,
 	logoutGithub: queryMocks.logoutGithub,
 }));
 
@@ -37,12 +41,13 @@ const signedIn: RuntimeGithubAuthStatus = {
 	expiresAt: null,
 };
 
+// `expiresAt` is a far-future epoch ms so normal flows never trip the client expiry guard.
+const FAR_FUTURE = 1_900_000_000_000;
 const grant: RuntimeGithubBeginLoginResponse = {
-	deviceCode: "device-123",
 	userCode: "ABCD-1234",
 	verificationUri: "https://github.com/login/device",
 	intervalSeconds: 5,
-	expiresInSeconds: 900,
+	expiresAt: FAR_FUTURE,
 };
 
 describe("useGithubAuth", () => {
@@ -54,6 +59,10 @@ describe("useGithubAuth", () => {
 		for (const mock of Object.values(queryMocks)) {
 			mock.mockReset();
 		}
+		// Sensible defaults: no in-flight login to resume, cancel succeeds. Tests that exercise
+		// resume / cancel override these.
+		queryMocks.fetchGithubPendingLogin.mockResolvedValue({ pending: null });
+		queryMocks.cancelGithubLogin.mockResolvedValue();
 		container = document.createElement("div");
 		document.body.appendChild(container);
 		root = createRoot(container);
@@ -265,14 +274,14 @@ describe("useGithubAuth", () => {
 	it("stops with an expired error once the code lifetime elapses", async () => {
 		vi.useFakeTimers();
 		queryMocks.fetchGithubAuthStatus.mockResolvedValue(signedOut);
-		queryMocks.beginGithubLogin.mockResolvedValue({ ...grant, expiresInSeconds: 1 });
+		// Code expires 1s from now; the first poll tick (at +5s) is already past it.
+		queryMocks.beginGithubLogin.mockResolvedValue({ ...grant, expiresAt: Date.now() + 1000 });
 
 		const { getState } = await renderHook();
 
 		await act(async () => {
 			await getState().login();
 		});
-		// First tick is at +5s, already past the 1s code lifetime.
 		await act(async () => {
 			await vi.advanceTimersByTimeAsync(5000);
 		});
@@ -280,6 +289,67 @@ describe("useGithubAuth", () => {
 		const { flow } = getState();
 		expect(flow.kind).toBe("error");
 		expect(queryMocks.pollGithubLogin).not.toHaveBeenCalled();
+	});
+
+	it("resumes an in-flight login after a refresh, then completes once authorized", async () => {
+		vi.useFakeTimers();
+		queryMocks.fetchGithubAuthStatus.mockResolvedValue(signedOut);
+		// A login was started before this mount (e.g. the page was refreshed mid-flow); the
+		// backend still holds the pending device-flow login.
+		queryMocks.fetchGithubPendingLogin.mockResolvedValue({
+			pending: {
+				userCode: "WXYZ-9999",
+				verificationUri: "https://github.com/login/device",
+				intervalSeconds: 5,
+				expiresAt: FAR_FUTURE,
+			},
+		});
+		queryMocks.pollGithubLogin.mockResolvedValue({ state: "complete", status: signedIn });
+
+		const { getState } = await renderHook();
+
+		// Without the user touching anything, the hook picks the login back up.
+		const resumed = getState().flow;
+		expect(resumed.kind).toBe("awaiting");
+		if (resumed.kind === "awaiting") {
+			expect(resumed.prompt.userCode).toBe("WXYZ-9999");
+		}
+
+		// It polls the server-held login (no device code needed) and completes.
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(5000);
+		});
+		expect(getState().flow.kind).toBe("idle");
+		expect(getState().status).toEqual(signedIn);
+		expect(queryMocks.pollGithubLogin).toHaveBeenCalled();
+	});
+
+	it("does not resume when there is no pending login (stays idle)", async () => {
+		queryMocks.fetchGithubAuthStatus.mockResolvedValue(signedOut);
+		queryMocks.fetchGithubPendingLogin.mockResolvedValue({ pending: null });
+
+		const { getState } = await renderHook();
+
+		expect(getState().flow.kind).toBe("idle");
+	});
+
+	it("resets to idle when the server reports no pending login mid-poll", async () => {
+		vi.useFakeTimers();
+		queryMocks.fetchGithubAuthStatus.mockResolvedValue(signedOut);
+		queryMocks.beginGithubLogin.mockResolvedValue(grant);
+		// The pending login was completed/cancelled elsewhere (e.g. another tab) → idle.
+		queryMocks.pollGithubLogin.mockResolvedValue({ state: "idle" });
+
+		const { getState } = await renderHook();
+		await act(async () => {
+			await getState().login();
+		});
+		expect(getState().flow.kind).toBe("awaiting");
+
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(5000);
+		});
+		expect(getState().flow.kind).toBe("idle");
 	});
 
 	it("cancelLogin() returns to idle and halts polling", async () => {
@@ -297,6 +367,8 @@ describe("useGithubAuth", () => {
 			getState().cancelLogin();
 		});
 		expect(getState().flow.kind).toBe("idle");
+		// Cancel must clear the server-held pending login so it can't be resumed later.
+		expect(queryMocks.cancelGithubLogin).toHaveBeenCalled();
 
 		await act(async () => {
 			await vi.advanceTimersByTimeAsync(15000);

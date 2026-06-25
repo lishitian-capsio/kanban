@@ -16,6 +16,7 @@ import type {
 	RuntimeGithubAuthStatus,
 	RuntimeGithubBeginLoginResponse,
 	RuntimeGithubLogoutResponse,
+	RuntimeGithubPendingLoginResponse,
 	RuntimeGithubPollLoginResponse,
 	RuntimeKanbanMcpAuthStatusResponse,
 	RuntimeKanbanMcpOAuthResponse,
@@ -194,12 +195,22 @@ export async function beginGithubLogin(workspaceId: string | null): Promise<Runt
 	return await trpcClient.github.beginLogin.mutate();
 }
 
-export async function pollGithubLogin(
-	workspaceId: string | null,
-	deviceCode: string,
-): Promise<RuntimeGithubPollLoginResponse> {
+/** The in-flight login (if any) to resume after a UI refresh / brief disconnect. */
+export async function fetchGithubPendingLogin(workspaceId: string | null): Promise<RuntimeGithubPendingLoginResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.github.pollLogin.mutate({ deviceCode });
+	return await trpcClient.github.pendingLogin.query();
+}
+
+export async function pollGithubLogin(workspaceId: string | null): Promise<RuntimeGithubPollLoginResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	// The device code lives server-side now; the UI polls the server-held pending login.
+	return await trpcClient.github.pollLogin.mutate();
+}
+
+/** Discard the in-flight login server-side (explicit Cancel). */
+export async function cancelGithubLogin(workspaceId: string | null): Promise<void> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	await trpcClient.github.cancelLogin.mutate();
 }
 
 export async function logoutGithub(workspaceId: string | null): Promise<RuntimeGithubLogoutResponse> {

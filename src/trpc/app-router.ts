@@ -246,7 +246,7 @@ import {
 	runtimeGithubAuthStatusSchema,
 	runtimeGithubBeginLoginResponseSchema,
 	runtimeGithubLogoutResponseSchema,
-	runtimeGithubPollLoginRequestSchema,
+	runtimeGithubPendingLoginResponseSchema,
 	runtimeGithubPollLoginResponseSchema,
 	runtimeGitLogRequestSchema,
 	runtimeGitLogResponseSchema,
@@ -1341,21 +1341,18 @@ export const runtimeAppRouter = t.router({
 			return await getGitHubAuthService().getStatus();
 		}),
 		beginLogin: t.procedure.output(runtimeGithubBeginLoginResponseSchema).mutation(async () => {
-			const grant = await getGitHubAuthService().beginLogin();
-			return {
-				deviceCode: grant.deviceCode,
-				userCode: grant.userCode,
-				verificationUri: grant.verificationUri,
-				intervalSeconds: grant.intervalSeconds,
-				expiresInSeconds: grant.expiresInSeconds,
-			};
+			return await getGitHubAuthService().beginLogin();
 		}),
-		pollLogin: t.procedure
-			.input(runtimeGithubPollLoginRequestSchema)
-			.output(runtimeGithubPollLoginResponseSchema)
-			.mutation(async ({ input }) => {
-				return await getGitHubAuthService().pollLogin(input.deviceCode);
-			}),
+		// The in-flight login a UI resumes after a refresh; the `deviceCode` stays server-side.
+		pendingLogin: t.procedure.output(runtimeGithubPendingLoginResponseSchema).query(async () => {
+			return { pending: await getGitHubAuthService().getPendingLogin() };
+		}),
+		pollLogin: t.procedure.output(runtimeGithubPollLoginResponseSchema).mutation(async () => {
+			return await getGitHubAuthService().pollLogin();
+		}),
+		cancelLogin: t.procedure.mutation(async () => {
+			await getGitHubAuthService().cancelLogin();
+		}),
 		logout: t.procedure.output(runtimeGithubLogoutResponseSchema).mutation(async () => {
 			await getGitHubAuthService().logout();
 			return { status: await getGitHubAuthService().getStatus() };

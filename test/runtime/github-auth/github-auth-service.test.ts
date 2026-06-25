@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GitHubAuthService } from "../../../src/github-auth/github-auth-service";
 import { readPersistedGitHubAuth, writePersistedGitHubAuth } from "../../../src/github-auth/github-auth-store";
 import { GITHUB_TOKEN_ENV_VAR } from "../../../src/github-auth/github-git-credentials";
+import { readPendingGitHubLogin } from "../../../src/github-auth/github-pending-login-store";
 import { createTempDir } from "../../utilities/temp-dir";
 
 const grant = {
@@ -20,6 +21,7 @@ describe("GitHubAuthService", () => {
 	let dir: string;
 	let cleanup: () => void;
 	let file: string;
+	let pendingFile: string;
 	let nowMs: number;
 
 	beforeEach(() => {
@@ -27,12 +29,18 @@ describe("GitHubAuthService", () => {
 		dir = tmp.path;
 		cleanup = tmp.cleanup;
 		file = join(dir, "settings", "github-auth.json");
+		pendingFile = join(dir, "settings", "github-login-pending.json");
 		nowMs = 1_700_000_000_000;
 	});
 	afterEach(() => cleanup());
 
 	function makeService(overrides: ConstructorParameters<typeof GitHubAuthService>[0] = {}) {
-		return new GitHubAuthService({ resolvePath: () => file, now: () => nowMs, ...overrides });
+		return new GitHubAuthService({
+			resolvePath: () => file,
+			resolvePendingPath: () => pendingFile,
+			now: () => nowMs,
+			...overrides,
+		});
 	}
 
 	it("reports not authenticated and injects nothing when logged out", async () => {
@@ -87,7 +95,44 @@ describe("GitHubAuthService", () => {
 		expect((await service.getStatus()).authenticated).toBe(false);
 	});
 
-	it("non-blocking device flow: beginLogin then pollLogin pending → complete", async () => {
+	it("beginLogin persists the pending login server-side and returns the prompt", async () => {
+		const service = makeService({ requestDeviceCode: async () => grant });
+		const prompt = await service.beginLogin();
+		expect(prompt).toEqual({
+			userCode: "WXYZ",
+			verificationUri: "https://github.com/login/device",
+			intervalSeconds: 1,
+			expiresAt: nowMs + 900 * 1000,
+		});
+		// The deviceCode is persisted (not returned) so a UI refresh can resume by polling.
+		expect(await readPendingGitHubLogin(pendingFile)).toMatchObject({
+			deviceCode: "DEV",
+			userCode: "WXYZ",
+			startedAt: nowMs,
+			expiresAt: nowMs + 900 * 1000,
+		});
+	});
+
+	it("getPendingLogin returns the active prompt for a UI to resume after a refresh", async () => {
+		const service = makeService({ requestDeviceCode: async () => grant });
+		await service.beginLogin();
+		expect(await service.getPendingLogin()).toEqual({
+			userCode: "WXYZ",
+			verificationUri: "https://github.com/login/device",
+			intervalSeconds: 1,
+			expiresAt: nowMs + 900 * 1000,
+		});
+	});
+
+	it("getPendingLogin clears and returns null once the code has expired", async () => {
+		const service = makeService({ requestDeviceCode: async () => ({ ...grant, expiresInSeconds: 10 }) });
+		await service.beginLogin();
+		nowMs += 11_000; // past the 10s lifetime
+		expect(await service.getPendingLogin()).toBeNull();
+		expect(await readPendingGitHubLogin(pendingFile)).toBeNull();
+	});
+
+	it("stateful device flow: beginLogin then pollLogin() pending → complete clears pending", async () => {
 		let polls = 0;
 		const service = makeService({
 			requestDeviceCode: async () => grant,
@@ -96,19 +141,61 @@ describe("GitHubAuthService", () => {
 			fetchAuthenticatedLogin: async () => "octocat",
 		});
 
-		expect(await service.beginLogin()).toEqual(grant);
-		expect(await service.pollLogin(grant.deviceCode)).toEqual({ state: "pending" });
-		const done = await service.pollLogin(grant.deviceCode);
+		await service.beginLogin();
+		expect(await service.pollLogin()).toEqual({ state: "pending" });
+		const done = await service.pollLogin();
 		expect(done).toMatchObject({ state: "complete", status: { authenticated: true, login: "octocat" } });
 		expect(await readPersistedGitHubAuth(file)).toMatchObject({ accessToken: "gho_UI" });
+		// Pending login cleared on success so it can't block a fresh sign-in.
+		expect(await readPendingGitHubLogin(pendingFile)).toBeNull();
 	});
 
-	it("pollLogin surfaces a terminal error without persisting", async () => {
+	it("pollLogin() resumes from disk across a runtime restart (a fresh service instance)", async () => {
+		const before = makeService({ requestDeviceCode: async () => grant });
+		await before.beginLogin();
+
+		// Simulate a runtime restart: a brand-new service instance reads the persisted pending
+		// login and polls it to completion — no UI-held state required.
+		const after = makeService({
+			pollAccessTokenOnce: async () => ({ kind: "token", grant: { accessToken: "gho_RESUMED", scope: "repo" } }),
+			fetchAuthenticatedLogin: async () => "octocat",
+		});
+		const done = await after.pollLogin();
+		expect(done).toMatchObject({ state: "complete", status: { authenticated: true, login: "octocat" } });
+		expect(await readPersistedGitHubAuth(file)).toMatchObject({ accessToken: "gho_RESUMED" });
+	});
+
+	it("pollLogin() returns idle when there is no pending login", async () => {
+		const service = makeService();
+		expect(await service.pollLogin()).toEqual({ state: "idle" });
+	});
+
+	it("pollLogin() surfaces a terminal error and clears the pending login", async () => {
 		const service = makeService({
+			requestDeviceCode: async () => grant,
 			pollAccessTokenOnce: async () => ({ kind: "error", message: "access_denied" }),
 		});
-		expect(await service.pollLogin("DEV")).toEqual({ state: "error", message: "access_denied" });
+		await service.beginLogin();
+		expect(await service.pollLogin()).toEqual({ state: "error", message: "access_denied" });
 		expect(await readPersistedGitHubAuth(file)).toBeNull();
+		expect(await readPendingGitHubLogin(pendingFile)).toBeNull();
+	});
+
+	it("pollLogin() surfaces an expiry error and clears the pending login", async () => {
+		const service = makeService({ requestDeviceCode: async () => ({ ...grant, expiresInSeconds: 10 }) });
+		await service.beginLogin();
+		nowMs += 11_000;
+		const result = await service.pollLogin();
+		expect(result.state).toBe("error");
+		expect(await readPendingGitHubLogin(pendingFile)).toBeNull();
+	});
+
+	it("cancelLogin clears the pending login", async () => {
+		const service = makeService({ requestDeviceCode: async () => grant });
+		await service.beginLogin();
+		await service.cancelLogin();
+		expect(await readPendingGitHubLogin(pendingFile)).toBeNull();
+		expect(await service.getPendingLogin()).toBeNull();
 	});
 
 	it("logout removes the credential and returns to passthrough", async () => {

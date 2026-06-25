@@ -2,13 +2,28 @@
 //
 // The backend `github` tRPC router exposes a secret-free surface: `status` (who is
 // signed in, token expiry), `beginLogin` (device-flow handshake → user code +
-// verification URL), `pollLogin` (one poll per call), and `logout`. The OAuth token
-// itself never crosses the wire. This hook owns the device-flow state machine and the
+// verification URL), `pendingLogin` (the in-flight login to resume), `pollLogin` (one
+// poll of the server-held login), `cancelLogin`, and `logout`. The OAuth token AND the
+// device code never cross the wire. This hook owns the device-flow state machine and the
 // polling lifecycle so the view component can stay presentational.
+//
+// **Refresh/disconnect resilience:** the device-flow pending state (device code, interval,
+// expiry) is owned by the backend, not this component. On mount the hook queries
+// `pendingLogin` and, if a non-expired login is in flight, resumes polling automatically.
+// This is what stops the "GitHub says connected, Kanban says signed out" dead-end: a page
+// refresh or a brief tRPC/ws disconnect used to discard the only copy of the device code
+// and silently abandon the flow.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { showAppToast } from "@/components/app-toaster";
-import { beginGithubLogin, fetchGithubAuthStatus, logoutGithub, pollGithubLogin } from "@/runtime/runtime-config-query";
+import {
+	beginGithubLogin,
+	cancelGithubLogin,
+	fetchGithubAuthStatus,
+	fetchGithubPendingLogin,
+	logoutGithub,
+	pollGithubLogin,
+} from "@/runtime/runtime-config-query";
 import type { RuntimeGithubAuthStatus } from "@/runtime/types";
 import { useTrpcQuery } from "@/runtime/use-trpc-query";
 import { createLogger } from "@/utils/logger";
@@ -83,67 +98,81 @@ export function useGithubAuth(workspaceId: string | null): UseGithubAuthResult {
 	const [isPolling, setIsPolling] = useState(false);
 	const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-	// Refs keep the poll tick stable so changing it never resets the interval, and let
-	// us detect cancellation of an in-flight poll.
-	const deviceCodeRef = useRef<string | null>(null);
+	// A monotonic "flow generation": every state-machine transition (start, cancel, resume,
+	// terminal) bumps it. A poll request captures the generation at dispatch and drops its
+	// result if the generation changed while it was in flight (cancel/restart raced the
+	// request). It replaces the old device-code-identity guard now that the device code lives
+	// server-side.
+	const generationRef = useRef(0);
+	// Client-side expiry guard (the backend also enforces expiry) so a dead code stops polling
+	// without a pointless round-trip.
 	const expiresAtRef = useRef<number>(0);
 	const pollInFlightRef = useRef(false);
 	const pollFailuresRef = useRef(0);
+	// Mirror of the current flow kind, read by the resume effect without depending on `flow`.
+	const flowKindRef = useRef<GithubAuthFlow["kind"]>("idle");
+	useEffect(() => {
+		flowKindRef.current = flow.kind;
+	}, [flow.kind]);
 
 	const setDataRef = useRef(statusQuery.setData);
 	setDataRef.current = statusQuery.setData;
 
-	const login = useCallback(async () => {
-		setFlow({ kind: "starting" });
-		try {
-			const grant = await beginGithubLogin(workspaceId);
-			deviceCodeRef.current = grant.deviceCode;
-			pollFailuresRef.current = 0;
-			expiresAtRef.current = Date.now() + grant.expiresInSeconds * 1000;
-			setPollDelayMs(Math.max(grant.intervalSeconds, MIN_POLL_INTERVAL_SECONDS) * 1000);
-			setFlow({
-				kind: "awaiting",
-				prompt: {
-					userCode: grant.userCode,
-					verificationUri: grant.verificationUri,
-					expiresAt: expiresAtRef.current,
-				},
-			});
-		} catch (error) {
-			log.warn("github.beginLogin failed", { error });
-			deviceCodeRef.current = null;
-			setFlow({ kind: "error", message: toMessage(error, "Could not reach GitHub to start sign-in.") });
-		}
-	}, [workspaceId]);
-
-	const cancelLogin = useCallback(() => {
-		deviceCodeRef.current = null;
+	// Enter the awaiting state for a prompt, starting a fresh poll generation.
+	const enterAwaiting = useCallback((prompt: GithubLoginPrompt, intervalSeconds: number) => {
+		generationRef.current += 1;
 		pollFailuresRef.current = 0;
-		setFlow({ kind: "idle" });
+		expiresAtRef.current = prompt.expiresAt;
+		setPollDelayMs(Math.max(intervalSeconds, MIN_POLL_INTERVAL_SECONDS) * 1000);
+		setFlow({ kind: "awaiting", prompt });
 	}, []);
 
+	const login = useCallback(async () => {
+		generationRef.current += 1; // invalidate any in-flight poll from a prior flow
+		setFlow({ kind: "starting" });
+		try {
+			const prompt = await beginGithubLogin(workspaceId);
+			enterAwaiting(
+				{ userCode: prompt.userCode, verificationUri: prompt.verificationUri, expiresAt: prompt.expiresAt },
+				prompt.intervalSeconds,
+			);
+		} catch (error) {
+			log.warn("github.beginLogin failed", { error });
+			generationRef.current += 1;
+			setFlow({ kind: "error", message: toMessage(error, "Could not reach GitHub to start sign-in.") });
+		}
+	}, [workspaceId, enterAwaiting]);
+
+	const cancelLogin = useCallback(() => {
+		generationRef.current += 1;
+		pollFailuresRef.current = 0;
+		setFlow({ kind: "idle" });
+		// Best-effort: clear the server-held pending login so it can't be resumed later.
+		void cancelGithubLogin(workspaceId).catch((error) => log.warn("github.cancelLogin failed", { error }));
+	}, [workspaceId]);
+
 	const pollTick = useCallback(async () => {
-		const deviceCode = deviceCodeRef.current;
-		if (deviceCode === null || pollInFlightRef.current) {
+		if (pollInFlightRef.current) {
 			return;
 		}
 		if (Date.now() > expiresAtRef.current) {
-			deviceCodeRef.current = null;
+			generationRef.current += 1;
 			setFlow({ kind: "error", message: "The sign-in code expired. Start again to get a new code." });
 			return;
 		}
+		const generation = generationRef.current;
 		pollInFlightRef.current = true;
 		setIsPolling(true);
 		try {
-			const result = await pollGithubLogin(workspaceId, deviceCode);
+			const result = await pollGithubLogin(workspaceId);
 			// A cancel / restart happened while this request was in flight — drop the result.
-			if (deviceCodeRef.current !== deviceCode) {
+			if (generationRef.current !== generation) {
 				return;
 			}
-			// The backend answered (pending/complete/error all count) — clear the failure streak.
+			// The backend answered (pending/complete/error/idle all count) — clear the streak.
 			pollFailuresRef.current = 0;
 			if (result.state === "complete") {
-				deviceCodeRef.current = null;
+				generationRef.current += 1;
 				setDataRef.current(result.status);
 				setFlow({ kind: "idle" });
 				showAppToast({
@@ -155,14 +184,18 @@ export function useGithubAuth(workspaceId: string | null): UseGithubAuthResult {
 					timeout: 4000,
 				});
 			} else if (result.state === "error") {
-				deviceCodeRef.current = null;
+				generationRef.current += 1;
 				setFlow({ kind: "error", message: result.message });
+			} else if (result.state === "idle") {
+				// The server has no pending login (completed/cancelled elsewhere) — reset quietly.
+				generationRef.current += 1;
+				setFlow({ kind: "idle" });
 			}
 			// "pending" → keep polling on the next tick.
 		} catch (error) {
 			// A cancel / restart happened while this request was in flight — drop the failure
 			// so it can't taint a freshly started (or cancelled) flow.
-			if (deviceCodeRef.current !== deviceCode) {
+			if (generationRef.current !== generation) {
 				return;
 			}
 			pollFailuresRef.current += 1;
@@ -173,7 +206,7 @@ export function useGithubAuth(workspaceId: string | null): UseGithubAuthResult {
 					error,
 					failures: pollFailuresRef.current,
 				});
-				deviceCodeRef.current = null;
+				generationRef.current += 1;
 				pollFailuresRef.current = 0;
 				setFlow({
 					kind: "error",
@@ -199,6 +232,35 @@ export function useGithubAuth(workspaceId: string | null): UseGithubAuthResult {
 		},
 		flow.kind === "awaiting" ? pollDelayMs : null,
 	);
+
+	// Resume an in-flight login started before a refresh / brief disconnect. The backend owns
+	// the device code, so the only thing lost on reload is this component's view of the flow —
+	// re-fetch it and pick polling back up so an authorization that lands in this window still
+	// completes. Only resumes from idle: never clobber a flow the user just (re)started.
+	useEffect(() => {
+		let cancelled = false;
+		void (async () => {
+			try {
+				const { pending } = await fetchGithubPendingLogin(workspaceId);
+				if (cancelled || !pending || flowKindRef.current !== "idle") {
+					return;
+				}
+				enterAwaiting(
+					{
+						userCode: pending.userCode,
+						verificationUri: pending.verificationUri,
+						expiresAt: pending.expiresAt,
+					},
+					pending.intervalSeconds,
+				);
+			} catch (error) {
+				log.warn("github.pendingLogin resume check failed", { error });
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [workspaceId, enterAwaiting]);
 
 	const logout = useCallback(async () => {
 		setIsLoggingOut(true);
@@ -226,10 +288,10 @@ export function useGithubAuth(workspaceId: string | null): UseGithubAuthResult {
 		await refetchRef.current();
 	}, []);
 
-	// Stop polling if the component unmounts mid-flow.
+	// Drop any in-flight poll's state update if the component unmounts mid-flow.
 	useEffect(
 		() => () => {
-			deviceCodeRef.current = null;
+			generationRef.current += 1;
 		},
 		[],
 	);

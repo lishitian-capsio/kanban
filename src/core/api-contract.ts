@@ -1062,25 +1062,39 @@ export const runtimeGithubAuthStatusSchema = z.object({
 });
 export type RuntimeGithubAuthStatus = z.infer<typeof runtimeGithubAuthStatusSchema>;
 
-/** Device-flow handshake returned by `github.beginLogin` (no secret beyond the device code). */
-export const runtimeGithubBeginLoginResponseSchema = z.object({
-	deviceCode: z.string(),
+/**
+ * The user-facing view of an in-flight device-flow login. The `deviceCode` is deliberately
+ * NOT here: it stays server-side so the UI polls a server-held pending login (by no argument)
+ * and a page refresh / brief disconnect can't orphan the flow. `expiresAt` is an absolute
+ * epoch-ms anchor (the runtime's clock) so a resuming UI shows the correct remaining time.
+ */
+export const runtimeGithubLoginPromptSchema = z.object({
 	userCode: z.string(),
 	verificationUri: z.string(),
 	intervalSeconds: z.number().int().nonnegative(),
-	expiresInSeconds: z.number().int().nonnegative(),
+	expiresAt: z.number().int().positive(),
 });
+export type RuntimeGithubLoginPrompt = z.infer<typeof runtimeGithubLoginPromptSchema>;
+
+/** Device-flow handshake returned by `github.beginLogin` (the prompt; no `deviceCode`). */
+export const runtimeGithubBeginLoginResponseSchema = runtimeGithubLoginPromptSchema;
 export type RuntimeGithubBeginLoginResponse = z.infer<typeof runtimeGithubBeginLoginResponseSchema>;
 
-export const runtimeGithubPollLoginRequestSchema = z.object({
-	deviceCode: z.string().min(1),
+/**
+ * `github.pendingLogin` — the in-flight login a UI can resume after a refresh, or `null` when
+ * none is active (none started, expired, or already completed/cancelled).
+ */
+export const runtimeGithubPendingLoginResponseSchema = z.object({
+	pending: runtimeGithubLoginPromptSchema.nullable(),
 });
-export type RuntimeGithubPollLoginRequest = z.infer<typeof runtimeGithubPollLoginRequestSchema>;
+export type RuntimeGithubPendingLoginResponse = z.infer<typeof runtimeGithubPendingLoginResponseSchema>;
 
 export const runtimeGithubPollLoginResponseSchema = z.discriminatedUnion("state", [
 	z.object({ state: z.literal("pending") }),
 	z.object({ state: z.literal("complete"), status: runtimeGithubAuthStatusSchema }),
 	z.object({ state: z.literal("error"), message: z.string() }),
+	// No pending login server-side — the UI should drop back to its idle state.
+	z.object({ state: z.literal("idle") }),
 ]);
 export type RuntimeGithubPollLoginResponse = z.infer<typeof runtimeGithubPollLoginResponseSchema>;
 

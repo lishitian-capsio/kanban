@@ -22,7 +22,7 @@ import {
 	statGitHubAuthMtimeMs,
 	writePersistedGitHubAuth,
 } from "./github-auth-store";
-import type { GitHubAuthStatus, PersistedGitHubAuth } from "./github-auth-types";
+import type { GitHubAuthStatus, PendingGitHubLogin, PersistedGitHubAuth } from "./github-auth-types";
 import {
 	type DeviceCodeGrant,
 	fetchAuthenticatedLogin,
@@ -39,6 +39,12 @@ import {
 	buildGitHubCredentialEnv,
 	type GitHubGitInjection,
 } from "./github-git-credentials";
+import {
+	clearPendingGitHubLogin,
+	getGitHubPendingLoginFilePath,
+	readPendingGitHubLogin,
+	writePendingGitHubLogin,
+} from "./github-pending-login-store";
 
 const log = createLogger("github-auth.service");
 
@@ -47,6 +53,7 @@ const EXPIRY_SKEW_MS = 60_000;
 
 export interface GitHubAuthServiceDeps {
 	resolvePath?: () => string;
+	resolvePendingPath?: () => string;
 	now?: () => number;
 	requestDeviceCode?: (clientId: string) => Promise<DeviceCodeGrant>;
 	pollForAccessToken?: (
@@ -63,7 +70,23 @@ export interface GitHubAuthServiceDeps {
 export type GitHubLoginPollResult =
 	| { state: "pending" }
 	| { state: "complete"; status: GitHubAuthStatus }
-	| { state: "error"; message: string };
+	| { state: "error"; message: string }
+	/** No pending login exists server-side (none started, or it was completed/cancelled elsewhere). */
+	| { state: "idle" };
+
+/**
+ * The user-facing view of an in-flight device-flow login, returned by `beginLogin` and
+ * `getPendingLogin`. Carries everything the UI needs to render the prompt and pace its
+ * polling — but never the `deviceCode` (that stays server-side; the UI polls by no argument).
+ */
+export interface GitHubLoginPrompt {
+	userCode: string;
+	verificationUri: string;
+	/** Server-recommended minimum poll interval (seconds). */
+	intervalSeconds: number;
+	/** Epoch ms the device/user code pair expires. */
+	expiresAt: number;
+}
 
 export interface GitHubLoginCallbacks {
 	/** Surface the verification URL + user code to the operator (printed by the CLI). */
@@ -73,13 +96,15 @@ export interface GitHubLoginCallbacks {
 
 export class GitHubAuthService {
 	private readonly resolvePath: () => string;
+	private readonly resolvePendingPath: () => string;
 	private readonly now: () => number;
-	private readonly deps: Required<Omit<GitHubAuthServiceDeps, "resolvePath" | "now">>;
+	private readonly deps: Required<Omit<GitHubAuthServiceDeps, "resolvePath" | "resolvePendingPath" | "now">>;
 	private cache: { mtimeMs: number | null; record: PersistedGitHubAuth | null } | null = null;
 	private refreshInFlight: Promise<PersistedGitHubAuth | null> | null = null;
 
 	constructor(deps: GitHubAuthServiceDeps = {}) {
 		this.resolvePath = deps.resolvePath ?? getGitHubAuthFilePath;
+		this.resolvePendingPath = deps.resolvePendingPath ?? getGitHubPendingLoginFilePath;
 		this.now = deps.now ?? Date.now;
 		this.deps = {
 			requestDeviceCode: deps.requestDeviceCode ?? requestDeviceCode,
@@ -202,32 +227,95 @@ export class GitHubAuthService {
 		return this.statusOf(record);
 	}
 
-	/**
-	 * Step 1 of the non-blocking (UI) device flow: request a device + user code. The caller
-	 * shows the code, then polls {@link pollLogin} with the returned `deviceCode`.
-	 */
-	async beginLogin(): Promise<DeviceCodeGrant> {
-		return this.deps.requestDeviceCode(resolveGitHubOAuthClientId());
+	private toPrompt(pending: PendingGitHubLogin): GitHubLoginPrompt {
+		return {
+			userCode: pending.userCode,
+			verificationUri: pending.verificationUri,
+			intervalSeconds: pending.intervalSeconds,
+			expiresAt: pending.expiresAt,
+		};
+	}
+
+	private isPendingExpired(pending: PendingGitHubLogin): boolean {
+		return pending.expiresAt <= this.now();
 	}
 
 	/**
-	 * Step 2 of the non-blocking (UI) device flow: one poll. On `complete` the token is
-	 * persisted and the new status returned; `pending` means "keep polling"; `error` is a
-	 * terminal device-flow failure.
+	 * Step 1 of the non-blocking (UI) device flow: request a device + user code and **persist
+	 * the in-flight login server-side**, then return the user-facing prompt. The `deviceCode`
+	 * never leaves the runtime — the UI resumes/polls a server-held record (see
+	 * {@link pollLogin} / {@link getPendingLogin}) so a refresh or a brief disconnect can't
+	 * orphan the flow.
 	 */
-	async pollLogin(deviceCode: string): Promise<GitHubLoginPollResult> {
-		const attempt = await this.deps.pollAccessTokenOnce(deviceCode, resolveGitHubOAuthClientId());
+	async beginLogin(): Promise<GitHubLoginPrompt> {
+		const grant = await this.deps.requestDeviceCode(resolveGitHubOAuthClientId());
+		const startedAt = this.now();
+		const pending: PendingGitHubLogin = {
+			deviceCode: grant.deviceCode,
+			userCode: grant.userCode,
+			verificationUri: grant.verificationUri,
+			intervalSeconds: grant.intervalSeconds,
+			startedAt,
+			expiresAt: startedAt + grant.expiresInSeconds * 1000,
+		};
+		await writePendingGitHubLogin(this.resolvePendingPath(), pending);
+		return this.toPrompt(pending);
+	}
+
+	/**
+	 * The current in-flight login prompt, or `null` if none is active. Used by the UI on mount
+	 * / reconnect to resume a login started before a refresh. Lazily clears an expired record
+	 * so a stale pending login never lingers to block a fresh sign-in.
+	 */
+	async getPendingLogin(): Promise<GitHubLoginPrompt | null> {
+		const pending = await readPendingGitHubLogin(this.resolvePendingPath());
+		if (!pending) {
+			return null;
+		}
+		if (this.isPendingExpired(pending)) {
+			await clearPendingGitHubLogin(this.resolvePendingPath());
+			return null;
+		}
+		return this.toPrompt(pending);
+	}
+
+	/**
+	 * Step 2 of the non-blocking (UI) device flow: one poll of the **server-held** pending
+	 * login. `idle` ⇒ nothing to poll; `pending` ⇒ keep polling; `complete` ⇒ token persisted
+	 * (and the pending login cleared); `error` ⇒ a terminal failure or an expired code (also
+	 * cleared). Because the pending login lives on disk, this self-heals across a UI refresh or
+	 * a runtime restart.
+	 */
+	async pollLogin(): Promise<GitHubLoginPollResult> {
+		const pendingPath = this.resolvePendingPath();
+		const pending = await readPendingGitHubLogin(pendingPath);
+		if (!pending) {
+			return { state: "idle" };
+		}
+		if (this.isPendingExpired(pending)) {
+			await clearPendingGitHubLogin(pendingPath);
+			return { state: "error", message: "The sign-in code expired. Start again to get a new code." };
+		}
+		const attempt = await this.deps.pollAccessTokenOnce(pending.deviceCode, resolveGitHubOAuthClientId());
 		if (attempt.kind === "token") {
 			const login = await this.deps.fetchAuthenticatedLogin(attempt.grant.accessToken);
 			const record = this.toRecord(attempt.grant, login);
 			await writePersistedGitHubAuth(this.resolvePath(), record);
 			this.cache = { mtimeMs: await statGitHubAuthMtimeMs(this.resolvePath()), record };
+			await clearPendingGitHubLogin(pendingPath);
 			return { state: "complete", status: this.statusOf(record) };
 		}
 		if (attempt.kind === "error") {
+			await clearPendingGitHubLogin(pendingPath);
 			return { state: "error", message: attempt.message };
 		}
+		// `pending` / `slow_down` ⇒ keep polling on the next UI tick.
 		return { state: "pending" };
+	}
+
+	/** Discard the in-flight login (explicit Cancel). Idempotent. */
+	async cancelLogin(): Promise<void> {
+		await clearPendingGitHubLogin(this.resolvePendingPath());
 	}
 
 	/** Remove the persisted credential (logout). Idempotent. */
