@@ -13,7 +13,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SessionProviderControl } from "@/components/agent-providers/session-provider-control";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
-import { KanbanAgentChatPanel } from "@/components/detail-panels/kanban-agent-chat-panel";
+import {
+	KanbanAgentChatPanel,
+	type KanbanAgentChatPanelHandle,
+} from "@/components/detail-panels/kanban-agent-chat-panel";
+import { HomeNextStepSuggestion } from "@/components/home-agent/home-next-step-suggestion";
 import { HomeThreadBar } from "@/components/home-agent/home-thread-bar";
 import { TerminalAgentHints } from "@/components/home-agent/terminal-agent-hints";
 import { resolveAgentLabel } from "@/components/home-agent/thread-agent-badge";
@@ -134,15 +138,39 @@ export function HomeSidebarAgentPanel({
 	const homeTaskChatMessages = useTaskChatMessages(taskId);
 	const latestHomeTaskChatMessage = useLatestTaskChatMessageForTask(taskId);
 
+	const chatPanelRef = useRef<KanbanAgentChatPanelHandle>(null);
+	const { clearNextStep } = homeThreads;
+	const activeThreadIdForClear = homeThreads.activeThread?.id ?? null;
+	const activeThreadIsDefault = homeThreads.activeThread?.isDefault ?? true;
+	const pendingNextStep = homeThreads.activeThread?.pendingNextStep ?? null;
+
 	const handleSendHomeKanbanChatMessage = useCallback(
 		async (messageTaskId: string, text: string, options?: { mode?: "act" | "plan" }) => {
+			// Any send (typed or via the suggestion chip) supersedes a pending next-step
+			// suggestion — drop the chip locally the instant we send; the backend clears the
+			// persisted value too.
+			if (activeThreadIdForClear && !activeThreadIsDefault) {
+				clearNextStep(activeThreadIdForClear);
+			}
 			const providerId = providerOverrideByTaskId[messageTaskId];
 			return await sendTaskChatMessage(messageTaskId, text, {
 				...options,
 				...(providerId ? { providerId } : {}),
 			});
 		},
-		[providerOverrideByTaskId, sendTaskChatMessage],
+		[activeThreadIdForClear, activeThreadIsDefault, clearNextStep, providerOverrideByTaskId, sendTaskChatMessage],
+	);
+
+	// Clicking the chip sends its text through the SAME path as typing it and pressing enter
+	// (the panel's imperative composer-send), so the agent proceeds with the next step.
+	const handleSendNextStep = useCallback((suggestion: string) => {
+		void chatPanelRef.current?.sendText(suggestion);
+	}, []);
+
+	const nextStepSuggestionSlot = useMemo(
+		() =>
+			pendingNextStep ? <HomeNextStepSuggestion suggestion={pendingNextStep} onSend={handleSendNextStep} /> : null,
+		[pendingNextStep, handleSendNextStep],
 	);
 
 	const handleLoadHomeKanbanChatMessages = useCallback(
@@ -172,12 +200,14 @@ export function HomeSidebarAgentPanel({
 		body = (
 			<KanbanAgentChatPanel
 				key={taskId}
+				ref={chatPanelRef}
 				taskId={taskId}
 				summary={homeAgentPanelSummary ?? createIdleTaskSession(taskId)}
 				defaultMode="act"
 				showComposerModeToggle={false}
 				workspaceId={currentProjectId}
 				runtimeConfig={runtimeProjectConfig}
+				suggestionSlot={nextStepSuggestionSlot}
 				modelControlSlot={
 					<SessionProviderControl
 						workspaceId={currentProjectId}

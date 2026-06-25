@@ -199,6 +199,10 @@ const COMMAND_SCHEMA_REGISTRY: Record<string, CommandSchemaMeta> = {
 		output: { ref: GENERIC_OUTPUT_REF },
 		errors: [...DEFAULT_WORKSPACE_ERRORS, "invalid_argument"],
 	},
+	"home-thread.suggest-next": {
+		output: { ref: GENERIC_OUTPUT_REF },
+		errors: [...DEFAULT_WORKSPACE_ERRORS, "invalid_argument"],
+	},
 	"service.install": {
 		output: { ref: "#/schemas/ServiceActionResult" },
 		errors: ["service_unsupported_platform", "invalid_argument", "internal_error"],

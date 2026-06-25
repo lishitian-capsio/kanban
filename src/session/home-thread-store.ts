@@ -15,6 +15,7 @@ import {
 	renameHomeThread,
 	type SetHomeThreadAutoTitleResult,
 	setHomeThreadAutoTitle,
+	setHomeThreadNextStep,
 } from "./home-thread-registry";
 
 /**
@@ -124,6 +125,22 @@ export class HomeThreadStore {
 			throw new Error(`Home chat thread "${id}" not found.`);
 		}
 		return { thread: result.thread, applied: result.applied };
+	}
+
+	/**
+	 * Set or clear a thread's transient `pendingNextStep` suggestion. Pass a non-empty string
+	 * to record the agent's proposed next step (`home-thread suggest-next`), or `null` to clear
+	 * it (done when the user sends a message in the thread). Returns the updated thread. Throws
+	 * if the thread is missing.
+	 */
+	async setNextStep(id: string, suggestion: string | null): Promise<RuntimeHomeChatThread> {
+		const next = await this.persistence.mutate((current) => setHomeThreadNextStep(current, id, suggestion));
+		const updated = next.threads.find((thread) => thread.id === id);
+		if (!updated) {
+			// Unreachable: setHomeThreadNextStep throws when the id is missing.
+			throw new Error(`Home chat thread "${id}" not found after setNextStep.`);
+		}
+		return updated;
 	}
 
 	async close(id: string): Promise<RuntimeHomeChatThread> {

@@ -51,6 +51,7 @@ import {
 	parseHomeChatThreadCloseRequest,
 	parseHomeChatThreadCreateRequest,
 	parseHomeChatThreadRenameRequest,
+	parseHomeChatThreadSetNextStepRequest,
 	parseHomeChatThreadSetTitleRequest,
 	parseKanbanMcpOAuthRequest,
 	parseKanbanMcpSettingsSaveRequest,
@@ -70,6 +71,7 @@ import {
 	createHomeAgentSessionId,
 	DEFAULT_HOME_THREAD_ID,
 	isHomeAgentSessionId,
+	parseHomeAgentSessionId,
 	resolveHomeAgentId,
 } from "../core/home-agent-session";
 import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
@@ -737,6 +739,22 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				return { ok: false, thread: null, error: message };
 			}
 		},
+		setHomeThreadNextStep: async (workspaceScope, input) => {
+			try {
+				const body = parseHomeChatThreadSetNextStepRequest(input);
+				// The synthetic default thread is not a registry entry, so an agent suggest-next on
+				// it is a benign no-op (the directive is only injected for non-default threads).
+				if (body.id === DEFAULT_HOME_THREAD_ID) {
+					return { ok: true, thread: null };
+				}
+				const thread = await deps.getScopedHomeThreadStore(workspaceScope).setNextStep(body.id, body.suggestion);
+				deps.bumpKanbanSessionContextVersion?.();
+				return { ok: true, thread };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, thread: null, error: message };
+			}
+		},
 		closeHomeThread: async (workspaceScope, input) => {
 			try {
 				const body = parseHomeChatThreadCloseRequest(input);
@@ -820,6 +838,22 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				}
 
 				const isHomeSession = isHomeAgentSessionId(body.taskId);
+
+				// Sending a user message into a home thread starts the agent's next turn, so any
+				// pending next-step suggestion is now stale: clear it (best-effort) and bump the
+				// session-context version so the sidebar chip disappears for everyone. Scoped to
+				// non-default threads (the default thread has no registry entry / suggestion).
+				if (isHomeSession) {
+					const homeThreadId = parseHomeAgentSessionId(body.taskId)?.threadId;
+					if (homeThreadId && homeThreadId !== DEFAULT_HOME_THREAD_ID) {
+						try {
+							await deps.getScopedHomeThreadStore(workspaceScope).setNextStep(homeThreadId, null);
+							deps.bumpKanbanSessionContextVersion?.();
+						} catch {
+							// A missing thread or transient persistence error must never block sending.
+						}
+					}
+				}
 
 				// Lazily (re)start a home pi chat. The home sidebar starts pi chats
 				// lazily on first message, and the live agent can be absent even when a

@@ -94,6 +94,7 @@ const EXPECTED_COMMAND_IDS = [
 	"vault.doc.update",
 	"vault.doc.delete",
 	"home-thread.set-title",
+	"home-thread.suggest-next",
 	"service.install",
 	"service.uninstall",
 	"service.start",

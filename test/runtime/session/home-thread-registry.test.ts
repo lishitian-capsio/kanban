@@ -8,6 +8,7 @@ import {
 	listHomeThreads,
 	renameHomeThread,
 	setHomeThreadAutoTitle,
+	setHomeThreadNextStep,
 } from "../../../src/session/home-thread-registry";
 
 function seed(): RuntimeHomeChatThreadsData {
@@ -131,6 +132,32 @@ describe("home thread registry", () => {
 
 		it("returns an empty string for blank input", () => {
 			expect(deriveProvisionalThreadTitle("   \n  ")).toBe("");
+		});
+	});
+
+	describe("setHomeThreadNextStep", () => {
+		it("sets the pending next-step suggestion without bumping updatedAt", () => {
+			const next = setHomeThreadNextStep(seed(), "t2", "Start the top backlog task");
+			const thread = next.threads.find((t) => t.id === "t2");
+			expect(thread?.pendingNextStep).toBe("Start the top backlog task");
+			// Transient state: updatedAt (title/identity) is untouched.
+			expect(thread?.updatedAt).toBe(50);
+		});
+
+		it("clears the suggestion when passed null", () => {
+			const withSuggestion = setHomeThreadNextStep(seed(), "t1", "Do the thing");
+			const cleared = setHomeThreadNextStep(withSuggestion, "t1", null);
+			expect(cleared.threads.find((t) => t.id === "t1")?.pendingNextStep).toBeNull();
+		});
+
+		it("does not mutate the source data", () => {
+			const data = seed();
+			setHomeThreadNextStep(data, "t1", "Do the thing");
+			expect(data.threads.find((t) => t.id === "t1")?.pendingNextStep).toBeUndefined();
+		});
+
+		it("throws when the thread does not exist", () => {
+			expect(() => setHomeThreadNextStep(seed(), "missing", "x")).toThrow();
 		});
 	});
 

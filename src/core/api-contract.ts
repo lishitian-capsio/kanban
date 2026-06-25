@@ -307,6 +307,12 @@ export const runtimeHomeChatThreadSchema = z.object({
 	titleSource: runtimeHomeChatThreadTitleSourceSchema.default("manual"),
 	createdAt: z.number(),
 	updatedAt: z.number(),
+	// Transient per-thread "next step" the thread's own agent proposes at the end of a turn
+	// (via `home-thread suggest-next`), surfaced in the sidebar as a clickable chip. It is a
+	// ready-to-send next user message, NOT conversation history: a new suggest-next overwrites
+	// it, and it is cleared when the user sends a message in the thread (the agent's next turn).
+	// Optional + nullable so existing persisted threads (no field) load cleanly.
+	pendingNextStep: z.string().nullable().optional(),
 });
 export type RuntimeHomeChatThread = z.infer<typeof runtimeHomeChatThreadSchema>;
 
@@ -355,6 +361,15 @@ export const runtimeHomeChatThreadSetTitleRequestSchema = z.object({
 	title: z.string(),
 });
 export type RuntimeHomeChatThreadSetTitleRequest = z.infer<typeof runtimeHomeChatThreadSetTitleRequestSchema>;
+
+// An agent-driven next-step suggestion (`home-thread suggest-next`). Like set-title it is set
+// by the thread's OWN agent and skipped for the synthetic default thread, but it writes the
+// transient `pendingNextStep` rather than the title.
+export const runtimeHomeChatThreadSetNextStepRequestSchema = z.object({
+	id: z.string(),
+	suggestion: z.string(),
+});
+export type RuntimeHomeChatThreadSetNextStepRequest = z.infer<typeof runtimeHomeChatThreadSetNextStepRequestSchema>;
 
 // Shared by create/rename/close — each returns the affected thread (close → the removed thread).
 export const runtimeHomeChatThreadMutationResponseSchema = z.object({

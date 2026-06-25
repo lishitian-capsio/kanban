@@ -50,6 +50,12 @@ export interface UseHomeThreadsResult {
 	renameThread: (threadId: string, name: string) => Promise<void>;
 	closeThread: (threadId: string) => Promise<void>;
 	/**
+	 * Optimistically clear a thread's pending next-step suggestion locally (drop the chip the
+	 * instant the user sends a message). The runtime also clears it server-side on send and
+	 * broadcasts a session-context bump, so a subsequent {@link refresh} reconciles either way.
+	 */
+	clearNextStep: (threadId: string) => void;
+	/**
 	 * Re-fetch the registry for the current workspace. Used to pick up agent-driven
 	 * title changes (a thread self-titles via `home-thread set-title`, which bumps the
 	 * kanban session-context version); a background refresh, so failures are silent.
@@ -234,6 +240,27 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		[currentProjectId],
 	);
 
+	const clearNextStep = useCallback(
+		(threadId: string) => {
+			if (!currentProjectId || threadId === DEFAULT_HOME_THREAD_ID) {
+				return;
+			}
+			setRegistryThreadsByWorkspace((current) => {
+				const threadsForWorkspace = current[currentProjectId];
+				if (!threadsForWorkspace?.some((thread) => thread.id === threadId && thread.pendingNextStep)) {
+					return current;
+				}
+				return {
+					...current,
+					[currentProjectId]: threadsForWorkspace.map((thread) =>
+						thread.id === threadId ? { ...thread, pendingNextStep: null } : thread,
+					),
+				};
+			});
+		},
+		[currentProjectId],
+	);
+
 	const refresh = useCallback(async () => {
 		if (!currentProjectId) {
 			return;
@@ -293,6 +320,7 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		createThread,
 		renameThread,
 		closeThread,
+		clearNextStep,
 		refresh,
 		isLoading: loadingWorkspaceId !== null && loadingWorkspaceId === currentProjectId,
 	};

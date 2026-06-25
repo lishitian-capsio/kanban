@@ -1,16 +1,21 @@
 /**
  * `kanban home-thread …` — CLI surface for the home (sidebar) chat threads.
  *
- * The only verb today is `set-title`, invoked by a thread's OWN agent to give the thread
- * a concise title. The agent does not need to know its thread id: Kanban injects the
- * synthetic home session id into every agent subprocess as `KANBAN_SESSION_TASK_ID`
- * (see `hook-runtime-context.ts`), so the command resolves the workspace + thread from
- * that env by default, with an explicit `--session-id` override for scripted use.
+ * Two verbs, both invoked by a thread's OWN agent and both resolving the thread from the
+ * session env rather than an explicit id. The agent does not need to know its thread id:
+ * Kanban injects the synthetic home session id into every agent subprocess as
+ * `KANBAN_SESSION_TASK_ID` (see `hook-runtime-context.ts`), so the commands resolve the
+ * workspace + thread from that env by default, with an explicit `--session-id` override
+ * for scripted use.
  *
- * The title is recorded as `auto` and routed through the workspace-scoped
- * `setHomeThreadTitle` runtime endpoint, which persists it to `threads.json` and skips
- * the write when the user has pinned the title with a manual rename. Output flows through
- * the standard `runCliCommand` envelope like every other CLI command.
+ * - `set-title` records a concise title (as `auto`) via the workspace-scoped
+ *   `setHomeThreadTitle` endpoint, which persists it to `threads.json` and skips the write
+ *   when the user has pinned the title with a manual rename.
+ * - `suggest-next` records a transient `pendingNextStep` suggestion via
+ *   `setHomeThreadNextStep` — a ready-to-send next user message the sidebar surfaces as a
+ *   clickable chip; the runtime clears it when the user next sends a message in the thread.
+ *
+ * Output flows through the standard `runCliCommand` envelope like every other CLI command.
  */
 
 import type { Command } from "commander";
@@ -21,7 +26,7 @@ import { readGlobalCliOptions, runCliCommand } from "./cli-command-runner";
 import { CliError } from "./cli-envelope";
 import { createRuntimeTrpcClient, type JsonRecord } from "./runtime-workspace";
 
-function resolveSessionId(explicit: string | undefined, env: NodeJS.ProcessEnv): string {
+function resolveSessionId(verb: string, explicit: string | undefined, env: NodeJS.ProcessEnv): string {
 	const fromFlag = explicit?.trim();
 	if (fromFlag) {
 		return fromFlag;
@@ -32,12 +37,12 @@ function resolveSessionId(explicit: string | undefined, env: NodeJS.ProcessEnv):
 	}
 	throw new CliError(
 		"invalid_argument",
-		`home-thread set-title could not determine the thread: no --session-id was given and ${KANBAN_SESSION_TASK_ID_ENV} is not set. Run it from inside a Kanban home chat session, or pass --session-id.`,
+		`home-thread ${verb} could not determine the thread: no --session-id was given and ${KANBAN_SESSION_TASK_ID_ENV} is not set. Run it from inside a Kanban home chat session, or pass --session-id.`,
 	);
 }
 
 async function setHomeThreadTitle(input: { title: string; sessionId: string | undefined }): Promise<JsonRecord> {
-	const sessionId = resolveSessionId(input.sessionId, process.env);
+	const sessionId = resolveSessionId("set-title", input.sessionId, process.env);
 	const parsed = parseHomeAgentSessionId(sessionId);
 	if (!parsed) {
 		throw new CliError(
@@ -72,6 +77,39 @@ async function setHomeThreadTitle(input: { title: string; sessionId: string | un
 	};
 }
 
+async function suggestHomeThreadNextStep(input: {
+	suggestion: string;
+	sessionId: string | undefined;
+}): Promise<JsonRecord> {
+	const sessionId = resolveSessionId("suggest-next", input.sessionId, process.env);
+	const parsed = parseHomeAgentSessionId(sessionId);
+	if (!parsed) {
+		throw new CliError(
+			"invalid_argument",
+			`"${sessionId}" is not a Kanban home chat session id, so it has no thread to suggest a next step for.`,
+		);
+	}
+
+	const runtimeClient = createRuntimeTrpcClient(parsed.workspaceId);
+	const response = await runtimeClient.runtime.setHomeThreadNextStep.mutate({
+		id: parsed.threadId,
+		suggestion: input.suggestion,
+	});
+	if (!response.ok) {
+		throw new Error(response.error ?? "Could not set the home chat thread next-step suggestion.");
+	}
+
+	const thread = response.thread;
+	// `thread === null` is the benign default-thread no-op (the default thread carries no
+	// suggestion); a non-null thread echoes back the recorded suggestion.
+	return {
+		ok: true,
+		threadId: parsed.threadId,
+		suggestion: thread?.pendingNextStep ?? input.suggestion,
+		applied: thread !== null,
+	};
+}
+
 export function registerHomeThreadCommand(program: Command): void {
 	const homeThread = program
 		.command("home-thread")
@@ -90,6 +128,25 @@ export function registerHomeThreadCommand(program: Command): void {
 			await runCliCommand(
 				"home-thread.set-title",
 				async () => await setHomeThreadTitle({ title, sessionId: options.sessionId }),
+				{ globals },
+			);
+		});
+
+	homeThread
+		.command("suggest-next")
+		.description(
+			"Suggest the calling thread's next step (agent-driven). Surfaced in the sidebar as a clickable chip that sends the text as the next message. Resolves the thread from the session env.",
+		)
+		.argument("<suggestion>", "A concise, ready-to-send next-step prompt phrased as the user's next message.")
+		.option(
+			"--session-id <id>",
+			`Home chat session id to suggest for. Defaults to ${KANBAN_SESSION_TASK_ID_ENV} from the agent session.`,
+		)
+		.action(async function (this: Command, suggestion: string, options: { sessionId?: string }) {
+			const globals = readGlobalCliOptions(this);
+			await runCliCommand(
+				"home-thread.suggest-next",
+				async () => await suggestHomeThreadNextStep({ suggestion, sessionId: options.sessionId }),
 				{ globals },
 			);
 		});

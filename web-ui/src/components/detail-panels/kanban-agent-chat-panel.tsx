@@ -11,7 +11,7 @@ import React, {
 	useRef,
 	useState,
 } from "react";
-import { type Components as VirtuosoComponents, Virtuoso } from "react-virtuoso";
+import { Virtuoso, type Components as VirtuosoComponents } from "react-virtuoso";
 
 import { KanbanChatComposer } from "@/components/detail-panels/kanban-chat-composer";
 import { KanbanChatHistorySkeleton } from "@/components/detail-panels/kanban-chat-history-skeleton";
@@ -90,6 +90,10 @@ export interface KanbanAgentChatPanelProps {
 	// (e.g. the home sidebar's session provider switch). This panel stays agnostic
 	// about what the slot does — the owner builds and wires it.
 	modelControlSlot?: ReactElement | null;
+	// Optional content rendered just above the composer (e.g. the home sidebar's clickable
+	// next-step suggestion chip). The panel stays agnostic about what it is — the owner builds
+	// and wires it; omitted on surfaces that don't use it.
+	suggestionSlot?: ReactElement | null;
 	taskKanbanSettings?: RuntimeTaskAgentSettings;
 	taskHasExplicitKanbanSettings?: boolean;
 	onKanbanSettingsSaved?: () => void;
@@ -130,6 +134,7 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 			workspaceId = null,
 			runtimeConfig = null,
 			modelControlSlot = null,
+			suggestionSlot = null,
 			taskKanbanSettings,
 			taskHasExplicitKanbanSettings = false,
 			onKanbanSettingsSaved,
@@ -433,6 +438,7 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 						{panelError}
 					</div>
 				) : null}
+				{suggestionSlot ? <div className="px-2 pt-2">{suggestionSlot}</div> : null}
 				<div className="px-2 py-3">
 					<KanbanChatComposer
 						taskId={taskId}

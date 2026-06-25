@@ -121,6 +121,31 @@ export function deriveProvisionalThreadTitle(description: string): string {
 	return `${collapsed.slice(0, PROVISIONAL_TITLE_MAX_LENGTH - 1).trimEnd()}…`;
 }
 
+/**
+ * Set (or clear) a thread's transient `pendingNextStep` suggestion. Passing `null` clears it.
+ * This is ephemeral state — it does NOT bump `updatedAt` (which tracks title/identity changes)
+ * and never reorders the list. Returns the SAME data reference when the value is unchanged
+ * (treating an absent field and `null` as equivalent), so the runtime's clear-on-every-send
+ * does not rewrite `threads.json` when there is nothing to clear. Throws if the thread is missing.
+ */
+export function setHomeThreadNextStep(
+	data: RuntimeHomeChatThreadsData,
+	id: string,
+	suggestion: string | null,
+): RuntimeHomeChatThreadsData {
+	const existing = data.threads.find((thread) => thread.id === id);
+	if (!existing) {
+		throw new Error(`Home chat thread "${id}" not found.`);
+	}
+	const next = suggestion ?? null;
+	if ((existing.pendingNextStep ?? null) === next) {
+		return data;
+	}
+	return {
+		threads: data.threads.map((thread) => (thread.id === id ? { ...thread, pendingNextStep: next } : thread)),
+	};
+}
+
 export interface CloseHomeThreadResult {
 	next: RuntimeHomeChatThreadsData;
 	removed: RuntimeHomeChatThread;

@@ -73,6 +73,18 @@ describe("HomeThreadStore", () => {
 		expect(skipped.thread.name).toBe("Named by user");
 	});
 
+	it("sets and clears a thread's pending next-step suggestion", async () => {
+		const { store } = makeStore();
+		const created = await store.create({ agentId: "pi", name: "Planning" });
+
+		const withSuggestion = await store.setNextStep(created.id, "Start the top backlog task");
+		expect(withSuggestion.pendingNextStep).toBe("Start the top backlog task");
+		expect((await store.list()).find((t) => t.id === created.id)?.pendingNextStep).toBe("Start the top backlog task");
+
+		const cleared = await store.setNextStep(created.id, null);
+		expect(cleared.pendingNextStep).toBeNull();
+	});
+
 	it("closes a thread and cleans up the derived session via onCloseSession", async () => {
 		const onCloseSession = vi.fn(async () => undefined);
 		const { store } = makeStore({ onCloseSession });

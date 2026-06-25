@@ -77,6 +77,7 @@ import type {
 	RuntimeHomeChatThreadCreateRequest,
 	RuntimeHomeChatThreadMutationResponse,
 	RuntimeHomeChatThreadRenameRequest,
+	RuntimeHomeChatThreadSetNextStepRequest,
 	RuntimeHomeChatThreadSetTitleRequest,
 	RuntimeHomeChatThreadsListResponse,
 	RuntimeHookIngestRequest,
@@ -254,6 +255,7 @@ import {
 	runtimeHomeChatThreadCreateRequestSchema,
 	runtimeHomeChatThreadMutationResponseSchema,
 	runtimeHomeChatThreadRenameRequestSchema,
+	runtimeHomeChatThreadSetNextStepRequestSchema,
 	runtimeHomeChatThreadSetTitleRequestSchema,
 	runtimeHomeChatThreadsListResponseSchema,
 	runtimeHookIngestRequestSchema,
@@ -404,6 +406,10 @@ export interface RuntimeTrpcContext {
 		setHomeThreadTitle: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatThreadSetTitleRequest,
+		) => Promise<RuntimeHomeChatThreadMutationResponse>;
+		setHomeThreadNextStep: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeHomeChatThreadSetNextStepRequest,
 		) => Promise<RuntimeHomeChatThreadMutationResponse>;
 		closeHomeThread: (
 			scope: RuntimeTrpcWorkspaceScope,
@@ -803,6 +809,12 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeHomeChatThreadMutationResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.setHomeThreadTitle(ctx.workspaceScope, input);
+			}),
+		setHomeThreadNextStep: workspaceProcedure
+			.input(runtimeHomeChatThreadSetNextStepRequestSchema)
+			.output(runtimeHomeChatThreadMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.setHomeThreadNextStep(ctx.workspaceScope, input);
 			}),
 		closeHomeThread: workspaceProcedure
 			.input(runtimeHomeChatThreadCloseRequestSchema)

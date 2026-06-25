@@ -40,6 +40,13 @@ export interface RenderAppendSystemPromptOptions {
 	 */
 	selfTitleDirective?: boolean;
 	/**
+	 * When true, append the next-step suggestion directive: at the end of a turn the agent may
+	 * propose ONE concise, ready-to-send next-step prompt via `home-thread suggest-next`, which
+	 * the sidebar renders as a clickable chip. Enabled for created (non-default) home threads
+	 * only — same gating as {@link selfTitleDirective}.
+	 */
+	suggestNextStepDirective?: boolean;
+	/**
 	 * The workspace's vault-takeover mode (see `RuntimeVaultSettings.vaultMode`), a
 	 * strictly progressive four-tier enum. It decides how much vault guidance is
 	 * injected, each tier a superset of the previous one:
@@ -290,6 +297,24 @@ This conversation is a named chat thread in the Kanban sidebar, and you are resp
 - If the user has manually renamed the thread, the command will report that the title is pinned and leave it unchanged. Respect that: do not keep trying to re-title a thread the user has named.`;
 }
 
+/**
+ * Render the next-step suggestion directive: at the end of a turn the agent proposes at most
+ * one concise, self-contained next-step prompt via `home-thread suggest-next`, which the sidebar
+ * surfaces as a clickable chip. Because clicking sends the text verbatim as the user's next
+ * message, it must read as a ready-to-send user message. Injected only for created (non-default)
+ * home threads. Pure/side-effect-free.
+ */
+function renderSuggestNextStepDirective(kanbanCommand: string): string {
+	return `# Suggest a next step
+
+At the end of your turn, if there is an obvious next action the user is likely to want, you may propose exactly ONE next step by running \`${kanbanCommand} home-thread suggest-next "<text>"\`. The sidebar shows it as a single clickable button above the composer; clicking it sends your text verbatim as the user's next message, so the user can proceed in one click (or ignore it).
+
+- Write the suggestion as a ready-to-send user message, in the user's voice and addressed to you (e.g. "Start the top backlog task", "Break this into tasks and link them", "Show me the tasks in review"). Do NOT phrase it as a question to the user or as a description of what you will do.
+- Keep it short, concrete, and self-contained — it must make sense on its own, without relying on this message's context.
+- Propose at most one, and only when the next step is genuinely obvious. When there is no clear next step, do not run the command at all. Do not repeat a suggestion the user already declined.
+- You do not need to pass the thread or session id — the command resolves them from the session it is run in.`;
+}
+
 export function resolveAppendSystemPromptCommandPrefix(
 	options: ResolveAppendSystemPromptCommandPrefixOptions = {},
 ): string {
@@ -356,6 +381,9 @@ export function renderAppendSystemPrompt(commandPrefix: string, options: RenderA
 	const vaultCliReference = vaultModeAtLeast(vaultMode, "cli-only") ? renderVaultCliReference(kanbanCommand) : "";
 	const vaultCliReferenceBlock = vaultCliReference ? `${vaultCliReference}\n\n` : "";
 	const selfTitleBlock = options.selfTitleDirective ? `\n${renderSelfTitleDirective(kanbanCommand)}\n` : "";
+	const suggestNextStepBlock = options.suggestNextStepDirective
+		? `\n${renderSuggestNextStepDirective(kanbanCommand)}\n`
+		: "";
 	return `# Kanban Sidebar
 
 You are the Kanban sidebar agent for this workspace. Help the user interact with their Kanban board directly from this side panel. When the user asks to add tasks, create tasks, break work down, link tasks, or start tasks, prefer using the Kanban CLI yourself instead of describing manual steps.
@@ -376,7 +404,7 @@ If the user asks you to write code, fix a bug, implement a feature, refactor, or
 - Tasks can also enable automatic review actions: auto-commit or auto-open-pr once completed, which then moves the task to done and kicks off any linked tasks. Combining auto-review with linking is how you can set up fully autonomous pipelines when the user wants it. For example, enabling auto-commit on each task in a chain: task A finishes, auto-commits and is moved to done, task B auto-starts from backlog, auto-commits and is moved to done, task C auto-starts, and so on.
 - If your current working directory is inside \`.kanban/worktrees/\`, you are inside a Kanban task worktree. In that case, create or manage tasks against the main workspace path, not the task worktree path. Pass the main workspace with \`--project-path\`.
 - If a task command fails because the runtime is unavailable, tell the user to start Kanban in that workspace first with \`${kanbanCommand}\`, then retry the task command.
-${selfTitleBlock}${vaultIntroBlock}
+${selfTitleBlock}${suggestNextStepBlock}${vaultIntroBlock}
 # Command Prefix
 
 Use this prefix for every Kanban command in this session:
@@ -591,9 +619,11 @@ export async function resolveHomeAgentAppendSystemPrompt(
 	// label (it is not a registry entry), so only created (non-default) threads get the
 	// directive to name themselves.
 	const threadId = parseHomeAgentSessionId(taskId)?.threadId ?? DEFAULT_HOME_THREAD_ID;
+	const isNonDefaultThread = threadId !== DEFAULT_HOME_THREAD_ID;
 	return renderAppendSystemPrompt(resolveAppendSystemPromptCommandPrefix(options), {
 		agentId: resolveHomeAgentId(taskId),
-		selfTitleDirective: threadId !== DEFAULT_HOME_THREAD_ID,
+		selfTitleDirective: isNonDefaultThread,
+		suggestNextStepDirective: isNonDefaultThread,
 		vaultTypes,
 		vaultMode,
 	});

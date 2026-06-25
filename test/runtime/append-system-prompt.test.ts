@@ -126,6 +126,17 @@ describe("renderAppendSystemPrompt", () => {
 		expect(withDirective).toContain("manually renamed");
 	});
 
+	it("omits the next-step directive by default and includes it when suggestNextStepDirective is set", () => {
+		const withoutDirective = renderAppendSystemPrompt("kanban");
+		expect(withoutDirective).not.toContain("# Suggest a next step");
+		expect(withoutDirective).not.toContain("home-thread suggest-next");
+
+		const withDirective = renderAppendSystemPrompt("kanban", { suggestNextStepDirective: true });
+		expect(withDirective).toContain("# Suggest a next step");
+		expect(withDirective).toContain('kanban home-thread suggest-next "<text>"');
+		expect(withDirective).toContain("clickable button");
+	});
+
 	it("renders only the active-agent Linear MCP guidance when an agent is provided", () => {
 		const rendered = renderAppendSystemPrompt("kanban", {
 			agentId: "codex",
@@ -254,6 +265,22 @@ describe("resolveHomeAgentAppendSystemPrompt", () => {
 		});
 		expect(prompt).toContain("Current home agent: `codex`");
 		expect(prompt).toContain("codex mcp add linear --url https://mcp.linear.app/mcp");
+		// Non-default threads get both the self-titling and the next-step directives.
+		expect(prompt).toContain("# Name this chat thread");
+		expect(prompt).toContain("# Suggest a next step");
+	});
+
+	it("omits the self-title and next-step directives for the default (3-segment) home session", async () => {
+		const prompt = await resolveHomeAgentAppendSystemPrompt("__home_agent__:workspace-1:codex", {
+			currentVersion: "0.1.10",
+			cwd: "/Users/example/repo",
+			execPath: "/usr/local/bin/node",
+			execArgv: [],
+			argv: ["node", "/Users/example/repo/dist/cli.js"],
+			resolveRealPath: (path) => path,
+		});
+		expect(prompt).not.toContain("# Name this chat thread");
+		expect(prompt).not.toContain("# Suggest a next step");
 	});
 
 	it("returns active-agent guidance for kiro home sidebar sessions", async () => {

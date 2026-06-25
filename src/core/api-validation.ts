@@ -9,6 +9,7 @@ import {
 	type RuntimeHomeChatThreadCloseRequest,
 	type RuntimeHomeChatThreadCreateRequest,
 	type RuntimeHomeChatThreadRenameRequest,
+	type RuntimeHomeChatThreadSetNextStepRequest,
 	type RuntimeHomeChatThreadSetTitleRequest,
 	type RuntimeHookIngestRequest,
 	type RuntimeKanbanMcpOAuthRequest,
@@ -40,6 +41,7 @@ import {
 	runtimeHomeChatThreadCloseRequestSchema,
 	runtimeHomeChatThreadCreateRequestSchema,
 	runtimeHomeChatThreadRenameRequestSchema,
+	runtimeHomeChatThreadSetNextStepRequestSchema,
 	runtimeHomeChatThreadSetTitleRequestSchema,
 	runtimeHookIngestRequestSchema,
 	runtimeKanbanMcpOAuthRequestSchema,
@@ -173,7 +175,12 @@ export function parseWorktreeDeleteRequest(value: unknown): RuntimeWorktreeDelet
 }
 
 export function parseWorkspaceStateSaveRequest(value: unknown): RuntimeWorkspaceStateSaveRequest {
-	return parseWithSchema(runtimeWorkspaceStateSaveRequestSchema, value);
+	// `parseWithSchema` infers its return type from the schema, but this schema is large enough
+	// (board + `ZodEffects`-on-`id` columns) that the inference degrades — widening
+	// `board.columns[].id` to `unknown` — whenever the program's total type complexity grows
+	// (e.g. when another contract schema is added elsewhere). zod has already validated the value
+	// at runtime, so assert the declared output type to keep this immune to that fragility.
+	return parseWithSchema(runtimeWorkspaceStateSaveRequestSchema, value) as RuntimeWorkspaceStateSaveRequest;
 }
 
 export function parseProjectAddRequest(value: unknown): RuntimeProjectAddRequest {
@@ -340,6 +347,22 @@ export function parseHomeChatThreadSetTitleRequest(value: unknown): RuntimeHomeC
 	return {
 		id,
 		title,
+	};
+}
+
+export function parseHomeChatThreadSetNextStepRequest(value: unknown): RuntimeHomeChatThreadSetNextStepRequest {
+	const parsed = parseWithSchema(runtimeHomeChatThreadSetNextStepRequestSchema, value);
+	const id = parsed.id.trim();
+	if (!id) {
+		throw new Error("Home chat thread id cannot be empty.");
+	}
+	const suggestion = parsed.suggestion.trim();
+	if (!suggestion) {
+		throw new Error("Home chat thread next-step suggestion cannot be empty.");
+	}
+	return {
+		id,
+		suggestion,
 	};
 }
 
