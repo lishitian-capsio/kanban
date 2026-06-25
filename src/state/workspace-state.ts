@@ -21,8 +21,18 @@ import {
 } from "../core/api-contract";
 import { createGitProcessEnv } from "../core/git-process-env";
 import { updateTaskDependencies } from "../core/task-board-mutations";
+import {
+	type ConnectionRecord,
+	type DbCredential,
+	normalizeConnId,
+	readConnections,
+	readCredentials,
+	writeConnections,
+	writeCredentials,
+} from "../db/registry/connection-store";
 import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
 import { createLogger } from "../logging";
+import { markStall } from "../server/event-loop-stall-watchdog";
 import { VaultDocumentStore } from "../vault/vault-document-store";
 import { getVaultTypesDir } from "../vault/vault-paths";
 import { seedVaultTypeDefinitions } from "../vault/vault-type-registry";
@@ -43,15 +53,6 @@ import {
 	isBoardDecouplingActive,
 	writeBoardRef,
 } from "./board-ref";
-import {
-	type ConnectionRecord,
-	type DbCredential,
-	normalizeConnId,
-	readConnections,
-	writeConnections,
-	readCredentials,
-	writeCredentials,
-} from "../db/registry/connection-store";
 import {
 	buildCommittedProviderFromProviderSettings,
 	type CommittedProviderRecord,
@@ -639,6 +640,10 @@ function parseWorkspaceStateSavePayload(payload: RuntimeWorkspaceStateSaveReques
 }
 
 async function readWorkspaceBoard(repoPath: string, workspaceId: string): Promise<RuntimeBoardData> {
+	// Breadcrumb: this shard-assembly + dependency-reconcile is the deepest synchronous
+	// work on the projects-payload / workspace-state read paths, so attribute a stall to
+	// it (and the workspace) rather than to the coarse upstream request breadcrumb.
+	markStall("board:read", workspaceId);
 	// The board is stored sharded (one `tasks/<id>.json` per task + a layout-only
 	// `board.json`); loadShardedBoard assembles the wire-shaped board, staying
 	// back-compatible with a legacy single-file board and the machine-rooted fallback.

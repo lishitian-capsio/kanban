@@ -20,6 +20,7 @@ import {
 	removeWorkspaceStateFiles,
 } from "../state/workspace-state";
 import { TerminalSessionManager } from "../terminal/session-manager";
+import { markStall } from "./event-loop-stall-watchdog";
 
 export interface WorkspaceRegistryScope {
 	workspaceId: string;
@@ -313,6 +314,9 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 		_repoPath: string,
 	): Promise<RuntimeProjectTaskCounts> => {
 		try {
+			// Breadcrumb: pin which project's board read is executing if the
+			// projects-payload fan-out stalls the event loop.
+			markStall("projects:summarize", workspaceId);
 			const board = await loadWorkspaceBoardById(workspaceId);
 			const persistedCounts = countTasksByColumn(board);
 			const terminalManager = getTerminalManagerForWorkspace(workspaceId);
@@ -345,6 +349,7 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 	};
 
 	const buildProjectsPayload = async (preferredCurrentProjectId: string | null) => {
+		markStall("projects:build");
 		const projects = await listWorkspaceIndexEntries();
 		const fallbackProjectId =
 			projects.find((project) => project.workspaceId === activeWorkspaceId)?.workspaceId ??

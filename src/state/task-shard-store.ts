@@ -15,7 +15,10 @@ import {
 import { resolveTaskTitle } from "../core/task-title";
 import { mapFilesConcurrent } from "../fs/concurrent-files";
 import { lockedFileSystem } from "../fs/locked-file-system";
+import { createLogger } from "../logging";
 import { reconcileColumnRanks } from "./task-rank";
+
+const log = createLogger("task-shard-store");
 
 const TASKS_DIRNAME = "tasks";
 const BOARD_MANIFEST_FILENAME = "board.json";
@@ -174,7 +177,20 @@ async function readStoredTasks(boardDir: string): Promise<StoredTask[]> {
 	// board with thousands of tasks can't open thousands of fds at once (EMFILE).
 	// Stable ordering is restored downstream by the rank sort in assembleBoard, so
 	// the parallel read order is irrelevant.
-	const rawShards = await mapFilesConcurrent(ids, (id) => readJson(taskFilePath(boardDir, id)));
+	const rawShards = await mapFilesConcurrent(ids, async (id) => {
+		try {
+			return await readJson(taskFilePath(boardDir, id));
+		} catch (error) {
+			// A shard truncated/garbled by a crash mid-write has unparseable bytes, so
+			// `readJson` throws. That MUST NOT sink the whole board read (it would make
+			// the board unloadable and wedge every read-path consumer — the projects
+			// payload, the snapshot, board-sync). Skip the one bad shard; its rank is
+			// re-minted on the next save. Schema-invalid-but-parseable shards are handled
+			// by the safeParse below.
+			log.warn("skipping unreadable task shard", { taskId: id, error });
+			return null;
+		}
+	});
 	const tasks: StoredTask[] = [];
 	for (const raw of rawShards) {
 		if (raw === null) {
@@ -206,7 +222,9 @@ function assembleBoard(
 	storedTasks: StoredTask[],
 ): RuntimeBoardData {
 	const tasksByColumn = new Map<RuntimeBoardColumnId, StoredTask[]>();
+	const liveTaskIds = new Set<string>();
 	for (const task of storedTasks) {
+		liveTaskIds.add(task.id);
 		const bucket = tasksByColumn.get(task.column);
 		if (bucket) {
 			bucket.push(task);
@@ -222,6 +240,15 @@ function assembleBoard(
 		);
 		const cards: RuntimeBoardCard[] = ordered.map((task) => {
 			for (const edge of task.dependsOn) {
+				// Drop a dangling edge whose target task no longer exists on the board
+				// (a torn/inconsistent shard set can leave one behind). The from-task is
+				// always live here since we only walk live tasks' `dependsOn`. Emitting a
+				// dangling edge would feed a half-real dependency graph to every direct
+				// `loadShardedBoard` consumer (board-sync, board-worktree) that does not
+				// run it back through `updateTaskDependencies`.
+				if (!liveTaskIds.has(edge.toTaskId)) {
+					continue;
+				}
 				dependencies.push({ id: edge.id, fromTaskId: task.id, toTaskId: edge.toTaskId, createdAt: edge.createdAt });
 			}
 			const { column: _column, rank: _rank, dependsOn: _dependsOn, ...cardFields } = task;

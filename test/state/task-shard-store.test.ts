@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -264,5 +264,117 @@ describe("task shard store", () => {
 		} finally {
 			cleanup();
 		}
+	});
+
+	// Regression coverage for the P0 hard hang triggered by an inconsistent sharded
+	// board (a hard kill landing mid board-sync/shard write). The read path must
+	// degrade gracefully — never throw away the whole board, never emit a dangling
+	// edge, and never spin — so the projects-payload broadcast fed by it can't wedge
+	// the event loop. See the systematic-debugging investigation.
+	describe("crash-torn / inconsistent shard tolerance", () => {
+		/** Write a stored-task shard directly to mimic an on-disk shard set. */
+		function writeShard(
+			dir: string,
+			id: string,
+			column: string,
+			rank: string,
+			dependsOn: Array<{ id: string; toTaskId: string; createdAt: number }> = [],
+		): void {
+			mkdirSync(join(dir, "tasks"), { recursive: true });
+			writeFileSync(
+				join(dir, "tasks", `${id}.json`),
+				JSON.stringify({ ...card(id), column, rank, dependsOn }),
+				"utf8",
+			);
+		}
+
+		it("skips a torn (unparseable) task shard instead of failing the whole board read", async () => {
+			const { path: dir, cleanup } = createTempDir("kanban-shard-torn-");
+			try {
+				await saveShardedBoard(
+					dir,
+					board({
+						columns: [{ id: "backlog", title: "Backlog", cards: [card("good")] }, ...board().columns.slice(1)],
+					}),
+				);
+				// Simulate a shard truncated mid atomic write: valid filename, garbage bytes.
+				writeFileSync(join(dir, "tasks", "torn.json"), '{ "id": "torn", "column": ', "utf8");
+
+				const loaded = await loadShardedBoard(dir);
+				const ids = loaded.columns.flatMap((column) => column.cards.map((c) => c.id));
+				expect(ids).toContain("good");
+				expect(ids).not.toContain("torn");
+			} finally {
+				cleanup();
+			}
+		});
+
+		it("drops a dangling dependency edge whose target task is absent", async () => {
+			const { path: dir, cleanup } = createTempDir("kanban-shard-dangling-");
+			try {
+				writeFileSync(
+					join(dir, "board.json"),
+					JSON.stringify({
+						version: 1,
+						columns: [
+							{ id: "backlog", title: "Backlog" },
+							{ id: "in_progress", title: "In Progress" },
+							{ id: "review", title: "Review" },
+							{ id: "trash", title: "Done" },
+						],
+					}),
+					"utf8",
+				);
+				// A live backlog task carries an edge to a since-deleted task.
+				writeShard(dir, "blocked", "backlog", "a0", [{ id: "edge", toTaskId: "gone", createdAt: 1 }]);
+
+				const loaded = await loadShardedBoard(dir);
+				expect(loaded.dependencies).toEqual([]);
+			} finally {
+				cleanup();
+			}
+		});
+
+		it("loads quickly (no hang) for the linked + started + torn + dangling scenario", async () => {
+			const { path: dir, cleanup } = createTempDir("kanban-shard-freeze-");
+			try {
+				writeFileSync(
+					join(dir, "board.json"),
+					JSON.stringify({
+						version: 1,
+						columns: [
+							{ id: "backlog", title: "Backlog" },
+							{ id: "in_progress", title: "In Progress" },
+							{ id: "review", title: "Review" },
+							{ id: "trash", title: "Done" },
+						],
+					}),
+					"utf8",
+				);
+				// Prerequisite "prereq" was started (moved to in_progress); "blocked"
+				// depends on it. A second torn shard and a dangling edge model the
+				// inconsistency a mid-write kill leaves behind.
+				writeShard(dir, "prereq", "in_progress", "a1");
+				writeShard(dir, "blocked", "backlog", "a0", [
+					{ id: "e1", toTaskId: "prereq", createdAt: 1 },
+					{ id: "e2", toTaskId: "vanished", createdAt: 2 },
+				]);
+				writeFileSync(join(dir, "tasks", "torn.json"), "{ truncated", "utf8");
+
+				const start = performance.now();
+				const loaded = await loadShardedBoard(dir);
+				const elapsedMs = performance.now() - start;
+
+				expect(elapsedMs).toBeLessThan(2_000);
+				const ids = loaded.columns.flatMap((column) => column.cards.map((c) => c.id));
+				expect(ids).toEqual(expect.arrayContaining(["prereq", "blocked"]));
+				// Only the real prereq edge survives; the dangling one is dropped.
+				expect(loaded.dependencies).toEqual([
+					{ id: "e1", fromTaskId: "blocked", toTaskId: "prereq", createdAt: 1 },
+				]);
+			} finally {
+				cleanup();
+			}
+		});
 	});
 });

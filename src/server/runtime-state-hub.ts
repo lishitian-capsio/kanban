@@ -111,6 +111,13 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			return;
 		}
 		try {
+			// Breadcrumb for the stall watchdog. `notifyStateUpdated` only `void`-fires
+			// this (and the workspace-state broadcast, which early-returns before its own
+			// mark when the workspace has no clients), so without a mark here a stall in
+			// the projects-payload fan-out is mis-attributed to the stale "trpc
+			// workspace.notifyStateUpdated" request breadcrumb. buildProjectsPayload marks
+			// the per-project sub-steps from here on.
+			markStall("broadcast:projects");
 			const payload = await deps.workspaceRegistry.buildProjectsPayload(preferredCurrentProjectId);
 			for (const client of runtimeStateClients) {
 				sendRuntimeStateMessage(client, {
