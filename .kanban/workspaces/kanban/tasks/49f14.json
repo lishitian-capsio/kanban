@@ -1,0 +1,19 @@
+{
+  "id": "49f14",
+  "title": "GitHub OAuth git 认证设置 UI",
+  "prompt": "目标:在 web-ui 设置里为后端任务实现的『Kanban 托管 GitHub git OAuth』提供管理界面。\n\n范围:\n- 显示登录状态(账号/头像/是否已登录)。\n- 登录按钮:触发 device-flow,展示 user code + verification URL,引导用户在浏览器完成授权,并轮询直到完成。\n- 登出按钮。\n- 妥善呈现 token 过期、以及远程不可达/降级 等状态。\n\n实现:消费后端任务暴露的 tRPC 接口(已登录账号 / login / logout / 状态)。参考现有 Settings 里 agent provider 登录与状态的渲染方式,保持一致。\n\n约束:遵循 AGENTS.md 的 web-ui 规范(Tailwind 设计 token、Radix 原语、lucide 图标、ui/ 下的 Button/Dialog/Tooltip 等基元、日志走 web-ui logger、禁止 any)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782365172953,
+  "updatedAt": 1782365172953,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
