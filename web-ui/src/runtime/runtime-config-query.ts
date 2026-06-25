@@ -13,6 +13,10 @@ import type {
 	RuntimeAgentProviderSetListResponse,
 	RuntimeConfigResponse,
 	RuntimeDebugResetAllStateResponse,
+	RuntimeGithubAuthStatus,
+	RuntimeGithubBeginLoginResponse,
+	RuntimeGithubLogoutResponse,
+	RuntimeGithubPollLoginResponse,
 	RuntimeKanbanMcpAuthStatusResponse,
 	RuntimeKanbanMcpOAuthResponse,
 	RuntimeKanbanMcpServer,
@@ -173,6 +177,34 @@ export async function setAgentExecutablePath(
 ): Promise<RuntimeAgentExecutablePathResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
 	return await trpcClient.runtime.setAgentExecutablePath.mutate(input);
+}
+
+// ── Kanban-hosted GitHub git auth ────────────────────────────────────────────
+// Machine-global (no workspace scope); the `github` router is a sibling of `runtime`.
+// The OAuth token never crosses the wire — only the secret-free status + device-flow
+// handshake do.
+
+export async function fetchGithubAuthStatus(workspaceId: string | null): Promise<RuntimeGithubAuthStatus> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.github.status.query();
+}
+
+export async function beginGithubLogin(workspaceId: string | null): Promise<RuntimeGithubBeginLoginResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.github.beginLogin.mutate();
+}
+
+export async function pollGithubLogin(
+	workspaceId: string | null,
+	deviceCode: string,
+): Promise<RuntimeGithubPollLoginResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.github.pollLogin.mutate({ deviceCode });
+}
+
+export async function logoutGithub(workspaceId: string | null): Promise<RuntimeGithubLogoutResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.github.logout.mutate();
 }
 
 // ── Remote model fetching ──────────────────────────────────────────────────
