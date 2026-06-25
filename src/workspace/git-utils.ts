@@ -2,10 +2,25 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { buildSubprocessProxyEnv } from "../config/proxy-fetch";
 import { createGitProcessEnv } from "../core/git-process-env";
+import type { GitHubGitAuthInjector } from "../github-auth/github-git-credentials";
 import { buildGitSshProxyEnv } from "./git-ssh-proxy";
 
 const execFileAsync = promisify(execFile);
 const GIT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Registration seam for github.com HTTPS credential injection. Kept as a setter (rather than
+ * a static import of the github-auth service) so `git-utils` stays a leaf module — the
+ * service reaches `workspace-state`, which transitively imports `git-utils`, so a direct
+ * import would create a cycle. The runtime wires the real injector at startup via
+ * {@link setGitHubGitAuthInjector}; until then (and in unit tests) it is `null`, so `runGit`
+ * injects nothing and git auth behaves exactly as it does today.
+ */
+let gitHubGitAuthInjector: GitHubGitAuthInjector | null = null;
+
+export function setGitHubGitAuthInjector(injector: GitHubGitAuthInjector | null): void {
+	gitHubGitAuthInjector = injector;
+}
 
 interface GitCommandResult {
 	ok: boolean;
@@ -49,7 +64,20 @@ function normalizeProcessExitCode(code: unknown): number {
 
 export async function runGit(cwd: string, args: string[], options: RunGitOptions = {}): Promise<GitCommandResult> {
 	try {
-		const fullArgs = ["-c", "core.quotepath=false", ...args];
+		// Inject github.com HTTPS credentials when the runtime is logged in (registration
+		// seam above). The config args are token-free (the secret rides in the env only) and
+		// git-scoped to `https://github.com`, so non-github / SSH remotes are untouched and
+		// an absent login injects nothing at all. Network failures here must never break the
+		// git op, so a throwing injector degrades to no injection.
+		let gitHubAuth = null;
+		if (gitHubGitAuthInjector) {
+			try {
+				gitHubAuth = await gitHubGitAuthInjector();
+			} catch {
+				gitHubAuth = null;
+			}
+		}
+		const fullArgs = ["-c", "core.quotepath=false", ...(gitHubAuth?.args ?? []), ...args];
 		// Merge the runtime's configured outbound proxy into the per-spawn env so git's
 		// network ops (clone/fetch/push/ls-remote) route through the same proxy as the
 		// runtime's own fetch. Both builders return `{}` when the proxy is disabled, so
@@ -63,7 +91,12 @@ export async function runGit(cwd: string, args: string[], options: RunGitOptions
 			cwd,
 			encoding: "utf8",
 			maxBuffer: GIT_MAX_BUFFER_BYTES,
-			env: { ...baseEnv, ...buildSubprocessProxyEnv(), ...buildGitSshProxyEnv(inheritedSshCommand) },
+			env: {
+				...baseEnv,
+				...buildSubprocessProxyEnv(),
+				...buildGitSshProxyEnv(inheritedSshCommand),
+				...(gitHubAuth?.env ?? {}),
+			},
 			...(options.timeoutMs ? { timeout: options.timeoutMs, killSignal: "SIGKILL" } : {}),
 		});
 		const normalizedStdout = String(stdout ?? "").trim();

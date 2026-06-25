@@ -243,6 +243,11 @@ import {
 	runtimeGitCommitDiffRequestSchema,
 	runtimeGitCommitDiffResponseSchema,
 	runtimeGitDiscardResponseSchema,
+	runtimeGithubAuthStatusSchema,
+	runtimeGithubBeginLoginResponseSchema,
+	runtimeGithubLogoutResponseSchema,
+	runtimeGithubPollLoginRequestSchema,
+	runtimeGithubPollLoginResponseSchema,
 	runtimeGitLogRequestSchema,
 	runtimeGitLogResponseSchema,
 	runtimeGitRefsResponseSchema,
@@ -345,6 +350,7 @@ import {
 	runtimeWorktreeEnsureRequestSchema,
 	runtimeWorktreeEnsureResponseSchema,
 } from "../core/api-contract";
+import { getGitHubAuthService } from "../github-auth";
 import type { WorkspaceDbApi } from "./workspace-db-api";
 
 export interface RuntimeTrpcWorkspaceScope {
@@ -1326,6 +1332,34 @@ export const runtimeAppRouter = t.router({
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.deleteRow(ctx.workspaceScope, input);
 			}),
+	}),
+	// GitHub OAuth for git remote auth. Machine-global (no workspace scope) — it delegates
+	// directly to the process-wide singleton rather than through ctx. The token is never
+	// returned over the wire; only the secret-free status + device-flow handshake are.
+	github: t.router({
+		status: t.procedure.output(runtimeGithubAuthStatusSchema).query(async () => {
+			return await getGitHubAuthService().getStatus();
+		}),
+		beginLogin: t.procedure.output(runtimeGithubBeginLoginResponseSchema).mutation(async () => {
+			const grant = await getGitHubAuthService().beginLogin();
+			return {
+				deviceCode: grant.deviceCode,
+				userCode: grant.userCode,
+				verificationUri: grant.verificationUri,
+				intervalSeconds: grant.intervalSeconds,
+				expiresInSeconds: grant.expiresInSeconds,
+			};
+		}),
+		pollLogin: t.procedure
+			.input(runtimeGithubPollLoginRequestSchema)
+			.output(runtimeGithubPollLoginResponseSchema)
+			.mutation(async ({ input }) => {
+				return await getGitHubAuthService().pollLogin(input.deviceCode);
+			}),
+		logout: t.procedure.output(runtimeGithubLogoutResponseSchema).mutation(async () => {
+			await getGitHubAuthService().logout();
+			return { status: await getGitHubAuthService().getStatus() };
+		}),
 	}),
 });
 

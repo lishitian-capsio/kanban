@@ -1049,6 +1049,46 @@ export const runtimeBoardSyncActionResponseSchema = z.object({
 });
 export type RuntimeBoardSyncActionResponse = z.infer<typeof runtimeBoardSyncActionResponseSchema>;
 
+/**
+ * GitHub OAuth git-auth contract. Machine-global (no workspace scope). The access token is
+ * NEVER carried over the wire — only the secret-free status and the device-flow handshake.
+ */
+export const runtimeGithubAuthStatusSchema = z.object({
+	authenticated: z.boolean(),
+	login: z.string().nullable(),
+	scope: z.string().nullable(),
+	/** Epoch ms of token expiry, or null when long-lived / not logged in. */
+	expiresAt: z.number().int().positive().nullable(),
+});
+export type RuntimeGithubAuthStatus = z.infer<typeof runtimeGithubAuthStatusSchema>;
+
+/** Device-flow handshake returned by `github.beginLogin` (no secret beyond the device code). */
+export const runtimeGithubBeginLoginResponseSchema = z.object({
+	deviceCode: z.string(),
+	userCode: z.string(),
+	verificationUri: z.string(),
+	intervalSeconds: z.number().int().nonnegative(),
+	expiresInSeconds: z.number().int().nonnegative(),
+});
+export type RuntimeGithubBeginLoginResponse = z.infer<typeof runtimeGithubBeginLoginResponseSchema>;
+
+export const runtimeGithubPollLoginRequestSchema = z.object({
+	deviceCode: z.string().min(1),
+});
+export type RuntimeGithubPollLoginRequest = z.infer<typeof runtimeGithubPollLoginRequestSchema>;
+
+export const runtimeGithubPollLoginResponseSchema = z.discriminatedUnion("state", [
+	z.object({ state: z.literal("pending") }),
+	z.object({ state: z.literal("complete"), status: runtimeGithubAuthStatusSchema }),
+	z.object({ state: z.literal("error"), message: z.string() }),
+]);
+export type RuntimeGithubPollLoginResponse = z.infer<typeof runtimeGithubPollLoginResponseSchema>;
+
+export const runtimeGithubLogoutResponseSchema = z.object({
+	status: runtimeGithubAuthStatusSchema,
+});
+export type RuntimeGithubLogoutResponse = z.infer<typeof runtimeGithubLogoutResponseSchema>;
+
 export const runtimeBoardAutoSyncRequestSchema = z.object({
 	paused: z.boolean(),
 });

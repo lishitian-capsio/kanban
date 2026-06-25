@@ -11,6 +11,7 @@ import { CLI_EXIT_USAGE_ERROR } from "./commands/cli-envelope";
 import { registerSchemaCommand } from "./commands/cli-schema";
 import { registerDbCommand } from "./commands/db";
 import { registerFileCommand } from "./commands/file";
+import { registerGithubCommand } from "./commands/github";
 import { registerHomeThreadCommand } from "./commands/home-thread";
 import { registerHooksCommand } from "./commands/hooks";
 import { registerPasscodeAliasCommand, registerRemoteCommand } from "./commands/remote";
@@ -40,6 +41,7 @@ import {
 	setKanbanRuntimePort,
 	setKanbanRuntimeTls,
 } from "./core/runtime-endpoint";
+import { getGitHubAuthService } from "./github-auth";
 import { configureLogging, createLogger } from "./logging";
 import { disablePasscode, generateInternalToken, setPasscode } from "./security/passcode-manager";
 import { getPasscodeFilePath, isPersistedPasscodeDisabled, resolveAndPersistPasscode } from "./security/passcode-store";
@@ -50,6 +52,7 @@ import type { RuntimeStateHub } from "./server/runtime-state-hub";
 import { captureNodeException, flushNodeTelemetry } from "./telemetry/sentry-node.js";
 import type { TerminalSessionManager } from "./terminal/session-manager";
 import { runOnDemandUpdate } from "./update/update";
+import { setGitHubGitAuthInjector } from "./workspace/git-utils";
 
 const cliLog = createLogger("cli");
 
@@ -405,6 +408,13 @@ async function startServer(): Promise<{
 	const strippedProxy = installProxyFetch();
 	const proxyLog = createLogger("proxy-fetch");
 	proxyLog.info("installed global fetch proxy interceptor");
+
+	// Wire github.com HTTPS credential injection into the single `runGit` egress so every
+	// runtime git network op (code push/pull, board push/fetch, clone, task worktree ops)
+	// authenticates with the machine-local GitHub OAuth token when logged in. Registered as
+	// a setter to keep `git-utils` a leaf module (the service transitively imports it).
+	// No-op until `kanban github login` has stored a token.
+	setGitHubGitAuthInjector(() => getGitHubAuthService().getGitInjection());
 
 	// Start the event-loop stall watchdog before the server stack loads so a
 	// synchronous hang anywhere in the runtime (e.g. the move-to-done freeze under
@@ -812,6 +822,7 @@ function createProgram(invocationArgs: string[]): Command {
 	registerServiceCommand(program);
 	registerRemoteCommand(program);
 	registerPasscodeAliasCommand(program);
+	registerGithubCommand(program);
 	// Registered after the others so it sits alongside them in help; the manifest itself is
 	// built at invocation time from the fully-assembled tree, so registration order is moot.
 	registerSchemaCommand(program, { kanbanVersion: KANBAN_VERSION });
