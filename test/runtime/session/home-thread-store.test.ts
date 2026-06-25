@@ -31,24 +31,46 @@ function makeStore(overrides: Partial<ConstructorParameters<typeof HomeThreadSto
 }
 
 describe("HomeThreadStore", () => {
-	it("creates a thread with a generated id and returns it", async () => {
+	it("creates a thread with a generated id and returns it (default manual title)", async () => {
 		const { store } = makeStore();
 		const thread = await store.create({ agentId: "pi", name: "Planning" });
 		expect(thread).toEqual({
 			id: "thread-1",
 			agentId: "pi",
 			name: "Planning",
+			titleSource: "manual",
 			createdAt: 1000,
 			updatedAt: 1000,
 		});
 		expect(await store.list()).toHaveLength(1);
 	});
 
-	it("renames a thread", async () => {
+	it("creates a thread carrying the requested titleSource", async () => {
 		const { store } = makeStore();
-		const created = await store.create({ agentId: "pi", name: "Old" });
+		const thread = await store.create({ agentId: "claude", name: "Provisional", titleSource: "auto" });
+		expect(thread.titleSource).toBe("auto");
+	});
+
+	it("renames a thread and pins it manual", async () => {
+		const { store } = makeStore();
+		const created = await store.create({ agentId: "pi", name: "Old", titleSource: "auto" });
 		const renamed = await store.rename(created.id, "New");
 		expect(renamed.name).toBe("New");
+		expect(renamed.titleSource).toBe("manual");
+	});
+
+	it("sets an auto title when not pinned, and skips a pinned manual title", async () => {
+		const { store } = makeStore();
+		const auto = await store.create({ agentId: "claude", name: "Provisional", titleSource: "auto" });
+		const applied = await store.setAutoTitle(auto.id, "Concise summary");
+		expect(applied.applied).toBe(true);
+		expect(applied.thread.name).toBe("Concise summary");
+		expect(applied.thread.titleSource).toBe("auto");
+
+		const manual = await store.create({ agentId: "codex", name: "Named by user" });
+		const skipped = await store.setAutoTitle(manual.id, "Agent title");
+		expect(skipped.applied).toBe(false);
+		expect(skipped.thread.name).toBe("Named by user");
 	});
 
 	it("closes a thread and cleans up the derived session via onCloseSession", async () => {
@@ -67,8 +89,8 @@ describe("HomeThreadStore", () => {
 	it("lists threads sorted by creation time", async () => {
 		const persistence = inMemoryPersistence({
 			threads: [
-				{ id: "b", agentId: "pi", name: "B", createdAt: 200, updatedAt: 200 },
-				{ id: "a", agentId: "pi", name: "A", createdAt: 100, updatedAt: 100 },
+				{ id: "b", agentId: "pi", name: "B", titleSource: "manual", createdAt: 200, updatedAt: 200 },
+				{ id: "a", agentId: "pi", name: "A", titleSource: "manual", createdAt: 100, updatedAt: 100 },
 			],
 		});
 		const { store } = makeStore({ persistence });

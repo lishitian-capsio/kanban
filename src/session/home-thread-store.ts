@@ -1,9 +1,21 @@
 import { randomUUID } from "node:crypto";
 
-import type { RuntimeAgentId, RuntimeHomeChatThread, RuntimeHomeChatThreadsData } from "../core/api-contract";
+import type {
+	RuntimeAgentId,
+	RuntimeHomeChatThread,
+	RuntimeHomeChatThreadsData,
+	RuntimeHomeChatThreadTitleSource,
+} from "../core/api-contract";
 import { createHomeAgentSessionId } from "../core/home-agent-session";
 import { loadWorkspaceHomeThreads, mutateWorkspaceHomeThreads } from "../state/workspace-state";
-import { closeHomeThread, createHomeThread, listHomeThreads, renameHomeThread } from "./home-thread-registry";
+import {
+	closeHomeThread,
+	createHomeThread,
+	listHomeThreads,
+	renameHomeThread,
+	type SetHomeThreadAutoTitleResult,
+	setHomeThreadAutoTitle,
+} from "./home-thread-registry";
 
 /**
  * Persistence seam for the home chat thread registry. The default
@@ -32,6 +44,14 @@ export interface HomeThreadStoreOptions {
 export interface CreateThreadRequest {
 	agentId: RuntimeAgentId;
 	name: string;
+	/** How `name` was set. Defaults to `manual` (pinned) when omitted. */
+	titleSource?: RuntimeHomeChatThreadTitleSource;
+}
+
+export interface SetAutoTitleResult {
+	thread: RuntimeHomeChatThread;
+	/** False when the thread's title was pinned `manual` and therefore left untouched. */
+	applied: boolean;
 }
 
 /**
@@ -62,13 +82,15 @@ export class HomeThreadStore {
 	async create(request: CreateThreadRequest): Promise<RuntimeHomeChatThread> {
 		const id = this.generateId();
 		const now = this.now();
+		const titleSource = request.titleSource ?? "manual";
 		await this.persistence.mutate((current) =>
-			createHomeThread(current, { id, agentId: request.agentId, name: request.name, now }),
+			createHomeThread(current, { id, agentId: request.agentId, name: request.name, titleSource, now }),
 		);
 		return {
 			id,
 			agentId: request.agentId,
 			name: request.name,
+			titleSource,
 			createdAt: now,
 			updatedAt: now,
 		};
@@ -83,6 +105,25 @@ export class HomeThreadStore {
 			throw new Error(`Home chat thread "${id}" not found after rename.`);
 		}
 		return renamed;
+	}
+
+	/**
+	 * Set a thread's title from its own agent (`home-thread set-title`). Records the title
+	 * as `auto`, but leaves a pinned `manual` title untouched (`applied: false`) so a user
+	 * rename always wins. Throws if the thread is missing.
+	 */
+	async setAutoTitle(id: string, title: string): Promise<SetAutoTitleResult> {
+		const now = this.now();
+		let result: SetHomeThreadAutoTitleResult | undefined;
+		await this.persistence.mutate((current) => {
+			result = setHomeThreadAutoTitle(current, id, title, now);
+			return result.next;
+		});
+		if (!result) {
+			// Unreachable: setHomeThreadAutoTitle throws when the id is missing.
+			throw new Error(`Home chat thread "${id}" not found.`);
+		}
+		return { thread: result.thread, applied: result.applied };
 	}
 
 	async close(id: string): Promise<RuntimeHomeChatThread> {

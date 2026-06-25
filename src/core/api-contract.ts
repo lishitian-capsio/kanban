@@ -290,10 +290,21 @@ export type RuntimeRequirementProblemStatus = z.infer<typeof runtimeRequirementP
 // of the home agent session id), NOT the full synthetic session id. Each thread
 // is bound to one agent; the full session id is derived via
 // `createHomeAgentSessionId(workspaceId, agentId, id)`.
+// How the thread's current `name` was set. `manual` means a human typed/renamed it
+// and it is PINNED — the thread's own agent must not overwrite it. `auto` means the
+// title is agent-managed (a provisional title derived from the kickoff description, or
+// a concise title the agent summarized via `home-thread set-title`); the agent may
+// freely re-title it as the conversation's topic shifts. Existing persisted threads
+// have no field and load as `manual` (their names were user-typed), so the agent never
+// clobbers a pre-existing name.
+export const runtimeHomeChatThreadTitleSourceSchema = z.enum(["auto", "manual"]);
+export type RuntimeHomeChatThreadTitleSource = z.infer<typeof runtimeHomeChatThreadTitleSourceSchema>;
+
 export const runtimeHomeChatThreadSchema = z.object({
 	id: z.string(),
 	agentId: runtimeAgentIdSchema,
 	name: z.string(),
+	titleSource: runtimeHomeChatThreadTitleSourceSchema.default("manual"),
 	createdAt: z.number(),
 	updatedAt: z.number(),
 });
@@ -312,7 +323,15 @@ export const runtimeHomeChatThreadsListResponseSchema = z.object({
 export type RuntimeHomeChatThreadsListResponse = z.infer<typeof runtimeHomeChatThreadsListResponseSchema>;
 
 export const runtimeHomeChatThreadCreateRequestSchema = z.object({
-	name: z.string(),
+	// A free-text description of what the thread is for. When present it becomes the
+	// thread's kickoff prompt (the agent's first message) and the seed for a provisional
+	// `auto` title; the thread's own agent then summarizes a concise title shortly after
+	// its first turn. Preferred over `name` for new threads.
+	description: z.string().optional(),
+	// Legacy: an explicit human title. When supplied (and no `description`), the thread is
+	// created with a PINNED `manual` title and no session is started. Retained so existing
+	// callers keep working; at least one of `description` / `name` must be present.
+	name: z.string().optional(),
 	// Optional: the agent bound to this thread. Defaults to the workspace's selectedAgentId.
 	agentId: runtimeAgentIdSchema.optional(),
 });
@@ -328,6 +347,14 @@ export const runtimeHomeChatThreadCloseRequestSchema = z.object({
 	id: z.string(),
 });
 export type RuntimeHomeChatThreadCloseRequest = z.infer<typeof runtimeHomeChatThreadCloseRequestSchema>;
+
+// An agent-driven title set (`home-thread set-title`). Distinct from rename: it writes
+// `titleSource="auto"` and is SKIPPED when the thread's title is already pinned `manual`.
+export const runtimeHomeChatThreadSetTitleRequestSchema = z.object({
+	id: z.string(),
+	title: z.string(),
+});
+export type RuntimeHomeChatThreadSetTitleRequest = z.infer<typeof runtimeHomeChatThreadSetTitleRequestSchema>;
 
 // Shared by create/rename/close — each returns the affected thread (close → the removed thread).
 export const runtimeHomeChatThreadMutationResponseSchema = z.object({

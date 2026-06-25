@@ -51,6 +51,7 @@ import {
 	parseHomeChatThreadCloseRequest,
 	parseHomeChatThreadCreateRequest,
 	parseHomeChatThreadRenameRequest,
+	parseHomeChatThreadSetTitleRequest,
 	parseKanbanMcpOAuthRequest,
 	parseKanbanMcpSettingsSaveRequest,
 	parseKanbanProviderModelsRequest,
@@ -65,12 +66,19 @@ import {
 	parseTaskSessionStartRequest,
 	parseTaskSessionStopRequest,
 } from "../core/api-validation";
-import { isHomeAgentSessionId, resolveHomeAgentId } from "../core/home-agent-session";
+import {
+	createHomeAgentSessionId,
+	DEFAULT_HOME_THREAD_ID,
+	isHomeAgentSessionId,
+	resolveHomeAgentId,
+} from "../core/home-agent-session";
 import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
 import { resolveTaskTitle } from "../core/task-title.js";
+import { createLogger } from "../logging";
 import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-prompt";
 import { limitAgentStart } from "../server/agent-start-limiter";
 import { openInBrowser } from "../server/browser";
+import { deriveProvisionalThreadTitle } from "../session/home-thread-registry";
 import type { HomeThreadStore } from "../session/home-thread-store";
 import { capChatMessagesForTransport } from "../session/session-message-display-cap";
 import { getSelectedCommittedProvider } from "../state/committed-provider-store";
@@ -166,6 +174,8 @@ async function loadSelectedCommittedProvider(
 	}
 }
 
+const log = createLogger("runtime-api");
+
 export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrpcContext["runtimeApi"] {
 	const agentProviderService = createAgentProviderService();
 	const kanbanMcpSettingsService = createKanbanMcpSettingsService();
@@ -191,7 +201,11 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		return fn(piService);
 	};
 
-	return {
+	// Bound to a named const (rather than `return { … }` directly) so a few methods can
+	// call sibling methods — e.g. `createHomeThread` kicks off the thread's first turn via
+	// `api.startTaskSession`. The closure is only dereferenced at request time, never during
+	// construction, so there is no temporal-dead-zone hazard.
+	const api: RuntimeTrpcContext["runtimeApi"] = {
 		loadConfig: async (workspaceScope) => {
 			const activeRuntimeConfig = deps.getActiveRuntimeConfig?.();
 			if (!workspaceScope && !activeRuntimeConfig) {
@@ -652,10 +666,42 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			try {
 				const body = parseHomeChatThreadCreateRequest(input);
 				const agentId = body.agentId ?? (await deps.loadScopedRuntimeConfig(workspaceScope)).selectedAgentId;
+				const description = body.description?.trim();
+				// A description-seeded thread starts with a provisional `auto` title (a cleaned
+				// snippet of the description) that the thread's own agent replaces with a concise
+				// summary after its first turn. A legacy name-only thread keeps a PINNED `manual`
+				// title and starts no session.
+				const titleSource = description ? "auto" : "manual";
+				const name = description ? deriveProvisionalThreadTitle(description) : (body.name ?? "");
 				const thread = await deps.getScopedHomeThreadStore(workspaceScope).create({
 					agentId,
-					name: body.name,
+					name,
+					titleSource,
 				});
+				// Kick off the thread's first turn with the description as the opening message so
+				// the agent both does the requested work and self-titles. Fire-and-forget: the
+				// thread is already persisted, so a launch failure must not fail creation (the user
+				// can retry by sending a message). Resolving the agent from the synthetic session
+				// id is handled inside startTaskSession.
+				if (description) {
+					const sessionId = createHomeAgentSessionId(workspaceScope.workspaceId, agentId, thread.id);
+					void api
+						.startTaskSession(workspaceScope, {
+							taskId: sessionId,
+							prompt: description,
+							// Home sessions ignore baseRef (they run in the workspace path), but the
+							// request schema requires a non-empty string.
+							baseRef: "HEAD",
+						})
+						.catch((error) => {
+							log.warn("failed to start home thread session", {
+								workspaceId: workspaceScope.workspaceId,
+								threadId: thread.id,
+								error,
+							});
+						});
+				}
+				deps.bumpKanbanSessionContextVersion?.();
 				return { ok: true, thread };
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -666,6 +712,25 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			try {
 				const body = parseHomeChatThreadRenameRequest(input);
 				const thread = await deps.getScopedHomeThreadStore(workspaceScope).rename(body.id, body.name);
+				deps.bumpKanbanSessionContextVersion?.();
+				return { ok: true, thread };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, thread: null, error: message };
+			}
+		},
+		setHomeThreadTitle: async (workspaceScope, input) => {
+			try {
+				const body = parseHomeChatThreadSetTitleRequest(input);
+				// The synthetic default thread is not a registry entry and its name is a fixed
+				// frontend label, so an agent set-title on it is a benign no-op rather than a
+				// "thread not found" error. (The self-titling directive is only injected for
+				// non-default threads, so this guards against a stray call.)
+				if (body.id === DEFAULT_HOME_THREAD_ID) {
+					return { ok: true, thread: null };
+				}
+				const { thread } = await deps.getScopedHomeThreadStore(workspaceScope).setAutoTitle(body.id, body.title);
+				deps.bumpKanbanSessionContextVersion?.();
 				return { ok: true, thread };
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -991,4 +1056,6 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			};
 		},
 	};
+
+	return api;
 }

@@ -3,7 +3,7 @@ import { realpathSync } from "node:fs";
 import packageJson from "../../package.json" with { type: "json" };
 
 import type { RuntimeAgentId, RuntimeVaultMode } from "../core/api-contract";
-import { isHomeAgentSessionId, parseHomeAgentSessionId } from "../core/home-agent-session";
+import { DEFAULT_HOME_THREAD_ID, isHomeAgentSessionId, parseHomeAgentSessionId } from "../core/home-agent-session";
 import { resolveKanbanCommandParts } from "../core/kanban-command";
 import { buildShellCommandLine } from "../core/shell";
 import { resolveRepoPathForWorkspaceId } from "../state/workspace-state";
@@ -33,6 +33,12 @@ export interface RenderAppendSystemPromptOptions {
 	 * which renders the type-agnostic "no types defined" guidance.
 	 */
 	vaultTypes?: readonly VaultTypeDefinition[];
+	/**
+	 * When true, append the thread self-titling directive: the agent summarizes a concise
+	 * title for its own thread and sets it via `home-thread set-title`. Enabled for created
+	 * (non-default) home threads only — the synthetic default thread keeps its fixed label.
+	 */
+	selfTitleDirective?: boolean;
 	/**
 	 * The workspace's vault-takeover mode (see `RuntimeVaultSettings.vaultMode`), a
 	 * strictly progressive four-tier enum. It decides how much vault guidance is
@@ -268,6 +274,22 @@ This authorization is scoped to the vault only. It does NOT make you a coding ag
 Do not invent a fixed routine. Let each document type govern what you write: before creating or updating a document of a given type, run \`${kanbanCommand} vault type show --type <type>\` and follow that type's authoring prompt. Prefer updating an existing document over creating a duplicate (use \`${kanbanCommand} vault doc list\` and \`${kanbanCommand} vault doc show\` to check first). Keep changes proportionate and relevant; when in doubt about a large or destructive change, ask the user first.`;
 }
 
+/**
+ * Render the thread self-titling directive: the conversational agent itself (no separate
+ * summarizer) names its own thread early and keeps it current, while respecting a manual
+ * rename. Injected only for created (non-default) home threads. Pure/side-effect-free.
+ */
+function renderSelfTitleDirective(kanbanCommand: string): string {
+	return `# Name this chat thread
+
+This conversation is a named chat thread in the Kanban sidebar, and you are responsible for keeping its title meaningful — there is no separate process that does this.
+
+- Early in the conversation (after the user's first message and your first substantive reply), summarize what this thread is about as a concise 3-6 word title and set it by running \`${kanbanCommand} home-thread set-title "<title>"\`. You do not need to pass the thread or session id — the command resolves them from the session it is run in.
+- If the conversation's topic meaningfully shifts later, run the same command again with an updated title. Do not re-title for minor follow-ups — only when the thread is genuinely about something new.
+- Keep titles short, specific, and human-readable (e.g. "Fix flaky auth tests", "Plan Q3 billing migration"). No quotes inside the title, no trailing punctuation.
+- If the user has manually renamed the thread, the command will report that the title is pinned and leave it unchanged. Respect that: do not keep trying to re-title a thread the user has named.`;
+}
+
 export function resolveAppendSystemPromptCommandPrefix(
 	options: ResolveAppendSystemPromptCommandPrefixOptions = {},
 ): string {
@@ -326,11 +348,14 @@ export function renderAppendSystemPrompt(commandPrefix: string, options: RenderA
 	const selectedAgentId = options.agentId ?? null;
 	const vaultMode = options.vaultMode ?? "off";
 	const vaultDocumentsSection = renderVaultDocumentsSection(vaultMode, options.vaultTypes ?? [], kanbanCommand);
-	const vaultManagedDirective = vaultModeAtLeast(vaultMode, "managed") ? renderVaultManagedDirective(kanbanCommand) : "";
+	const vaultManagedDirective = vaultModeAtLeast(vaultMode, "managed")
+		? renderVaultManagedDirective(kanbanCommand)
+		: "";
 	const vaultIntroAndManaged = [vaultDocumentsSection, vaultManagedDirective].filter(Boolean).join("\n\n");
 	const vaultIntroBlock = vaultIntroAndManaged ? `\n${vaultIntroAndManaged}\n` : "";
 	const vaultCliReference = vaultModeAtLeast(vaultMode, "cli-only") ? renderVaultCliReference(kanbanCommand) : "";
 	const vaultCliReferenceBlock = vaultCliReference ? `${vaultCliReference}\n\n` : "";
+	const selfTitleBlock = options.selfTitleDirective ? `\n${renderSelfTitleDirective(kanbanCommand)}\n` : "";
 	return `# Kanban Sidebar
 
 You are the Kanban sidebar agent for this workspace. Help the user interact with their Kanban board directly from this side panel. When the user asks to add tasks, create tasks, break work down, link tasks, or start tasks, prefer using the Kanban CLI yourself instead of describing manual steps.
@@ -351,7 +376,7 @@ If the user asks you to write code, fix a bug, implement a feature, refactor, or
 - Tasks can also enable automatic review actions: auto-commit or auto-open-pr once completed, which then moves the task to done and kicks off any linked tasks. Combining auto-review with linking is how you can set up fully autonomous pipelines when the user wants it. For example, enabling auto-commit on each task in a chain: task A finishes, auto-commits and is moved to done, task B auto-starts from backlog, auto-commits and is moved to done, task C auto-starts, and so on.
 - If your current working directory is inside \`.kanban/worktrees/\`, you are inside a Kanban task worktree. In that case, create or manage tasks against the main workspace path, not the task worktree path. Pass the main workspace with \`--project-path\`.
 - If a task command fails because the runtime is unavailable, tell the user to start Kanban in that workspace first with \`${kanbanCommand}\`, then retry the task command.
-${vaultIntroBlock}
+${selfTitleBlock}${vaultIntroBlock}
 # Command Prefix
 
 Use this prefix for every Kanban command in this session:
@@ -562,8 +587,13 @@ export async function resolveHomeAgentAppendSystemPrompt(
 		loadVaultTypesForHomeSession(taskId),
 		loadVaultModeForHomeSession(taskId),
 	]);
+	// Self-titling is per-thread: the synthetic default thread keeps its fixed "Default"
+	// label (it is not a registry entry), so only created (non-default) threads get the
+	// directive to name themselves.
+	const threadId = parseHomeAgentSessionId(taskId)?.threadId ?? DEFAULT_HOME_THREAD_ID;
 	return renderAppendSystemPrompt(resolveAppendSystemPromptCommandPrefix(options), {
 		agentId: resolveHomeAgentId(taskId),
+		selfTitleDirective: threadId !== DEFAULT_HOME_THREAD_ID,
 		vaultTypes,
 		vaultMode,
 	});

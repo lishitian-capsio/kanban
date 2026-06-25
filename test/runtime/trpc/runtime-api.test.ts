@@ -2764,14 +2764,63 @@ describe("createRuntimeApi home thread handlers", () => {
 		expect(loadScopedRuntimeConfig).not.toHaveBeenCalled();
 	});
 
-	it("rejects an empty thread name", async () => {
+	it("rejects a create with neither description nor name", async () => {
 		const { api } = makeApiWithStore();
 
 		const response = await api.createHomeThread(workspaceScope, { name: "   " });
 
 		expect(response.ok).toBe(false);
 		expect(response.thread).toBeNull();
-		expect(response.error).toContain("name");
+		expect(response.error).toContain("description or a name");
+	});
+
+	it("seeds a description-created thread with a provisional auto title", async () => {
+		const { api } = makeApiWithStore();
+
+		// The kickoff session start is fire-and-forget (and may fail against the mock
+		// managers); creation still succeeds and the title is the provisional `auto` one.
+		const response = await api.createHomeThread(workspaceScope, { description: "Fix the login bug" });
+
+		expect(response.ok).toBe(true);
+		expect(response.thread?.titleSource).toBe("auto");
+		expect(response.thread?.name).toBe("Fix the login bug");
+	});
+
+	it("creates a name-only thread with a pinned manual title", async () => {
+		const { api } = makeApiWithStore();
+
+		const response = await api.createHomeThread(workspaceScope, { name: "Planning" });
+
+		expect(response.thread?.titleSource).toBe("manual");
+	});
+
+	it("sets an auto title via setHomeThreadTitle and skips a pinned manual title", async () => {
+		const { api } = makeApiWithStore();
+
+		const auto = await api.createHomeThread(workspaceScope, { description: "Fix the login bug" });
+		const set = await api.setHomeThreadTitle(workspaceScope, { id: auto.thread?.id ?? "", title: "Login fix" });
+		expect(set.ok).toBe(true);
+		expect(set.thread?.name).toBe("Login fix");
+		expect(set.thread?.titleSource).toBe("auto");
+
+		const manual = await api.createHomeThread(workspaceScope, { name: "User named" });
+		const skipped = await api.setHomeThreadTitle(workspaceScope, {
+			id: manual.thread?.id ?? "",
+			title: "Agent title",
+		});
+		expect(skipped.ok).toBe(true);
+		// A manually-pinned title is left untouched.
+		expect(skipped.thread?.name).toBe("User named");
+		expect(skipped.thread?.titleSource).toBe("manual");
+	});
+
+	it("no-ops setHomeThreadTitle for the synthetic default thread", async () => {
+		const { api } = makeApiWithStore();
+
+		const response = await api.setHomeThreadTitle(workspaceScope, { id: "default", title: "Anything" });
+
+		expect(response.ok).toBe(true);
+		expect(response.thread).toBeNull();
 	});
 
 	it("lists created threads in createdAt-ascending order", async () => {

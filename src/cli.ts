@@ -11,6 +11,7 @@ import { CLI_EXIT_USAGE_ERROR } from "./commands/cli-envelope";
 import { registerSchemaCommand } from "./commands/cli-schema";
 import { registerDbCommand } from "./commands/db";
 import { registerFileCommand } from "./commands/file";
+import { registerHomeThreadCommand } from "./commands/home-thread";
 import { registerHooksCommand } from "./commands/hooks";
 import { registerPasscodeAliasCommand, registerRemoteCommand } from "./commands/remote";
 import { registerServiceCommand } from "./commands/service";
@@ -109,14 +110,7 @@ function shouldAutoOpenBrowserTabForInvocation(argv: string[]): boolean {
 		"--no-color",
 		"--quiet",
 	]);
-	const launchOptionsWithValues = new Set([
-		"--host",
-		"--port",
-		"--cert",
-		"--key",
-		"--passcode",
-		"--project-path",
-	]);
+	const launchOptionsWithValues = new Set(["--host", "--port", "--cert", "--key", "--passcode", "--project-path"]);
 
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
@@ -803,6 +797,7 @@ function createProgram(invocationArgs: string[]): Command {
 	registerFileCommand(program);
 	registerVaultCommand(program);
 	registerDbCommand(program);
+	registerHomeThreadCommand(program);
 	registerHooksCommand(program);
 	registerServiceCommand(program);
 	registerRemoteCommand(program);

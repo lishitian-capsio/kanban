@@ -9,6 +9,7 @@ import {
 	type RuntimeHomeChatThreadCloseRequest,
 	type RuntimeHomeChatThreadCreateRequest,
 	type RuntimeHomeChatThreadRenameRequest,
+	type RuntimeHomeChatThreadSetTitleRequest,
 	type RuntimeHookIngestRequest,
 	type RuntimeKanbanMcpOAuthRequest,
 	type RuntimeKanbanMcpSettingsSaveRequest,
@@ -39,6 +40,7 @@ import {
 	runtimeHomeChatThreadCloseRequestSchema,
 	runtimeHomeChatThreadCreateRequestSchema,
 	runtimeHomeChatThreadRenameRequestSchema,
+	runtimeHomeChatThreadSetTitleRequestSchema,
 	runtimeHookIngestRequestSchema,
 	runtimeKanbanMcpOAuthRequestSchema,
 	runtimeKanbanMcpSettingsSaveRequestSchema,
@@ -285,13 +287,16 @@ export function parseTaskChatSendRequest(value: unknown): RuntimeTaskChatSendReq
 
 export function parseHomeChatThreadCreateRequest(value: unknown): RuntimeHomeChatThreadCreateRequest {
 	const parsed = parseWithSchema(runtimeHomeChatThreadCreateRequestSchema, value);
-	const name = parsed.name.trim();
-	if (!name) {
-		throw new Error("Home chat thread name cannot be empty.");
+	const description = parsed.description?.trim();
+	const name = parsed.name?.trim();
+	if (!description && !name) {
+		throw new Error("Home chat thread requires a description or a name.");
 	}
 	return {
 		...parsed,
-		name,
+		...(description ? { description } : { description: undefined }),
+		...(name ? { name } : { name: undefined }),
+		...(parsed.agentId ? { agentId: parsed.agentId } : {}),
 	};
 }
 
@@ -319,6 +324,22 @@ export function parseHomeChatThreadCloseRequest(value: unknown): RuntimeHomeChat
 	}
 	return {
 		id,
+	};
+}
+
+export function parseHomeChatThreadSetTitleRequest(value: unknown): RuntimeHomeChatThreadSetTitleRequest {
+	const parsed = parseWithSchema(runtimeHomeChatThreadSetTitleRequestSchema, value);
+	const id = parsed.id.trim();
+	if (!id) {
+		throw new Error("Home chat thread id cannot be empty.");
+	}
+	const title = parsed.title.trim();
+	if (!title) {
+		throw new Error("Home chat thread title cannot be empty.");
+	}
+	return {
+		id,
+		title,
 	};
 }
 

@@ -68,15 +68,16 @@ import type {
 	RuntimeGitLogRequest,
 	RuntimeGitLogResponse,
 	RuntimeGitRefsResponse,
+	RuntimeGitRemoteResponse,
 	RuntimeGitSummaryResponse,
 	RuntimeGitSyncAction,
 	RuntimeGitSyncResponse,
-	RuntimeGitRemoteResponse,
 	RuntimeGitUserIdentityResponse,
 	RuntimeHomeChatThreadCloseRequest,
 	RuntimeHomeChatThreadCreateRequest,
 	RuntimeHomeChatThreadMutationResponse,
 	RuntimeHomeChatThreadRenameRequest,
+	RuntimeHomeChatThreadSetTitleRequest,
 	RuntimeHomeChatThreadsListResponse,
 	RuntimeHookIngestRequest,
 	RuntimeHookIngestResponse,
@@ -166,10 +167,10 @@ import type {
 	RuntimeWorktreeEnsureResponse,
 } from "../core/api-contract";
 import {
-	runtimeAgentProviderConfigListResponseSchema,
-	runtimeAgentProviderConfigSaveRequestSchema,
 	runtimeAgentExecutablePathResponseSchema,
 	runtimeAgentExecutablePathSaveRequestSchema,
+	runtimeAgentProviderConfigListResponseSchema,
+	runtimeAgentProviderConfigSaveRequestSchema,
 	runtimeAgentProviderMutationRequestSchema,
 	runtimeAgentProviderMutationResponseSchema,
 	runtimeAgentProviderSetListResponseSchema,
@@ -244,15 +245,16 @@ import {
 	runtimeGitLogRequestSchema,
 	runtimeGitLogResponseSchema,
 	runtimeGitRefsResponseSchema,
+	runtimeGitRemoteResponseSchema,
 	runtimeGitSummaryResponseSchema,
 	runtimeGitSyncActionSchema,
 	runtimeGitSyncResponseSchema,
-	runtimeGitRemoteResponseSchema,
 	runtimeGitUserIdentityResponseSchema,
 	runtimeHomeChatThreadCloseRequestSchema,
 	runtimeHomeChatThreadCreateRequestSchema,
 	runtimeHomeChatThreadMutationResponseSchema,
 	runtimeHomeChatThreadRenameRequestSchema,
+	runtimeHomeChatThreadSetTitleRequestSchema,
 	runtimeHomeChatThreadsListResponseSchema,
 	runtimeHookIngestRequestSchema,
 	runtimeHookIngestResponseSchema,
@@ -274,9 +276,9 @@ import {
 	runtimeProjectRemoveResponseSchema,
 	runtimeProjectsResponseSchema,
 	runtimeRunUpdateResponseSchema,
-	runtimeSetGitUserIdentityRequestSchema,
 	runtimeSetGitRemoteRequestSchema,
 	runtimeSetGitRemoteResponseSchema,
+	runtimeSetGitUserIdentityRequestSchema,
 	runtimeSetGitUserIdentityResponseSchema,
 	runtimeShellSessionStartRequestSchema,
 	runtimeShellSessionStartResponseSchema,
@@ -398,6 +400,10 @@ export interface RuntimeTrpcContext {
 		renameHomeThread: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatThreadRenameRequest,
+		) => Promise<RuntimeHomeChatThreadMutationResponse>;
+		setHomeThreadTitle: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeHomeChatThreadSetTitleRequest,
 		) => Promise<RuntimeHomeChatThreadMutationResponse>;
 		closeHomeThread: (
 			scope: RuntimeTrpcWorkspaceScope,
@@ -791,6 +797,12 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeHomeChatThreadMutationResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.renameHomeThread(ctx.workspaceScope, input);
+			}),
+		setHomeThreadTitle: workspaceProcedure
+			.input(runtimeHomeChatThreadSetTitleRequestSchema)
+			.output(runtimeHomeChatThreadMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.setHomeThreadTitle(ctx.workspaceScope, input);
 			}),
 		closeHomeThread: workspaceProcedure
 			.input(runtimeHomeChatThreadCloseRequestSchema)

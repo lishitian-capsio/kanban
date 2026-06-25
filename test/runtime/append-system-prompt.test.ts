@@ -115,6 +115,17 @@ describe("renderAppendSystemPrompt", () => {
 		expect(rendered).not.toContain("Proactive vault management is ENABLED");
 	});
 
+	it("omits the self-titling directive by default and includes it when selfTitleDirective is set", () => {
+		const withoutDirective = renderAppendSystemPrompt("kanban");
+		expect(withoutDirective).not.toContain("# Name this chat thread");
+		expect(withoutDirective).not.toContain("home-thread set-title");
+
+		const withDirective = renderAppendSystemPrompt("kanban", { selfTitleDirective: true });
+		expect(withDirective).toContain("# Name this chat thread");
+		expect(withDirective).toContain('kanban home-thread set-title "<title>"');
+		expect(withDirective).toContain("manually renamed");
+	});
+
 	it("renders only the active-agent Linear MCP guidance when an agent is provided", () => {
 		const rendered = renderAppendSystemPrompt("kanban", {
 			agentId: "codex",

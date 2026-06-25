@@ -57,6 +57,8 @@ function buildDefaultThread(agentId: RuntimeAgentId): HomeThread {
 		id: DEFAULT_HOME_THREAD_ID,
 		agentId,
 		name: DEFAULT_THREAD_NAME,
+		// The default thread's label is a fixed frontend constant, never agent-managed.
+		titleSource: "manual",
 		createdAt: 0,
 		updatedAt: 0,
 		isDefault: true,

@@ -11,6 +11,7 @@ import {
 } from "../../src/commands/cli-schema";
 import { registerDbCommand } from "../../src/commands/db";
 import { registerFileCommand } from "../../src/commands/file";
+import { registerHomeThreadCommand } from "../../src/commands/home-thread";
 import { registerHooksCommand } from "../../src/commands/hooks";
 import { registerPasscodeAliasCommand, registerRemoteCommand } from "../../src/commands/remote";
 import { registerServiceCommand } from "../../src/commands/service";
@@ -40,6 +41,7 @@ function buildRealManifest(): CliSchemaManifest {
 	registerFileCommand(program);
 	registerVaultCommand(program);
 	registerDbCommand(program);
+	registerHomeThreadCommand(program);
 	registerHooksCommand(program);
 	registerServiceCommand(program);
 	registerRemoteCommand(program);
@@ -91,6 +93,7 @@ const EXPECTED_COMMAND_IDS = [
 	"vault.doc.create",
 	"vault.doc.update",
 	"vault.doc.delete",
+	"home-thread.set-title",
 	"service.install",
 	"service.uninstall",
 	"service.start",

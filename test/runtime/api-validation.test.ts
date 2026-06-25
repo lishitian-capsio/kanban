@@ -105,8 +105,15 @@ describe("parseHomeChatThreadCreateRequest", () => {
 		expect(parseHomeChatThreadCreateRequest({ name: "Planning" })).toEqual({ name: "Planning" });
 	});
 
-	it("throws on an empty name", () => {
-		expect(() => parseHomeChatThreadCreateRequest({ name: "   " })).toThrow("name cannot be empty");
+	it("trims and passes a description through", () => {
+		expect(parseHomeChatThreadCreateRequest({ description: "  Fix the login bug  " })).toEqual({
+			description: "Fix the login bug",
+		});
+	});
+
+	it("throws when neither description nor name is provided", () => {
+		expect(() => parseHomeChatThreadCreateRequest({ name: "   " })).toThrow("requires a description or a name");
+		expect(() => parseHomeChatThreadCreateRequest({})).toThrow("requires a description or a name");
 	});
 });
 
