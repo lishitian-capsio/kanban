@@ -1,8 +1,9 @@
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { cp, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { z } from "zod";
 
 import { getAgentProviderConfig } from "../agent-sdk/kanban/agent-provider-config";
@@ -1057,32 +1058,64 @@ async function ensureRuntimeHomeGitignore(repoPath: string): Promise<void> {
 	await writeFile(gitignorePath, RUNTIME_HOME_GITIGNORE_CONTENT, "utf8");
 }
 
-function runGitCapture(cwd: string, args: string[]): string | null {
-	const result = spawnSync("git", args, {
-		cwd,
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "ignore"],
-		env: createGitProcessEnv(),
-	});
-	if (result.status !== 0 || typeof result.stdout !== "string") {
+const execFileAsync = promisify(execFile);
+
+/**
+ * Hard wall-clock cap for a local git detection read. These are fast local
+ * operations (`rev-parse`/`symbolic-ref`/`for-each-ref`), so a read that takes
+ * this long signals a genuinely wedged git (lock contention, a stalled network
+ * filesystem); bound it and degrade to `null` rather than leaving the load
+ * pending. Generous so a momentarily busy repo is never falsely reported as
+ * "no git".
+ */
+const GIT_DETECT_TIMEOUT_MS = 10_000;
+/** Matches git-utils' cap so a repo with many refs can't overflow the pipe buffer. */
+const GIT_DETECT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Run a read-only local git command and return its trimmed stdout (or `null` on
+ * non-zero exit / timeout / empty output).
+ *
+ * MUST stay async: this runs on the hot `loadWorkspaceContext` path (every
+ * workspace-state broadcast, every restart-connect, the projects tRPC api). The
+ * previous `spawnSync` implementation blocked the entire event loop for the git
+ * subprocess's full duration — when git was slow/contended (the stall watchdog
+ * caught an 88s hard freeze after a `task start` raced the new task worktree's
+ * `git worktree add` + board-sync), the runtime hard-froze at 100% with no async
+ * yield. An `await`ed spawn keeps the loop breathing, so a slow git degrades to a
+ * laggy (not frozen) read. No github-auth/proxy injection here on purpose — these
+ * are purely local reads (see `runGit` in git-utils for the network-git path).
+ */
+async function runGitCapture(cwd: string, args: string[]): Promise<string | null> {
+	try {
+		const { stdout } = await execFileAsync("git", args, {
+			cwd,
+			encoding: "utf8",
+			env: createGitProcessEnv(),
+			timeout: GIT_DETECT_TIMEOUT_MS,
+			maxBuffer: GIT_DETECT_MAX_BUFFER_BYTES,
+		});
+		const value = stdout.trim();
+		return value.length > 0 ? value : null;
+	} catch {
+		// Non-zero exit, timeout kill, or spawn failure — the callers all treat a
+		// null as "unknown", so a degraded read never throws out of the hot path.
 		return null;
 	}
-	const value = result.stdout.trim();
-	return value.length > 0 ? value : null;
 }
 
-function detectGitRoot(cwd: string): string | null {
+function detectGitRoot(cwd: string): Promise<string | null> {
 	return runGitCapture(cwd, ["rev-parse", "--show-toplevel"]);
 }
 
-function detectGitCurrentBranch(repoPath: string): string | null {
+function detectGitCurrentBranch(repoPath: string): Promise<string | null> {
 	return runGitCapture(repoPath, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
 }
 
-function detectGitBranches(repoPath: string): string[] {
+async function detectGitBranches(repoPath: string): Promise<string[]> {
 	// TODO: support showing remote branches again once worktree creation can safely fetch/pull
 	// and resolve missing local tracking branches automatically.
-	const output = runGitCapture(repoPath, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]);
+	const output = await runGitCapture(repoPath, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]);
 	if (!output) {
 		return [];
 	}
@@ -1098,8 +1131,8 @@ function detectGitBranches(repoPath: string): string[] {
 	return Array.from(unique).sort((left, right) => left.localeCompare(right));
 }
 
-function detectGitDefaultBranch(repoPath: string, branches: string[]): string | null {
-	const remoteHead = runGitCapture(repoPath, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+async function detectGitDefaultBranch(repoPath: string, branches: string[]): Promise<string | null> {
+	const remoteHead = await runGitCapture(repoPath, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
 	if (remoteHead) {
 		const normalized = remoteHead.startsWith("origin/") ? remoteHead.slice("origin/".length) : remoteHead;
 		if (normalized) {
@@ -1115,16 +1148,21 @@ function detectGitDefaultBranch(repoPath: string, branches: string[]): string | 
 	return branches[0] ?? null;
 }
 
-function detectGitRepositoryInfo(repoPath: string): RuntimeGitRepositoryInfo {
-	const gitRoot = detectGitRoot(repoPath);
+export async function detectGitRepositoryInfo(repoPath: string): Promise<RuntimeGitRepositoryInfo> {
+	// Breadcrumb so a future slow git read on this hot path is attributed precisely
+	// (the reads are async now, so a slow git no longer hard-freezes the loop, but a
+	// stall report still wants the workspace + step that lagged).
+	markStall("git:detect", repoPath);
+	const gitRoot = await detectGitRoot(repoPath);
 	if (!gitRoot) {
 		throw new Error(`No git repository detected at ${repoPath}`);
 	}
 
-	const currentBranch = detectGitCurrentBranch(repoPath);
-	const branches = detectGitBranches(repoPath);
+	// The current branch and the branch list are independent reads — run them
+	// concurrently so the whole detection costs one git round-trip, not three.
+	const [currentBranch, branches] = await Promise.all([detectGitCurrentBranch(repoPath), detectGitBranches(repoPath)]);
 	const orderedBranches = currentBranch && !branches.includes(currentBranch) ? [currentBranch, ...branches] : branches;
-	const defaultBranch = detectGitDefaultBranch(repoPath, orderedBranches);
+	const defaultBranch = await detectGitDefaultBranch(repoPath, orderedBranches);
 
 	return {
 		currentBranch,
@@ -1142,7 +1180,7 @@ async function resolveWorkspacePath(cwd: string): Promise<string> {
 		canonicalCwd = resolvedCwd;
 	}
 
-	const gitRoot = detectGitRoot(canonicalCwd);
+	const gitRoot = await detectGitRoot(canonicalCwd);
 	if (!gitRoot) {
 		throw new Error(`No git repository detected at ${canonicalCwd}`);
 	}
@@ -1198,7 +1236,7 @@ export async function loadWorkspaceContext(
 			repoPath,
 			workspaceId: existingEntry.workspaceId,
 			statePath: getWorkspaceDirectoryPath(repoPath, existingEntry.workspaceId),
-			git: detectGitRepositoryInfo(repoPath),
+			git: await detectGitRepositoryInfo(repoPath),
 			boardData: resolveBoardDataLocation(repoPath),
 		};
 	}
@@ -1219,7 +1257,7 @@ export async function loadWorkspaceContext(
 			repoPath,
 			workspaceId: ensured.entry.workspaceId,
 			statePath: getWorkspaceDirectoryPath(repoPath, ensured.entry.workspaceId),
-			git: detectGitRepositoryInfo(repoPath),
+			git: await detectGitRepositoryInfo(repoPath),
 			boardData: resolveBoardDataLocation(repoPath),
 		};
 	});
