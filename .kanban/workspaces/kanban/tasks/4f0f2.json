@@ -1,0 +1,19 @@
+{
+  "id": "4f0f2",
+  "title": "VSCode-style runtime ops status bar at bottom of Kanban-agent sidebar",
+  "prompt": "GOAL: Add a VSCode-style status bar at the BOTTOM of the unified Kanban-agent sidebar showing real-time runtime ops metrics, plus the data channel that feeds them to the frontend. DEPENDS ON the sidebar-unification task (part ①), which leaves a bottom status-bar slot — mount into that slot.\n\nDESIGN SOURCE: vault decision doc 'Unify project navigation and runtime ops into the Kanban-agent sidebar'.\n\nMETRICS TO SHOW (compact, VSCode status-bar style, left-to-right):\n- Process memory (RSS) e.g. '483MB'\n- CPU% of the runtime process\n- Event-loop stall state (healthy / stalled), derived from the existing event-loop stall watchdog.\n\nCONTEXT (read first):\n- src/server/event-loop-stall-watchdog.ts — already emits stall/recovered events (Worker + SharedArrayBuffer) and writes '[stall-watchdog]' JSON to stderr. Reuse its in-process signal as the stall indicator; do NOT parse stderr.\n- process.memoryUsage()/process.cpuUsage() (Bun) for RSS + CPU; sample on an interval in the runtime, compute CPU% from cpuUsage deltas.\n- Broadcast channel: follow the existing dedicated ws broadcast pattern (e.g. board_sync_status_updated → RuntimeBoardSyncStatus → granular store slice → leaf-subscribed badge component, see memory 'board-branch-decoupling' + 'perf10'). Add a similar low-frequency 'runtime_metrics_updated' broadcast + a runtime-stream-store slice + a useRuntimeMetrics() selector hook.\n- Frontend: web-ui/src/runtime/runtime-stream-store.ts (granular external store), the existing HomeBoardSyncControl badge (components/home-board-sync-control.tsx) is a good reference for a leaf-subscribed status widget.\n\nREQUIRED WORK:\n1. Backend: sample RSS + CPU% on a modest interval (e.g. 2-3s) in the runtime server; combine with the stall watchdog's current state; broadcast as a new low-frequency ws message. Keep it cheap; reuse the stall watchdog, don't add a second loop if avoidable.\n2. Contract: add the metrics shape to src/core/api-contract.ts (RuntimeOpsMetrics) so web-ui shares the type via @runtime-contract.\n3. Frontend store + hook: dispatch into runtime-stream-store; expose a useRuntimeMetrics() selector. Subscribe ONLY in the leaf status-bar component (memory perf10) so it never re-renders the tree.\n4. UI: a <SidebarOpsStatusBar/> mounted in the bottom slot part ① left. VSCode look: thin, muted (surface/text-secondary tokens), compact numbers, a small colored dot for stall state (status-green healthy / status-red stalled). Tooltip with detail.\n\nCONSTRAINTS: AGENTS.md — Tailwind v4, Radix, lucide, surface tokens, ui primitives; no any; structured logging via createLogger not console; web:typecheck + biome + (bun) tests clean. Add a unit test for the CPU%-from-deltas calc (pure fn).\n\nACCEPTANCE: bottom of the agent sidebar shows live RSS + CPU% + stall dot, updating on the interval; metrics travel via a dedicated ws broadcast + granular store slice; subscription is leaf-only; typecheck/biome/tests pass.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782354004079,
+  "updatedAt": 1782354004079,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
