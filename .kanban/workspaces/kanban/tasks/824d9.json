@@ -1,0 +1,19 @@
+{
+  "id": "824d9",
+  "title": "Settings → Project: 添加 Git Remote (origin) 配置控件",
+  "prompt": "在 Settings 的 Project 分区新增一个 \"Git remote (origin)\" 控件，让用户能为工作区仓库设置/修改远程仓库 URL。这是因为 Kanban 在添加项目时可能替用户做了 git init（本地仓库无 remote），需要后期接入真正的远程仓库。\n\n## 范围（第一版，最小且安全）\n- 只做\"读取 / 设置 / 修改 origin URL\"，不在前端处理认证密钥；认证沿用系统 git 凭据（credential helper / SSH agent）。\n- 不强制做推送；可选提供一个轻量的 'Push now' 按钮作为后续增强，但第一版以设置 URL 为主。\n\n## 后端契约（沿用现有 GitIdentity 模式）\n参考 src/trpc 中已有的 workspace.getGitUserIdentity / setGitUserIdentity 实现方式，新增：\n- workspace.getGitRemote：执行 git remote get-url origin，未配置时返回空（不报错）。\n- workspace.setGitRemote：若 origin 不存在则 git remote add origin <url>，已存在则 git remote set-url origin <url>。对 URL 做基本校验。\n对应的 git 操作放到 src/workspace/ 下合适的模块，复用现有的 git 调用/解析工具，统一通过 src/logging facade 记录日志（不要用 console.*）。\n\n## 前端控件（自包含，仿照 git-identity-setting.tsx）\n- 新建 web-ui/src/components/git-remote-setting.tsx，组件 GitRemoteSetting({ workspaceId })，自带数据 hook（仿照 useGitIdentityEditor）。\n- UI 用现有设计系统：Button、Spinner、输入框、showAppToast；遵循 dark-theme + Tailwind token 约定（见 AGENTS.md）。\n- 状态：未配置 remote（提示可填）/ 已配置（显示并可编辑）/ 保存中。\n- 在 runtime-settings-dialog.tsx 的 Project 分区，把它和 BoardBranchSetting / GitIdentitySetting 并排渲染（约 1468 行附近）。\n\n## 注意点 / 约束\n- board 数据在独立分支 kanban/board 上，由 board sync 管理；本任务不改 board sync，只设置代码仓库的 origin。设了 origin 后，已有的 board sync 推送路径即可工作。\n- 不要把任何密钥写到磁盘或提交的状态里。\n- 加上对应测试，仿照 git-identity-setting.test.tsx 的方式覆盖前端控件，后端 git remote 读写逻辑也加单元测试。\n- 不要 commit（除非另有要求）。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782350067251,
+  "updatedAt": 1782350067251,
+  "column": "backlog",
+  "rank": "Zo",
+  "dependsOn": []
+}
