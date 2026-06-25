@@ -13,6 +13,13 @@
       "name": "会话",
       "createdAt": 1782349308679,
       "updatedAt": 1782349308679
+    },
+    {
+      "id": "e0654754-d711-4c28-8d79-45d96e81141f",
+      "agentId": "claude",
+      "name": "provider",
+      "createdAt": 1782351351870,
+      "updatedAt": 1782351351870
     }
   ]
 }
