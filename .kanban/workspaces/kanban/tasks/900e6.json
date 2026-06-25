@@ -1,0 +1,19 @@
+{
+  "id": "900e6",
+  "title": "Sidebar header: merge Kanban Agent identity + project switcher into one row",
+  "prompt": "GOAL (web-ui, frontend only): In the dockable Kanban-agent sidebar header, collapse the current TWO header rows (dock controls on one row, project switcher on a separate row below) into a SINGLE row. Left side = the project selector, whose trigger now also carries the 'Kanban Agent' identity (e.g. an icon + 'Kanban Agent · <ProjectName>' + chevron). Right side = the existing dock control buttons, right-aligned on the same row. This reclaims a full row of vertical space in the narrow sidebar and makes the expanded header show the 'Kanban Agent' identity (today it only appears in the COLLAPSED vertical strip).\n\nCONTEXT (read first):\n- web-ui/src/components/home-agent/dockable-chat-panel.tsx — DockHeaderWithChildren currently renders, top to bottom: <ChatDockHeader …/> (the dock control buttons), then {projectSwitcher}, then children, then <SidebarOpsStatusBar/>. The change: put ChatDockHeader's controls and projectSwitcher on the SAME flex row (project selector left/grows, dock controls right/shrink-0). The collapsed strip (CollapsedChatStrip) already shows a vertical 'Kanban Agent' label — keep it; this only changes the EXPANDED header.\n- web-ui/src/components/home-agent/project-switcher.tsx — SidebarProjectSwitcher: the Radix Popover trigger button currently shows FolderOpen icon + project name + ChevronDown. Update the trigger label to read like 'Kanban Agent · <ProjectName>' (identity + project), keeping truncation on the project name. Confirm exact wording/icon while implementing; keep it compact for a narrow sidebar.\n- ChatDockHeader is the component rendering the dock left/right/float/close/collapse/hide buttons (find it near dockable-chat-panel.tsx). It may need to expose its buttons so they can sit inline at the row's right edge rather than as a standalone full-width row — refactor minimally, do not duplicate the buttons.\n\nCONSTRAINTS:\n- Frontend only. Follow AGENTS.md web-ui rules: Tailwind v4, Radix, lucide, surface tokens (surface-1/2/3, border, text-secondary), src/components/ui primitives, cn(). Dark theme only.\n- Narrow-sidebar resilient: project name truncates, dock buttons stay shrink-0 and fully clickable; nothing overflows horizontally.\n- Do not change dock behavior, the popover project list/Add Project, the ops status bar, or the chat panel below.\n\nACCEPTANCE:\n- Expanded sidebar header is a single row: left = project selector carrying the 'Kanban Agent' identity, right = dock control buttons. One fewer vertical row than before.\n- Project name still truncates; all dock controls still work; no horizontal overflow at narrow widths.\n- Collapsed strip unchanged. web:typecheck + biome clean. No any types.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782363663442,
+  "updatedAt": 1782363663442,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
