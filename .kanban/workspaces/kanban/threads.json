@@ -59,14 +59,6 @@
       "titleSource": "auto",
       "createdAt": 1782367732124,
       "updatedAt": 1782367732124
-    },
-    {
-      "id": "42806eda-d7a1-4d1f-b72b-e43e58821177",
-      "agentId": "codex",
-      "name": "认识 Kanban 助手",
-      "titleSource": "auto",
-      "createdAt": 1782367744531,
-      "updatedAt": 1782367780258
     }
   ]
 }
