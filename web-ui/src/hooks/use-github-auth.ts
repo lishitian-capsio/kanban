@@ -19,6 +19,15 @@ const log = createLogger("github-auth");
 /** GitHub's device flow recommends a minimum poll interval; never poll faster than this. */
 const MIN_POLL_INTERVAL_SECONDS = 5;
 
+/**
+ * How many *consecutive* failed polls to tolerate before surfacing an error. A single
+ * blip (transient network hiccup, a momentary proxy stall) should not abort a flow that
+ * is otherwise healthy, but a sustained failure must become visible — silently retrying
+ * forever is the bug this guards against (the UI would spin on "Checking authorization…"
+ * indefinitely, indistinguishable from a still-pending authorization).
+ */
+const MAX_CONSECUTIVE_POLL_FAILURES = 3;
+
 /** What the user needs in order to complete the device flow in their browser. */
 export interface GithubLoginPrompt {
 	userCode: string;
@@ -79,6 +88,7 @@ export function useGithubAuth(workspaceId: string | null): UseGithubAuthResult {
 	const deviceCodeRef = useRef<string | null>(null);
 	const expiresAtRef = useRef<number>(0);
 	const pollInFlightRef = useRef(false);
+	const pollFailuresRef = useRef(0);
 
 	const setDataRef = useRef(statusQuery.setData);
 	setDataRef.current = statusQuery.setData;
@@ -88,6 +98,7 @@ export function useGithubAuth(workspaceId: string | null): UseGithubAuthResult {
 		try {
 			const grant = await beginGithubLogin(workspaceId);
 			deviceCodeRef.current = grant.deviceCode;
+			pollFailuresRef.current = 0;
 			expiresAtRef.current = Date.now() + grant.expiresInSeconds * 1000;
 			setPollDelayMs(Math.max(grant.intervalSeconds, MIN_POLL_INTERVAL_SECONDS) * 1000);
 			setFlow({
@@ -107,6 +118,7 @@ export function useGithubAuth(workspaceId: string | null): UseGithubAuthResult {
 
 	const cancelLogin = useCallback(() => {
 		deviceCodeRef.current = null;
+		pollFailuresRef.current = 0;
 		setFlow({ kind: "idle" });
 	}, []);
 
@@ -128,6 +140,8 @@ export function useGithubAuth(workspaceId: string | null): UseGithubAuthResult {
 			if (deviceCodeRef.current !== deviceCode) {
 				return;
 			}
+			// The backend answered (pending/complete/error all count) — clear the failure streak.
+			pollFailuresRef.current = 0;
 			if (result.state === "complete") {
 				deviceCodeRef.current = null;
 				setDataRef.current(result.status);
@@ -146,9 +160,33 @@ export function useGithubAuth(workspaceId: string | null): UseGithubAuthResult {
 			}
 			// "pending" → keep polling on the next tick.
 		} catch (error) {
-			// A transient network blip during a poll should not abort the whole flow —
-			// log it and let the next tick retry while the code is still valid.
-			log.warn("github.pollLogin failed", { error });
+			// A cancel / restart happened while this request was in flight — drop the failure
+			// so it can't taint a freshly started (or cancelled) flow.
+			if (deviceCodeRef.current !== deviceCode) {
+				return;
+			}
+			pollFailuresRef.current += 1;
+			if (pollFailuresRef.current >= MAX_CONSECUTIVE_POLL_FAILURES) {
+				// Sustained failure: stop the silent retry and make it visible so the user can
+				// act (check network/proxy, retry) instead of watching an endless spinner.
+				log.warn("github.pollLogin failed repeatedly; surfacing error", {
+					error,
+					failures: pollFailuresRef.current,
+				});
+				deviceCodeRef.current = null;
+				pollFailuresRef.current = 0;
+				setFlow({
+					kind: "error",
+					message: toMessage(
+						error,
+						"Lost contact with GitHub while waiting for authorization. Check your network or proxy and try again.",
+					),
+				});
+			} else {
+				// A transient blip should not abort an otherwise healthy flow — let the next
+				// tick retry while the code is still valid.
+				log.warn("github.pollLogin failed; will retry", { error, failures: pollFailuresRef.current });
+			}
 		} finally {
 			pollInFlightRef.current = false;
 			setIsPolling(false);

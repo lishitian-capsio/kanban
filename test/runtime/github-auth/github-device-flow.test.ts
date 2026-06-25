@@ -63,6 +63,29 @@ describe("requestDeviceCode", () => {
 		mockFetchOnce(200, { device_code: "DEV" });
 		await expect(requestDeviceCode("c")).rejects.toThrow(/missing required fields/i);
 	});
+
+	it("surfaces a request timeout as a clear, recoverable error", async () => {
+		vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new DOMException("aborted", "TimeoutError"));
+		await expect(requestDeviceCode("c")).rejects.toThrow(/timed out/i);
+	});
+
+	it("passes an abort signal so a hung request cannot wedge the poll forever", async () => {
+		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					device_code: "DEV",
+					user_code: "WXYZ-1234",
+					verification_uri: "https://github.com/login/device",
+					interval: 5,
+					expires_in: 900,
+				}),
+				{ status: 200 },
+			),
+		);
+		await requestDeviceCode("c");
+		const init = fetchSpy.mock.calls[0]?.[1];
+		expect(init?.signal).toBeInstanceOf(AbortSignal);
+	});
 });
 
 describe("pollAccessTokenOnce", () => {

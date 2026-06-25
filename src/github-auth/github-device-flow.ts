@@ -57,12 +57,29 @@ const JSON_HEADERS = {
 	"Content-Type": "application/json",
 } as const;
 
+/**
+ * Per-request timeout. A device-flow poll runs on a UI interval; a hung request (a stalled
+ * proxy, a dropped connection that never resets) would otherwise keep an in-flight poll
+ * pending forever, leaving the UI spinning with no way to recover. Bounding the request
+ * turns a hang into a surfaced error the caller can retry.
+ */
+const REQUEST_TIMEOUT_MS = 15_000;
+
 async function postJson(url: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-	const response = await fetch(url, {
-		method: "POST",
-		headers: JSON_HEADERS,
-		body: JSON.stringify(body),
-	});
+	let response: Response;
+	try {
+		response = await fetch(url, {
+			method: "POST",
+			headers: JSON_HEADERS,
+			body: JSON.stringify(body),
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+		});
+	} catch (error) {
+		if (error instanceof DOMException && error.name === "TimeoutError") {
+			throw new Error(`GitHub request to ${url} timed out after ${REQUEST_TIMEOUT_MS}ms`);
+		}
+		throw error instanceof Error ? error : new Error(`GitHub request to ${url} failed: ${String(error)}`);
+	}
 	if (!response.ok) {
 		const text = await response.text().catch(() => "");
 		throw new Error(`GitHub request failed: ${response.status} ${response.statusText}${text ? ` — ${text}` : ""}`);

@@ -208,6 +208,60 @@ describe("useGithubAuth", () => {
 		}
 	});
 
+	it("tolerates a single transient poll failure, then completes", async () => {
+		vi.useFakeTimers();
+		queryMocks.fetchGithubAuthStatus.mockResolvedValue(signedOut);
+		queryMocks.beginGithubLogin.mockResolvedValue(grant);
+		queryMocks.pollGithubLogin
+			.mockRejectedValueOnce(new Error("transient blip"))
+			.mockResolvedValueOnce({ state: "complete", status: signedIn });
+
+		const { getState } = await renderHook();
+
+		await act(async () => {
+			await getState().login();
+		});
+
+		// First tick throws — a lone blip must NOT abort the flow.
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(5000);
+		});
+		expect(getState().flow.kind).toBe("awaiting");
+
+		// Second tick succeeds → completes.
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(5000);
+		});
+		expect(getState().flow.kind).toBe("idle");
+		expect(getState().status).toEqual(signedIn);
+	});
+
+	it("surfaces a flow error after repeated consecutive poll failures (no silent infinite spin)", async () => {
+		vi.useFakeTimers();
+		queryMocks.fetchGithubAuthStatus.mockResolvedValue(signedOut);
+		queryMocks.beginGithubLogin.mockResolvedValue(grant);
+		queryMocks.pollGithubLogin.mockRejectedValue(new Error("proxy refused connection"));
+
+		const { getState } = await renderHook();
+
+		await act(async () => {
+			await getState().login();
+		});
+
+		// Three consecutive failures must flip the flow to a visible error.
+		for (let i = 0; i < 3; i++) {
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(5000);
+			});
+		}
+
+		const { flow } = getState();
+		expect(flow.kind).toBe("error");
+		if (flow.kind === "error") {
+			expect(flow.message).toContain("proxy refused connection");
+		}
+	});
+
 	it("stops with an expired error once the code lifetime elapses", async () => {
 		vi.useFakeTimers();
 		queryMocks.fetchGithubAuthStatus.mockResolvedValue(signedOut);
