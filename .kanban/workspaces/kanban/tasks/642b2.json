@@ -1,0 +1,19 @@
+{
+  "id": "642b2",
+  "title": "board 并排 Timeline 可视化面板",
+  "prompt": "目标:在 Kanban board 四列(Backlog / In Progress / Review / Done)右侧新增一个与列并排的 Timeline 可视化面板。它不持有卡片、不是第五种生命周期状态列,只把所有任务/会话沿时间轴可视化出来。\n\n背景与硬约束:Backlog/In Progress/Review/Done 是写死的生命周期列枚举(backlog/in_progress/review/done),磁盘分片、拖拽规则、review→done 触发链式任务、auto-commit/PR 全都绑定这套枚举。Timeline 绝不能成为卡片可拖入的真实状态列,绝不能改动列枚举或这些契约。它是一个纯展示面板。\n\n范围与实现:\n- 在 board 布局右侧放一个 Timeline 面板(可折叠/可切换显隐),内部是甘特 / swimlane 式视图:每个任务一行(或按 agent 分泳道),横轴为时间。\n- 数据来源:消费前端已有的 task 与 session 时间戳——task 的 createdAt/updatedAt,session 的 startedAt/lastOutputAt/updatedAt 等。把任务在 in_progress → review → done 各阶段的时间段画成时间条;能体现并行运行、某任务/agent 卡住很久、链式任务的接力时机。\n- 纯前端可视化:不改后端、不新增持久化字段。如果现有前端数据不足以还原阶段切换时间点,优先用已有字段做合理近似,并在代码注释里说明取舍(不要为此改后端契约,如确实需要新数据,在产出说明里列出,不要擅自扩契约)。\n- 主要涉及文件参考:web-ui/src/components/kanban-board.tsx(布局接入点)、board-state.ts、types/board.ts、运行时状态来源 use-runtime-state-stream / runtime-stream-store 与相关 selector hook。把时间轴的纯计算(时间段映射、刻度、布局)抽成可测试的纯函数。\n- 性能:任务多时时间轴要能正常滚动/缩放,沿用 board 既有的虚拟化/裁剪思路,避免一次渲染全部节点拖垮页面。\n- 高频状态切片务必在叶子组件里订阅(useSyncExternalStore),不要在 App 级订阅 chat/高频切片,遵循仓库既有的 store 切片约定。\n\n约束:遵循 AGENTS.md 的 web-ui 规范——Tailwind 设计 token、Radix 原语、lucide 图标、复用 src/components/ui/ 基元、优先 react-use hook、日志走 web-ui logger、禁止 any。优先评估是否有成熟的第三方时间轴/甘特库可降低维护成本,有合适的就用,没有再自绘。补充纯函数单元测试。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782368518540,
+  "updatedAt": 1782368518540,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
