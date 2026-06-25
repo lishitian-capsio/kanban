@@ -39,7 +39,8 @@
       "name": "统一 git 认证可行性",
       "titleSource": "auto",
       "createdAt": 1782364389311,
-      "updatedAt": 1782364565437
+      "updatedAt": 1782364565437,
+      "pendingNextStep": "启动后端任务 3e759"
     }
   ]
 }
