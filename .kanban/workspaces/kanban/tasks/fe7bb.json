@@ -1,0 +1,19 @@
+{
+  "id": "fe7bb",
+  "title": "Move agent executablePath from Providers tab to General/Agent subsection",
+  "prompt": "Relocate the per-agent `executablePath` override input in the web-ui Settings dialog from the **Providers** tab to the **General** tab's **Agent** subsection. UI-only change — do NOT touch the data layer.\n\nContext / current state (verified):\n- Settings dialog: `web-ui/src/components/runtime-settings-dialog.tsx`.\n- The executablePath input currently renders in the **Providers** tab, below the agent picker, at roughly lines 992-1046. It only shows when `selectedAgentSupportsExecutablePath === true` (pi is excluded).\n- The **General** tab already has an 'Agent' subsection (around lines 925-927), but it is currently **read-only**: it lists each agent's install status with a 'Configure' button that just navigates to the Providers tab (see the read-only-indicator comment around lines 790-799).\n\nGoal:\n- Move the executablePath text field + Save button + status feedback (Detected/Not found) + helper text out of the Providers tab and INTO the General tab's Agent subsection, so the Agent subsection becomes the editable home for agent-level settings.\n- The Providers tab should go back to being purely about providers (agent picker -> official login -> custom providers list -> Add Provider). Remove the executablePath block from there.\n- In General's Agent subsection, the executablePath editor should be shown per-agent for agents that support it (mirror the existing `selectedAgentSupportsExecutablePath` gating; pi stays excluded). Decide the cleanest per-agent presentation consistent with how the Agent subsection already lists agents — e.g. inline under each supporting agent row, or revealed when an agent is expanded/selected. Keep it consistent with existing design tokens and UI primitives.\n\nConstraints:\n- DATA LAYER UNCHANGED. Keep reading/writing through the existing `getAgentExecutablePath` / `setAgentExecutablePath` (tRPC `setAgentExecutablePath`) and the existing contract schemas. The field stays on `AgentProviderSet` on disk (`~/.kanban/settings/agent_providers.json`). This is purely moving where the input is rendered.\n- The 'Configure' button in the General Agent rows currently links to Providers; reconcile this so it no longer points users at executablePath in Providers. Provider configuration still lives in the Providers tab, so a link to Providers for *provider* config is fine — just make sure executablePath editing now lives in General.\n- Follow the repo styling rules (Tailwind tokens, src/components/ui primitives, lucide icons, no console.* — use the web-ui logger).\n- Add/adjust tests if the existing Settings dialog has them; otherwise verify the move renders and saves correctly.\n\nAcceptance:\n- executablePath editor no longer appears in the Providers tab.\n- executablePath editor appears in General -> Agent subsection, per supporting agent, and saving still works (Detected/Not found feedback intact).\n- No data migration; on-disk format unchanged.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782364044536,
+  "updatedAt": 1782364044536,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
