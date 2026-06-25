@@ -42,6 +42,15 @@
       "createdAt": 1782364389311,
       "updatedAt": 1782364565437,
       "pendingNextStep": "启动后端任务 3e759"
+    },
+    {
+      "id": "b13f7b70-0944-4539-859a-d732d6dd8219",
+      "agentId": "claude",
+      "name": "Review board cards completeness",
+      "titleSource": "auto",
+      "createdAt": 1782367485981,
+      "updatedAt": 1782367517530,
+      "pendingNextStep": "确认 3e759 的产出后把它移到 done,自动放行前端任务 49f14"
     }
   ]
 }
