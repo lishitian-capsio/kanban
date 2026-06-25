@@ -1,0 +1,19 @@
+{
+  "id": "ecbd1",
+  "title": "Home thread: auto-summarized titles (backend + contract)",
+  "prompt": "GOAL: Change home (sidebar) chat thread creation so the user provides a DESCRIPTION (which becomes the thread's kickoff prompt), and the thread TITLE is auto-summarized by the agent instead of typed by hand. Also re-summarize the title as the conversation continues, so it stays representative. Manual rename must remain available as an override.\n\nThis is the BACKEND + wire-contract half. A separate linked task does the web-ui dialog/thread-bar changes.\n\nCONTEXT (read these first):\n- src/session/home-thread-store.ts (HomeThreadStore.create/rename) and src/session/home-thread-registry.ts (pure list/create/rename/close). Today create() takes a user-supplied { name, agentId }; threadId is randomUUID().\n- src/core/home-agent-session.ts (synthetic session id __home_agent__:<workspaceId>:<agentId>[:<threadId>]; default thread omits the 4th segment for backward-compat — preserve this).\n- tRPC create/rename/close endpoints (createHomeThread/renameHomeThread/closeHomeThread) — grep runtime-api.ts / runtime-server.ts and the RuntimeHomeChatThread* contract in src/core/api-contract.ts.\n- Session kickoff: how a home thread session is started with a prompt (startTaskSession / KANBAN_SESSION_TASK_ID path; memory note: task/home-chat kickoff prompt).\n\nREQUIRED BEHAVIOR:\n1. createHomeThread should accept a 'description' (the kickoff prompt) rather than requiring a human title. On create: persist the thread with a PROVISIONAL title (e.g. derived/truncated from the description, or a 'Summarizing…' placeholder), kick off the thread's agent session with the description as the first message, and asynchronously generate a concise title.\n2. Title generation: summarize the conversation into a short (~3-6 word) title via a lightweight model call. Reuse EXISTING model/provider plumbing (pi is the main agent; do not fork agent-provider-resolver). Keep it cheap and non-blocking — never block thread creation or the chat on title generation. Persist the result through renameHomeThread so it flows over the existing broadcast.\n3. Re-summarization: re-generate the title as the conversation grows, debounced/throttled (e.g. after the first assistant turn, then every N turns or on a debounce). Do not thrash; do not re-summarize if the user has manually renamed the thread (add a 'titleManuallySet'/'titleAuto' flag to the thread record so manual rename pins the title).\n4. Keep full backward-compat for the default thread id scheme and existing threads.json. Add any new field (e.g. titleAuto) optionally so existing data loads cleanly.\n\nOUT OF SCOPE: the web-ui create dialog + thread bar rendering (linked frontend task). But DO update the wire contract (api-contract.ts) so the frontend can pass a description and read the auto/pending title state.\n\nACCEPTANCE:\n- A thread can be created from a description; a sensible title appears shortly after without manual entry.\n- Title updates again as the conversation evolves; manual rename pins it.\n- typecheck (incl. web:typecheck for shared contract) + biome clean. No any types; prefer SDK/contract types.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782349832288,
+  "updatedAt": 1782349832288,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
