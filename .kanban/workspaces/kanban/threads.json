@@ -51,6 +51,22 @@
       "createdAt": 1782367485981,
       "updatedAt": 1782367517530,
       "pendingNextStep": "确认 3e759 的产出后把它移到 done,自动放行前端任务 49f14"
+    },
+    {
+      "id": "b6ec77f5-971f-4d5b-85b2-4efbe3542436",
+      "agentId": "claude",
+      "name": "你是谁？",
+      "titleSource": "auto",
+      "createdAt": 1782367732124,
+      "updatedAt": 1782367732124
+    },
+    {
+      "id": "42806eda-d7a1-4d1f-b72b-e43e58821177",
+      "agentId": "codex",
+      "name": "你是谁？",
+      "titleSource": "auto",
+      "createdAt": 1782367744531,
+      "updatedAt": 1782367744531
     }
   ]
 }
