@@ -1,6 +1,6 @@
 import { promisify } from "node:util";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const childProcessMocks = vi.hoisted(() => ({
 	execFile: vi.fn(),
@@ -13,6 +13,15 @@ vi.mock("node:child_process", () => ({
 	}),
 }));
 
+// Make an SSH CONNECT helper deterministically "available" so GIT_SSH_COMMAND
+// injection is exercised regardless of what's installed on the test machine.
+vi.mock("../../src/terminal/command-discovery", () => ({
+	isBinaryAvailableOnPath: (binary: string) => binary === "socat",
+	buildPathWithBinaryDir: (_binary: string, currentPath: string | undefined) => currentPath,
+}));
+
+import { setRuntimeProxyState, setRuntimeProxyStateFromConfig } from "../../src/config/proxy-fetch";
+import { resetGitSshProxyCacheForTests } from "../../src/workspace/git-ssh-proxy";
 import {
 	isLikelyGitRemoteUrl,
 	readGitRemoteUrl,
@@ -77,6 +86,86 @@ describe("runGit", () => {
 		expect(result.ok).toBe(false);
 		expect(result.exitCode).toBe(-1);
 		expect(result.stdout).toBe("partial-output");
+	});
+});
+
+describe("runGit proxy env injection", () => {
+	beforeEach(() => {
+		childProcessMocks.execFile.mockReset();
+		childProcessMocks.execFilePromise.mockReset();
+		childProcessMocks.execFilePromise.mockResolvedValue({ stdout: "", stderr: "" });
+	});
+
+	afterEach(() => {
+		// Reset the shared holder so proxy state never leaks between tests.
+		setRuntimeProxyState({ enabled: false, proxyUrl: "", noProxy: "" });
+		resetGitSshProxyCacheForTests();
+	});
+
+	function envForLastCall(): NodeJS.ProcessEnv {
+		const calls = childProcessMocks.execFilePromise.mock.calls;
+		return (calls[calls.length - 1][2] as { env: NodeJS.ProcessEnv }).env;
+	}
+
+	it("injects HTTP_PROXY/HTTPS_PROXY into the git subprocess env when the proxy is enabled", async () => {
+		setRuntimeProxyStateFromConfig(true, "proxy.example.com", "8080", "", "", "");
+
+		await runGit("/repo", ["fetch", "origin"], { env: { PATH: "/usr/bin" } });
+
+		const env = envForLastCall();
+		expect(env.HTTP_PROXY).toBe("http://proxy.example.com:8080");
+		expect(env.HTTPS_PROXY).toBe("http://proxy.example.com:8080");
+		expect(env.http_proxy).toBe("http://proxy.example.com:8080");
+		expect(env.https_proxy).toBe("http://proxy.example.com:8080");
+	});
+
+	it("carries the merged NO_PROXY list when the proxy is enabled", async () => {
+		setRuntimeProxyStateFromConfig(true, "proxy.example.com", "8080", "", "", "example.com", ["127.0.0.1"]);
+
+		await runGit("/repo", ["push", "origin", "main"], { env: { PATH: "/usr/bin" } });
+
+		const env = envForLastCall();
+		expect(env.NO_PROXY).toContain("example.com");
+		expect(env.NO_PROXY).toContain("127.0.0.1");
+		expect(env.no_proxy).toContain("example.com");
+	});
+
+	it("does not add proxy env vars when the proxy is disabled (behavior unchanged)", async () => {
+		setRuntimeProxyState({ enabled: false, proxyUrl: "", noProxy: "" });
+
+		await runGit("/repo", ["fetch", "origin"], { env: { PATH: "/usr/bin" } });
+
+		const env = envForLastCall();
+		expect(env).toEqual({ PATH: "/usr/bin" });
+		expect(env.HTTP_PROXY).toBeUndefined();
+		expect(env.HTTPS_PROXY).toBeUndefined();
+	});
+
+	it("sets GIT_SSH_COMMAND so SSH remotes route through the proxy when enabled", async () => {
+		setRuntimeProxyStateFromConfig(true, "proxy.example.com", "8080", "", "", "");
+
+		await runGit("/repo", ["fetch", "origin"], { env: { PATH: "/usr/bin" } });
+
+		const env = envForLastCall();
+		expect(env.GIT_SSH_COMMAND).toContain("ProxyCommand=");
+		expect(env.GIT_SSH_COMMAND).toContain("socat");
+	});
+
+	it("appends to an inherited GIT_SSH_COMMAND rather than clobbering it", async () => {
+		setRuntimeProxyStateFromConfig(true, "proxy.example.com", "8080", "", "", "");
+
+		await runGit("/repo", ["push"], { env: { PATH: "/usr/bin", GIT_SSH_COMMAND: "ssh -i /keys/id" } });
+
+		const env = envForLastCall();
+		expect(env.GIT_SSH_COMMAND?.startsWith("ssh -i /keys/id -o ProxyCommand=")).toBe(true);
+	});
+
+	it("does not set GIT_SSH_COMMAND when the proxy is disabled", async () => {
+		setRuntimeProxyState({ enabled: false, proxyUrl: "", noProxy: "" });
+
+		await runGit("/repo", ["fetch", "origin"], { env: { PATH: "/usr/bin" } });
+
+		expect(envForLastCall().GIT_SSH_COMMAND).toBeUndefined();
 	});
 });
 

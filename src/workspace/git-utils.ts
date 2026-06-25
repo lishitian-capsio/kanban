@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { buildSubprocessProxyEnv } from "../config/proxy-fetch";
 import { createGitProcessEnv } from "../core/git-process-env";
+import { buildGitSshProxyEnv } from "./git-ssh-proxy";
 
 const execFileAsync = promisify(execFile);
 const GIT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
@@ -48,11 +50,20 @@ function normalizeProcessExitCode(code: unknown): number {
 export async function runGit(cwd: string, args: string[], options: RunGitOptions = {}): Promise<GitCommandResult> {
 	try {
 		const fullArgs = ["-c", "core.quotepath=false", ...args];
+		// Merge the runtime's configured outbound proxy into the per-spawn env so git's
+		// network ops (clone/fetch/push/ls-remote) route through the same proxy as the
+		// runtime's own fetch. Both builders return `{}` when the proxy is disabled, so
+		// this is a no-op then (git inherits the runtime's already-stripped direct env).
+		// `buildSubprocessProxyEnv()` covers http(s) remotes (git honors HTTP_PROXY/
+		// NO_PROXY natively); `buildGitSshProxyEnv()` covers SSH remotes via a
+		// GIT_SSH_COMMAND ProxyCommand (appended to any inherited GIT_SSH_COMMAND).
+		const baseEnv = options.env || createGitProcessEnv();
+		const inheritedSshCommand = typeof baseEnv.GIT_SSH_COMMAND === "string" ? baseEnv.GIT_SSH_COMMAND : undefined;
 		const { stdout, stderr } = await execFileAsync("git", fullArgs, {
 			cwd,
 			encoding: "utf8",
 			maxBuffer: GIT_MAX_BUFFER_BYTES,
-			env: options.env || createGitProcessEnv(),
+			env: { ...baseEnv, ...buildSubprocessProxyEnv(), ...buildGitSshProxyEnv(inheritedSshCommand) },
 			...(options.timeoutMs ? { timeout: options.timeoutMs, killSignal: "SIGKILL" } : {}),
 		});
 		const normalizedStdout = String(stdout ?? "").trim();
