@@ -4,9 +4,12 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback } from "react";
 
 import { BoardCard } from "@/components/board-card";
+import { BoardColumnFilterControls } from "@/components/board-column-filter-controls";
 import { Button } from "@/components/ui/button";
 import { ColumnIndicator } from "@/components/ui/column-indicator";
+import { useColumnView } from "@/hooks/use-column-view";
 import type { RuntimeTaskSessionSummary } from "@/runtime/types";
+import { resolveColumnEmptyState } from "@/state/board-column-view";
 import { isCardDropDisabled, type ProgrammaticCardMoveInFlight } from "@/state/drag-rules";
 import type { BoardCard as BoardCardModel, BoardColumnId, BoardColumn as BoardColumnModel } from "@/types";
 
@@ -85,14 +88,24 @@ export function BoardColumn({
 		[column.id, onEditTask, onCardClick],
 	);
 
+	const columnView = useColumnView(column.cards);
+	const { displayedCards, isActive: isViewActive } = columnView;
+
 	const canCreate = column.id === "backlog" && onCreateTask;
 	const canStartAllTasks = column.id === "backlog" && onStartAllTasks;
 	const canClearTrash = column.id === "trash" && onClearTrash;
 	const cardDropType = "CARD";
-	const isDropDisabled = isCardDropDisabled(column.id, activeDragSourceColumnId ?? null, {
-		activeDragTaskId,
-		programmaticCardMoveInFlight,
-	});
+	// An active per-column view reorders/hides cards relative to their persisted
+	// rank, so dropping into (or dragging within) the column would desync the UI
+	// order from disk. Disable drop while a view is active; cards also opt out of
+	// dragging via `dragDisabled` below.
+	const isDropDisabled =
+		isViewActive ||
+		isCardDropDisabled(column.id, activeDragSourceColumnId ?? null, {
+			activeDragTaskId,
+			programmaticCardMoveInFlight,
+		});
+	const emptyState = resolveColumnEmptyState(column.cards.length, displayedCards.length, isViewActive);
 	const createTaskButtonText = (
 		<span className="inline-flex items-center gap-1.5">
 			<span>Create task</span>
@@ -118,34 +131,39 @@ export function BoardColumn({
 						padding: "0 12px",
 					}}
 				>
-					<div className="flex items-center gap-2">
+					<div className="flex min-w-0 items-center gap-2">
 						<ColumnIndicator columnId={column.id} />
-						<span className="font-semibold text-sm">{column.title}</span>
-						<span className="text-text-secondary text-xs">{column.cards.length}</span>
+						<span className="font-semibold text-sm truncate">{column.title}</span>
+						<span className="text-text-secondary text-xs shrink-0">
+							{isViewActive ? `${displayedCards.length}/${column.cards.length}` : column.cards.length}
+						</span>
 					</div>
-					{canStartAllTasks ? (
-						<Button
-							icon={<Play size={14} />}
-							variant="ghost"
-							size="sm"
-							onClick={onStartAllTasks}
-							disabled={column.cards.length === 0}
-							aria-label="Start all backlog tasks"
-							title={column.cards.length > 0 ? "Start all backlog tasks" : "Backlog is empty"}
-						/>
-					) : null}
-					{canClearTrash ? (
-						<Button
-							icon={<Trash2 size={14} />}
-							variant="ghost"
-							size="sm"
-							className="text-status-red hover:text-status-red"
-							onClick={onClearTrash}
-							disabled={column.cards.length === 0}
-							aria-label="Clear done"
-							title={column.cards.length > 0 ? "Clear done items permanently" : "Done is empty"}
-						/>
-					) : null}
+					<div className="flex shrink-0 items-center gap-1">
+						<BoardColumnFilterControls controls={columnView} columnTitle={column.title} />
+						{canStartAllTasks ? (
+							<Button
+								icon={<Play size={14} />}
+								variant="ghost"
+								size="sm"
+								onClick={onStartAllTasks}
+								disabled={column.cards.length === 0}
+								aria-label="Start all backlog tasks"
+								title={column.cards.length > 0 ? "Start all backlog tasks" : "Backlog is empty"}
+							/>
+						) : null}
+						{canClearTrash ? (
+							<Button
+								icon={<Trash2 size={14} />}
+								variant="ghost"
+								size="sm"
+								className="text-status-red hover:text-status-red"
+								onClick={onClearTrash}
+								disabled={column.cards.length === 0}
+								aria-label="Clear done"
+								title={column.cards.length > 0 ? "Clear done items permanently" : "Done is empty"}
+							/>
+						) : null}
+					</div>
 				</div>
 
 				<Droppable droppableId={column.id} type={cardDropType} isDropDisabled={isDropDisabled}>
@@ -166,7 +184,7 @@ export function BoardColumn({
 							{(() => {
 								const items: ReactNode[] = [];
 								let draggableIndex = 0;
-								for (const card of column.cards) {
+								for (const card of displayedCards) {
 									if (column.id === "backlog" && editingTaskId === card.id) {
 										items.push(
 											<div
@@ -201,6 +219,7 @@ export function BoardColumn({
 											isDependencySource={dependencySourceTaskId === card.id}
 											isDependencyTarget={dependencyTargetTaskId === card.id}
 											isDependencyLinking={isDependencyLinking}
+											dragDisabled={isViewActive}
 											workspacePath={workspacePath}
 											defaultKanbanModelId={defaultKanbanModelId}
 											onSaveTitle={onSaveTitle}
@@ -212,6 +231,24 @@ export function BoardColumn({
 								return items;
 							})()}
 							{cardProvided.placeholder}
+							{emptyState !== "none" ? (
+								<div className="px-1 py-3 text-center text-xs text-text-tertiary">
+									{emptyState === "no-matches" ? (
+										<div className="flex flex-col items-center gap-1.5">
+											<span>No tasks match this column's filters.</span>
+											<button
+												type="button"
+												onClick={columnView.reset}
+												className="cursor-pointer text-accent hover:underline"
+											>
+												Clear filters
+											</button>
+										</div>
+									) : (
+										<span>No tasks here yet.</span>
+									)}
+								</div>
+							) : null}
 						</div>
 					)}
 				</Droppable>
