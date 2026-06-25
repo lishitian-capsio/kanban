@@ -1,0 +1,19 @@
+{
+  "id": "a8295",
+  "title": "修复 GitHub OAuth device-flow 授权后一直转圈不完成",
+  "prompt": "Bug:用户在 github.com 输入 device code 并授权成功,但 Settings → GitHub git auth 卡片一直显示 'Checking authorization…' 无限转圈,永远翻不到已登录状态。这是已提交功能(commit c4a0ee34 设置 UI / 9294080e 后端 OAuth)里的缺陷。\n\n已定位的关键链路与缺陷(请先据此复现+确认根因,再改):\n- 前端 web-ui/src/hooks/use-github-auth.ts 的 pollTick:调用 tRPC pollLogin(单次,非阻塞,前端按 ~5-10s interval 反复调)。其 catch 分支只 log.warn('github.pollLogin failed') 然后【继续轮询、不改状态】——因此『后端轮询持续抛异常』与『GitHub 持续返回 authorization_pending』在 UI 上都是无限转圈,无法区分。这是要修的根本可用性问题之一:连续失败 N 次应向用户暴露错误,而不是无声转圈。\n- 后端 src/github-auth/github-auth-service.ts pollLogin → src/github-auth/github-device-flow.ts pollAccessTokenOnce / postJson:向 GitHub token 端点(https://github.com/login/oauth/access_token)发请求,解析 authorization_pending / slow_down / token / error。\n\n最可疑的两个具体根因,请逐一验证:\n1. postJson 是否带了 Accept: application/json 请求头。GitHub device-flow token 端点默认返回 application/x-www-form-urlencoded;若缺该头,后端拿不到正确 JSON,解析不到 access_token,导致永远 pending 或被吞掉的解析异常。这是 device-flow 最经典的坑,优先查。\n2. 代理/网络:本运行时有全局 fetch 代理 monkey-patch(见 src/config/proxy-fetch.ts)。确认 postJson 是否经由它、github.com 是否被正确路由/可达、是否需要 NO_PROXY 处理;给 postJson 加合理超时,避免长时间挂起。\n\n排查手段:在后端 poll 路径加临时调试日志,确认 pollLogin 到底是在返回 pending、还是在抛异常(以及 GitHub 实际返回了什么 body / content-type)。同时核对 beginLogin 与 pollLogin 使用的 client_id(resolveGitHubOAuthClientId)是否一致。\n\n修复目标:\n- 授权成功后,轮询能正确拿到 token、持久化(~/.kanban/settings/github-auth.json)、UI 翻到已登录态。\n- 终态/持续失败要在 UI 上明确暴露(不再无声无限转圈)。\n- 不破坏未登录透传行为;遵循 AGENTS.md(禁止 any、日志走 createLogger / web-ui logger)。补充/更新对应测试(已有 test/runtime/github-auth/ 与 web-ui use-github-auth.test.tsx)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782369487244,
+  "updatedAt": 1782369487244,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}
