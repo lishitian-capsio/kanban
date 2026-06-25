@@ -1,0 +1,19 @@
+{
+  "id": "6a2a5",
+  "title": "Persist GitHub device-flow pending state so a refresh/reconnect resumes polling",
+  "prompt": "PROBLEM (observed live): GitHub device-flow login can leave Kanban showing 'Not signed in' even though GitHub shows 'device connected'. Root cause: the device-flow pending state (deviceCode + interval + expiry) lives ONLY in the frontend component's in-memory React state — beginLogin returns deviceCode to the UI and the UI drives pollLogin(deviceCode). So a page REFRESH (or a runtime restart dropping the ws/tRPC connection) discards the deviceCode and polling stops forever; if the user authorized on GitHub in that window, the token is never exchanged/persisted and there is NO self-heal. Confirmed: CLI 'kanban github login' (which polls in-process to completion) succeeds with the same client id + proxy, proving the device-flow core is fine — only the UI's poll continuity is fragile.\n\nCONTEXT (read first):\n- src/github-auth/github-device-flow.ts (DEVICE_CODE_URL/ACCESS_TOKEN_URL, pollAccessTokenOnce, runDeviceFlow), github-auth-service.ts (beginLogin/pollLogin — backend is currently STATELESS, UI holds deviceCode), and the tRPC github router in src/trpc/app-router.ts (~beginLogin/pollLogin/status/logout).\n- web-ui: the GitHub git auth Settings card + use-github-auth hook (memory: github-auth-settings-ui-implemented). The card shows the user code + 'Waiting for you to authorize…' and drives polling.\n- Token persistence is machine-local ~/.kanban/settings/github-auth.json (0600); runtime mtime-caches it so a separate-process login is picked up with no restart.\n\nGOAL: make an in-flight login survive a refresh / brief disconnect so it resumes polling and completes the token exchange — no more 'GitHub says connected, Kanban says signed out' dead-end.\n\nREQUIRED WORK (pick the minimal robust approach; backend persistence preferred):\n1. Persist the pending login (deviceCode, intervalSeconds, expiresAt, startedAt) where it survives a UI refresh. Preferred: a small backend-held pending-login record (machine-local, e.g. alongside github-auth settings or in-memory in the long-lived runtime keyed so it survives UI reloads) exposed via the github router so the UI can resume; acceptable fallback: sessionStorage in the UI. Justify the choice in a comment.\n2. On Settings mount / reconnect, if a non-expired pending login exists, AUTOMATICALLY resume polling (show the existing user code + remaining time) instead of resetting to 'Not signed in'.\n3. Clear the pending record on success, on explicit Cancel, and on expiry. Never leave a stale pending login that blocks a fresh Sign in.\n4. Keep the existing poll-failure surfacing (memory: github-auth-poll-spin-fix — surface after 3 failures + postJson AbortSignal.timeout). Don't regress it.\n\nCONSTRAINTS: AGENTS.md — no any; structured logging (createLogger), never log the deviceCode/token; token/secret handling stays machine-local 0600, never committed; web-ui Tailwind v4 + Radix + ui primitives + leaf-subscribed slices. web:typecheck/biome + bun tests clean. Add tests: backend pending-state lifecycle (create/resume/expire/clear) + a UI hook test that a simulated refresh resumes polling.\n\nACCEPTANCE: start login → refresh the page (or briefly drop the connection) → the card resumes the same pending login and, once GitHub is authorized, completes and flips to signed-in WITHOUT the user restarting the whole flow. Expired/cancelled pending state cleanly resets.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782373017410,
+  "updatedAt": 1782373017410,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
