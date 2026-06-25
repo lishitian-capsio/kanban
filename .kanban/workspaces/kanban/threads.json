@@ -4,6 +4,7 @@
       "id": "a4a7388c-4fee-4a13-bd99-47a163fa8441",
       "agentId": "claude",
       "name": "Git",
+      "titleSource": "manual",
       "createdAt": 1782349238503,
       "updatedAt": 1782349238503
     },
@@ -11,6 +12,7 @@
       "id": "8f537abc-1115-4c4b-9c4c-96f8bb52a314",
       "agentId": "claude",
       "name": "会话",
+      "titleSource": "manual",
       "createdAt": 1782349308679,
       "updatedAt": 1782349308679
     },
@@ -18,6 +20,7 @@
       "id": "e0654754-d711-4c28-8d79-45d96e81141f",
       "agentId": "claude",
       "name": "provider",
+      "titleSource": "manual",
       "createdAt": 1782351351870,
       "updatedAt": 1782351351870
     },
@@ -25,6 +28,7 @@
       "id": "36d434f5-e136-4d04-bf80-bfa331510e10",
       "agentId": "claude",
       "name": "运维",
+      "titleSource": "manual",
       "createdAt": 1782352548103,
       "updatedAt": 1782352548103
     }
