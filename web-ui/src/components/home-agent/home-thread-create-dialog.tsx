@@ -12,7 +12,7 @@ interface HomeThreadCreateDialogProps {
 	onOpenChange: (open: boolean) => void;
 	agents: RuntimeAgentDefinition[];
 	defaultAgentId: RuntimeAgentId;
-	onCreate: (input: { name: string; agentId: RuntimeAgentId }) => void | Promise<void>;
+	onCreate: (input: { description: string; agentId: RuntimeAgentId }) => void | Promise<void>;
 }
 
 export function HomeThreadCreateDialog({
@@ -36,21 +36,21 @@ export function HomeThreadCreateDialog({
 		return selectableAgents[0]?.id ?? null;
 	}, [selectableAgents, defaultAgentId]);
 
-	const [name, setName] = useState("");
+	const [description, setDescription] = useState("");
 	const [agentId, setAgentId] = useState<RuntimeAgentId | null>(resolvedDefaultAgentId);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	// Reset the form each time the dialog opens.
 	useEffect(() => {
 		if (open) {
-			setName("");
+			setDescription("");
 			setAgentId(resolvedDefaultAgentId);
 			setIsSubmitting(false);
 		}
 	}, [open, resolvedDefaultAgentId]);
 
-	const trimmedName = name.trim();
-	const canSubmit = trimmedName.length > 0 && !isSubmitting && agentId !== null;
+	const trimmedDescription = description.trim();
+	const canSubmit = trimmedDescription.length > 0 && !isSubmitting && agentId !== null;
 
 	const handleSubmit = async () => {
 		if (!canSubmit || agentId === null) {
@@ -58,7 +58,7 @@ export function HomeThreadCreateDialog({
 		}
 		setIsSubmitting(true);
 		try {
-			await onCreate({ name: trimmedName, agentId });
+			await onCreate({ description: trimmedDescription, agentId });
 			onOpenChange(false);
 		} finally {
 			setIsSubmitting(false);
@@ -69,23 +69,27 @@ export function HomeThreadCreateDialog({
 		<Dialog open={open} onOpenChange={onOpenChange} contentClassName="max-w-sm">
 			<DialogHeader title="New chat thread" />
 			<DialogBody className="flex flex-col gap-3">
-				<label htmlFor="home-thread-name" className="flex flex-col gap-1 text-[13px] text-text-secondary">
-					Name
-					<input
-						id="home-thread-name"
-						type="text"
-						value={name}
+				<label htmlFor="home-thread-description" className="flex flex-col gap-1 text-[13px] text-text-secondary">
+					Description
+					<textarea
+						id="home-thread-description"
+						value={description}
 						autoFocus
-						placeholder="e.g. Debugging"
-						onChange={(event) => setName(event.target.value)}
+						rows={4}
+						placeholder="Describe what you want to work on…"
+						onChange={(event) => setDescription(event.target.value)}
 						onKeyDown={(event) => {
-							if (event.key === "Enter") {
+							// Enter inserts a newline; ⌘/Ctrl+Enter submits.
+							if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
 								event.preventDefault();
 								void handleSubmit();
 							}
 						}}
-						className="h-8 rounded-md border border-border-bright bg-surface-2 px-2 text-[13px] text-text-primary focus:border-border-focus focus:outline-none"
+						className="resize-none rounded-md border border-border-bright bg-surface-2 px-2 py-1.5 text-[13px] text-text-primary focus:border-border-focus focus:outline-none"
 					/>
+					<span className="text-[11px] text-text-tertiary">
+						The thread's agent works on this and names the thread itself.
+					</span>
 				</label>
 				<div className="flex flex-col gap-1.5 text-[13px] text-text-secondary">
 					Agent

@@ -9,7 +9,7 @@
 // subscriptions — chat tokens and the kanban session-context version — live in
 // its own fiber and don't re-render App.
 import type { ReactElement } from "react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SessionProviderControl } from "@/components/agent-providers/session-provider-control";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
@@ -80,6 +80,22 @@ export function HomeSidebarAgentPanel({
 		}
 		return mergedSessionSummaries;
 	}, [sessionSummaries, taskSessions]);
+
+	// A bump to the kanban session-context version signals that session-affecting
+	// state changed server-side — including a thread self-titling via
+	// `home-thread set-title`. Re-fetch the registry so the agent-set title replaces
+	// the provisional one in the switcher. Subscribing the version here (a leaf
+	// fiber) keeps the refetch out of App's render path. Skip the initial render so
+	// the hook's own first load is not duplicated.
+	const { refresh: refreshHomeThreads } = homeThreads;
+	const previousSessionContextVersionRef = useRef(kanbanSessionContextVersion);
+	useEffect(() => {
+		if (previousSessionContextVersionRef.current === kanbanSessionContextVersion) {
+			return;
+		}
+		previousSessionContextVersionRef.current = kanbanSessionContextVersion;
+		void refreshHomeThreads();
+	}, [kanbanSessionContextVersion, refreshHomeThreads]);
 
 	const activeThread = useMemo<HomeAgentActiveThread | null>(() => {
 		if (!homeThreads.activeThread) {

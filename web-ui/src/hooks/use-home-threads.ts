@@ -46,9 +46,15 @@ export interface UseHomeThreadsResult {
 	activeThread: HomeThread | null;
 	activeThreadId: string;
 	setActiveThread: (threadId: string) => void;
-	createThread: (input: { name: string; agentId: RuntimeAgentId }) => Promise<void>;
+	createThread: (input: { description: string; agentId: RuntimeAgentId }) => Promise<void>;
 	renameThread: (threadId: string, name: string) => Promise<void>;
 	closeThread: (threadId: string) => Promise<void>;
+	/**
+	 * Re-fetch the registry for the current workspace. Used to pick up agent-driven
+	 * title changes (a thread self-titles via `home-thread set-title`, which bumps the
+	 * kanban session-context version); a background refresh, so failures are silent.
+	 */
+	refresh: () => Promise<void>;
 	isLoading: boolean;
 }
 
@@ -174,13 +180,15 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 	);
 
 	const createThread = useCallback(
-		async ({ name, agentId }: { name: string; agentId: RuntimeAgentId }) => {
+		async ({ description, agentId }: { description: string; agentId: RuntimeAgentId }) => {
 			if (!currentProjectId) {
 				return;
 			}
 			try {
+				// `description` becomes the thread's kickoff prompt and the seed for a provisional
+				// title; the thread's own agent self-titles it shortly after its first turn.
 				const response = await getRuntimeTrpcClient(currentProjectId).runtime.createHomeThread.mutate({
-					name,
+					description,
 					agentId,
 				});
 				if (!response.ok || !response.thread) {
@@ -226,6 +234,28 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		[currentProjectId],
 	);
 
+	const refresh = useCallback(async () => {
+		if (!currentProjectId) {
+			return;
+		}
+		const workspaceId = currentProjectId;
+		try {
+			const response = await getRuntimeTrpcClient(workspaceId).runtime.listHomeThreads.query();
+			if (!response.ok) {
+				return;
+			}
+			loadedWorkspacesRef.current.add(workspaceId);
+			setRegistryThreadsByWorkspace((current) => ({
+				...current,
+				[workspaceId]: response.threads,
+			}));
+		} catch {
+			// Background refresh: a transient failure is non-fatal. The persisted threads
+			// are intact server-side and the next session-context bump retries; never
+			// poison the cache with an empty list (see the initial-load guard above).
+		}
+	}, [currentProjectId]);
+
 	const closeThread = useCallback(
 		async (threadId: string) => {
 			if (!currentProjectId || threadId === DEFAULT_HOME_THREAD_ID) {
@@ -263,6 +293,7 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		createThread,
 		renameThread,
 		closeThread,
+		refresh,
 		isLoading: loadingWorkspaceId !== null && loadingWorkspaceId === currentProjectId,
 	};
 }

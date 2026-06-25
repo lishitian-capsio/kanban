@@ -196,8 +196,15 @@ describe("useHomeThreads", () => {
 		}
 	});
 
-	it("creates a thread, auto-selects it, and appends it to the list", async () => {
-		const created = createThread({ id: "thread-new", name: "Refactor", agentId: "codex" });
+	it("creates a thread from a description, auto-selects it, and appends it to the list", async () => {
+		// The thread is seeded by a description (its kickoff prompt); the backend
+		// returns it with a provisional `auto` title derived from that description.
+		const created = createThread({
+			id: "thread-new",
+			name: "Refactor the auth module",
+			titleSource: "auto",
+			agentId: "codex",
+		});
 		createHomeThreadMutateMock.mockResolvedValue({ ok: true, thread: created });
 		let latest: UseHomeThreadsResult | null = null;
 
@@ -213,14 +220,51 @@ describe("useHomeThreads", () => {
 		});
 
 		await act(async () => {
-			await (latest as unknown as UseHomeThreadsResult).createThread({ name: "Refactor", agentId: "codex" });
+			await (latest as unknown as UseHomeThreadsResult).createThread({
+				description: "Refactor the auth module to use the new provider resolver",
+				agentId: "codex",
+			});
 			await flushPromises();
 		});
 
 		const result = latest as unknown as UseHomeThreadsResult;
-		expect(createHomeThreadMutateMock).toHaveBeenCalledWith({ name: "Refactor", agentId: "codex" });
+		expect(createHomeThreadMutateMock).toHaveBeenCalledWith({
+			description: "Refactor the auth module to use the new provider resolver",
+			agentId: "codex",
+		});
 		expect(result.activeThreadId).toBe("thread-new");
 		expect(result.threads.map((thread) => thread.id)).toEqual([DEFAULT_HOME_THREAD_ID, "thread-new"]);
+		// The provisional title is shown until the agent self-titles.
+		expect(result.threads[1]?.name).toBe("Refactor the auth module");
+	});
+
+	it("refresh re-fetches the registry so an agent-set title replaces the provisional one", async () => {
+		const provisional = createThread({ id: "thread-1", name: "Fix the flaky login test…", titleSource: "auto" });
+		const retitled = createThread({ id: "thread-1", name: "Stabilize login test", titleSource: "auto" });
+		listHomeThreadsQueryMock.mockResolvedValue({ ok: true, threads: [provisional] });
+		let latest: UseHomeThreadsResult | null = null;
+
+		await act(async () => {
+			root.render(
+				<StableHarness
+					onResult={(result) => {
+						latest = result;
+					}}
+				/>,
+			);
+			await flushPromises();
+		});
+
+		expect((latest as unknown as UseHomeThreadsResult).threads[1]?.name).toBe("Fix the flaky login test…");
+
+		// The thread's agent self-titles; the next registry read returns the new title.
+		listHomeThreadsQueryMock.mockResolvedValue({ ok: true, threads: [retitled] });
+		await act(async () => {
+			await (latest as unknown as UseHomeThreadsResult).refresh();
+			await flushPromises();
+		});
+
+		expect((latest as unknown as UseHomeThreadsResult).threads[1]?.name).toBe("Stabilize login test");
 	});
 
 	it("closes the active thread and falls back to the default", async () => {
