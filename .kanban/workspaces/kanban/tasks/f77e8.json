@@ -1,0 +1,19 @@
+{
+  "id": "f77e8",
+  "title": "Unify project nav into the Kanban-agent sidebar (header project switcher)",
+  "prompt": "GOAL (frontend only): Fold the standalone project-navigation column INTO the single Kanban-agent sidebar, so the agent sidebar becomes the one unified surface. Preserve ALL of the agent sidebar's flexible behaviors.\n\nDESIGN SOURCE: read the vault decision doc 'Unify project navigation and runtime ops into the Kanban-agent sidebar' (`kanban vault doc list --type decision`, then `vault doc show`). This task is part ① of two; part ② (bottom VSCode-style ops status bar) is linked and depends on this.\n\nCONTEXT (read first):\n- web-ui/src/App.tsx (~line 820-853): today renders a separate <ProjectNavigationPanel> column AND a <DockableChatPanel><HomeSidebarAgentPanel/></DockableChatPanel>. ProjectNavigationPanel shows only when no card selected.\n- web-ui/src/components/project-navigation-panel.tsx — current project list/switch/add/remove + collapse + width persistence.\n- web-ui/src/components/home-agent/{dockable-chat-panel,chat-dock-header,chat-dock-state,home-sidebar-agent-panel,home-thread-bar}.tsx — the dockable (left/right/float via react-rnd), collapse/hide, and multi-thread machinery.\n- Before commit 66261f42 these WERE one column — that split is what we are conceptually undoing while KEEPING the dock/float flexibility 66261f42 added.\n\nREQUIRED WORK:\n1. The Kanban-agent sidebar becomes the single sidebar. Its HEADER = 'Kanban Agent' title + a PROJECT SWITCHER (dropdown ▾, current project shown) + an ADD-PROJECT (+) control. Use the existing chat-dock-header as the home for these or extend it. Project list stops being a permanent vertical column.\n2. Selecting a project in the switcher ENTERS that project (same effect as today's onSelectProject → board/content appears on the right). Add project = today's onAddProject. Keep remove-project reachable (e.g. in the switcher item menu).\n3. Remove the standalone <ProjectNavigationPanel> column from App.tsx; fold its still-needed logic (select/add/remove/loading/current id) into the agent sidebar. Slim project-navigation-panel.tsx accordingly (don't delete logic that's still used — relocate it).\n4. PRESERVE every flexible behavior: dock left/right, float, collapse/hide, multi-thread thread bar. The project switcher lives inside this flexible container and travels with it when docked/floated.\n5. Leave a clear, documented seam at the BOTTOM of the sidebar for part ② to mount a status bar (e.g. a <SidebarOpsStatusBar/> placeholder slot). Do NOT build the metrics channel here.\n\nCONSTRAINTS: AGENTS.md web-ui rules — Tailwind v4, Radix, lucide, surface tokens, src/components/ui primitives; no any; subscribe high-frequency runtime-store slices in LEAF components (memory perf10). web:typecheck + biome clean.\n\nACCEPTANCE: one sidebar; header has Kanban Agent + project switcher + add; selecting a project enters it; dock/float/collapse/multi-thread all still work; no separate ProjectNavigationPanel column; bottom status-bar slot present and empty.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782353978495,
+  "updatedAt": 1782353978495,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
