@@ -1,21 +1,79 @@
-// Bottom status-bar seam for the unified Kanban-agent sidebar.
-//
-// SEAM FOR PART ②: this is the reserved mount point for the VSCode-style ops
-// status bar (process RSS / CPU% / event-loop stall state, extensible later to
-// health + board-sync). Part ② replaces the `null` below with the real bar and
-// its metrics channel.
+import { Cpu, MemoryStick } from "lucide-react";
+import type { ReactElement } from "react";
+
+import { cn } from "@/components/ui/cn";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useRuntimeOpsMetrics } from "@/runtime/runtime-stream-store";
+
+// Bottom status bar for the unified Kanban-agent sidebar — a thin, VSCode-style
+// readout of the runtime process's live ops metrics (resident memory, CPU%, and
+// event-loop stall state).
 //
 // It is mounted at the bottom of the sidebar's flexible container
 // (`dockable-chat-panel.tsx` → `DockHeaderWithChildren`), so it travels with the
 // sidebar when docked left/right or floated and is hidden when the sidebar
-// collapses to its edge strip — exactly like the rest of the cockpit.
+// collapses to its edge strip.
 //
-// Per the runtime-store leaf-subscription rule (web-ui perf model), part ② MUST
-// subscribe its high-frequency metrics slice HERE, inside this leaf component,
-// so streaming metric updates re-render only this bar and not the whole app.
-//
-// Today it renders nothing (the slot is present but empty); keeping it as a
-// real, mounted component means part ② is a content change, not a wiring change.
-export function SidebarOpsStatusBar(): React.ReactElement | null {
-	return null;
+// Per the runtime-store leaf-subscription rule (web-ui perf model), the
+// high-frequency metrics slice is subscribed HERE, inside this leaf component, so
+// the ~2.5s `runtime_metrics_updated` broadcast re-renders only this bar and not
+// the whole app.
+
+/** Format a byte count as a compact `MB`/`GB` string for the status bar. */
+function formatRss(bytes: number): string {
+	const megabytes = bytes / (1024 * 1024);
+	if (megabytes >= 1024) {
+		return `${(megabytes / 1024).toFixed(1)}GB`;
+	}
+	return `${Math.round(megabytes)}MB`;
+}
+
+/** Format a CPU percentage as a compact integer string (can exceed 100%). */
+function formatCpuPercent(percent: number): string {
+	return `${Math.round(percent)}%`;
+}
+
+export function SidebarOpsStatusBar(): ReactElement | null {
+	const metrics = useRuntimeOpsMetrics();
+	if (!metrics) {
+		return null;
+	}
+
+	const stalled = metrics.eventLoopStalled;
+
+	return (
+		<div
+			className="-mx-2 -mb-2 flex items-center gap-3 border-t border-border px-2 py-1 text-[11px] text-text-secondary tabular-nums select-none"
+			data-testid="sidebar-ops-status-bar"
+		>
+			<Tooltip side="top" content="Runtime process resident memory (RSS)">
+				<span className="inline-flex items-center gap-1">
+					<MemoryStick size={12} className="text-text-tertiary" />
+					{formatRss(metrics.rssBytes)}
+				</span>
+			</Tooltip>
+			<Tooltip side="top" content="Runtime process CPU usage (sums across cores, so it can exceed 100%)">
+				<span className="inline-flex items-center gap-1">
+					<Cpu size={12} className="text-text-tertiary" />
+					{formatCpuPercent(metrics.cpuPercent)}
+				</span>
+			</Tooltip>
+			<Tooltip
+				side="top"
+				content={
+					stalled
+						? "Event loop stalled — the runtime is blocked (likely a synchronous loop or blocking call)"
+						: "Event loop healthy"
+				}
+			>
+				<span className="inline-flex items-center gap-1">
+					<span
+						className={cn("h-1.5 w-1.5 rounded-full", stalled ? "bg-status-red" : "bg-status-green")}
+						aria-hidden
+					/>
+					<span>{stalled ? "Stalled" : "Healthy"}</span>
+				</span>
+			</Tooltip>
+		</div>
+	);
 }

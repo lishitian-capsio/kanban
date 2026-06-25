@@ -1059,6 +1059,34 @@ export const runtimeBoardBranchUpdateResponseSchema = z.object({
 export type RuntimeBoardBranchUpdateResponse = z.infer<typeof runtimeBoardBranchUpdateResponseSchema>;
 
 // ---------------------------------------------------------------------------
+// Runtime ops metrics
+//
+// Process-global health metrics for the VSCode-style status bar at the bottom of
+// the Kanban-agent sidebar: resident memory, CPU% of the runtime process, and the
+// event-loop stall state (derived from the in-process stall watchdog). These are
+// NOT workspace-scoped — they describe the single runtime process — so the
+// `runtime_metrics_updated` broadcast carries no workspaceId and fans out to every
+// connected client. Sampled on a modest interval (~2.5s) so the channel stays low-
+// frequency, like the board-sync badge.
+// ---------------------------------------------------------------------------
+
+export const runtimeOpsMetricsSchema = z.object({
+	/** Resident set size of the runtime process, in bytes. */
+	rssBytes: z.number().nonnegative(),
+	/**
+	 * CPU usage of the runtime process over the last sampling interval, as a
+	 * percentage. Can exceed 100 on multi-core machines (it sums user+system time
+	 * across cores), so the bar formats it but does not clamp.
+	 */
+	cpuPercent: z.number().nonnegative(),
+	/** Whether the main event loop is currently stalled, per the stall watchdog. */
+	eventLoopStalled: z.boolean(),
+	/** Wall-clock time the sample was taken (epoch ms), for the tooltip detail. */
+	sampledAtMs: z.number().nonnegative(),
+});
+export type RuntimeOpsMetrics = z.infer<typeof runtimeOpsMetricsSchema>;
+
+// ---------------------------------------------------------------------------
 // Vault saved views & filter expressions
 //
 // A *view* is a saved way of looking at one document type: an optional filter
@@ -1470,6 +1498,12 @@ export const runtimeStateStreamBoardSyncStatusMessageSchema = z.object({
 });
 export type RuntimeStateStreamBoardSyncStatusMessage = z.infer<typeof runtimeStateStreamBoardSyncStatusMessageSchema>;
 
+export const runtimeStateStreamOpsMetricsMessageSchema = z.object({
+	type: z.literal("runtime_metrics_updated"),
+	metrics: runtimeOpsMetricsSchema,
+});
+export type RuntimeStateStreamOpsMetricsMessage = z.infer<typeof runtimeStateStreamOpsMetricsMessageSchema>;
+
 export const runtimeStateStreamErrorMessageSchema = z.object({
 	type: z.literal("error"),
 	message: z.string(),
@@ -1488,6 +1522,7 @@ export const runtimeStateStreamMessageSchema = z.discriminatedUnion("type", [
 	runtimeStateStreamMcpAuthUpdatedMessageSchema,
 	runtimeStateStreamKanbanSessionContextUpdatedMessageSchema,
 	runtimeStateStreamBoardSyncStatusMessageSchema,
+	runtimeStateStreamOpsMetricsMessageSchema,
 	runtimeStateStreamErrorMessageSchema,
 ]);
 export type RuntimeStateStreamMessage = z.infer<typeof runtimeStateStreamMessageSchema>;

@@ -194,6 +194,14 @@ export function useRuntimeStreamConnection(requestedWorkspaceId: string | null):
 						});
 						return;
 					}
+					if (payload.type === "runtime_metrics_updated") {
+						// Process-global metrics — not workspace-scoped, so no activeWorkspaceId gate.
+						dispatchRuntimeStreamAction({
+							type: "runtime_metrics_updated",
+							payload,
+						});
+						return;
+					}
 					if (payload.type === "kanban_session_context_updated") {
 						dispatchRuntimeStreamAction({
 							type: "kanban_session_context_updated",

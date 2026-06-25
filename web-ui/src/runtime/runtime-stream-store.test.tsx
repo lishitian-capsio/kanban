@@ -6,10 +6,11 @@ import {
 	getRuntimeStreamStore,
 	resetRuntimeStreamStoreForTest,
 	useRuntimeBoardSyncStatus,
+	useRuntimeOpsMetrics,
 	useRuntimeProjects,
 	useTaskChatMessages,
 } from "@/runtime/runtime-stream-store";
-import type { RuntimeBoardSyncStatus, RuntimeTaskChatMessage } from "@/runtime/types";
+import type { RuntimeBoardSyncStatus, RuntimeOpsMetrics, RuntimeTaskChatMessage } from "@/runtime/types";
 
 function makeMessage(id: string, content: string): RuntimeTaskChatMessage {
 	return { id, role: "assistant", content, createdAt: 1 };
@@ -25,6 +26,13 @@ const boardSyncStatus: RuntimeBoardSyncStatus = {
 	autoSyncPaused: false,
 	lastError: null,
 	worktreePath: "/tmp/board",
+};
+
+const opsMetrics: RuntimeOpsMetrics = {
+	rssBytes: 506_535_936,
+	cpuPercent: 12.5,
+	eventLoopStalled: false,
+	sampledAtMs: 1_000,
 };
 
 describe("runtime-stream-store granular subscriptions", () => {
@@ -57,7 +65,7 @@ describe("runtime-stream-store granular subscriptions", () => {
 	});
 
 	it("only re-renders the consumers whose slice changed", () => {
-		const renders = { chatA: 0, chatB: 0, boardSync: 0, projects: 0 };
+		const renders = { chatA: 0, chatB: 0, boardSync: 0, projects: 0, opsMetrics: 0 };
 
 		function Harness(): null {
 			useTaskChatMessages("task-a");
@@ -79,6 +87,11 @@ describe("runtime-stream-store granular subscriptions", () => {
 			renders.projects += 1;
 			return null;
 		}
+		function HarnessOpsMetrics(): null {
+			useRuntimeOpsMetrics();
+			renders.opsMetrics += 1;
+			return null;
+		}
 
 		act(() => {
 			root.render(
@@ -87,6 +100,7 @@ describe("runtime-stream-store granular subscriptions", () => {
 					<HarnessB />
 					<HarnessBoardSync />
 					<HarnessProjects />
+					<HarnessOpsMetrics />
 				</>,
 			);
 		});
@@ -124,6 +138,22 @@ describe("runtime-stream-store granular subscriptions", () => {
 		expect(renders.chatA).toBe(afterChat.chatA);
 		expect(renders.chatB).toBe(afterChat.chatB);
 		expect(renders.projects).toBe(afterChat.projects);
+		expect(renders.opsMetrics).toBe(afterChat.opsMetrics);
+
+		// A runtime-metrics broadcast wakes only the ops status bar — nothing else.
+		const afterBoardSync = { ...renders };
+		act(() => {
+			dispatchRuntimeStreamAction({
+				type: "runtime_metrics_updated",
+				payload: { type: "runtime_metrics_updated", metrics: opsMetrics },
+			});
+		});
+
+		expect(renders.opsMetrics).toBe(afterBoardSync.opsMetrics + 1);
+		expect(renders.boardSync).toBe(afterBoardSync.boardSync);
+		expect(renders.chatA).toBe(afterBoardSync.chatA);
+		expect(renders.chatB).toBe(afterBoardSync.chatB);
+		expect(renders.projects).toBe(afterBoardSync.projects);
 	});
 
 	it("does not re-emit when a dispatch leaves a field unchanged", () => {

@@ -7,11 +7,13 @@ import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-s
 import type {
 	RuntimeBoardSyncStatus,
 	RuntimeKanbanMcpServerAuthStatus,
+	RuntimeOpsMetrics,
 	RuntimeStateStreamBoardSyncStatusMessage,
 	RuntimeStateStreamErrorMessage,
 	RuntimeStateStreamKanbanSessionContextUpdatedMessage,
 	RuntimeStateStreamMcpAuthUpdatedMessage,
 	RuntimeStateStreamMessage,
+	RuntimeStateStreamOpsMetricsMessage,
 	RuntimeStateStreamProjectsMessage,
 	RuntimeStateStreamSnapshotMessage,
 	RuntimeStateStreamTaskChatClearedMessage,
@@ -62,6 +64,12 @@ export interface RuntimeStateHub {
 	bumpKanbanSessionContextVersion: () => void;
 	broadcastTaskReadyForReview: (workspaceId: string, taskId: string) => void;
 	broadcastBoardSyncStatusUpdated: (workspaceId: string, status: RuntimeBoardSyncStatus) => void;
+	/**
+	 * Fan out a runtime ops metrics snapshot. Process-global (not workspace-scoped),
+	 * so it goes to every connected runtime client regardless of which workspace
+	 * they are viewing.
+	 */
+	broadcastRuntimeOpsMetrics: (metrics: RuntimeOpsMetrics) => void;
 	close: () => Promise<void>;
 }
 
@@ -222,6 +230,19 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			status,
 		};
 		for (const client of runtimeClients) {
+			sendRuntimeStateMessage(client, payload);
+		}
+	};
+
+	const broadcastRuntimeOpsMetrics = (metrics: RuntimeOpsMetrics) => {
+		if (runtimeStateClients.size === 0) {
+			return;
+		}
+		const payload: RuntimeStateStreamOpsMetricsMessage = {
+			type: "runtime_metrics_updated",
+			metrics,
+		};
+		for (const client of runtimeStateClients) {
 			sendRuntimeStateMessage(client, payload);
 		}
 	};
@@ -596,6 +617,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 		broadcastRuntimeProjectsUpdated,
 		broadcastKanbanMcpAuthStatusesUpdated,
 		broadcastBoardSyncStatusUpdated,
+		broadcastRuntimeOpsMetrics,
 		bumpKanbanSessionContextVersion,
 		broadcastTaskReadyForReview,
 		close: async () => {

@@ -16,10 +16,12 @@ import { parseProjectIdFromPathname } from "@/hooks/app-utils";
 import type {
 	RuntimeBoardSyncStatus,
 	RuntimeKanbanMcpServerAuthStatus,
+	RuntimeOpsMetrics,
 	RuntimeProjectSummary,
 	RuntimeStateStreamBoardSyncStatusMessage,
 	RuntimeStateStreamKanbanSessionContextUpdatedMessage,
 	RuntimeStateStreamMcpAuthUpdatedMessage,
+	RuntimeStateStreamOpsMetricsMessage,
 	RuntimeStateStreamProjectsMessage,
 	RuntimeStateStreamSnapshotMessage,
 	RuntimeStateStreamTaskChatClearedMessage,
@@ -42,6 +44,7 @@ export interface RuntimeStateStreamStore {
 	latestMcpAuthStatuses: RuntimeKanbanMcpServerAuthStatus[] | null;
 	kanbanSessionContextVersion: number;
 	boardSyncStatus: RuntimeBoardSyncStatus | null;
+	opsMetrics: RuntimeOpsMetrics | null;
 	streamError: string | null;
 	isRuntimeDisconnected: boolean;
 	hasReceivedSnapshot: boolean;
@@ -64,6 +67,7 @@ export type RuntimeStateStreamAction =
 	| { type: "mcp_auth_updated"; payload: RuntimeStateStreamMcpAuthUpdatedMessage }
 	| { type: "kanban_session_context_updated"; payload: RuntimeStateStreamKanbanSessionContextUpdatedMessage }
 	| { type: "board_sync_status_updated"; payload: RuntimeStateStreamBoardSyncStatusMessage }
+	| { type: "runtime_metrics_updated"; payload: RuntimeStateStreamOpsMetricsMessage }
 	| { type: "workspace_state_updated"; workspaceState: RuntimeWorkspaceStateResponse }
 	| { type: "task_sessions_updated"; summaries: RuntimeTaskSessionSummary[] }
 	| { type: "stream_error"; message: string }
@@ -98,6 +102,7 @@ export function createInitialRuntimeStateStreamStore(requestedWorkspaceId: strin
 		latestMcpAuthStatuses: null,
 		kanbanSessionContextVersion: 0,
 		boardSyncStatus: null,
+		opsMetrics: null,
 		streamError: null,
 		isRuntimeDisconnected: false,
 		hasReceivedSnapshot: false,
@@ -187,6 +192,9 @@ export function runtimeStateStreamReducer(
 			latestMcpAuthStatuses: state.latestMcpAuthStatuses,
 			kanbanSessionContextVersion: action.payload.kanbanSessionContextVersion,
 			boardSyncStatus: null,
+			// Ops metrics are process-global, not workspace-scoped — keep the last
+			// sample across a re-snapshot so the status bar doesn't blank out.
+			opsMetrics: state.opsMetrics,
 			streamError: null,
 			isRuntimeDisconnected: false,
 			hasReceivedSnapshot: true,
@@ -258,6 +266,12 @@ export function runtimeStateStreamReducer(
 			boardSyncStatus: action.payload.status,
 		};
 	}
+	if (action.type === "runtime_metrics_updated") {
+		return {
+			...state,
+			opsMetrics: action.payload.metrics,
+		};
+	}
 	if (action.type === "workspace_state_updated") {
 		const mergedWorkspaceState = {
 			...action.workspaceState,
@@ -313,6 +327,7 @@ const FIELD_KEYS = [
 	"latestMcpAuthStatuses",
 	"kanbanSessionContextVersion",
 	"boardSyncStatus",
+	"opsMetrics",
 	"streamError",
 	"isRuntimeDisconnected",
 	"hasReceivedSnapshot",
@@ -435,6 +450,7 @@ const selectIsRuntimeDisconnected = (snapshot: RuntimeStateStreamStore) => snaps
 const selectHasReceivedSnapshot = (snapshot: RuntimeStateStreamStore) => snapshot.hasReceivedSnapshot;
 const selectKanbanSessionContextVersion = (snapshot: RuntimeStateStreamStore) => snapshot.kanbanSessionContextVersion;
 const selectBoardSyncStatus = (snapshot: RuntimeStateStreamStore) => snapshot.boardSyncStatus;
+const selectOpsMetrics = (snapshot: RuntimeStateStreamStore) => snapshot.opsMetrics;
 
 export function useRuntimeCurrentProjectId(): string | null {
 	return useField("currentProjectId", selectCurrentProjectId);
@@ -474,6 +490,15 @@ export function useRuntimeKanbanSessionContextVersion(): number {
 
 export function useRuntimeBoardSyncStatus(): RuntimeBoardSyncStatus | null {
 	return useField("boardSyncStatus", selectBoardSyncStatus);
+}
+
+/**
+ * The latest runtime ops metrics (process RSS / CPU% / event-loop stall state).
+ * Subscribe ONLY in the leaf status-bar component so the ~2.5s metrics broadcast
+ * re-renders just that bar, not the rest of the tree.
+ */
+export function useRuntimeOpsMetrics(): RuntimeOpsMetrics | null {
+	return useField("opsMetrics", selectOpsMetrics);
 }
 
 function subscribeTaskChat(taskId: string, listener: Listener): () => void {

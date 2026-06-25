@@ -90,12 +90,19 @@ export interface EventLoopStallWatchdog {
 	 * the most recent mark before a stall is retained.
 	 */
 	mark(label: string, detail?: string): void;
+	/**
+	 * Whether the main event loop is currently observed as stalled — flips true on
+	 * the Worker's `stall` report and back to false on `recovered`. Reused as the
+	 * stall indicator for the runtime ops metrics bar (no stderr parsing).
+	 */
+	isStalled(): boolean;
 	/** Tear down the Worker and the heartbeat timer. */
 	stop(): Promise<void>;
 }
 
 const NOOP_WATCHDOG: EventLoopStallWatchdog = {
 	mark: () => {},
+	isStalled: () => false,
 	stop: async () => {},
 };
 
@@ -106,6 +113,15 @@ let activeWatchdog: EventLoopStallWatchdog = NOOP_WATCHDOG;
 /** Record a breadcrumb on the active watchdog (no-op when none is running). */
 export function markStall(label: string, detail?: string): void {
 	activeWatchdog.mark(label, detail);
+}
+
+/**
+ * Whether the active watchdog currently observes a stalled main event loop
+ * (false when no watchdog is running). Lets the ops metrics sampler read the
+ * stall signal in-process without parsing the watchdog's stderr.
+ */
+export function isEventLoopStalled(): boolean {
+	return activeWatchdog.isStalled();
 }
 
 // The Worker runs as standalone plain JS (no bundler-resolved imports) so it
@@ -195,6 +211,7 @@ export function startEventLoopStallWatchdog(options: StartEventLoopStallWatchdog
 	let worker: Worker | null = null;
 	let blobUrl: string | null = null;
 	let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+	let stalled = false;
 	try {
 		const sab = new SharedArrayBuffer(STALL_WATCHDOG_SAB_INT32_LENGTH * Int32Array.BYTES_PER_ELEMENT);
 		const view = new Int32Array(sab);
@@ -206,11 +223,13 @@ export function startEventLoopStallWatchdog(options: StartEventLoopStallWatchdog
 		worker.onmessage = (event: MessageEvent) => {
 			const data = event.data as { type?: string; stalledMs?: number; breadcrumb?: string };
 			if (data?.type === "stall") {
+				stalled = true;
 				log.error("main event loop stalled — runtime is blocked (likely a synchronous loop or blocking call)", {
 					stalledMs: data.stalledMs,
 					operation: data.breadcrumb || "unknown",
 				});
 			} else if (data?.type === "recovered") {
+				stalled = false;
 				log.warn("main event loop recovered after a stall", { stalledMs: data.stalledMs });
 			}
 		};
@@ -227,6 +246,7 @@ export function startEventLoopStallWatchdog(options: StartEventLoopStallWatchdog
 			mark: (label, detail) => {
 				writeBreadcrumb(view, detail ? `${label} ${detail}` : label);
 			},
+			isStalled: () => stalled,
 			stop: async () => {
 				if (heartbeatTimer) {
 					clearInterval(heartbeatTimer);

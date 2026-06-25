@@ -45,6 +45,7 @@ import { disablePasscode, generateInternalToken, setPasscode } from "./security/
 import { getPasscodeFilePath, isPersistedPasscodeDisabled, resolveAndPersistPasscode } from "./security/passcode-store";
 import { startEventLoopStallWatchdog } from "./server/event-loop-stall-watchdog";
 import { terminateProcessForTimeout } from "./server/process-termination";
+import { startRuntimeOpsMetricsSampler } from "./server/runtime-ops-metrics";
 import type { RuntimeStateHub } from "./server/runtime-state-hub";
 import { captureNodeException, flushNodeTelemetry } from "./telemetry/sentry-node.js";
 import type { TerminalSessionManager } from "./terminal/session-manager";
@@ -481,6 +482,14 @@ async function startServer(): Promise<{
 		runtimeHub.trackTerminalManager(workspaceId, terminalManager);
 	}
 
+	// Sample process RSS / CPU% and the stall watchdog's state on a modest
+	// interval, broadcasting them as the low-frequency `runtime_metrics_updated`
+	// channel that feeds the sidebar's VSCode-style ops status bar. The sampler's
+	// timer is unref'd, so it never keeps the process alive on its own.
+	const opsMetricsSampler = startRuntimeOpsMetricsSampler({
+		onSample: (metrics) => runtimeHub.broadcastRuntimeOpsMetrics(metrics),
+	});
+
 	const disposeTrackedWorkspace = (
 		workspaceId: string,
 		options?: {
@@ -564,6 +573,7 @@ async function startServer(): Promise<{
 			closeRuntimeServer: close,
 			skipSessionCleanup: options?.skipSessionCleanup ?? false,
 		});
+		opsMetricsSampler.stop();
 		await stopNetworkBridge();
 		await stallWatchdog?.stop();
 	};
