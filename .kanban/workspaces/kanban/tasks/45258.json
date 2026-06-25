@@ -1,0 +1,19 @@
+{
+  "id": "45258",
+  "title": "board 每列独立的过滤/搜索/排序控件",
+  "prompt": "目标:给 Kanban board 的四列(Backlog / In Progress / Review / Done)各自加上独立的过滤、搜索、排序控件——作用域只限于本列,不做全局统一搜索。顺带补上空列的空状态文案。\n\n范围与实现:\n- 在每一列的列头加一个轻量控件区:文本搜索(匹配卡片 title 与 prompt/描述)、按 agent 过滤、按 owner 过滤、排序(按 createdAt / updatedAt / 标题)。每列各自维护自己的过滤/排序状态,互不影响。\n- 纯前端、纯客户端:基于前端已有的 board 数据做过滤与排序,不改后端、不新增 tRPC、绝不改动列枚举(backlog/in_progress/review/done)或磁盘 rank 顺序——只影响该列的呈现。\n- 当某列在过滤后为空、或本身就没有卡片时,显示明确的空状态文案(区分'无卡片'与'过滤无结果')。\n- 主要涉及文件参考:web-ui/src/components/kanban-board.tsx、board-column.tsx、board-card.tsx、web-ui/src/state/board-state.ts、types/board.ts。把过滤/排序逻辑抽到可测试的纯函数/hook,不要堆在组件里。\n- 不要破坏拖拽:拖拽顺序/规则基于真实 rank,过滤态下的拖拽行为要明确(建议:有激活的过滤/排序时禁用该列拖拽或给出提示),不能让 UI 顺序与持久化 rank 错乱。\n\n约束:遵循 AGENTS.md 的 web-ui 规范——Tailwind 设计 token(surface/border/text/accent)、Radix 原语(popover/dropdown/select 等)、lucide 图标、复用 src/components/ui/ 下的 Button/Tooltip/Dialog 等基元、优先用 @/kanban/utils/react-use 的 hook、日志走 web-ui logger、禁止 any。补充对纯函数/hook 的单元测试。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782368501265,
+  "updatedAt": 1782368501265,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
