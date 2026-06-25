@@ -20,6 +20,13 @@
       "name": "provider",
       "createdAt": 1782351351870,
       "updatedAt": 1782351351870
+    },
+    {
+      "id": "36d434f5-e136-4d04-bf80-bfa331510e10",
+      "agentId": "claude",
+      "name": "运维",
+      "createdAt": 1782352548103,
+      "updatedAt": 1782352548103
     }
   ]
 }
