@@ -29,6 +29,7 @@ import { useKanbanChatPanelController } from "@/hooks/use-kanban-chat-panel-cont
 import type { KanbanChatActionResult } from "@/hooks/use-kanban-chat-runtime-actions";
 import type { KanbanChatMessage } from "@/hooks/use-kanban-chat-session";
 import { useRuntimeSettingsKanbanController } from "@/hooks/use-runtime-settings-kanban-controller";
+import { appendTranscriptToDraft } from "@/hooks/voice-input-state";
 import type {
 	RuntimeConfigResponse,
 	RuntimeReasoningEffort,
@@ -347,15 +348,7 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 
 		const handleAppendToDraft = useCallback(
 			(text: string) => {
-				const trimmed = text.trim();
-				if (trimmed.length === 0) {
-					return;
-				}
-				if (draft.trim().length === 0) {
-					setDraft(trimmed);
-					return;
-				}
-				setDraft(`${draft.trimEnd()}\n\n${trimmed}`);
+				setDraft(appendTranscriptToDraft(draft, text));
 			},
 			[draft, setDraft],
 		);

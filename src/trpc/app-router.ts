@@ -294,6 +294,10 @@ import {
 	runtimeShellSessionStartRequestSchema,
 	runtimeShellSessionStartResponseSchema,
 	runtimeSlashCommandsResponseSchema,
+	runtimeSttSaveRequestSchema,
+	runtimeSttStatusSchema,
+	runtimeSttTranscribeRequestSchema,
+	runtimeSttTranscribeResponseSchema,
 	runtimeTaskChatAbortRequestSchema,
 	runtimeTaskChatAbortResponseSchema,
 	runtimeTaskChatCancelRequestSchema,
@@ -356,6 +360,7 @@ import {
 } from "../core/api-contract";
 import { getGiteeAuthService } from "../gitee-auth";
 import { getGitHubAuthService } from "../github-auth";
+import { getSttConfigService, SttTranscriptionError } from "../stt";
 import type { WorkspaceDbApi } from "./workspace-db-api";
 
 export interface RuntimeTrpcWorkspaceScope {
@@ -1381,6 +1386,37 @@ export const runtimeAppRouter = t.router({
 			await getGiteeAuthService().logout();
 			return { status: await getGiteeAuthService().getStatus() };
 		}),
+	}),
+	// Machine-global STT (speech-to-text) config + transcription egress for the chat
+	// composer's voice input. The API key never crosses the wire (status is masked);
+	// the audio clip is uploaded as base64 and forwarded to the configured
+	// OpenAI-compatible endpoint through the runtime's unified outbound proxy.
+	stt: t.router({
+		status: t.procedure.output(runtimeSttStatusSchema).query(async () => {
+			return await getSttConfigService().getStatus();
+		}),
+		save: t.procedure
+			.input(runtimeSttSaveRequestSchema)
+			.output(runtimeSttStatusSchema)
+			.mutation(async ({ input }) => {
+				return await getSttConfigService().save(input);
+			}),
+		clear: t.procedure.output(runtimeSttStatusSchema).mutation(async () => {
+			return await getSttConfigService().clear();
+		}),
+		transcribe: t.procedure
+			.input(runtimeSttTranscribeRequestSchema)
+			.output(runtimeSttTranscribeResponseSchema)
+			.mutation(async ({ input }) => {
+				try {
+					return await getSttConfigService().transcribe(input);
+				} catch (error) {
+					if (error instanceof SttTranscriptionError) {
+						throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+					}
+					throw error;
+				}
+			}),
 	}),
 });
 

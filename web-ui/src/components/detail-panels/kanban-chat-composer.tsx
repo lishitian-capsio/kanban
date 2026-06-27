@@ -17,10 +17,11 @@ import {
 	applyKanbanComposerCompletion,
 	buildMentionInsertText,
 	buildSlashCommandInsertText,
-	type KanbanComposerCompletionSuggestion,
 	detectActiveKanbanComposerToken,
+	type KanbanComposerCompletionSuggestion,
 } from "@/components/detail-panels/kanban-chat-composer-completion";
 import { KanbanChatModelSelector } from "@/components/detail-panels/kanban-chat-model-selector";
+import { VoiceInputButton } from "@/components/detail-panels/voice-input-button";
 import { type InlineCompletionItem, InlineCompletionPicker } from "@/components/inline-completion-picker";
 import type { SearchSelectOption } from "@/components/search-select-dropdown";
 import { collectImageFilesFromDataTransfer, extractImagesFromDataTransfer } from "@/components/task-image-input-utils";
@@ -29,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
+import { appendTranscriptToDraft } from "@/hooks/voice-input-state";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeReasoningEffort, RuntimeSlashCommand, RuntimeTaskSessionMode } from "@/runtime/types";
 import type { TaskImage } from "@/types";
@@ -340,6 +342,28 @@ export function KanbanChatComposer({
 		[draft, onDraftChange],
 	);
 
+	const handleVoiceTranscript = useCallback(
+		(text: string) => {
+			const next = appendTranscriptToDraft(draft, text);
+			if (next === draft) {
+				return;
+			}
+			onDraftChange(next);
+			// Fill the draft for the user to confirm/edit — never auto-send. Drop the cursor
+			// at the end of the inserted text so they can keep typing or hit Enter.
+			window.requestAnimationFrame(() => {
+				const textarea = textareaRef.current;
+				if (!textarea) {
+					return;
+				}
+				textarea.focus();
+				textarea.setSelectionRange(next.length, next.length);
+				setCursorIndex(next.length);
+			});
+		},
+		[draft, onDraftChange],
+	);
+
 	const handleCompletionSelect = useCallback(
 		(item: InlineCompletionItem) => {
 			const suggestion = completionSuggestions.find((s) => s.id === item.id);
@@ -516,6 +540,7 @@ export function KanbanChatComposer({
 					</div>
 				)}
 				<div className="ml-auto flex shrink-0 items-center gap-2">
+					<VoiceInputButton workspaceId={workspaceId} onTranscript={handleVoiceTranscript} disabled={!canSend} />
 					{showModeToggle ? (
 						<Tooltip
 							side="top"
