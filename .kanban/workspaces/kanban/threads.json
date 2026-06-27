@@ -51,14 +51,6 @@
       "createdAt": 1782367485981,
       "updatedAt": 1782367517530,
       "pendingNextStep": "启动 Timeline 面板任务 642b2"
-    },
-    {
-      "id": "b6ec77f5-971f-4d5b-85b2-4efbe3542436",
-      "agentId": "claude",
-      "name": "你是谁？",
-      "titleSource": "auto",
-      "createdAt": 1782367732124,
-      "updatedAt": 1782367732124
     }
   ]
 }
