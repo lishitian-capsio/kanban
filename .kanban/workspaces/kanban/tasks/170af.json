@@ -1,0 +1,19 @@
+{
+  "id": "170af",
+  "title": "Home Tab 启动台（会话卡片网格 + 固定「+」卡）",
+  "prompt": "背景见 vault decision 文档 1902b（《Drive the home agent chat layout by panel size》）。先读它。依赖任务①（全屏态 + 布局选择器骨架）已就绪。\n\n目标：在全屏工作区里实现「Home Tab」启动台：\n- 一个会话卡片网格，每个 agent 会话（thread）一张卡，数据源复用现有 per-workspace thread registry（threads.json）。\n- 卡片承载真实信号：agent 图标、标题、最近一条消息摘要、状态点（running / awaiting-review / idle 的具体语义可在实现中确定并记录）。最近消息/状态尽量从现有 per-thread 会话/transcript 状态派生，不新增数据模型。\n- 末尾固定一张「+」添加会话卡（浏览器新标签页式），点击新建 thread。\n\n本任务只做 Home Tab 启动台与卡片本身；「点击卡片打开会话 tab」与 tab 条由任务③实现。遵循 web-ui 设计规范（Tailwind/Radix/lucide、surface 层级、dark theme）。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782570055798,
+  "updatedAt": 1782570055798,
+  "column": "backlog",
+  "rank": "Zw",
+  "dependsOn": []
+}
