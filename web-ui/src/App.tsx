@@ -833,7 +833,14 @@ export default function App(): ReactElement {
 								}}
 							/>
 						}
-						fullscreenContent={<HomeChatWorkspace />}
+						fullscreenContent={
+							<HomeChatWorkspace
+								currentProjectId={currentProjectId}
+								runtimeProjectConfig={runtimeProjectConfig}
+								homeThreads={homeThreads}
+								taskSessions={sessions}
+							/>
+						}
 					>
 						<HomeSidebarAgentPanel
 							currentProjectId={currentProjectId}
