@@ -8,6 +8,14 @@
       "createdAt": 1782551922032,
       "updatedAt": 1782551955473,
       "pendingNextStep": "Start task 1248a"
+    },
+    {
+      "id": "504301b2-6afd-47c1-9e97-ef6675adb0c2",
+      "agentId": "claude",
+      "name": "provider与agent的关系",
+      "titleSource": "auto",
+      "createdAt": 1782554189963,
+      "updatedAt": 1782554189963
     }
   ]
 }
