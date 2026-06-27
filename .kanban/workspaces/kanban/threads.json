@@ -34,14 +34,6 @@
       "createdAt": 1782554264056,
       "updatedAt": 1782554290229,
       "pendingNextStep": "启动调研任务(语音方案选型)"
-    },
-    {
-      "id": "59bd131c-36a3-47ae-98d4-8586992ff023",
-      "agentId": "claude",
-      "name": "沟通下kanban agent布局的问题，第一我觉得，kanban agent还可以增加一个全屏功能，第二我想重新设计…",
-      "titleSource": "auto",
-      "createdAt": 1782567990795,
-      "updatedAt": 1782567990795
     }
   ]
 }
