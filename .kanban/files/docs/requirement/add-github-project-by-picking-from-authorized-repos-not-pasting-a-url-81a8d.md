@@ -2,9 +2,9 @@
 _id: 81a8d
 type: requirement
 _created: 1782554714914
-_updated: 1782558872945
+_updated: 1782565921765
 priority: high
-status: proposed
+status: invalid
 title: 'Add GitHub project by picking from authorized repos, not pasting a URL'
 ---
 ## Who is affected
