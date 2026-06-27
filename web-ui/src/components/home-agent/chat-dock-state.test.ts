@@ -16,19 +16,33 @@ import {
 	normalizeChatDockPosition,
 	normalizeChatDockSide,
 	normalizeChatFloatRect,
+	selectHomeChatLayout,
 } from "@/components/home-agent/chat-dock-state";
 
 describe("normalizeChatDockPosition", () => {
-	it("accepts the three known positions", () => {
+	it("accepts the four known positions", () => {
 		expect(normalizeChatDockPosition("left")).toBe("left");
 		expect(normalizeChatDockPosition("right")).toBe("right");
 		expect(normalizeChatDockPosition("float")).toBe("float");
+		expect(normalizeChatDockPosition("fullscreen")).toBe("fullscreen");
 	});
 
 	it("rejects unknown values", () => {
 		expect(normalizeChatDockPosition("bottom")).toBeNull();
 		expect(normalizeChatDockPosition("")).toBeNull();
 		expect(normalizeChatDockPosition("LEFT")).toBeNull();
+	});
+});
+
+describe("selectHomeChatLayout", () => {
+	it("maps docked and float positions to the compact layout", () => {
+		expect(selectHomeChatLayout("left")).toBe("compact");
+		expect(selectHomeChatLayout("right")).toBe("compact");
+		expect(selectHomeChatLayout("float")).toBe("compact");
+	});
+
+	it("maps the fullscreen position to the fullscreen workspace layout", () => {
+		expect(selectHomeChatLayout("fullscreen")).toBe("fullscreen");
 	});
 });
 
@@ -132,6 +146,51 @@ describe("chatDockReducer", () => {
 	it("ignores collapse while floating (no collapsed float)", () => {
 		const floated: ChatDockState = { position: "float", lastDockedSide: "right", collapsed: false, open: true };
 		expect(chatDockReducer(floated, { type: "collapse" })).toBe(floated);
+	});
+
+	it("entering fullscreen keeps the last docked side and clears collapse", () => {
+		const collapsed: ChatDockState = { position: "left", lastDockedSide: "left", collapsed: true, open: true };
+		expect(chatDockReducer(collapsed, { type: "fullscreen" })).toEqual({
+			position: "fullscreen",
+			lastDockedSide: "left",
+			collapsed: false,
+			open: true,
+		});
+	});
+
+	it("entering fullscreen reopens a hidden panel", () => {
+		const hidden: ChatDockState = { position: "right", lastDockedSide: "right", collapsed: false, open: false };
+		expect(chatDockReducer(hidden, { type: "fullscreen" })).toEqual({
+			position: "fullscreen",
+			lastDockedSide: "right",
+			collapsed: false,
+			open: true,
+		});
+	});
+
+	it("exiting fullscreen returns to the last docked side", () => {
+		const full: ChatDockState = { position: "fullscreen", lastDockedSide: "left", collapsed: false, open: true };
+		expect(chatDockReducer(full, { type: "exitFullscreen" })).toEqual({
+			position: "left",
+			lastDockedSide: "left",
+			collapsed: false,
+			open: true,
+		});
+	});
+
+	it("ignores collapse while fullscreen (no collapsed fullscreen)", () => {
+		const full: ChatDockState = { position: "fullscreen", lastDockedSide: "right", collapsed: false, open: true };
+		expect(chatDockReducer(full, { type: "collapse" })).toBe(full);
+	});
+
+	it("docking from fullscreen exits to the chosen side", () => {
+		const full: ChatDockState = { position: "fullscreen", lastDockedSide: "right", collapsed: false, open: true };
+		expect(chatDockReducer(full, { type: "dock", side: "left" })).toEqual({
+			position: "left",
+			lastDockedSide: "left",
+			collapsed: false,
+			open: true,
+		});
 	});
 
 	it("floating clears a collapsed docked panel", () => {

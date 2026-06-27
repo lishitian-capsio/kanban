@@ -1,12 +1,16 @@
 // The dockable shell around the home chat surface.
 //
-// Reuses the existing chat element (passed as `children`) and places it
-// according to the persisted dock position:
+// A pure size/state → layout selector (`selectHomeChatLayout`) chooses what to
+// mount: the compact surface (`children`) for docked/float, or the fullscreen
+// workspace (`fullscreenContent`) for the fullscreen state. The shell then
+// places that content according to the persisted dock position:
 //   - left / right: a resizable flex column. Left↔right only flips the CSS
 //     `order`, so the chat session is not remounted when swapping sides.
 //   - float: a free-floating, draggable, resizable window (react-rnd) inside a
 //     full-screen pointer-events-none overlay so the rest of the app stays
 //     interactive. z-40 keeps it below Radix dialogs/dropdowns (z-50).
+//   - fullscreen: a solid full-viewport overlay (same z-40) carrying the header
+//     and the fullscreen workspace. Same data, a roomier presentation.
 // When docked and `collapsed`, the chat is replaced by a thin edge strip whose
 // only job is a one-click expand back to the previous width and side. The fully
 // hidden (`open === false`) state is handled by the caller, which simply stops
@@ -33,6 +37,7 @@ import {
 	MIN_CHAT_DOCK_WIDTH,
 	MIN_CHAT_FLOAT_HEIGHT,
 	MIN_CHAT_FLOAT_WIDTH,
+	selectHomeChatLayout,
 } from "./chat-dock-state";
 import { SidebarOpsStatusBar } from "./sidebar-ops-status-bar";
 
@@ -41,10 +46,17 @@ interface DockableChatPanelProps {
 	// Project navigation, folded into the sidebar header (the old standalone
 	// `ProjectNavigationPanel` column). Rendered just below the dock controls.
 	projectSwitcher?: React.ReactNode;
+	// The fullscreen-state presentation (Home tab + session tabs). Mounted only
+	// when the dock is in its fullscreen layout; `children` is the compact surface.
+	fullscreenContent?: React.ReactNode;
 	children: React.ReactNode;
 }
 
-function DockHeaderWithChildren({ dock, projectSwitcher, children }: DockableChatPanelProps): React.ReactElement {
+function DockHeaderWithChildren({
+	dock,
+	projectSwitcher,
+	children,
+}: Omit<DockableChatPanelProps, "fullscreenContent">): React.ReactElement {
 	const floating = dock.position === "float";
 	return (
 		<div className="flex h-full min-h-0 w-full flex-col gap-2 p-2">
@@ -67,6 +79,8 @@ function DockHeaderWithChildren({ dock, projectSwitcher, children }: DockableCha
 					onDockLeft={dock.dockLeft}
 					onDockRight={dock.dockRight}
 					onFloat={dock.floatPanel}
+					onEnterFullscreen={dock.enterFullscreen}
+					onExitFullscreen={dock.exitFullscreen}
 					onClose={dock.closeFloat}
 					onCollapse={dock.collapse}
 					onHide={dock.hide}
@@ -104,13 +118,31 @@ function CollapsedChatStrip({ dock }: { dock: UseChatDockResult }): React.ReactE
 	);
 }
 
-export function DockableChatPanel({ dock, projectSwitcher, children }: DockableChatPanelProps): React.ReactElement {
+export function DockableChatPanel({
+	dock,
+	projectSwitcher,
+	fullscreenContent,
+	children,
+}: DockableChatPanelProps): React.ReactElement {
 	const isLeft = dock.position === "left";
 	const { isResizing, startResize } = useHorizontalResize({
 		width: dock.width,
 		edge: isLeft ? "right" : "left",
 		onWidthChange: dock.setWidth,
 	});
+
+	// Fullscreen owns the whole viewport: a solid overlay carrying the same header
+	// (so the dock/exit controls stay reachable) with the workspace presentation
+	// in place of the compact surface.
+	if (selectHomeChatLayout(dock.position) === "fullscreen") {
+		return (
+			<div className="fixed inset-0 z-40 flex flex-col bg-surface-0">
+				<DockHeaderWithChildren dock={dock} projectSwitcher={projectSwitcher}>
+					{fullscreenContent}
+				</DockHeaderWithChildren>
+			</div>
+		);
+	}
 
 	if (dock.position === "float") {
 		const { floatRect } = dock;

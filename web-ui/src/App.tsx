@@ -13,6 +13,7 @@ import { DebugDialog } from "@/components/debug-dialog";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
 import { GitHistoryView } from "@/components/git-history-view";
 import { DockableChatPanel } from "@/components/home-agent/dockable-chat-panel";
+import { HomeChatWorkspace } from "@/components/home-agent/home-chat-workspace";
 import { HomeSidebarAgentPanel } from "@/components/home-agent/home-sidebar-agent-panel";
 import { SidebarProjectSwitcher } from "@/components/home-agent/project-switcher";
 import { KanbanBoard } from "@/components/kanban-board";
@@ -832,6 +833,7 @@ export default function App(): ReactElement {
 								}}
 							/>
 						}
+						fullscreenContent={<HomeChatWorkspace />}
 					>
 						<HomeSidebarAgentPanel
 							currentProjectId={currentProjectId}
