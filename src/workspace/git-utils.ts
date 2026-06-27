@@ -2,24 +2,67 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { buildSubprocessProxyEnv } from "../config/proxy-fetch";
 import { createGitProcessEnv } from "../core/git-process-env";
-import type { GitHubGitAuthInjector } from "../github-auth/github-git-credentials";
 import { buildGitSshProxyEnv } from "./git-ssh-proxy";
 
 const execFileAsync = promisify(execFile);
 const GIT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 
 /**
- * Registration seam for github.com HTTPS credential injection. Kept as a setter (rather than
- * a static import of the github-auth service) so `git-utils` stays a leaf module — the
- * service reaches `workspace-state`, which transitively imports `git-utils`, so a direct
- * import would create a cycle. The runtime wires the real injector at startup via
- * {@link setGitHubGitAuthInjector}; until then (and in unit tests) it is `null`, so `runGit`
- * injects nothing and git auth behaves exactly as it does today.
+ * A per-host git credential injection: `-c key=value` config flags (token-free, safe to log)
+ * plus the per-spawn env carrying the secret. `runGit` prepends the args and merges the env.
  */
-let gitHubGitAuthInjector: GitHubGitAuthInjector | null = null;
+export interface GitCredentialInjection {
+	args: string[];
+	env: NodeJS.ProcessEnv;
+}
 
-export function setGitHubGitAuthInjector(injector: GitHubGitAuthInjector | null): void {
-	gitHubGitAuthInjector = injector;
+/** Resolves a host's git credential injection, or `null` when that host isn't logged in. */
+export type GitCredentialInjector = () => Promise<GitCredentialInjection | null>;
+
+/**
+ * Host-keyed registry of git credential sources. Kept as a setter registry (rather than a
+ * static import of the auth services) so `git-utils` stays a leaf module — the services reach
+ * `workspace-state`, which transitively imports `git-utils`, so a direct import would create a
+ * cycle. The runtime wires the real sources at startup via {@link registerGitCredentialInjector}
+ * (one per host: github.com, gitee.com, …); until then (and in unit tests) the registry is
+ * empty, so `runGit` injects nothing and git auth behaves exactly as it does today.
+ *
+ * Each source is independent: it's asked separately, a throwing/failing source degrades to no
+ * injection for that host only, and the underlying mechanism is per-URL
+ * (`credential.https://HOST.helper`) so multiple host helpers coexist on one git invocation
+ * without interfering.
+ */
+const gitCredentialInjectors = new Map<string, GitCredentialInjector>();
+
+/** Register (or, with `null`, clear) the credential source for a host key (e.g. "github"). */
+export function registerGitCredentialInjector(key: string, injector: GitCredentialInjector | null): void {
+	if (injector) {
+		gitCredentialInjectors.set(key, injector);
+	} else {
+		gitCredentialInjectors.delete(key);
+	}
+}
+
+/**
+ * Collect the merged credential config args + env from every registered host source. A source
+ * that throws or returns `null` contributes nothing (full passthrough for that host), so a
+ * network failure in one source can never break the git op.
+ */
+async function collectGitCredentialInjection(): Promise<GitCredentialInjection> {
+	const args: string[] = [];
+	let env: NodeJS.ProcessEnv = {};
+	for (const injector of gitCredentialInjectors.values()) {
+		try {
+			const injection = await injector();
+			if (injection) {
+				args.push(...injection.args);
+				env = { ...env, ...injection.env };
+			}
+		} catch {
+			// Degrade to no injection for this source; never break the git op.
+		}
+	}
+	return { args, env };
 }
 
 interface GitCommandResult {
@@ -64,20 +107,14 @@ function normalizeProcessExitCode(code: unknown): number {
 
 export async function runGit(cwd: string, args: string[], options: RunGitOptions = {}): Promise<GitCommandResult> {
 	try {
-		// Inject github.com HTTPS credentials when the runtime is logged in (registration
-		// seam above). The config args are token-free (the secret rides in the env only) and
-		// git-scoped to `https://github.com`, so non-github / SSH remotes are untouched and
-		// an absent login injects nothing at all. Network failures here must never break the
-		// git op, so a throwing injector degrades to no injection.
-		let gitHubAuth = null;
-		if (gitHubGitAuthInjector) {
-			try {
-				gitHubAuth = await gitHubGitAuthInjector();
-			} catch {
-				gitHubAuth = null;
-			}
-		}
-		const fullArgs = ["-c", "core.quotepath=false", ...(gitHubAuth?.args ?? []), ...args];
+		// Inject per-host HTTPS credentials for every registered source (github.com, gitee.com,
+		// …) when the runtime is logged in to that host (registration seam above). The config
+		// args are token-free (the secret rides in the env only) and each is git-scoped to its
+		// `https://HOST`, so non-matching / SSH remotes are untouched and an absent login injects
+		// nothing at all. Network failures here must never break the git op, so a throwing source
+		// degrades to no injection for that host.
+		const credentialInjection = await collectGitCredentialInjection();
+		const fullArgs = ["-c", "core.quotepath=false", ...credentialInjection.args, ...args];
 		// Merge the runtime's configured outbound proxy into the per-spawn env so git's
 		// network ops (clone/fetch/push/ls-remote) route through the same proxy as the
 		// runtime's own fetch. Both builders return `{}` when the proxy is disabled, so
@@ -95,7 +132,7 @@ export async function runGit(cwd: string, args: string[], options: RunGitOptions
 				...baseEnv,
 				...buildSubprocessProxyEnv(),
 				...buildGitSshProxyEnv(inheritedSshCommand),
-				...(gitHubAuth?.env ?? {}),
+				...credentialInjection.env,
 			},
 			...(options.timeoutMs ? { timeout: options.timeoutMs, killSignal: "SIGKILL" } : {}),
 		});

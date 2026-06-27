@@ -1103,6 +1103,37 @@ export const runtimeGithubLogoutResponseSchema = z.object({
 });
 export type RuntimeGithubLogoutResponse = z.infer<typeof runtimeGithubLogoutResponseSchema>;
 
+/**
+ * Gitee git-auth contract. Machine-global (no workspace scope). The PAT is NEVER carried over
+ * the wire — only the secret-free status crosses it. Gitee has no OAuth device flow (decision
+ * cf0d6), so this is a pasted-PAT surface (status / setToken / logout) with no begin/poll login.
+ */
+export const runtimeGiteeAuthStatusSchema = z.object({
+	authenticated: z.boolean(),
+	/** Gitee account login resolved from the API, or null when not resolved / logged out. */
+	login: z.string().nullable(),
+	/** The basic-auth username captured at login (may equal `login`), or null when logged out. */
+	username: z.string().nullable(),
+});
+export type RuntimeGiteeAuthStatus = z.infer<typeof runtimeGiteeAuthStatusSchema>;
+
+/** `gitee.setToken` input: a pasted PAT plus an optional account username. */
+export const runtimeGiteeSetTokenRequestSchema = z.object({
+	token: z.string().min(1),
+	username: z.string().optional(),
+});
+export type RuntimeGiteeSetTokenRequest = z.infer<typeof runtimeGiteeSetTokenRequestSchema>;
+
+export const runtimeGiteeSetTokenResponseSchema = z.object({
+	status: runtimeGiteeAuthStatusSchema,
+});
+export type RuntimeGiteeSetTokenResponse = z.infer<typeof runtimeGiteeSetTokenResponseSchema>;
+
+export const runtimeGiteeLogoutResponseSchema = z.object({
+	status: runtimeGiteeAuthStatusSchema,
+});
+export type RuntimeGiteeLogoutResponse = z.infer<typeof runtimeGiteeLogoutResponseSchema>;
+
 export const runtimeBoardAutoSyncRequestSchema = z.object({
 	paused: z.boolean(),
 });

@@ -11,6 +11,7 @@ import { CLI_EXIT_USAGE_ERROR } from "./commands/cli-envelope";
 import { registerSchemaCommand } from "./commands/cli-schema";
 import { registerDbCommand } from "./commands/db";
 import { registerFileCommand } from "./commands/file";
+import { registerGiteeCommand } from "./commands/gitee";
 import { registerGithubCommand } from "./commands/github";
 import { registerHomeThreadCommand } from "./commands/home-thread";
 import { registerHooksCommand } from "./commands/hooks";
@@ -41,6 +42,7 @@ import {
 	setKanbanRuntimePort,
 	setKanbanRuntimeTls,
 } from "./core/runtime-endpoint";
+import { getGiteeAuthService } from "./gitee-auth";
 import { getGitHubAuthService } from "./github-auth";
 import { configureLogging, createLogger } from "./logging";
 import { disablePasscode, generateInternalToken, setPasscode } from "./security/passcode-manager";
@@ -52,7 +54,7 @@ import type { RuntimeStateHub } from "./server/runtime-state-hub";
 import { captureNodeException, flushNodeTelemetry } from "./telemetry/sentry-node.js";
 import type { TerminalSessionManager } from "./terminal/session-manager";
 import { runOnDemandUpdate } from "./update/update";
-import { setGitHubGitAuthInjector } from "./workspace/git-utils";
+import { registerGitCredentialInjector } from "./workspace/git-utils";
 
 const cliLog = createLogger("cli");
 
@@ -409,12 +411,14 @@ async function startServer(): Promise<{
 	const proxyLog = createLogger("proxy-fetch");
 	proxyLog.info("installed global fetch proxy interceptor");
 
-	// Wire github.com HTTPS credential injection into the single `runGit` egress so every
-	// runtime git network op (code push/pull, board push/fetch, clone, task worktree ops)
-	// authenticates with the machine-local GitHub OAuth token when logged in. Registered as
-	// a setter to keep `git-utils` a leaf module (the service transitively imports it).
-	// No-op until `kanban github login` has stored a token.
-	setGitHubGitAuthInjector(() => getGitHubAuthService().getGitInjection());
+	// Wire per-host HTTPS credential injection into the single `runGit` egress so every runtime
+	// git network op (code push/pull, board push/fetch, clone, task worktree ops) authenticates
+	// with the machine-local token for that host when logged in. Registered via the host-keyed
+	// registry to keep `git-utils` a leaf module (the services transitively import it). Each is a
+	// no-op until `kanban <host> login` has stored a token; the per-URL credential helpers
+	// coexist cleanly so a repo with both github.com and gitee.com remotes authenticates each.
+	registerGitCredentialInjector("github", () => getGitHubAuthService().getGitInjection());
+	registerGitCredentialInjector("gitee", () => getGiteeAuthService().getGitInjection());
 
 	// Start the event-loop stall watchdog before the server stack loads so a
 	// synchronous hang anywhere in the runtime (e.g. the move-to-done freeze under
@@ -823,6 +827,7 @@ function createProgram(invocationArgs: string[]): Command {
 	registerRemoteCommand(program);
 	registerPasscodeAliasCommand(program);
 	registerGithubCommand(program);
+	registerGiteeCommand(program);
 	// Registered after the others so it sits alongside them in help; the manifest itself is
 	// built at invocation time from the fully-assembled tree, so registration order is moot.
 	registerSchemaCommand(program, { kanbanVersion: KANBAN_VERSION });

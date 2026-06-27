@@ -35,6 +35,7 @@ import { AgentExecutablePathSetting } from "@/components/agent-executable-path-s
 import { BoardBranchSetting } from "@/components/board-branch-setting";
 import { GitIdentitySetting } from "@/components/git-identity-setting";
 import { GitRemoteSetting } from "@/components/git-remote-setting";
+import { GiteeAuthSetting } from "@/components/gitee-auth-setting";
 import { GithubAuthSetting } from "@/components/github-auth-setting";
 import {
 	KanbanAddProviderDialog,
@@ -1402,6 +1403,7 @@ export function RuntimeSettingsDialog({
 					<GitIdentitySetting workspaceId={workspaceId} />
 					<GitRemoteSetting workspaceId={workspaceId} />
 					<GithubAuthSetting workspaceId={workspaceId} />
+					<GiteeAuthSetting workspaceId={workspaceId} />
 					<div className="rounded-lg border border-border bg-surface-0 px-4 py-3 mb-4">
 						<div className="flex items-center justify-between mb-2">
 							<h6

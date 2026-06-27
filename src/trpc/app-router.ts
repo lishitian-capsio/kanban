@@ -243,6 +243,10 @@ import {
 	runtimeGitCommitDiffRequestSchema,
 	runtimeGitCommitDiffResponseSchema,
 	runtimeGitDiscardResponseSchema,
+	runtimeGiteeAuthStatusSchema,
+	runtimeGiteeLogoutResponseSchema,
+	runtimeGiteeSetTokenRequestSchema,
+	runtimeGiteeSetTokenResponseSchema,
 	runtimeGithubAuthStatusSchema,
 	runtimeGithubBeginLoginResponseSchema,
 	runtimeGithubLogoutResponseSchema,
@@ -350,6 +354,7 @@ import {
 	runtimeWorktreeEnsureRequestSchema,
 	runtimeWorktreeEnsureResponseSchema,
 } from "../core/api-contract";
+import { getGiteeAuthService } from "../gitee-auth";
 import { getGitHubAuthService } from "../github-auth";
 import type { WorkspaceDbApi } from "./workspace-db-api";
 
@@ -1356,6 +1361,25 @@ export const runtimeAppRouter = t.router({
 		logout: t.procedure.output(runtimeGithubLogoutResponseSchema).mutation(async () => {
 			await getGitHubAuthService().logout();
 			return { status: await getGitHubAuthService().getStatus() };
+		}),
+	}),
+	// Gitee PAT for git remote auth. Machine-global (no workspace scope) — delegates directly to
+	// the process-wide singleton. The PAT is never returned over the wire; only the secret-free
+	// status is. Gitee has no device flow (cf0d6), so this is status/setToken/logout only.
+	gitee: t.router({
+		status: t.procedure.output(runtimeGiteeAuthStatusSchema).query(async () => {
+			return await getGiteeAuthService().getStatus();
+		}),
+		setToken: t.procedure
+			.input(runtimeGiteeSetTokenRequestSchema)
+			.output(runtimeGiteeSetTokenResponseSchema)
+			.mutation(async ({ input }) => {
+				const status = await getGiteeAuthService().login({ token: input.token, username: input.username });
+				return { status };
+			}),
+		logout: t.procedure.output(runtimeGiteeLogoutResponseSchema).mutation(async () => {
+			await getGiteeAuthService().logout();
+			return { status: await getGiteeAuthService().getStatus() };
 		}),
 	}),
 });

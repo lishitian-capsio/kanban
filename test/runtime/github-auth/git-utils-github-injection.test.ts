@@ -2,7 +2,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { runGit, setGitHubGitAuthInjector } from "../../../src/workspace/git-utils";
+import { registerGitCredentialInjector, runGit } from "../../../src/workspace/git-utils";
 import { createTempDir } from "../../utilities/temp-dir";
 
 const MARKER = "KANBAN_TEST_GH_HELPER_MARKER";
@@ -18,12 +18,12 @@ describe("runGit github credential injection seam", () => {
 		await runGit(dir, ["init", "-q", "."]);
 	});
 	afterEach(() => {
-		setGitHubGitAuthInjector(null);
+		registerGitCredentialInjector("github", null);
 		cleanup();
 	});
 
 	it("prepends the injector's config args to the git invocation", async () => {
-		setGitHubGitAuthInjector(async () => ({
+		registerGitCredentialInjector("github", async () => ({
 			args: ["-c", `credential.https://github.com.helper=!echo ${MARKER}`],
 			env: { KANBAN_GIT_GITHUB_TOKEN: "tok" },
 		}));
@@ -33,19 +33,19 @@ describe("runGit github credential injection seam", () => {
 	});
 
 	it("injects nothing when no injector is registered (passthrough)", async () => {
-		setGitHubGitAuthInjector(null);
+		registerGitCredentialInjector("github", null);
 		const result = await runGit(dir, ["config", "--list"]);
 		expect(result.stdout).not.toContain(MARKER);
 	});
 
 	it("injects nothing when the injector returns null (logged out)", async () => {
-		setGitHubGitAuthInjector(async () => null);
+		registerGitCredentialInjector("github", async () => null);
 		const result = await runGit(dir, ["config", "--list"]);
 		expect(result.stdout).not.toContain(MARKER);
 	});
 
 	it("never breaks the git op when the injector throws", async () => {
-		setGitHubGitAuthInjector(async () => {
+		registerGitCredentialInjector("github", async () => {
 			throw new Error("injector boom");
 		});
 		const result = await runGit(dir, ["rev-parse", "--is-inside-work-tree"]);
@@ -54,8 +54,7 @@ describe("runGit github credential injection seam", () => {
 	});
 
 	it("merges the injector env into the spawn (does not clobber the base env)", async () => {
-		// Sanity: a normal local op still succeeds with an injector that supplies env.
-		setGitHubGitAuthInjector(async () => ({ args: [], env: { KANBAN_GIT_GITHUB_TOKEN: "tok" } }));
+		registerGitCredentialInjector("github", async () => ({ args: [], env: { KANBAN_GIT_GITHUB_TOKEN: "tok" } }));
 		const result = await runGit(dir, ["rev-parse", "--git-dir"]);
 		expect(result.ok).toBe(true);
 		expect(result.stdout).toContain(join(".git"));

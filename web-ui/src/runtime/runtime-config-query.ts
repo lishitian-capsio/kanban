@@ -13,6 +13,9 @@ import type {
 	RuntimeAgentProviderSetListResponse,
 	RuntimeConfigResponse,
 	RuntimeDebugResetAllStateResponse,
+	RuntimeGiteeAuthStatus,
+	RuntimeGiteeLogoutResponse,
+	RuntimeGiteeSetTokenResponse,
 	RuntimeGithubAuthStatus,
 	RuntimeGithubBeginLoginResponse,
 	RuntimeGithubLogoutResponse,
@@ -216,6 +219,29 @@ export async function cancelGithubLogin(workspaceId: string | null): Promise<voi
 export async function logoutGithub(workspaceId: string | null): Promise<RuntimeGithubLogoutResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
 	return await trpcClient.github.logout.mutate();
+}
+
+// ── Kanban-hosted Gitee git auth ─────────────────────────────────────────────
+// Machine-global (no workspace scope); the `gitee` router is a sibling of `runtime`. Gitee has
+// no device flow (cf0d6): the PAT is pasted, stored server-side, and never crosses the wire on
+// read — only the secret-free status does.
+
+export async function fetchGiteeAuthStatus(workspaceId: string | null): Promise<RuntimeGiteeAuthStatus> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.gitee.status.query();
+}
+
+export async function setGiteeToken(
+	workspaceId: string | null,
+	input: { token: string; username?: string },
+): Promise<RuntimeGiteeSetTokenResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.gitee.setToken.mutate(input);
+}
+
+export async function logoutGitee(workspaceId: string | null): Promise<RuntimeGiteeLogoutResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.gitee.logout.mutate();
 }
 
 // ── Remote model fetching ──────────────────────────────────────────────────
