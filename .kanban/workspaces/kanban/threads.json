@@ -20,11 +20,11 @@
     {
       "id": "10f1fd3a-8c2d-4bb8-b1cb-0112bb0ac518",
       "agentId": "claude",
-      "name": "GitHub repo picker for add-project",
+      "name": "Gitee git auth (PAT) + host-keyed injector",
       "titleSource": "auto",
       "createdAt": 1782554248263,
-      "updatedAt": 1782554776804,
-      "pendingNextStep": "启动后端任务 dc9dd 开始实现 GitHub 仓库列表接口"
+      "updatedAt": 1782567637287,
+      "pendingNextStep": "启动任务 5feb0 实现 Gitee PAT 认证 + host-keyed 注入器"
     },
     {
       "id": "d6f6d516-d423-4a85-b006-4aef995def21",
