@@ -6,7 +6,8 @@
       "name": "Fix provider add fetch-models error",
       "titleSource": "auto",
       "createdAt": 1782551922032,
-      "updatedAt": 1782551955473
+      "updatedAt": 1782551955473,
+      "pendingNextStep": "Start task 1248a"
     }
   ]
 }
