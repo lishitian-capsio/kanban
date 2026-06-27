@@ -34,6 +34,15 @@
       "createdAt": 1782554264056,
       "updatedAt": 1782554290229,
       "pendingNextStep": "启动调研任务(语音方案选型)"
+    },
+    {
+      "id": "19f22f95-06a5-4f8c-af07-0b755d87b119",
+      "agentId": "claude",
+      "name": "Redesign home tab + session tabs",
+      "titleSource": "auto",
+      "createdAt": 1782569170541,
+      "updatedAt": 1782569239227,
+      "pendingNextStep": "Write this up as a decision doc, keeping session tabs in the sidebar with the opened conversation expanding to a wider view"
     }
   ]
 }
