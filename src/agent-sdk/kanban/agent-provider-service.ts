@@ -23,6 +23,7 @@ import {
 	getAllAgentProviderSets,
 	saveAgentProvider,
 } from "./agent-provider-config";
+import { buildModelsUrl, extractModelRecords } from "./model-discovery";
 import {
 	BUNDLED_PROVIDER_DEFAULT_PROTOCOLS,
 	getBaseUrlForProtocol,
@@ -138,34 +139,10 @@ function formatProviderName(id: string): string {
 
 // ------------------------------------------------------------------ model fetch
 
-function extractModelRecords(payload: unknown): Array<{ id: string; name?: string }> {
-	const container =
-		payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as Record<string, unknown>) : null;
-	const list = Array.isArray(payload)
-		? payload
-		: container
-			? ((container.data ?? container.models ?? container.result ?? container.items) as unknown)
-			: undefined;
-	if (!Array.isArray(list)) {
-		return [];
-	}
-	const records: Array<{ id: string; name?: string }> = [];
-	for (const item of list) {
-		if (!item || typeof item !== "object") {
-			continue;
-		}
-		const entry = item as { id?: unknown; name?: unknown };
-		const id = typeof entry.id === "string" ? entry.id.trim() : "";
-		if (id.length === 0) {
-			continue;
-		}
-		records.push({ id, name: typeof entry.name === "string" ? entry.name.trim() : undefined });
-	}
-	return records;
-}
-
 async function fetchModelsFromEndpoint(baseUrl: string, apiKey?: string): Promise<RuntimeKanbanProviderModel[]> {
-	const modelsUrl = `${baseUrl.replace(/\/+$/, "")}/models`;
+	// Saved providers store the OpenAI-compatible base URL, so discover via the
+	// shared OpenAI-protocol URL builder (single source of truth with the dialog path).
+	const modelsUrl = buildModelsUrl(baseUrl, "openai");
 	const maxAttempts = 2;
 
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {

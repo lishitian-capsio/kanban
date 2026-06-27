@@ -23,6 +23,7 @@ import type { CommittedProviderLayer } from "../agent-sdk/kanban/agent-provider-
 import { createAgentProviderService } from "../agent-sdk/kanban/agent-provider-service";
 import { createMcpRuntimeService, type McpRuntimeService } from "../agent-sdk/kanban/mcp-runtime-service";
 import { createKanbanMcpSettingsService } from "../agent-sdk/kanban/mcp-settings-service";
+import { buildModelsUrl, classifyModelFetchError, extractModelRecords } from "../agent-sdk/kanban/model-discovery";
 import { resolvePiLaunchConfig } from "../agent-sdk/kanban/pi-provider-config";
 import { buildPiSystemPrompt } from "../agent-sdk/kanban/pi-system-prompt";
 import type { PiTaskSessionService } from "../agent-sdk/kanban/pi-task-session-service";
@@ -775,29 +776,28 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		},
 		fetchRemoteProviderModels: async (_workspaceScope, input) => {
 			const body = parseFetchRemoteModelsRequest(input);
-			const modelsPath = body.protocol === "anthropic" ? "/v1/models" : "/models";
-			const url = `${body.baseUrl.replace(/\/$/, "")}${modelsPath}`;
-			const headers: Record<string, string> = {};
+			const url = buildModelsUrl(body.baseUrl, body.protocol);
+			const headers: Record<string, string> = { Accept: "application/json" };
 			if (body.apiKey) {
 				headers.Authorization = `Bearer ${body.apiKey}`;
 			}
-			const response = await fetch(url, { headers });
+			// The global fetch is proxy-aware (config/proxy-fetch.ts). A connection-level
+			// failure (refused/DNS/TLS/timeout/proxy) otherwise surfaces the runtime's raw
+			// native error to the dialog; classify it into an actionable message instead.
+			let response: Response;
+			try {
+				response = await fetch(url, { method: "GET", headers, signal: AbortSignal.timeout(15_000) });
+			} catch (error) {
+				throw new TRPCError({ code: "BAD_REQUEST", message: classifyModelFetchError({ url, error }) });
+			}
 			if (!response.ok) {
 				throw new TRPCError({
 					code: "BAD_REQUEST",
-					message: `Failed to fetch models from ${url}: HTTP ${response.status} ${response.statusText}`,
+					message: classifyModelFetchError({ url, status: response.status, statusText: response.statusText }),
 				});
 			}
-			const data = (await response.json()) as Record<string, unknown>;
-			let models: string[] = [];
-			if (Array.isArray(data.data)) {
-				models = (data.data as Array<{ id?: string }>).map((m) => m.id).filter(Boolean) as string[];
-			} else if (Array.isArray(data.models)) {
-				models = (data.models as Array<{ id?: string; name?: string }>)
-					.map((m) => m.id || m.name)
-					.filter(Boolean) as string[];
-			}
-			return { models };
+			const records = extractModelRecords(await response.json());
+			return { models: records.map((record) => record.id) };
 		},
 		getKanbanMcpAuthStatuses: async (_workspaceScope) => {
 			const statuses = await mcpRuntimeService.getAuthStatuses();
