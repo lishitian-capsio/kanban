@@ -1,0 +1,19 @@
+{
+  "id": "ea60c",
+  "title": "项目选择器改为弹窗（替换下拉框）",
+  "prompt": "把 sidebar 头部的项目切换器（SidebarProjectSwitcher，参见 web-ui 中折叠进 dockable agent sidebar header 的 project switcher）从下拉框（dropdown）改为弹窗（modal dialog）形式。\n\n背景与动机：\n- sidebar 下方已经有一个 agent 会话选择器（也是下拉/选择交互）。两个下拉叠在一起体验不好。\n- 因此项目选择改成点击后弹出一个居中 modal，里面列出所有项目供选择/切换，并保留「添加项目」入口。\n\n要求：\n1. 头部仍显示当前项目名作为触发器（点击打开弹窗），但不再是 dropdown/popover 展开列表。\n2. 点击触发器打开一个 modal dialog：使用 web-ui 现有的 Dialog 基元（@/components/ui/dialog 的 Dialog/DialogHeader/DialogBody），暗色主题、设计 token 一致。\n3. 弹窗内列出所有项目，高亮当前项目，点击某项即切换并关闭弹窗。\n4. 保留原有「添加项目 / 打开新项目」入口（放进弹窗内或弹窗底部）。\n5. 项目较多时弹窗内列表可滚动；可选地加一个搜索/过滤输入框（项目多时有用，少时可不显示）。\n6. 切换项目的实际逻辑复用现有的 project navigation / runtime store 选择逻辑，不要重写状态管理。\n7. 与下方的 agent 会话选择器视觉上不冲突。\n\n验收：项目切换器不再以下拉框展开，而是点击弹出 modal；在 modal 中可以看到全部项目、切换当前项目、添加新项目；交互在暗色主题下样式正确。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782551449002,
+  "updatedAt": 1782551449002,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
