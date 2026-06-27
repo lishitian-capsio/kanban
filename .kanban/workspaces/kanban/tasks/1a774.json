@@ -1,0 +1,19 @@
+{
+  "id": "1a774",
+  "title": "Add-project GitHub repo picker UI (frontend)",
+  "prompt": "Build the 'add project by picking an authorized GitHub repo' UI in web-ui (vault requirement 81a8d). Depends on the backend listing API task.\n\nScope:\n- In the add-project surface (the '+' add-project control in the unified Kanban-agent sidebar header — see decision f57b5), add a GitHub path alongside the existing manual-path / paste-URL option.\n- Gate it on GitHub auth: if not authenticated (use the existing github.* status / use-github-auth hook), show a clear prompt routing the user to Settings → GitHub git auth to log in, instead of letting it fail later.\n- When authenticated, call the new backend listing endpoints to show authorized orgs/repos as candidates. Make it searchable/filterable for accounts with many repos; show private/public, default branch, description.\n- Selecting a repo clones it over HTTPS (its HTTPS clone URL) through the existing add-project/clone path — reusing the github.com credential injection at runGit. Show clone progress + clear error mapping (git-clone.ts already maps auth failures).\n- Keep the raw-URL paste option as a fallback for non-GitHub hosts (Gitee/GitLab/self-hosted).\n- Follow web-ui conventions: Tailwind v4 tokens, Radix primitives, lucide icons, ui/ primitives, sonner toasts. No console.* (use the web-ui logger). Prefer react-use hooks.\n\nVerify behavior end-to-end against a real authenticated account where possible (or document manual verification steps).",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782554749078,
+  "updatedAt": 1782554749078,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
