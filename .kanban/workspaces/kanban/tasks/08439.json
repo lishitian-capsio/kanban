@@ -1,0 +1,19 @@
+{
+  "id": "08439",
+  "title": "实现:侧边栏聊天语音输入(STT)",
+  "prompt": "在 Kanban web-ui 的聊天输入框中增加语音输入(STT)能力:用户按住/点击麦克风说话,语音转成文字填入聊天输入框,可编辑后再发送。\n\n落地要求:\n- 在侧边栏 home chat 的输入框 composer 增加麦克风按钮;同样应用到任务聊天面板(CardDetailView)的输入框,尽量抽成共享组件/hook 复用。\n- 实现方式以前置调研任务《调研:语音输入与语音指令方案选型》的推荐方案为准(浏览器原生 Web Speech API 或云端 STT)。若调研推荐云端方案,出站请求要走 runtime 统一代理(config/proxy-fetch.ts),密钥按本项目约定machine-local 存储,不落库/不提交。\n- 交互:push-to-talk 或点击切换录音;录音中有可见状态(波形或闪烁麦克风 + 计时);识别结果填入输入框而非自动发送(留给用户确认/编辑)。\n- 处理权限被拒、设备无麦克风、识别失败等错误,给出清晰提示(用 sonner toast / showAppToast)。\n- 遵循 web-ui 设计规范:Tailwind + 设计 token、lucide-react 图标(Mic / MicOff)、ui/ 下的 Button/Tooltip 等基础组件;深色主题。\n- 为可纯逻辑测试的部分(状态机/识别结果处理)补单测。\n\n注意:这是看板的编码实现任务,请在本任务的 worktree 中完成。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782567521833,
+  "updatedAt": 1782567521833,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
