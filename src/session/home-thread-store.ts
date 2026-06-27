@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
 	RuntimeAgentId,
+	RuntimeHomeChatFullscreenTabs,
 	RuntimeHomeChatThread,
 	RuntimeHomeChatThreadsData,
 	RuntimeHomeChatThreadTitleSource,
@@ -11,9 +12,11 @@ import { loadWorkspaceHomeThreads, mutateWorkspaceHomeThreads } from "../state/w
 import {
 	closeHomeThread,
 	createHomeThread,
+	getHomeFullscreenTabs,
 	listHomeThreads,
 	renameHomeThread,
 	type SetHomeThreadAutoTitleResult,
+	setHomeFullscreenTabs,
 	setHomeThreadAutoTitle,
 	setHomeThreadNextStep,
 } from "./home-thread-registry";
@@ -78,6 +81,21 @@ export class HomeThreadStore {
 
 	async list(): Promise<RuntimeHomeChatThread[]> {
 		return listHomeThreads(await this.persistence.load());
+	}
+
+	/** The persisted fullscreen-workspace tab set (open tabs + active tab). */
+	async getFullscreenTabs(): Promise<RuntimeHomeChatFullscreenTabs> {
+		return getHomeFullscreenTabs(await this.persistence.load());
+	}
+
+	/**
+	 * Persist a new fullscreen-workspace tab set. The registry sanitizes it against the
+	 * current threads (dropping tabs for threads that no longer exist) and skips the
+	 * write when nothing changed. Returns the stored set.
+	 */
+	async setFullscreenTabs(tabs: RuntimeHomeChatFullscreenTabs): Promise<RuntimeHomeChatFullscreenTabs> {
+		const next = await this.persistence.mutate((current) => setHomeFullscreenTabs(current, tabs));
+		return getHomeFullscreenTabs(next);
 	}
 
 	async create(request: CreateThreadRequest): Promise<RuntimeHomeChatThread> {

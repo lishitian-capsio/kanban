@@ -23,7 +23,7 @@ interface HomeThreadBarProps {
 	agents: RuntimeAgentDefinition[];
 	defaultAgentId: RuntimeAgentId;
 	onSelectThread: (threadId: string) => void;
-	onCreateThread: (input: { description: string; agentId: RuntimeAgentId }) => void | Promise<void>;
+	onCreateThread: (input: { description: string; agentId: RuntimeAgentId }) => void | Promise<unknown>;
 	onRenameThread: (threadId: string, name: string) => void | Promise<void>;
 	onCloseThread: (threadId: string) => void | Promise<void>;
 }

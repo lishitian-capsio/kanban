@@ -49,6 +49,7 @@ import type {
 import {
 	parseCommandRunRequest,
 	parseFetchRemoteModelsRequest,
+	parseHomeChatFullscreenTabsSaveRequest,
 	parseHomeChatThreadCloseRequest,
 	parseHomeChatThreadCreateRequest,
 	parseHomeChatThreadRenameRequest,
@@ -658,8 +659,9 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		},
 		listHomeThreads: async (workspaceScope) => {
 			try {
-				const threads = await deps.getScopedHomeThreadStore(workspaceScope).list();
-				return { ok: true, threads };
+				const store = deps.getScopedHomeThreadStore(workspaceScope);
+				const [threads, fullscreenTabs] = await Promise.all([store.list(), store.getFullscreenTabs()]);
+				return { ok: true, threads, fullscreenTabs };
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				return { ok: false, threads: [], error: message };
@@ -765,6 +767,16 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				return { ok: false, thread: null, error: message };
+			}
+		},
+		setHomeFullscreenTabs: async (workspaceScope, input) => {
+			try {
+				const body = parseHomeChatFullscreenTabsSaveRequest(input);
+				const fullscreenTabs = await deps.getScopedHomeThreadStore(workspaceScope).setFullscreenTabs(body);
+				return { ok: true, fullscreenTabs };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, fullscreenTabs: null, error: message };
 			}
 		},
 		getKanbanProviderCatalog: async (_workspaceScope) => {

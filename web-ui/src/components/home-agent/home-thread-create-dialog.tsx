@@ -12,7 +12,7 @@ interface HomeThreadCreateDialogProps {
 	onOpenChange: (open: boolean) => void;
 	agents: RuntimeAgentDefinition[];
 	defaultAgentId: RuntimeAgentId;
-	onCreate: (input: { description: string; agentId: RuntimeAgentId }) => void | Promise<void>;
+	onCreate: (input: { description: string; agentId: RuntimeAgentId }) => void | Promise<unknown>;
 }
 
 export function HomeThreadCreateDialog({

@@ -1,9 +1,11 @@
 import type {
 	RuntimeAgentId,
+	RuntimeHomeChatFullscreenTabs,
 	RuntimeHomeChatThread,
 	RuntimeHomeChatThreadsData,
 	RuntimeHomeChatThreadTitleSource,
 } from "../core/api-contract";
+import { DEFAULT_HOME_THREAD_ID } from "../core/home-agent-session";
 
 /**
  * Pure, I/O-free operations over the persisted home chat thread registry.
@@ -151,14 +153,82 @@ export interface CloseHomeThreadResult {
 	removed: RuntimeHomeChatThread;
 }
 
-/** Remove a thread, returning the new data and the removed entry. Throws if missing. */
+/**
+ * Remove a thread, returning the new data and the removed entry. Also prunes the
+ * removed thread from the persisted fullscreen tab set so a hard-closed thread can
+ * never linger as a stale open tab. Throws if missing.
+ */
 export function closeHomeThread(data: RuntimeHomeChatThreadsData, id: string): CloseHomeThreadResult {
 	const removed = data.threads.find((thread) => thread.id === id);
 	if (!removed) {
 		throw new Error(`Home chat thread "${id}" not found.`);
 	}
-	return {
-		next: { threads: data.threads.filter((thread) => thread.id !== id) },
-		removed,
-	};
+	const threads = data.threads.filter((thread) => thread.id !== id);
+	const next: RuntimeHomeChatThreadsData = { threads };
+	if (data.fullscreenTabs) {
+		next.fullscreenTabs = sanitizeFullscreenTabs(data.fullscreenTabs, threads.map((thread) => thread.id));
+	}
+	return { next, removed };
+}
+
+// ---------------------------------------------------------------------------
+// Fullscreen workspace tab set (decision 1902b)
+//
+// Pure view state persisted on the registry doc: which threads are open as
+// session tabs and which tab is active. The synthetic default thread is always a
+// valid tab target even though it is not a registry entry.
+// ---------------------------------------------------------------------------
+
+const EMPTY_FULLSCREEN_TABS: RuntimeHomeChatFullscreenTabs = { openThreadIds: [], activeThreadId: null };
+
+/** The persisted fullscreen tab set, or an empty Home-active set when none is stored. */
+export function getHomeFullscreenTabs(data: RuntimeHomeChatThreadsData): RuntimeHomeChatFullscreenTabs {
+	return data.fullscreenTabs ?? EMPTY_FULLSCREEN_TABS;
+}
+
+/**
+ * Drop open tab ids that are not real threads (deduping, preserving order) and clear
+ * the active id when it is not among the surviving open tabs. The synthetic default
+ * thread is always treated as valid. Pure and side-effect free.
+ */
+export function sanitizeFullscreenTabs(
+	tabs: RuntimeHomeChatFullscreenTabs,
+	threadIds: readonly string[],
+): RuntimeHomeChatFullscreenTabs {
+	const valid = new Set<string>([DEFAULT_HOME_THREAD_ID, ...threadIds]);
+	const seen = new Set<string>();
+	const openThreadIds: string[] = [];
+	for (const id of tabs.openThreadIds) {
+		if (valid.has(id) && !seen.has(id)) {
+			seen.add(id);
+			openThreadIds.push(id);
+		}
+	}
+	const activeThreadId =
+		tabs.activeThreadId !== null && seen.has(tabs.activeThreadId) ? tabs.activeThreadId : null;
+	return { openThreadIds, activeThreadId };
+}
+
+function fullscreenTabsEqual(a: RuntimeHomeChatFullscreenTabs, b: RuntimeHomeChatFullscreenTabs): boolean {
+	return (
+		a.activeThreadId === b.activeThreadId &&
+		a.openThreadIds.length === b.openThreadIds.length &&
+		a.openThreadIds.every((id, index) => id === b.openThreadIds[index])
+	);
+}
+
+/**
+ * Persist a new fullscreen tab set, sanitized against the current threads. Returns the
+ * SAME data reference when the sanitized set is unchanged (so the runtime does not
+ * rewrite `threads.json` on a no-op). Leaves the threads list untouched.
+ */
+export function setHomeFullscreenTabs(
+	data: RuntimeHomeChatThreadsData,
+	tabs: RuntimeHomeChatFullscreenTabs,
+): RuntimeHomeChatThreadsData {
+	const sanitized = sanitizeFullscreenTabs(tabs, data.threads.map((thread) => thread.id));
+	if (data.fullscreenTabs && fullscreenTabsEqual(data.fullscreenTabs, sanitized)) {
+		return data;
+	}
+	return { threads: data.threads, fullscreenTabs: sanitized };
 }

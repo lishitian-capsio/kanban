@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { RuntimeHomeChatThreadsData } from "../../../src/core/api-contract";
+import { DEFAULT_HOME_THREAD_ID } from "../../../src/core/home-agent-session";
 import {
 	closeHomeThread,
 	createHomeThread,
 	deriveProvisionalThreadTitle,
+	getHomeFullscreenTabs,
 	listHomeThreads,
 	renameHomeThread,
+	sanitizeFullscreenTabs,
+	setHomeFullscreenTabs,
 	setHomeThreadAutoTitle,
 	setHomeThreadNextStep,
 } from "../../../src/session/home-thread-registry";
@@ -170,6 +174,79 @@ describe("home thread registry", () => {
 
 		it("throws when the thread does not exist", () => {
 			expect(() => closeHomeThread(seed(), "missing")).toThrow();
+		});
+
+		it("prunes the closed thread from the persisted fullscreen tab set", () => {
+			const data: RuntimeHomeChatThreadsData = {
+				...seed(),
+				fullscreenTabs: { openThreadIds: ["t1", "t2"], activeThreadId: "t1" },
+			};
+			const { next } = closeHomeThread(data, "t1");
+			expect(next.fullscreenTabs).toEqual({ openThreadIds: ["t2"], activeThreadId: null });
+		});
+	});
+
+	describe("fullscreen tabs", () => {
+		describe("getHomeFullscreenTabs", () => {
+			it("returns an empty Home-active tab set when none is persisted", () => {
+				expect(getHomeFullscreenTabs(seed())).toEqual({ openThreadIds: [], activeThreadId: null });
+			});
+
+			it("returns the persisted tab set", () => {
+				const data: RuntimeHomeChatThreadsData = {
+					...seed(),
+					fullscreenTabs: { openThreadIds: ["t1"], activeThreadId: "t1" },
+				};
+				expect(getHomeFullscreenTabs(data)).toEqual({ openThreadIds: ["t1"], activeThreadId: "t1" });
+			});
+		});
+
+		describe("sanitizeFullscreenTabs", () => {
+			it("drops open ids that are not real threads, dedupes, and preserves order", () => {
+				const result = sanitizeFullscreenTabs(
+					{ openThreadIds: ["t2", "ghost", "t1", "t1"], activeThreadId: "t2" },
+					["t1", "t2"],
+				);
+				expect(result).toEqual({ openThreadIds: ["t2", "t1"], activeThreadId: "t2" });
+			});
+
+			it("keeps the synthetic default thread as a valid open tab", () => {
+				const result = sanitizeFullscreenTabs(
+					{ openThreadIds: [DEFAULT_HOME_THREAD_ID, "t1"], activeThreadId: DEFAULT_HOME_THREAD_ID },
+					["t1", "t2"],
+				);
+				expect(result.openThreadIds).toEqual([DEFAULT_HOME_THREAD_ID, "t1"]);
+				expect(result.activeThreadId).toBe(DEFAULT_HOME_THREAD_ID);
+			});
+
+			it("falls back to the Home tab when the active id is not open", () => {
+				const result = sanitizeFullscreenTabs({ openThreadIds: ["t1"], activeThreadId: "ghost" }, ["t1", "t2"]);
+				expect(result.activeThreadId).toBeNull();
+			});
+		});
+
+		describe("setHomeFullscreenTabs", () => {
+			it("persists a sanitized tab set without touching the threads", () => {
+				const data = seed();
+				const next = setHomeFullscreenTabs(data, { openThreadIds: ["t1", "ghost"], activeThreadId: "t1" });
+				expect(next.fullscreenTabs).toEqual({ openThreadIds: ["t1"], activeThreadId: "t1" });
+				expect(next.threads).toBe(data.threads);
+			});
+
+			it("returns the same data reference when the sanitized tab set is unchanged", () => {
+				const data: RuntimeHomeChatThreadsData = {
+					...seed(),
+					fullscreenTabs: { openThreadIds: ["t1"], activeThreadId: "t1" },
+				};
+				const next = setHomeFullscreenTabs(data, { openThreadIds: ["t1", "ghost"], activeThreadId: "t1" });
+				expect(next).toBe(data);
+			});
+
+			it("does not mutate the source data", () => {
+				const data = seed();
+				setHomeFullscreenTabs(data, { openThreadIds: ["t1"], activeThreadId: "t1" });
+				expect(data.fullscreenTabs).toBeUndefined();
+			});
 		});
 	});
 });

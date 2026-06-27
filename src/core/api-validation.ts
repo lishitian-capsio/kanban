@@ -6,6 +6,7 @@ import {
 	type RuntimeDirectoryListRequest,
 	type RuntimeFetchRemoteModelsRequest,
 	type RuntimeGitCheckoutRequest,
+	type RuntimeHomeChatFullscreenTabsSaveRequest,
 	type RuntimeHomeChatThreadCloseRequest,
 	type RuntimeHomeChatThreadCreateRequest,
 	type RuntimeHomeChatThreadRenameRequest,
@@ -38,6 +39,7 @@ import {
 	runtimeDirectoryListRequestSchema,
 	runtimeFetchRemoteModelsRequestSchema,
 	runtimeGitCheckoutRequestSchema,
+	runtimeHomeChatFullscreenTabsSaveRequestSchema,
 	runtimeHomeChatThreadCloseRequestSchema,
 	runtimeHomeChatThreadCreateRequestSchema,
 	runtimeHomeChatThreadRenameRequestSchema,
@@ -364,6 +366,17 @@ export function parseHomeChatThreadSetNextStepRequest(value: unknown): RuntimeHo
 		id,
 		suggestion,
 	};
+}
+
+export function parseHomeChatFullscreenTabsSaveRequest(value: unknown): RuntimeHomeChatFullscreenTabsSaveRequest {
+	// The runtime re-sanitizes against the live thread list before writing, so this
+	// only validates the wire shape. Cast the result for the same reason as
+	// parseWorkspaceStateSaveRequest: keeps the fn immune to zod/tsc inference-budget
+	// growth as more contract schemas are added.
+	return parseWithSchema(
+		runtimeHomeChatFullscreenTabsSaveRequestSchema,
+		value,
+	) as RuntimeHomeChatFullscreenTabsSaveRequest;
 }
 
 export function parseTaskChatAbortRequest(value: unknown): RuntimeTaskChatAbortRequest {

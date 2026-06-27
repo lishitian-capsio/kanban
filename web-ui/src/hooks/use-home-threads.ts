@@ -18,10 +18,19 @@ import { DEFAULT_HOME_THREAD_ID } from "@runtime-home-agent-session";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { notifyError } from "@/components/app-toaster";
+import {
+	activateHomeTab as activateHomeTabOp,
+	closeSessionTab as closeSessionTabOp,
+	type FullscreenTabsState,
+	openSessionTab as openSessionTabOp,
+	reconcileOnEnterFullscreen,
+	setActiveSessionTab as setActiveSessionTabOp,
+} from "@/components/home-agent/home-fullscreen-tabs";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeAgentId, RuntimeConfigResponse, RuntimeHomeChatThread } from "@/runtime/types";
 
 const DEFAULT_THREAD_NAME = "Default";
+const EMPTY_FULLSCREEN_TABS: FullscreenTabsState = { openThreadIds: [], activeThreadId: null };
 
 // The initial registry load can fail transiently on restart (the workspace scope
 // is briefly unresolvable while the runtime finishes its boot migrations/locks,
@@ -46,7 +55,8 @@ export interface UseHomeThreadsResult {
 	activeThread: HomeThread | null;
 	activeThreadId: string;
 	setActiveThread: (threadId: string) => void;
-	createThread: (input: { description: string; agentId: RuntimeAgentId }) => Promise<void>;
+	/** Create a thread (and kick off its first turn from `description`). Resolves to the new thread id, or null on failure. */
+	createThread: (input: { description: string; agentId: RuntimeAgentId }) => Promise<string | null>;
 	renameThread: (threadId: string, name: string) => Promise<void>;
 	closeThread: (threadId: string) => Promise<void>;
 	/**
@@ -62,6 +72,27 @@ export interface UseHomeThreadsResult {
 	 */
 	refresh: () => Promise<void>;
 	isLoading: boolean;
+	/**
+	 * The persisted fullscreen-workspace tab set for the current workspace: which threads are
+	 * open as session tabs and which tab is active (`activeThreadId === null` ⇒ the Home tab /
+	 * launcher). Drives the fullscreen Home-tab/session-tab layout (decision 1902b). The mutations
+	 * below apply the pure tab transitions optimistically and persist to the registry best-effort.
+	 */
+	fullscreenTabs: FullscreenTabsState;
+	/** Open (or focus) a session tab for the thread and make it active. */
+	openSessionTab: (threadId: string) => void;
+	/** Close a session tab — UI-only collapse back to Home; never a thread hard-close. */
+	closeSessionTab: (threadId: string) => void;
+	/** Activate an already-open session tab. */
+	activateSessionTab: (threadId: string) => void;
+	/** Activate the Home tab (the launcher), keeping the open session tabs intact. */
+	activateHomeTab: () => void;
+	/**
+	 * Continuity rule for entering fullscreen: restore the persisted tab set, seeding the current
+	 * docked conversation as the first tab when nothing is persisted yet. Run once when the
+	 * fullscreen workspace mounts.
+	 */
+	reconcileFullscreenTabsOnEnter: () => void;
 }
 
 function buildDefaultThread(agentId: RuntimeAgentId): HomeThread {
@@ -82,6 +113,10 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		Record<string, RuntimeHomeChatThread[]>
 	>({});
 	const [activeThreadIdByWorkspace, setActiveThreadIdByWorkspace] = useState<Record<string, string>>({});
+	const [fullscreenTabsByWorkspace, setFullscreenTabsByWorkspace] = useState<Record<string, FullscreenTabsState>>({});
+	// Mirror of fullscreenTabsByWorkspace read synchronously inside the tab mutations so
+	// rapid successive actions compose off the latest value (not the render-lagged state).
+	const fullscreenTabsRef = useRef<Record<string, FullscreenTabsState>>({});
 	const [loadingWorkspaceId, setLoadingWorkspaceId] = useState<string | null>(null);
 	const [loadRetryNonce, setLoadRetryNonce] = useState(0);
 	// Tracks workspaces whose registry load *succeeded*. Using this (instead of the
@@ -121,6 +156,9 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 					...current,
 					[workspaceId]: response.threads,
 				}));
+				const loadedTabs = response.fullscreenTabs ?? EMPTY_FULLSCREEN_TABS;
+				fullscreenTabsRef.current = { ...fullscreenTabsRef.current, [workspaceId]: loadedTabs };
+				setFullscreenTabsByWorkspace((current) => ({ ...current, [workspaceId]: loadedTabs }));
 			})
 			.catch((error) => {
 				if (cancelled) {
@@ -186,9 +224,9 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 	);
 
 	const createThread = useCallback(
-		async ({ description, agentId }: { description: string; agentId: RuntimeAgentId }) => {
+		async ({ description, agentId }: { description: string; agentId: RuntimeAgentId }): Promise<string | null> => {
 			if (!currentProjectId) {
-				return;
+				return null;
 			}
 			try {
 				// `description` becomes the thread's kickoff prompt and the seed for a provisional
@@ -206,8 +244,10 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 					[currentProjectId]: [...(current[currentProjectId] ?? []), created],
 				}));
 				setActiveThreadIdByWorkspace((current) => ({ ...current, [currentProjectId]: created.id }));
+				return created.id;
 			} catch (error) {
 				notifyError(error instanceof Error ? error.message : String(error));
+				return null;
 			}
 		},
 		[currentProjectId],
@@ -276,6 +316,9 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 				...current,
 				[workspaceId]: response.threads,
 			}));
+			const refreshedTabs = response.fullscreenTabs ?? EMPTY_FULLSCREEN_TABS;
+			fullscreenTabsRef.current = { ...fullscreenTabsRef.current, [workspaceId]: refreshedTabs };
+			setFullscreenTabsByWorkspace((current) => ({ ...current, [workspaceId]: refreshedTabs }));
 		} catch {
 			// Background refresh: a transient failure is non-fatal. The persisted threads
 			// are intact server-side and the next session-context bump retries; never
@@ -305,11 +348,71 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 					}
 					return { ...current, [currentProjectId]: DEFAULT_HOME_THREAD_ID };
 				});
+				// The runtime's closeHomeThread already pruned this thread from the persisted tab set;
+				// mirror that locally (no extra persist) so a hard-closed thread can't linger as a tab.
+				const previousTabs = fullscreenTabsRef.current[currentProjectId] ?? EMPTY_FULLSCREEN_TABS;
+				const prunedTabs = closeSessionTabOp(previousTabs, threadId);
+				if (prunedTabs !== previousTabs) {
+					fullscreenTabsRef.current = { ...fullscreenTabsRef.current, [currentProjectId]: prunedTabs };
+					setFullscreenTabsByWorkspace((current) => ({ ...current, [currentProjectId]: prunedTabs }));
+				}
 			} catch (error) {
 				notifyError(error instanceof Error ? error.message : String(error));
 			}
 		},
 		[currentProjectId],
+	);
+
+	const fullscreenTabs = currentProjectId
+		? (fullscreenTabsByWorkspace[currentProjectId] ?? EMPTY_FULLSCREEN_TABS)
+		: EMPTY_FULLSCREEN_TABS;
+
+	// Apply a pure tab transition optimistically, then persist the result to the registry
+	// best-effort. The ref mirror keeps successive calls composing off the latest value.
+	const applyFullscreenTabs = useCallback(
+		(transform: (current: FullscreenTabsState) => FullscreenTabsState) => {
+			if (!currentProjectId) {
+				return;
+			}
+			const workspaceId = currentProjectId;
+			const previous = fullscreenTabsRef.current[workspaceId] ?? EMPTY_FULLSCREEN_TABS;
+			const next = transform(previous);
+			if (next === previous) {
+				return;
+			}
+			fullscreenTabsRef.current = { ...fullscreenTabsRef.current, [workspaceId]: next };
+			setFullscreenTabsByWorkspace((current) => ({ ...current, [workspaceId]: next }));
+			void getRuntimeTrpcClient(workspaceId)
+				.runtime.setHomeFullscreenTabs.mutate(next)
+				.catch(() => {
+					// View state — a failed persist is non-fatal. The optimistic local value stands for
+					// this session; the next load reconciles from whatever did persist.
+				});
+		},
+		[currentProjectId],
+	);
+
+	const openSessionTab = useCallback(
+		(threadId: string) => applyFullscreenTabs((current) => openSessionTabOp(current, threadId)),
+		[applyFullscreenTabs],
+	);
+	const closeSessionTab = useCallback(
+		(threadId: string) => applyFullscreenTabs((current) => closeSessionTabOp(current, threadId)),
+		[applyFullscreenTabs],
+	);
+	const activateSessionTab = useCallback(
+		(threadId: string) => applyFullscreenTabs((current) => setActiveSessionTabOp(current, threadId)),
+		[applyFullscreenTabs],
+	);
+	const activateHomeTab = useCallback(
+		() => applyFullscreenTabs((current) => activateHomeTabOp(current)),
+		[applyFullscreenTabs],
+	);
+
+	const seedActiveThreadId = activeThread?.id ?? null;
+	const reconcileFullscreenTabsOnEnter = useCallback(
+		() => applyFullscreenTabs((current) => reconcileOnEnterFullscreen(current, seedActiveThreadId)),
+		[applyFullscreenTabs, seedActiveThreadId],
 	);
 
 	return {
@@ -323,5 +426,11 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		clearNextStep,
 		refresh,
 		isLoading: loadingWorkspaceId !== null && loadingWorkspaceId === currentProjectId,
+		fullscreenTabs,
+		openSessionTab,
+		closeSessionTab,
+		activateSessionTab,
+		activateHomeTab,
+		reconcileFullscreenTabsOnEnter,
 	};
 }

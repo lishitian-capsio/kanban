@@ -10,6 +10,7 @@ const listHomeThreadsQueryMock = vi.hoisted(() => vi.fn());
 const createHomeThreadMutateMock = vi.hoisted(() => vi.fn());
 const renameHomeThreadMutateMock = vi.hoisted(() => vi.fn());
 const closeHomeThreadMutateMock = vi.hoisted(() => vi.fn());
+const setHomeFullscreenTabsMutateMock = vi.hoisted(() => vi.fn());
 const notifyErrorMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/runtime/trpc-client", () => ({
@@ -19,6 +20,7 @@ vi.mock("@/runtime/trpc-client", () => ({
 			createHomeThread: { mutate: (input: object) => createHomeThreadMutateMock(input) },
 			renameHomeThread: { mutate: (input: object) => renameHomeThreadMutateMock(input) },
 			closeHomeThread: { mutate: (input: object) => closeHomeThreadMutateMock(input) },
+			setHomeFullscreenTabs: { mutate: (input: object) => setHomeFullscreenTabsMutateMock(input) },
 		},
 	}),
 }));
@@ -112,8 +114,10 @@ describe("useHomeThreads", () => {
 		createHomeThreadMutateMock.mockReset();
 		renameHomeThreadMutateMock.mockReset();
 		closeHomeThreadMutateMock.mockReset();
+		setHomeFullscreenTabsMutateMock.mockReset();
 		notifyErrorMock.mockReset();
 		listHomeThreadsQueryMock.mockResolvedValue({ ok: true, threads: [] });
+		setHomeFullscreenTabsMutateMock.mockResolvedValue({ ok: true, fullscreenTabs: null });
 		previousActEnvironment = (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
 			.IS_REACT_ACT_ENVIRONMENT;
 		(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -323,5 +327,90 @@ describe("useHomeThreads", () => {
 
 		expect(closeHomeThreadMutateMock).not.toHaveBeenCalled();
 		expect(renameHomeThreadMutateMock).not.toHaveBeenCalled();
+	});
+
+	it("seeds the fullscreen tab set from the registry load", async () => {
+		listHomeThreadsQueryMock.mockResolvedValue({
+			ok: true,
+			threads: [createThread()],
+			fullscreenTabs: { openThreadIds: ["thread-1"], activeThreadId: "thread-1" },
+		});
+		let latest: UseHomeThreadsResult | null = null;
+
+		await act(async () => {
+			root.render(
+				<Harness
+					onResult={(result) => {
+						latest = result;
+					}}
+				/>,
+			);
+			await flushPromises();
+		});
+
+		expect((latest as unknown as UseHomeThreadsResult).fullscreenTabs).toEqual({
+			openThreadIds: ["thread-1"],
+			activeThreadId: "thread-1",
+		});
+	});
+
+	it("opens a session tab optimistically and persists the new tab set", async () => {
+		listHomeThreadsQueryMock.mockResolvedValue({ ok: true, threads: [createThread()] });
+		let latest: UseHomeThreadsResult | null = null;
+
+		await act(async () => {
+			root.render(
+				<Harness
+					onResult={(result) => {
+						latest = result;
+					}}
+				/>,
+			);
+			await flushPromises();
+		});
+
+		await act(async () => {
+			(latest as unknown as UseHomeThreadsResult).openSessionTab("thread-1");
+			await flushPromises();
+		});
+
+		const result = latest as unknown as UseHomeThreadsResult;
+		expect(result.fullscreenTabs).toEqual({ openThreadIds: ["thread-1"], activeThreadId: "thread-1" });
+		expect(setHomeFullscreenTabsMutateMock).toHaveBeenCalledWith({
+			openThreadIds: ["thread-1"],
+			activeThreadId: "thread-1",
+		});
+	});
+
+	it("prunes a hard-closed thread from the tab set without an extra persist", async () => {
+		const existing = createThread({ id: "thread-1" });
+		listHomeThreadsQueryMock.mockResolvedValue({
+			ok: true,
+			threads: [existing],
+			fullscreenTabs: { openThreadIds: ["thread-1"], activeThreadId: "thread-1" },
+		});
+		closeHomeThreadMutateMock.mockResolvedValue({ ok: true, thread: existing });
+		let latest: UseHomeThreadsResult | null = null;
+
+		await act(async () => {
+			root.render(
+				<Harness
+					onResult={(result) => {
+						latest = result;
+					}}
+				/>,
+			);
+			await flushPromises();
+		});
+
+		await act(async () => {
+			await (latest as unknown as UseHomeThreadsResult).closeThread("thread-1");
+			await flushPromises();
+		});
+
+		const result = latest as unknown as UseHomeThreadsResult;
+		expect(result.fullscreenTabs).toEqual({ openThreadIds: [], activeThreadId: null });
+		// The runtime already pruned during closeHomeThread; the local prune must not re-persist.
+		expect(setHomeFullscreenTabsMutateMock).not.toHaveBeenCalled();
 	});
 });

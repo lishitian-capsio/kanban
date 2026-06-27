@@ -73,6 +73,8 @@ import type {
 	RuntimeGitSyncAction,
 	RuntimeGitSyncResponse,
 	RuntimeGitUserIdentityResponse,
+	RuntimeHomeChatFullscreenTabsResponse,
+	RuntimeHomeChatFullscreenTabsSaveRequest,
 	RuntimeHomeChatThreadCloseRequest,
 	RuntimeHomeChatThreadCreateRequest,
 	RuntimeHomeChatThreadMutationResponse,
@@ -260,6 +262,8 @@ import {
 	runtimeGitSyncActionSchema,
 	runtimeGitSyncResponseSchema,
 	runtimeGitUserIdentityResponseSchema,
+	runtimeHomeChatFullscreenTabsResponseSchema,
+	runtimeHomeChatFullscreenTabsSaveRequestSchema,
 	runtimeHomeChatThreadCloseRequestSchema,
 	runtimeHomeChatThreadCreateRequestSchema,
 	runtimeHomeChatThreadMutationResponseSchema,
@@ -431,6 +435,10 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatThreadCloseRequest,
 		) => Promise<RuntimeHomeChatThreadMutationResponse>;
+		setHomeFullscreenTabs: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeHomeChatFullscreenTabsSaveRequest,
+		) => Promise<RuntimeHomeChatFullscreenTabsResponse>;
 		getKanbanProviderCatalog: (
 			scope: RuntimeTrpcWorkspaceScope | null,
 		) => Promise<RuntimeKanbanProviderCatalogResponse>;
@@ -837,6 +845,12 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeHomeChatThreadMutationResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.closeHomeThread(ctx.workspaceScope, input);
+			}),
+		setHomeFullscreenTabs: workspaceProcedure
+			.input(runtimeHomeChatFullscreenTabsSaveRequestSchema)
+			.output(runtimeHomeChatFullscreenTabsResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.setHomeFullscreenTabs(ctx.workspaceScope, input);
 			}),
 		getKanbanProviderCatalog: t.procedure
 			.output(runtimeKanbanProviderCatalogResponseSchema)

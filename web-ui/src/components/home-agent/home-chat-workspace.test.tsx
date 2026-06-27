@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { FullscreenTabsState } from "@/components/home-agent/home-fullscreen-tabs";
 import type { HomeThread, UseHomeThreadsResult } from "@/hooks/use-home-threads";
 import type { RuntimeConfigResponse, RuntimeTaskSessionState, RuntimeTaskSessionSummary } from "@/runtime/types";
 
@@ -13,6 +14,14 @@ vi.mock("@/hooks/use-home-session-card", () => ({
 		preview: taskId ? { role: "assistant" as const, text: "hello from the agent", createdAt: 10 } : null,
 		isLoadingHistory: false,
 	}),
+}));
+
+// The active-tab conversation pulls in the session machinery (runtime store, terminal,
+// provider control); stub it so this suite covers tab/launcher switching, not the chat body.
+vi.mock("@/components/home-agent/home-agent-conversation", () => ({
+	HomeAgentConversation: ({ activeThread }: { activeThread: HomeThread | null }) => (
+		<div data-testid="conversation">conversation:{activeThread?.id ?? "none"}</div>
+	),
 }));
 
 import { HomeChatWorkspace } from "@/components/home-agent/home-chat-workspace";
@@ -41,6 +50,8 @@ function makeSummary(taskId: string, state: RuntimeTaskSessionState): RuntimeTas
 	};
 }
 
+const EMPTY_TABS: FullscreenTabsState = { openThreadIds: [], activeThreadId: null };
+
 function makeHomeThreads(threads: HomeThread[], overrides: Partial<UseHomeThreadsResult> = {}): UseHomeThreadsResult {
 	return {
 		threads,
@@ -53,6 +64,12 @@ function makeHomeThreads(threads: HomeThread[], overrides: Partial<UseHomeThread
 		clearNextStep: vi.fn(),
 		refresh: vi.fn(),
 		isLoading: false,
+		fullscreenTabs: EMPTY_TABS,
+		openSessionTab: vi.fn(),
+		closeSessionTab: vi.fn(),
+		activateSessionTab: vi.fn(),
+		activateHomeTab: vi.fn(),
+		reconcileFullscreenTabsOnEnter: vi.fn(),
 		...overrides,
 	};
 }
@@ -65,7 +82,7 @@ const RUNTIME_CONFIG = {
 	],
 } as unknown as RuntimeConfigResponse;
 
-describe("HomeChatWorkspace launcher", () => {
+describe("HomeChatWorkspace", () => {
 	let container: HTMLDivElement;
 	let root: Root;
 	let previousActEnvironment: boolean | undefined;
@@ -88,7 +105,7 @@ describe("HomeChatWorkspace launcher", () => {
 			previousActEnvironment;
 	});
 
-	it("renders one card per thread, the preview, the status dot, and the add card", () => {
+	it("shows the Home tab launcher (cards + add card) when no session tab is active", () => {
 		const threads = [
 			makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true),
 			makeThread("thread-2", "Refactor auth", "claude", false),
@@ -106,31 +123,32 @@ describe("HomeChatWorkspace launcher", () => {
 						[defaultTaskId]: makeSummary(defaultTaskId, "running"),
 						[secondTaskId]: makeSummary(secondTaskId, "awaiting_review"),
 					}}
+					workspaceGit={null}
 				/>,
 			);
 		});
 
-		expect(container.textContent).toContain("Default");
 		expect(container.textContent).toContain("Refactor auth");
 		expect(container.textContent).toContain("hello from the agent");
-		// Add-session card is always present.
-		const addButton = container.querySelector('[aria-label="New chat session"]');
-		expect(addButton).not.toBeNull();
-		// Status dots carry their accessible label.
-		expect(container.querySelector('[aria-label="Running"]')).not.toBeNull();
-		expect(container.querySelector('[aria-label="Awaiting review"]')).not.toBeNull();
+		expect(container.querySelector('[aria-label="New chat session"]')).not.toBeNull();
+		// The Home tab is present in the strip and selected.
+		const homeTab = container.querySelector('[role="tab"][aria-selected="true"]');
+		expect(homeTab?.textContent).toContain("Home");
+		// No conversation while on the Home tab.
+		expect(container.querySelector('[data-testid="conversation"]')).toBeNull();
 	});
 
-	it("opens the clicked thread (onOpenSession → setActiveThread)", () => {
-		const setActiveThread = vi.fn();
+	it("opens the clicked card as a session tab (onOpenSession → openSessionTab)", () => {
+		const openSessionTab = vi.fn();
 		const threads = [makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)];
 		act(() => {
 			root.render(
 				<HomeChatWorkspace
 					currentProjectId={WORKSPACE_ID}
 					runtimeProjectConfig={RUNTIME_CONFIG}
-					homeThreads={makeHomeThreads(threads, { setActiveThread })}
+					homeThreads={makeHomeThreads(threads, { openSessionTab })}
 					taskSessions={{}}
+					workspaceGit={null}
 				/>,
 			);
 		});
@@ -138,7 +156,51 @@ describe("HomeChatWorkspace launcher", () => {
 		act(() => {
 			card.click();
 		});
-		expect(setActiveThread).toHaveBeenCalledWith(DEFAULT_HOME_THREAD_ID);
+		expect(openSessionTab).toHaveBeenCalledWith(DEFAULT_HOME_THREAD_ID);
+	});
+
+	it("reconciles the persisted tab set once on mount (entering fullscreen)", () => {
+		const reconcileFullscreenTabsOnEnter = vi.fn();
+		act(() => {
+			root.render(
+				<HomeChatWorkspace
+					currentProjectId={WORKSPACE_ID}
+					runtimeProjectConfig={RUNTIME_CONFIG}
+					homeThreads={makeHomeThreads([makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)], {
+						reconcileFullscreenTabsOnEnter,
+					})}
+					taskSessions={{}}
+					workspaceGit={null}
+				/>,
+			);
+		});
+		expect(reconcileFullscreenTabsOnEnter).toHaveBeenCalledTimes(1);
+	});
+
+	it("renders the active session tab's conversation instead of the launcher", () => {
+		const threads = [
+			makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true),
+			makeThread("thread-2", "Refactor auth", "claude", false),
+		];
+		act(() => {
+			root.render(
+				<HomeChatWorkspace
+					currentProjectId={WORKSPACE_ID}
+					runtimeProjectConfig={RUNTIME_CONFIG}
+					homeThreads={makeHomeThreads(threads, {
+						fullscreenTabs: { openThreadIds: ["thread-2"], activeThreadId: "thread-2" },
+					})}
+					taskSessions={{}}
+					workspaceGit={null}
+				/>,
+			);
+		});
+		// Conversation for the active tab shows; the launcher add-card is gone.
+		expect(container.querySelector('[data-testid="conversation"]')?.textContent).toBe("conversation:thread-2");
+		expect(container.querySelector('[aria-label="New chat session"]')).toBeNull();
+		// The open session tab is in the strip and selected.
+		const activeTab = container.querySelector('[role="tab"][aria-selected="true"]');
+		expect(activeTab?.textContent).toContain("Refactor auth");
 	});
 
 	it("renders nothing without a project or config", () => {
@@ -149,6 +211,7 @@ describe("HomeChatWorkspace launcher", () => {
 					runtimeProjectConfig={RUNTIME_CONFIG}
 					homeThreads={makeHomeThreads([])}
 					taskSessions={{}}
+					workspaceGit={null}
 				/>,
 			);
 		});

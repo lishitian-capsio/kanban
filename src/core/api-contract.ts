@@ -316,14 +316,30 @@ export const runtimeHomeChatThreadSchema = z.object({
 });
 export type RuntimeHomeChatThread = z.infer<typeof runtimeHomeChatThreadSchema>;
 
+// Persisted fullscreen-workspace UI state (decision 1902b): which session threads
+// are open as tabs, and which tab is active. This is pure view state layered on the
+// SAME registry doc as the threads — the session data model is untouched. The
+// fullscreen Home-tab/session-tab layout reads it to restore the open tab set + active
+// tab when round-tripping docked↔fullscreen. `activeThreadId === null` means the Home
+// tab (launcher) is active; otherwise it is the active session tab's thread id.
+export const runtimeHomeChatFullscreenTabsSchema = z.object({
+	openThreadIds: z.array(z.string()).default([]),
+	activeThreadId: z.string().nullable().default(null),
+});
+export type RuntimeHomeChatFullscreenTabs = z.infer<typeof runtimeHomeChatFullscreenTabsSchema>;
+
 export const runtimeHomeChatThreadsDataSchema = z.object({
 	threads: z.array(runtimeHomeChatThreadSchema).default([]),
+	// Optional so existing `threads.json` (no field) loads cleanly as "no tabs persisted yet".
+	fullscreenTabs: runtimeHomeChatFullscreenTabsSchema.optional(),
 });
 export type RuntimeHomeChatThreadsData = z.infer<typeof runtimeHomeChatThreadsDataSchema>;
 
 export const runtimeHomeChatThreadsListResponseSchema = z.object({
 	ok: z.boolean(),
 	threads: z.array(runtimeHomeChatThreadSchema),
+	// The persisted fullscreen tab set, when present. Absent on error or when never set.
+	fullscreenTabs: runtimeHomeChatFullscreenTabsSchema.optional(),
 	error: z.string().optional(),
 });
 export type RuntimeHomeChatThreadsListResponse = z.infer<typeof runtimeHomeChatThreadsListResponseSchema>;
@@ -378,6 +394,21 @@ export const runtimeHomeChatThreadMutationResponseSchema = z.object({
 	error: z.string().optional(),
 });
 export type RuntimeHomeChatThreadMutationResponse = z.infer<typeof runtimeHomeChatThreadMutationResponseSchema>;
+
+// Persist the fullscreen-workspace tab set (open tabs + active tab). Frontend-driven
+// UI state, so the request IS the new {@link RuntimeHomeChatFullscreenTabs}; the runtime
+// sanitizes it (drops tabs for threads that no longer exist) before writing.
+export const runtimeHomeChatFullscreenTabsSaveRequestSchema = runtimeHomeChatFullscreenTabsSchema;
+export type RuntimeHomeChatFullscreenTabsSaveRequest = z.infer<
+	typeof runtimeHomeChatFullscreenTabsSaveRequestSchema
+>;
+
+export const runtimeHomeChatFullscreenTabsResponseSchema = z.object({
+	ok: z.boolean(),
+	fullscreenTabs: runtimeHomeChatFullscreenTabsSchema.nullable(),
+	error: z.string().optional(),
+});
+export type RuntimeHomeChatFullscreenTabsResponse = z.infer<typeof runtimeHomeChatFullscreenTabsResponseSchema>;
 
 // ---------------------------------------------------------------------------
 // Files library

@@ -13,7 +13,7 @@ import type { RuntimeAgentDefinition, RuntimeAgentId } from "@/runtime/types";
 interface HomeAddSessionCardProps {
 	agents: RuntimeAgentDefinition[];
 	defaultAgentId: RuntimeAgentId;
-	onCreate: (input: { description: string; agentId: RuntimeAgentId }) => void | Promise<void>;
+	onCreate: (input: { description: string; agentId: RuntimeAgentId }) => void | Promise<unknown>;
 }
 
 export function HomeAddSessionCard({ agents, defaultAgentId, onCreate }: HomeAddSessionCardProps): React.ReactElement {

@@ -436,6 +436,25 @@ export default function App(): ReactElement {
 		currentProjectId,
 		runtimeProjectConfig,
 	});
+	// Continuity rule, fullscreen → docked (decision 1902b): when the dock leaves the
+	// fullscreen layout, the active session tab becomes the docked conversation, so collapsing
+	// never loses the user's place. The Home tab being active leaves the docked thread as-is.
+	// Reading the active tab through a ref keeps this effect firing only on the layout transition
+	// (not on every tab switch while fullscreen).
+	const { setActiveThread: setActiveHomeThread, fullscreenTabs: homeFullscreenTabs } = homeThreads;
+	const fullscreenActiveTabRef = useRef(homeFullscreenTabs.activeThreadId);
+	fullscreenActiveTabRef.current = homeFullscreenTabs.activeThreadId;
+	const previousChatDockPositionRef = useRef(chatDock.position);
+	useEffect(() => {
+		const previousPosition = previousChatDockPositionRef.current;
+		previousChatDockPositionRef.current = chatDock.position;
+		if (previousPosition === "fullscreen" && chatDock.position !== "fullscreen") {
+			const activeTabThreadId = fullscreenActiveTabRef.current;
+			if (activeTabThreadId) {
+				setActiveHomeThread(activeTabThreadId);
+			}
+		}
+	}, [chatDock.position, setActiveHomeThread]);
 	// HomeSidebarAgentPanel renders null exactly when hasNoProjects || !currentProjectId,
 	// so mirror that gate here rather than instantiating the panel to test for null.
 	const isHomeChatAvailable = !selectedCard && !hasNoProjects && !!currentProjectId;
@@ -839,6 +858,7 @@ export default function App(): ReactElement {
 								runtimeProjectConfig={runtimeProjectConfig}
 								homeThreads={homeThreads}
 								taskSessions={sessions}
+								workspaceGit={workspaceGit}
 							/>
 						}
 					>
