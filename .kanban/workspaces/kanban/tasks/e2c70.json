@@ -1,0 +1,19 @@
+{
+  "id": "e2c70",
+  "title": "实现:语音指令控制看板",
+  "prompt": "在已有语音输入(STT)的基础上,支持用语音指令控制看板(例如'新建一个任务:修复登录 bug''启动顶部待办任务''把这条任务移到 done')。\n\n落地要求:\n- 复用前置任务实现的 STT 输入。注意侧边栏 agent 已能把自然语言翻译成 Kanban CLI 调用,因此核心是把语音转出的文字接入现有 agent 通路,并补齐语音特有的 UX,而不是另造一套意图解析(除非调研任务建议独立解析)。\n- 交互设计:\n  - 提供'命令/聊天'两种心智或一个可直接发送的语音指令入口;\n  - 对会改动看板的指令(新建/启动/移动/删除任务),在执行前做一次明确确认(显示将要执行的动作),避免误识别造成误操作;\n  - 执行后给出结果反馈(toast / 在聊天里回显)。\n- 实现以《调研:语音输入与语音指令方案选型》任务的推荐方案为准。\n- 遵循 web-ui 设计规范(Tailwind + 设计 token、lucide-react、ui/ 基础组件、深色主题、sonner toast)。\n- 为意图→动作映射、确认流等可测逻辑补单测。\n\n注意:这是看板的编码实现任务,请在本任务的 worktree 中完成。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782567529883,
+  "updatedAt": 1782567529883,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}
