@@ -1,0 +1,19 @@
+{
+  "id": "dc9dd",
+  "title": "GitHub repo/org listing API (backend)",
+  "prompt": "Add a backend capability to list the GitHub orgs and repositories the runtime's logged-in account can access, for the new 'add project by picking a repo' flow (vault requirement 81a8d).\n\nScope:\n- Reuse the existing machine-local GitHub token from the github-auth service (src/github-auth/, ~/.kanban/settings/github-auth.json). Do NOT add a second auth mechanism.\n- Add a tRPC endpoint(s) on the existing 'github' router (sibling of runtime) to: (a) list the authenticated user's orgs, (b) list repos the user can access (paginated/searchable), e.g. via GitHub REST API /user/orgs, /user/repos?affiliation=owner,collaborator,organization_member, /orgs/{org}/repos. Return enough per-repo to drive a picker + clone (full_name, clone HTTPS URL, private flag, default branch, description).\n- Route all outbound calls through the runtime's proxy-aware fetch (globalThis.fetch is already patched) and honor existing logging conventions.\n- IMPORTANT: verify the device-flow OAuth scope actually permits listing PRIVATE repos. The current client id is the GitHub CLI well-known device-flow id. If the granted scope is insufficient for private repos, document what scope is needed and surface a clear, typed error from the endpoint (do not silently return only public repos). Note findings in the task summary.\n- Handle not-authenticated cleanly: return a typed 'not authenticated' state the UI can route to Settings, not a raw error.\n- Add tests under test/runtime/github-auth/ for the listing/pagination/error mapping logic (mock the GitHub API).\n\nDo NOT build the frontend picker here — that is a separate linked task. This task is the API + scope verification only.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782554734138,
+  "updatedAt": 1782554734138,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
