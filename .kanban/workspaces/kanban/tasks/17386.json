@@ -1,0 +1,19 @@
+{
+  "id": "17386",
+  "title": "调研:语音输入与语音指令方案选型",
+  "prompt": "为 Kanban 增加语音功能做技术选型调研,产出一份书面建议(不写实现代码,聚焦方案对比与推荐)。\n\n目标语音能力(后续任务会实现):\n1) 侧边栏/任务聊天框的语音输入(STT,说话→转文字填入输入框)。\n2) 用语音指令控制看板(语音→意图→执行 Kanban CLI/聊天 agent)。\n\n需要对比并给出推荐:\n- STT 路线对比:浏览器原生 Web Speech API(零成本/纯前端,但兼容性与中文识别质量参差) vs 云端/模型 API(如 Whisper 或各家 STT,质量高、需后端集成与密钥管理)。给出在本项目 web-ui 与 runtime 架构下的集成成本、隐私、离线可用性、中文支持的权衡。\n- 交互形态:按住说话(push-to-talk) vs 常驻监听/唤醒词;语音输入落到聊天框后是否需要二次确认再发送。\n- '语音指令控制看板'的实现路径:注意本工作区的侧边栏 agent 已经能把自然语言意图翻译成 Kanban CLI 调用,所以一旦 STT 把语音转成文字填入输入框,大部分'语音指令'可复用现有 agent 通路;需评估额外需要的是 UX(命令模式 vs 聊天模式、确认流)还是独立的意图解析。\n- (可选)是否需要 TTS 语音播报,作为后续扩展点先记录。\n\n参考代码位置(供调研定位,勿改动):\n- web-ui 侧边栏 home chat 面板组件、任务聊天面板 CardDetailView,以及聊天输入框 composer。\n- runtime 的聊天/会话通路与 tRPC 接口(若选云端 STT 需要后端代理)。\n- config/proxy-fetch.ts(若走云端 API,出站请求需经统一代理)。\n\n交付物:一份 markdown 选型建议(推荐方案 + 理由 + 分阶段落地步骤 + 风险),方便据此推进后续实现任务。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782567510991,
+  "updatedAt": 1782567510991,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
