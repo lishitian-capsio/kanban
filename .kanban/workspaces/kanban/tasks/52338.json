@@ -3,7 +3,7 @@
   "title": "面板全屏态 + 尺寸→布局选择器",
   "prompt": "背景见 vault decision 文档 1902b（《Drive the home agent chat layout by panel size》）。先读它。\n\n目标：为 home agent 聊天面板（DockableChatPanel，现有 left/right/float 停靠态）新增一个「全屏态」，并实现一个「面板尺寸/状态 → 布局」选择器：\n- 停靠/紧凑态：维持现状（HomeThreadBar + 单会话 + 输入）。\n- 全屏态：渲染新的工作区布局（Home Tab 启动台 + 会话 tab，由后续任务实现具体内容）。\n\n本任务只负责：全屏态本身（进入/退出全屏的交互与状态）+ 布局选择器骨架（根据当前态决定渲染紧凑布局还是全屏工作区容器，全屏工作区内容可先留占位）。不改数据模型。\n\n关键约束：复用现有 dockable 面板能力，不破坏 left/right/float/collapse 与多线程。这是后续两个任务的基础。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782570048846,
-  "updatedAt": 1782570048846,
+  "updatedAt": 1782570164112,
   "column": "backlog",
   "rank": "Zx",
   "dependsOn": []

@@ -3,7 +3,7 @@
   "title": "会话 tab 条 + 连续性与持久化",
   "prompt": "背景见 vault decision 文档 1902b（《Drive the home agent chat layout by panel size》）。先读它。依赖任务①（全屏态/布局选择器）与任务②（Home Tab 启动台）。\n\n目标：在全屏工作区实现「会话 tab 条」与状态连续性：\n- 点击 Home Tab 里的会话卡片，把该会话作为 Home Tab 右侧的一个独立 tab 打开；多个 tab 并存，可横向切换。\n- tab 操作：打开 / 切换 / 关闭（关闭 = 折叠回 Home，仅 UI，不做 thread 硬关闭——不停进程、不删 transcript；硬关闭仍是另外的显式动作）。处理 tab 溢出/上限（具体策略实现中定并记录）。\n- 连续性规则（见文档）：全屏→停靠时折叠为「当前激活 tab = 当前会话」，HomeThreadBar 仍列出全部；停靠→全屏时恢复上次的「打开 tab 集合 + 激活 tab」。\n- 持久化：把「打开的 tab 集合 + 激活 tab」持久化到 thread registry（新增 UI 状态字段，不改会话数据模型）。\n\n遵循 web-ui 设计规范。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782570062300,
-  "updatedAt": 1782570062300,
+  "updatedAt": 1782570171542,
   "column": "backlog",
   "rank": "Zv",
   "dependsOn": [
