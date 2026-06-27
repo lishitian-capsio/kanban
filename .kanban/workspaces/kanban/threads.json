@@ -32,7 +32,8 @@
       "name": "Kanban agent 语音功能",
       "titleSource": "auto",
       "createdAt": 1782554264056,
-      "updatedAt": 1782554290229
+      "updatedAt": 1782554290229,
+      "pendingNextStep": "启动调研任务(语音方案选型)"
     }
   ]
 }
