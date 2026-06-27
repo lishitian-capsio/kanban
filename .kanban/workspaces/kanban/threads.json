@@ -1,56 +1,12 @@
 {
   "threads": [
     {
-      "id": "a4a7388c-4fee-4a13-bd99-47a163fa8441",
+      "id": "24458522-d855-4e3d-a297-9ccda4e2b242",
       "agentId": "claude",
-      "name": "Git",
-      "titleSource": "manual",
-      "createdAt": 1782349238503,
-      "updatedAt": 1782349238503,
-      "pendingNextStep": "启动任务 ea60c 让编码 agent 开始实现"
-    },
-    {
-      "id": "8f537abc-1115-4c4b-9c4c-96f8bb52a314",
-      "agentId": "claude",
-      "name": "会话",
-      "titleSource": "manual",
-      "createdAt": 1782349308679,
-      "updatedAt": 1782349308679
-    },
-    {
-      "id": "e0654754-d711-4c28-8d79-45d96e81141f",
-      "agentId": "claude",
-      "name": "provider",
-      "titleSource": "manual",
-      "createdAt": 1782351351870,
-      "updatedAt": 1782351351870,
-      "pendingNextStep": "Start task fe7bb"
-    },
-    {
-      "id": "36d434f5-e136-4d04-bf80-bfa331510e10",
-      "agentId": "claude",
-      "name": "运维",
-      "titleSource": "manual",
-      "createdAt": 1782352548103,
-      "updatedAt": 1782352548103
-    },
-    {
-      "id": "3f9ac607-21b3-45d2-b4ed-e5a1b2b8206b",
-      "agentId": "claude",
-      "name": "统一 git 认证可行性",
+      "name": "Fix provider add fetch-models error",
       "titleSource": "auto",
-      "createdAt": 1782364389311,
-      "updatedAt": 1782364565437,
-      "pendingNextStep": "启动修复任务 a8295"
-    },
-    {
-      "id": "b13f7b70-0944-4539-859a-d732d6dd8219",
-      "agentId": "claude",
-      "name": "Review board cards completeness",
-      "titleSource": "auto",
-      "createdAt": 1782367485981,
-      "updatedAt": 1782367517530,
-      "pendingNextStep": "启动 Timeline 面板任务 642b2"
+      "createdAt": 1782551922032,
+      "updatedAt": 1782551955473
     }
   ]
 }

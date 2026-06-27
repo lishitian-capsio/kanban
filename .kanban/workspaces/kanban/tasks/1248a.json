@@ -1,0 +1,19 @@
+{
+  "id": "1248a",
+  "title": "Fix 'Failed to fetch models' error when adding a provider",
+  "prompt": "When adding a new provider (in the per-agent Providers settings / provider dialog), clicking to fetch the available models fails with:\n\n    Failed to fetch models: Was there a typo in the url or port?\n\nInvestigate and fix the model-discovery / fetch-models code path used by the provider add/edit dialog.\n\nSuggested starting points:\n- The provider add/edit dialog in web-ui (per-agent provider config — Providers tab).\n- The backend tRPC endpoint / model-discovery call that fetches the model list from the provider's base URL.\n- The shared provider resolution layer (agent-provider-resolver) and base URL handling.\n\nThings to check:\n- How the base URL is built/normalized before the fetch (trailing slash, missing scheme, /v1 suffix, port handling). The error string 'Was there a typo in the url or port?' looks like it comes from a fetch/connection failure being surfaced verbatim — find where it's thrown and confirm the actual underlying error (DNS, ECONNREFUSED, wrong path, proxy).\n- Whether the runtime's outbound proxy (config/proxy-fetch.ts global fetch monkey-patch) is being applied/bypassed correctly for this request — a misrouted or bypassed proxy could cause a connection failure that surfaces as this message.\n- Whether the failure is provider-protocol specific (OpenAI-compatible vs vendor) and whether the right path (e.g. /models) is being requested.\n\nDeliver: a reproduction of the root cause, the fix, and surface a clearer error message to the user distinguishing 'bad URL/port' from 'connection refused / proxy / auth' failures. Add/adjust tests for the model-fetch URL building and error mapping.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782551974570,
+  "updatedAt": 1782551974570,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
