@@ -25,6 +25,7 @@ import { cn } from "@/components/ui/cn";
 import { useHomeSessionCard } from "@/hooks/use-home-session-card";
 import type { HomeThread } from "@/hooks/use-home-threads";
 import type { RuntimeAgentDefinition, RuntimeTaskSessionSummary } from "@/runtime/types";
+import { getCardSessionActivity } from "@/utils/session-activity";
 
 interface HomeSessionCardProps {
 	thread: HomeThread;
@@ -57,6 +58,15 @@ export function HomeSessionCard({
 }: HomeSessionCardProps): React.ReactElement {
 	const { preview, isLoadingHistory } = useHomeSessionCard(currentProjectId, taskId);
 	const status = useMemo(() => deriveHomeSessionCardStatus(summary), [summary]);
+
+	// While the session is live (running / awaiting review / errored) show the
+	// same one-line agent-activity row the board task card surfaces — a colored
+	// dot + truncated monospace text derived from the session summary. When the
+	// session is settled/idle we fall back to the last conversational line so the
+	// card still reads like "the last thing said". This complements the top-right
+	// status dot rather than replacing the message preview.
+	const liveActivity = useMemo(() => getCardSessionActivity(summary), [summary]);
+	const showLiveActivity = status.status !== "idle" && liveActivity != null;
 
 	// Last activity prefers the latest message; fall back to the session's own
 	// updatedAt so a started-but-silent thread still reads as recently touched.
@@ -236,7 +246,15 @@ export function HomeSessionCard({
 			</div>
 
 			<div className="min-h-0 flex-1 overflow-hidden text-[12px] leading-snug">
-				{isLoadingHistory && !preview ? (
+				{showLiveActivity && liveActivity ? (
+					<div className="flex items-start gap-1.5" role="status" aria-label="Agent activity">
+						<span
+							className="mt-[3px] inline-block size-1.5 shrink-0 rounded-full"
+							style={{ backgroundColor: liveActivity.dotColor }}
+						/>
+						<p className="m-0 min-w-0 flex-1 truncate font-mono text-text-secondary">{liveActivity.text}</p>
+					</div>
+				) : isLoadingHistory && !preview ? (
 					<div className="flex flex-col gap-1.5 pt-0.5" aria-hidden="true">
 						<span className="h-2.5 w-full animate-pulse rounded-full bg-surface-4" />
 						<span className="h-2.5 w-4/5 animate-pulse rounded-full bg-surface-4" />

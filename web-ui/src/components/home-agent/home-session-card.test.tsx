@@ -119,12 +119,50 @@ describe("HomeSessionCard", () => {
 		});
 	}
 
-	it("keeps the MVP layout (name, preview, agent badge, status dot)", () => {
-		renderCard({ summary: makeSummary("running") });
+	it("keeps the MVP layout (name, preview, agent badge, status dot) when idle", () => {
+		// Idle: the body falls back to the last conversational line (no live activity).
+		renderCard({ summary: makeSummary("idle") });
 		expect(container.textContent).toContain("Refactor auth");
 		expect(container.textContent).toContain("hello from the agent");
 		expect(container.textContent).toContain("Claude");
+		expect(byAriaLabel("Idle")).not.toBeNull();
+	});
+
+	it("shows the live agent-activity line instead of the preview while running", () => {
+		// A running session with no hook detail derives a generic "Thinking..." line;
+		// the colored-dot activity row replaces the last-message preview.
+		renderCard({ summary: makeSummary("running") });
 		expect(byAriaLabel("Running")).not.toBeNull();
+		expect(byAriaLabel("Agent activity")).not.toBeNull();
+		expect(container.textContent).toContain("Thinking...");
+		expect(container.textContent).not.toContain("hello from the agent");
+	});
+
+	it("surfaces a derived tool-call label as the live activity text", () => {
+		const summary = makeSummary("running");
+		renderCard({
+			summary: {
+				...summary,
+				latestHookActivity: {
+					activityText: "Using Read",
+					toolName: "Read",
+					toolInputSummary: "src/index.ts",
+					finalMessage: null,
+					hookEventName: "tool_call",
+					notificationType: null,
+					source: "pi",
+				},
+			},
+		});
+		expect(container.textContent).toContain("Read(src/index.ts)");
+		expect(container.textContent).not.toContain("Using Read");
+	});
+
+	it("shows 'Waiting for review' as live activity when awaiting review", () => {
+		renderCard({ summary: makeSummary("awaiting_review") });
+		expect(byAriaLabel("Agent activity")).not.toBeNull();
+		expect(container.textContent).toContain("Waiting for review");
+		expect(container.textContent).not.toContain("hello from the agent");
 	});
 
 	it("opens the session when the card body is clicked", () => {
