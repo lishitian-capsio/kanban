@@ -61,6 +61,14 @@
       "createdAt": 1782639849269,
       "updatedAt": 1782639913526,
       "pendingNextStep": "启动任务 5ab62"
+    },
+    {
+      "id": "7f175fd0-b7e1-40c0-bf02-638bb0a5e55a",
+      "agentId": "claude",
+      "name": ".kanban/worktrees/__board__/kanban/.kanban/files/blobs/278c…",
+      "titleSource": "auto",
+      "createdAt": 1782648145207,
+      "updatedAt": 1782648145207
     }
   ],
   "fullscreenTabs": {
@@ -70,8 +78,9 @@
       "ae5cb359-53d3-44b4-aa37-636b852939ab",
       "1ff463d8-42d5-4b24-8c47-c2cf3957768d",
       "3434ae10-5e66-420a-8e03-7b70b3d73379",
-      "815c2d5d-1b77-4ef2-99bb-d5c73582390c"
+      "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
+      "24458522-d855-4e3d-a297-9ccda4e2b242"
     ],
-    "activeThreadId": "3434ae10-5e66-420a-8e03-7b70b3d73379"
+    "activeThreadId": "24458522-d855-4e3d-a297-9ccda4e2b242"
   }
 }
