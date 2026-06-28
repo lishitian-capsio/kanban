@@ -1,0 +1,19 @@
+{
+  "id": "b9a9d",
+  "title": "Show provider/model/token on session & task cards",
+  "prompt": "目标：在 web-ui 的「会话卡片」(home/sidebar session cards) 和「任务卡片」(board task cards) 上，除已显示的 agent 外，再显示 provider、model 以及 token 用量。\n\n背景：\n- 当前卡片只展示了 agentId（agent 名称），缺少 provider、model、token 信息。\n- 每个 agent 维护一组命名 provider，session 通过 providerId 选择 provider；provider 又关联 protocol/baseUrl 和 model。这些信息应已在运行时 session summary / 任务的 provider 选择中可得。\n- token 用量：pi 与 CLI agent 的 session 都会产生 transcript；需要确认运行时是否已经统计/暴露 token 用量。如果 RuntimeTaskSessionSummary（或等价 wire 契约）里还没有 token 字段，则需要在后端把它补充进契约并填充，再传到前端展示。\n\n要求：\n1. 先在 web-ui 中定位「会话卡片」与「任务卡片」两个组件，确认它们当前如何取得并渲染 agentId。\n2. 沿着同一数据通路，取得并展示：\n   - provider（provider 名称，例如 official / 某个自定义 provider 名）\n   - model（该 session/任务实际使用的模型 id）\n   - token（token 用量，例如累计输入/输出 token；若有现成聚合则直接用，没有则按最小可行方式补齐）\n3. 数据契约：如果 provider/model/token 尚未通过 wire 契约（api-contract.ts 的 runtime summary 等）传到前端，需要在后端补充字段并填充，而不是在前端硬编码或猜测。遵循「wire schema 是 source of truth」的既有约定。\n4. UI：与卡片现有 agent 展示风格保持一致（紧凑、次要信息层级），不要破坏布局；token 这类可能为空的字段要优雅降级（无数据时不显示或显示占位）。\n5. 两类卡片（会话卡片、任务卡片）都要覆盖。\n6. 确认 web:typecheck 通过；如改动后端契约/类型，确认相关 typecheck/构建通过。\n\n注意：provider 的 API key 等机密绝不能展示或泄露到前端，只展示 provider 名称、model、token 这类非敏感信息。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782638671432,
+  "updatedAt": 1782638671432,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}

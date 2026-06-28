@@ -35,13 +35,20 @@
       "createdAt": 1782632515057,
       "updatedAt": 1782633016446,
       "pendingNextStep": "启动任务 6966e 去移除这段文案"
+    },
+    {
+      "id": "1ff463d8-42d5-4b24-8c47-c2cf3957768d",
+      "agentId": "claude",
+      "name": "Show provider/model/token on cards",
+      "titleSource": "auto",
+      "createdAt": 1782638627244,
+      "updatedAt": 1782638646010
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
       "85dc1623-012d-41e1-9691-99faaccc35d9",
-      "49d1f6cb-8534-40b9-9847-01b90a2fae0e",
-      "24458522-d855-4e3d-a297-9ccda4e2b242"
+      "49d1f6cb-8534-40b9-9847-01b90a2fae0e"
     ],
     "activeThreadId": null
   }
