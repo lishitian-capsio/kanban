@@ -78,7 +78,7 @@
       "titleSource": "auto",
       "createdAt": 1782648248457,
       "updatedAt": 1782648264562,
-      "pendingNextStep": "启动任务 2cbf1 修复 Home Tab 滚动问题"
+      "pendingNextStep": "把 3046e 链接到 2cbf1，让滚动条样式任务等容器修复完成后自动开始"
     }
   ],
   "fullscreenTabs": {
