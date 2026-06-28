@@ -182,6 +182,9 @@ function createDefaultSummary(taskId: string): RuntimeTaskSessionSummary {
 		agentSessionId: null,
 		latestTurnCheckpoint: null,
 		previousTurnCheckpoint: null,
+		providerId: null,
+		modelId: null,
+		usage: null,
 	};
 }
 
@@ -732,6 +735,8 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			agentSessionId: launch.agentSessionId ?? recordedAgentSessionId,
 			latestTurnCheckpoint: null,
 			previousTurnCheckpoint: null,
+			providerId: request.providerId ?? null,
+			modelId: agentProviderEnv.resolvedModelId ?? null,
 		});
 		this.emitSummary(entry.summary);
 

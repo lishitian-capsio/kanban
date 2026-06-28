@@ -22,6 +22,7 @@ import {
 import { HomeSessionCardStatusMarker } from "@/components/home-agent/home-session-card-status-marker";
 import { HomeThreadCloseDialog } from "@/components/home-agent/home-thread-close-dialog";
 import { ThreadAgentBadge } from "@/components/home-agent/thread-agent-badge";
+import { SessionMetaBadges } from "@/components/session-meta-badges";
 import { cn } from "@/components/ui/cn";
 import { useHomeSessionCard } from "@/hooks/use-home-session-card";
 import type { HomeThread } from "@/hooks/use-home-threads";
@@ -281,6 +282,11 @@ export function HomeSessionCard({
 					<p className="text-text-tertiary italic">No messages yet</p>
 				)}
 			</div>
+
+			{/* Live session provider/model + cumulative token usage, sourced from the
+			    same summary that drives the status dot. Renders nothing until the
+			    session has run (and tokens only for agents with telemetry). */}
+			<SessionMetaBadges summary={summary} />
 
 			<div className="flex items-center justify-between gap-2">
 				<ThreadAgentBadge agents={agents} agentId={thread.agentId} />

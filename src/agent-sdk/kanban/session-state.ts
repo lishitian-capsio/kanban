@@ -83,6 +83,9 @@ export function createDefaultSummary(taskId: string): RuntimeTaskSessionSummary 
 		warningMessage: null,
 		latestTurnCheckpoint: null,
 		previousTurnCheckpoint: null,
+		providerId: null,
+		modelId: null,
+		usage: null,
 	};
 }
 

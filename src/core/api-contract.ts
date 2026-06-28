@@ -1493,6 +1493,18 @@ export const runtimeTaskTurnCheckpointSchema = z.object({
 });
 export type RuntimeTaskTurnCheckpoint = z.infer<typeof runtimeTaskTurnCheckpointSchema>;
 
+/**
+ * Cumulative token usage for a session, summed across the session's turns. Only
+ * agents that surface per-run telemetry (pi) populate this; CLI/terminal agents
+ * have no token accounting and leave it null. Non-sensitive — no keys/cost.
+ */
+export const runtimeTaskSessionUsageSchema = z.object({
+	inputTokens: z.number().nonnegative(),
+	outputTokens: z.number().nonnegative(),
+	totalTokens: z.number().nonnegative(),
+});
+export type RuntimeTaskSessionUsage = z.infer<typeof runtimeTaskSessionUsageSchema>;
+
 export const runtimeTaskSessionSummarySchema = z.object({
 	taskId: z.string(),
 	state: runtimeTaskSessionStateSchema,
@@ -1516,6 +1528,15 @@ export const runtimeTaskSessionSummarySchema = z.object({
 	agentSessionId: z.string().nullable().optional(),
 	latestTurnCheckpoint: runtimeTaskTurnCheckpointSchema.nullable().optional(),
 	previousTurnCheckpoint: runtimeTaskTurnCheckpointSchema.nullable().optional(),
+	/**
+	 * Provider selected for this session (provider name == providerId) and the
+	 * resolved model id actually used. Non-sensitive (no API key/base URL). Both
+	 * are populated at launch by pi and CLI agents; null when unknown.
+	 */
+	providerId: z.string().nullable().optional(),
+	modelId: z.string().nullable().optional(),
+	/** Cumulative token usage; null when the agent has no token telemetry (CLI). */
+	usage: runtimeTaskSessionUsageSchema.nullable().optional(),
 });
 export type RuntimeTaskSessionSummary = z.infer<typeof runtimeTaskSessionSummarySchema>;
 

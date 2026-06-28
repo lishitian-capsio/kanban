@@ -113,7 +113,14 @@ export class InMemoryPiAgentRuntime implements PiAgentRuntime {
 				startInPlanMode: request.startInPlanMode,
 			});
 
-		// Create Agent instance
+		// Create Agent instance.
+		//
+		// A minimal telemetry config is supplied purely to activate the run
+		// collector so the per-run token usage rollup rides along on the
+		// `agent_end` event (consumed by the pi event adapter for the session's
+		// cumulative token total). No OTEL SDK is registered, so the tracer is a
+		// no-op and span calls are cheap pass-throughs; content capture is left
+		// off to avoid serializing message payloads we never export.
 		const agent = new Agent({
 			initialState: {
 				systemPrompt: [systemPrompt],
@@ -124,6 +131,7 @@ export class InMemoryPiAgentRuntime implements PiAgentRuntime {
 				? () => request.apiKey ?? undefined
 				: undefined,
 			beforeToolCall: createPiToolApprovalHook(request.requestToolApproval),
+			telemetry: { captureMessageContent: false },
 		});
 
 		// Set thinking level from reasoning effort

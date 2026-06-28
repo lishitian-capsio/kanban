@@ -1,5 +1,5 @@
 // Maps omp AgentEvent union type to Kanban RuntimeTaskSessionSummary.
-import type { RuntimeTaskSessionSummary } from "../../core/api-contract";
+import type { RuntimeTaskSessionSummary, RuntimeTaskSessionUsage } from "../../core/api-contract";
 import { now, type SessionMessage } from "../../session/session-message";
 import {
 	clearActiveTurnState,
@@ -102,6 +102,11 @@ function handleAgentEnd(input: ApplyPiAgentEventInput, event: Extract<AgentEvent
 		return;
 	}
 
+	// Fold this run's token telemetry into the session's cumulative usage. omp
+	// reports per-run usage on `agent_end`; summing across runs yields the
+	// session total. Absent telemetry leaves the prior total untouched.
+	const usage = accumulateUsage(entry.summary.usage, event.telemetry);
+
 	// Check if the agent ended with an error (empty text + errorMessage field)
 	const errorInfo = extractErrorFromMessages(event.messages);
 
@@ -132,6 +137,7 @@ function handleAgentEnd(input: ApplyPiAgentEventInput, event: Extract<AgentEvent
 			warningMessage: errorInfo,
 			lastOutputAt: now(),
 			lastHookAt: now(),
+			...(usage ? { usage } : {}),
 			latestHookActivity: {
 				activityText: `Error: ${truncate(errorInfo, 160)}`,
 				toolName: null,
@@ -148,6 +154,7 @@ function handleAgentEnd(input: ApplyPiAgentEventInput, event: Extract<AgentEvent
 			reviewReason: "hook",
 			lastOutputAt: now(),
 			lastHookAt: now(),
+			...(usage ? { usage } : {}),
 			latestHookActivity: {
 				activityText: finalText ? `Final: ${truncate(finalText, 160)}` : "Agent finished",
 				toolName: null,
@@ -159,6 +166,26 @@ function handleAgentEnd(input: ApplyPiAgentEventInput, event: Extract<AgentEvent
 			},
 		});
 	}
+}
+
+/**
+ * Accumulate a run's omp token telemetry onto the session's running total. Returns
+ * the prior total unchanged when this run carried no telemetry, and `undefined`
+ * when there is nothing to record yet (so callers can omit the field).
+ */
+function accumulateUsage(
+	prev: RuntimeTaskSessionSummary["usage"],
+	telemetry: Extract<AgentEvent, { type: "agent_end" }>["telemetry"],
+): RuntimeTaskSessionUsage | undefined {
+	if (!telemetry) {
+		return prev ?? undefined;
+	}
+	const base = prev ?? { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+	return {
+		inputTokens: base.inputTokens + telemetry.usage.inputTokens,
+		outputTokens: base.outputTokens + telemetry.usage.outputTokens,
+		totalTokens: base.totalTokens + telemetry.usage.totalTokens,
+	};
 }
 
 function handleTurnStart(input: ApplyPiAgentEventInput): void {

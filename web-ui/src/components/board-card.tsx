@@ -22,6 +22,7 @@ import {
 	formatKanbanSelectedModelButtonText,
 	resolveKanbanModelDisplayName,
 } from "@/components/detail-panels/kanban-model-picker-options";
+import { SessionMetaBadges } from "@/components/session-meta-badges";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
@@ -643,6 +644,9 @@ function BoardCardComponent({
 									) : null}
 								</div>
 							) : null}
+							{/* Live session provider/model + cumulative token usage. Renders
+							    nothing until a session has run, so backlog cards are unaffected. */}
+							<SessionMetaBadges summary={sessionSummary} muted={isTrashCard} className="mt-1" />
 							{sessionActivity ? (
 								<div
 									className="flex gap-1.5 items-start mt-[6px]"

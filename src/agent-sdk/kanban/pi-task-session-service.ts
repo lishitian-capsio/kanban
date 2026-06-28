@@ -254,6 +254,8 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 			startedAt: now(),
 			lastOutputAt: now(),
 			reviewReason: initialReviewReason,
+			providerId,
+			modelId,
 		});
 		this.messageStore.setTaskEntry(request.taskId, entry);
 		this.pendingTurnCancelTaskIds.delete(request.taskId);
