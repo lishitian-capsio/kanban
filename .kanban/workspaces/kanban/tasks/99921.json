@@ -1,0 +1,19 @@
+{
+  "id": "99921",
+  "title": "修复 web-ui 终端 OSC 52 复制不进系统剪贴板",
+  "prompt": "Bug: 在 web-ui（浏览器）的终端面板里，CLI agent（claude/codex 等）通过 OSC 52 转义序列写系统剪贴板时，终端会显示提示 \"sent 157 chars via OSC 52 · if paste fails, hold Shift (Option in iTerm2, Fn in Terminal.app) while selecting for native copy\"，但内容实际并没有进入用户的系统剪贴板，粘贴时拿不到复制的文本。\n\n复现路径：\n1. 在浏览器打开 web-ui，进入某个任务的终端/会话面板（xterm.js 渲染的终端）。\n2. 让 CLI agent 触发一次 OSC 52 复制（输出 OSC 52 序列），或在终端中执行会触发 OSC 52 的操作。\n3. 观察到 \"sent N chars via OSC 52\" 提示，但去其它地方 Ctrl/Cmd+V 粘贴，剪贴板里并没有该内容。\n\n排查方向（供参考，不限定）：\n- web-ui 终端使用 xterm.js。OSC 52 由 @xterm/addon-clipboard 或自定义 OSC handler 处理；确认是否注册了 OSC 52 handler，以及它是否真的调用了浏览器 navigator.clipboard.writeText / Clipboard API。\n- 浏览器 Clipboard API 写入要求安全上下文（HTTPS 或 localhost）且通常需要用户手势/焦点；OSC 52 来自远端输出而非用户手势，navigator.clipboard.writeText 很可能被浏览器拒绝（NotAllowedError），导致静默失败但仍打印了 \"sent\" 提示。注意本仓库的 safe-uuid / getUserMedia 已踩过 \"secure context\" 的坑（见 AGENTS.md），OSC 52 很可能是同类问题。\n- 确认 \"sent N chars via OSC 52\" 这条提示文案在代码里的来源，弄清它是\"已尝试写入\"还是\"写入成功\"——目前提示具有误导性（声称已发送，实际可能失败）。\n\n期望结果：\n- 在受支持的环境下，OSC 52 复制能真正写入系统剪贴板，浏览器其它位置可正常粘贴。\n- 当浏览器拒绝/不支持（如非安全上下文、无用户手势、权限被拒）时，给出诚实、准确的反馈（例如提示复制失败及原因/降级方案），不要谎报 \"sent\"。\n\n请先复现并定位根因，再给出修复方案。涉及 web-ui 终端组件与剪贴板处理。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782648409733,
+  "updatedAt": 1782648409733,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}
