@@ -52,6 +52,14 @@
       "titleSource": "auto",
       "createdAt": 1782639747391,
       "updatedAt": 1782639747391
+    },
+    {
+      "id": "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
+      "agentId": "claude",
+      "name": "kanban agent，PI的没有多会话管理",
+      "titleSource": "auto",
+      "createdAt": 1782639849269,
+      "updatedAt": 1782639849269
     }
   ],
   "fullscreenTabs": {
@@ -60,8 +68,9 @@
       "49d1f6cb-8534-40b9-9847-01b90a2fae0e",
       "ae5cb359-53d3-44b4-aa37-636b852939ab",
       "1ff463d8-42d5-4b24-8c47-c2cf3957768d",
-      "default"
+      "3434ae10-5e66-420a-8e03-7b70b3d73379",
+      "815c2d5d-1b77-4ef2-99bb-d5c73582390c"
     ],
-    "activeThreadId": "default"
+    "activeThreadId": "815c2d5d-1b77-4ef2-99bb-d5c73582390c"
   }
 }
