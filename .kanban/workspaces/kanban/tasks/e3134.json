@@ -1,0 +1,19 @@
+{
+  "id": "e3134",
+  "title": "全屏模式：Home tab 旁新增固定 Task tab（活跃任务跟踪清单）",
+  "prompt": "在 kanban agent 的全屏模式下，于现有 Home tab 旁边新增一个**固定常驻的 Task tab**，用于跟踪任务执行情况——替代目前只能靠 CLI 拍快照看状态的方式。\n\n## 背景 / 现有结构\n全屏模式当前的标签栏是「Home tab（会话卡启动器）+ 若干 home 会话标签」。本任务在 Home tab 旁再钉一个**固定的 Task tab**（与 Home tab 同级、始终存在，不可关闭）。请先阅读全屏标签栏 / Home tab 启动器 / 会话卡的现有实现，复用既有模式，不要新造一套。\n\n## Task tab 里要做什么（明确范围）\n做成**一栏精简的活跃任务清单**，纯只读跟踪，**不要把看板那一套（四列 + 卡片网格 + 拖拽）搬进来**：\n\n- **只列活跃任务**：column 为 in_progress 和 review 的任务（backlog / done 不展示）。\n- **排序**：活跃靠前（in_progress / review 在上），让用户一眼看到「谁在跑、谁等我审」。\n- **每行**：状态点 + 任务标题 + 当前活动行——请**复用全屏会话卡已有的状态点语义和实时 agent 活动行组件/逻辑**，不要重写。\n- **点一行 → 跳进 / 打开该任务的会话（transcript）**。请按现有方式把任务会话呈现出来（如何在全屏语境里展示任务会话由你判断并复用既有路径）。\n- **只读**：不做启动 / 移动 / 拖拽 / 改列等任何写操作。\n- **空状态**：没有活跃任务时给一个干净的空态提示。\n\n## 数据来源\n活跃任务及其执行状态来自 runtime 状态流里的 task session summary（RuntimeTaskSessionSummary：state、agent、lastOutputAt、reviewReason 等）/ 看板列信息。按本仓库的 granular external store 约定，**在叶子组件里订阅相应 slice**（参考 useRuntimeWorkspaceState / useTaskChatMessages 等用法），不要在 App 顶层订阅高频 slice。\n\n## 约束\n- 遵循 web-ui 既有技术栈与设计 token（Tailwind v4 / 现有 UI primitives / lucide 图标 / dark theme）。\n- 不重建看板逻辑；最大化复用全屏 Home tab 启动器与会话卡的状态/活动展示。\n- 不做任何与本功能无关的重构。\n\n完成后请确保 typecheck / 相关测试通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782639499591,
+  "updatedAt": 1782639499591,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
