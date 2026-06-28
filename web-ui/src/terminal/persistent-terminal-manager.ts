@@ -13,7 +13,8 @@ import type {
 	RuntimeTerminalWsClientMessage,
 	RuntimeTerminalWsServerMessage,
 } from "@/runtime/types";
-import { createSafeClipboardProvider } from "@/terminal/safe-clipboard-provider";
+import { showAppToast } from "@/components/app-toaster";
+import { type ClipboardWriteFailureReason, createSafeClipboardProvider } from "@/terminal/safe-clipboard-provider";
 import { clearTerminalGeometry, reportTerminalGeometry } from "@/terminal/terminal-geometry-registry";
 import { createKanbanTerminalOptions } from "@/terminal/terminal-options";
 import {
@@ -137,6 +138,24 @@ function buildKey(workspaceId: string, taskId: string): string {
 	return `${workspaceId}:${taskId}`;
 }
 
+// The CLI agent prints "sent N chars via OSC 52" optimistically the moment it
+// emits the escape sequence, regardless of whether the browser accepted the
+// write. When every clipboard path fails we surface an honest reason instead of
+// letting that claim stand. A stable toast id de-dupes a chatty agent.
+const CLIPBOARD_FAILURE_MESSAGES: Record<ClipboardWriteFailureReason, string> = {
+	"insecure-context":
+		"Couldn't copy to your clipboard (OSC 52): the browser requires a secure context (HTTPS or localhost). Select the text manually to copy.",
+	blocked:
+		"Couldn't copy to your clipboard (OSC 52): the browser blocked the write. Make sure this tab is focused, or select the text manually to copy.",
+};
+
+function notifyClipboardWriteFailure(reason: ClipboardWriteFailureReason): void {
+	showAppToast(
+		{ intent: "warning", message: CLIPBOARD_FAILURE_MESSAGES[reason], timeout: 6000 },
+		"terminal-osc52-clipboard-failure",
+	);
+}
+
 class PersistentTerminal {
 	private readonly terminal: Terminal;
 	private readonly fitAddon = new FitAddon();
@@ -191,7 +210,9 @@ class PersistentTerminal {
 		// Custom provider so an OSC 52 clipboard write doesn't throw an uncaught
 		// TypeError mid-parse when navigator.clipboard is absent (non-secure
 		// context, e.g. plain HTTP over a LAN). See safe-clipboard-provider.ts.
-		this.terminal.loadAddon(new ClipboardAddon(undefined, createSafeClipboardProvider()));
+		this.terminal.loadAddon(
+			new ClipboardAddon(undefined, createSafeClipboardProvider({ onWriteFailure: notifyClipboardWriteFailure })),
+		);
 		this.terminal.loadAddon(new WebLinksAddon());
 		this.terminal.loadAddon(this.unicode11Addon);
 		this.terminal.unicode.activeVersion = "11";
