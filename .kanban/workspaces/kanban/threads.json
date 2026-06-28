@@ -83,10 +83,10 @@
     {
       "id": "4f4258a4-d3cb-48b6-99ed-3448706dc93e",
       "agentId": "claude",
-      "name": "我想要增加qoder cli作为新的agent",
+      "name": "新增 qoder CLI agent",
       "titleSource": "auto",
       "createdAt": 1782649969582,
-      "updatedAt": 1782649969582
+      "updatedAt": 1782650033873
     }
   ],
   "fullscreenTabs": {

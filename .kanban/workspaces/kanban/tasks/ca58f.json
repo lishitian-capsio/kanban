@@ -1,0 +1,19 @@
+{
+  "id": "ca58f",
+  "title": "新增 qoder CLI 作为新的 agent",
+  "prompt": "目标：在 Kanban 中新增 \"qoder\" CLI 作为一个新的外部 CLI agent（与现有 claude/codex/droid/kiro/gemini/opencode 同类），让用户可以选择 qoder 来执行任务、跑会话。\n\n## 背景 / 现有结构（先读懂，按既有模式扩展，不要新造一套）\nKanban 的 agent 体系：原生 agent 是 pi（oh-my-pi，源码内嵌 src/agent-sdk/），其余都是外部 CLI agent（claude/codex/droid/kiro/gemini/opencode）。新增 qoder 属于\"外部 CLI agent\"这一类。\n\n请先把\"一个外部 CLI agent 从注册到能跑\"的完整链路读清楚，再照着加 qoder：\n1. **agent 目录 / catalog**：src/core/agent-catalog.ts —— 现有 CLI agent 在这里注册（id、显示名、isMain 标志 pi=true、可执行文件名等）。新增 qoder 的 catalog 条目。\n2. **wire 契约里的 agent 枚举**：src/core/api-contract.ts 的 RuntimeAgentId / 相关 schema。web-ui 通过 @runtime-contract tsconfig alias 共享这个枚举，**收窄/扩展 agent enum 会波及 web:typecheck**，务必同步。\n3. **CLI agent 适配器（adapter）**：src/terminal/ 下现有 claudeAdapter / codexAdapter 等（prepare/launch、构造 argv、启动 PTY 会话）。参考最接近的一个（如 claude 或 codex）为 qoder 写 adapter：如何用 qoder 的 CLI 构造启动命令、传 kickoff prompt。\n4. **agent 检测 / 可执行文件解析**：直接 PATH 检查 + 直接进程启动（AGENTS.md 明确：热路径上不要起交互式 shell 做命令发现）。支持 per-agent 绝对 executablePath 覆盖（agent-executable-path-override 已实现）。\n5. **provider / 能力边界**：每个 agent 自管一组命名 provider，CLI agent 通过 per-spawn env 注入（参考 claude provider env injection、unified-proxy/env-injector.ts buildAgentProviderEnv、shared agent-provider-resolver.ts、AGENT_PROVIDER_CAPABILITY）。确认 qoder 的 provider/认证模型（官方登录 official sentinel 默认、还是 API key + base url 注入），按 qoder CLI 实际支持的方式接进来。\n6. **session resume（如适用）**：claude 是 launch 时 --session-id 预订、重启后 --resume；codex 是 launch 后从 rollout 捕获。确认 qoder CLI 是否支持会话 resume，支持则按其机制接入（src/terminal/*-session-capture.ts 模式），不支持则先不做、注明。\n\n## 关键前置：先调研 qoder CLI 本身\n我（用户）没有给出 qoder CLI 的具体用法。请先确认 qoder CLI 的真实接口：可执行文件名、启动一次性/交互式会话的命令与参数、如何传入初始 prompt、如何配置 provider/model/base-url/API key（环境变量名）、是否支持 session id / resume、是否支持 OSC52 等。**优先查官方文档/`qoder --help`**；调研不充分前不要硬编码臆测的参数。把调研结论与采用的接入方式写清楚（建议先给简短设计说明，再实现，避免过度设计）。\n\n## 约束\n- 严格复用现有 CLI agent 的模式与抽象，不要为 qoder 单独造一套并行机制。\n- 遵循 AGENTS.md：无 any、SDK/契约为 source of truth、无 inline import、热路径不起交互式 shell、日志走 src/logging facade（禁 console.*）。\n- 同步好 web-ui 共享的 agent 枚举，确保 web:typecheck 通过；后端相关 typecheck/测试通过。\n- 不做与\"新增 qoder agent\"无关的重构。\n\n完成后请说明：qoder 的接入方式（启动命令、provider/认证、resume 支持情况）、改动了哪些文件、typecheck/测试结果。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782650030290,
+  "updatedAt": 1782650030290,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}
