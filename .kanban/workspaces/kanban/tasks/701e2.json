@@ -1,0 +1,19 @@
+{
+  "id": "701e2",
+  "title": "修复：全屏下新建 agent 会话会关闭所有已打开的 tab",
+  "prompt": "Bug：在 Kanban 全屏（fullscreen）模式下，kanban agent 创建一个新的 agent 会话时，会把当前所有已经打开的 agent tab 全部关掉。\n\n预期行为：新建会话应当只新增一个会话 tab（并切换到它），保留所有已经打开的 tab，不应清空/关闭现有 tab。\n\n相关背景（供定位，不要照搬）：\n- 这是全屏 Home Tab / 会话 tab strip 相关功能。涉及全屏会话 tab 的实现（fullscreenTabs 注册表持久化、HomeAgentConversation 抽取、会话卡片网格 + '+' 新建卡片）。\n- 怀疑新建会话时错误地重置/覆盖了 fullscreenTabs 注册表，而不是向其中 append 一个新 tab。\n\n任务：\n1. 复现该 bug：进入全屏，打开多个 agent 会话 tab，然后点击 '+' / 新建会话卡片，确认现有 tab 被全部关闭。\n2. 定位根因（重点检查新建会话写入 fullscreenTabs / 会话 tab 注册表的逻辑，是否用了覆盖写而非追加）。\n3. 修复，使新建会话只追加并激活一个新 tab，保留所有已打开 tab。\n4. 添加/更新相应测试覆盖该回归。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782625968878,
+  "updatedAt": 1782625968878,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}
