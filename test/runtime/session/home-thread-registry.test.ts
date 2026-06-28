@@ -24,6 +24,14 @@ function seed(): RuntimeHomeChatThreadsData {
 	};
 }
 
+/** A registry that also has open fullscreen session tabs persisted. */
+function seedWithTabs(): RuntimeHomeChatThreadsData {
+	return {
+		...seed(),
+		fullscreenTabs: { openThreadIds: ["t1", "t2"], activeThreadId: "t2" },
+	};
+}
+
 describe("home thread registry", () => {
 	describe("listHomeThreads", () => {
 		it("returns threads sorted by createdAt ascending", () => {
@@ -73,6 +81,11 @@ describe("home thread registry", () => {
 		it("throws when the thread id already exists", () => {
 			expect(() => createHomeThread(seed(), { id: "t1", agentId: "pi", name: "Dup", now: 200 })).toThrow();
 		});
+
+		it("preserves the persisted fullscreen tab set (regression: creating a thread closed all open tabs)", () => {
+			const next = createHomeThread(seedWithTabs(), { id: "t3", agentId: "codex", name: "Third", now: 200 });
+			expect(next.fullscreenTabs).toEqual({ openThreadIds: ["t1", "t2"], activeThreadId: "t2" });
+		});
 	});
 
 	describe("renameHomeThread", () => {
@@ -88,6 +101,11 @@ describe("home thread registry", () => {
 
 		it("throws when the thread does not exist", () => {
 			expect(() => renameHomeThread(seed(), "missing", "x", 300)).toThrow();
+		});
+
+		it("preserves the persisted fullscreen tab set", () => {
+			const next = renameHomeThread(seedWithTabs(), "t2", "Renamed", 300);
+			expect(next.fullscreenTabs).toEqual({ openThreadIds: ["t1", "t2"], activeThreadId: "t2" });
 		});
 	});
 
@@ -119,6 +137,11 @@ describe("home thread registry", () => {
 
 		it("throws when the thread does not exist", () => {
 			expect(() => setHomeThreadAutoTitle(seed(), "missing", "x", 400)).toThrow();
+		});
+
+		it("preserves the persisted fullscreen tab set when a title is applied", () => {
+			const { next } = setHomeThreadAutoTitle(seedWithTabs(), "t2", "Summarized", 400);
+			expect(next.fullscreenTabs).toEqual({ openThreadIds: ["t1", "t2"], activeThreadId: "t2" });
 		});
 	});
 
@@ -162,6 +185,11 @@ describe("home thread registry", () => {
 
 		it("throws when the thread does not exist", () => {
 			expect(() => setHomeThreadNextStep(seed(), "missing", "x")).toThrow();
+		});
+
+		it("preserves the persisted fullscreen tab set", () => {
+			const next = setHomeThreadNextStep(seedWithTabs(), "t2", "Start the top backlog task");
+			expect(next.fullscreenTabs).toEqual({ openThreadIds: ["t1", "t2"], activeThreadId: "t2" });
 		});
 	});
 

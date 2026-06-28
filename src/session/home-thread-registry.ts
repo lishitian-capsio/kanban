@@ -49,7 +49,9 @@ export function createHomeThread(
 		createdAt: input.now,
 		updatedAt: input.now,
 	};
-	return { threads: [...data.threads, thread] };
+	// Spread `data` so the persisted fullscreen tab set survives — dropping it here
+	// collapsed every open session tab back to Home on the next registry refresh.
+	return { ...data, threads: [...data.threads, thread] };
 }
 
 /**
@@ -67,6 +69,7 @@ export function renameHomeThread(
 		throw new Error(`Home chat thread "${id}" not found.`);
 	}
 	return {
+		...data,
 		threads: data.threads.map((thread) =>
 			thread.id === id ? { ...thread, name, titleSource: "manual", updatedAt: now } : thread,
 		),
@@ -102,7 +105,7 @@ export function setHomeThreadAutoTitle(
 	}
 	const updated: RuntimeHomeChatThread = { ...existing, name: title, titleSource: "auto", updatedAt: now };
 	return {
-		next: { threads: data.threads.map((thread) => (thread.id === id ? updated : thread)) },
+		next: { ...data, threads: data.threads.map((thread) => (thread.id === id ? updated : thread)) },
 		applied: true,
 		thread: updated,
 	};
@@ -144,6 +147,7 @@ export function setHomeThreadNextStep(
 		return data;
 	}
 	return {
+		...data,
 		threads: data.threads.map((thread) => (thread.id === id ? { ...thread, pendingNextStep: next } : thread)),
 	};
 }
