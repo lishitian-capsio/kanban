@@ -59,7 +59,8 @@
       "name": "PI agent multi-session management",
       "titleSource": "auto",
       "createdAt": 1782639849269,
-      "updatedAt": 1782639913526
+      "updatedAt": 1782639913526,
+      "pendingNextStep": "启动任务 5ab62"
     }
   ],
   "fullscreenTabs": {
