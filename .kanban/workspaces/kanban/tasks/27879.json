@@ -1,0 +1,19 @@
+{
+  "id": "27879",
+  "title": "修复全屏模式下无法删除 agent 会话的问题",
+  "prompt": "Bug：在 home（侧边栏）Kanban agent 的【全屏模式】下，无法删除/关闭 agent 会话（thread/session）。在非全屏（compact/侧边栏）模式下应是可以删除的，但全屏模式下该操作缺失或无效。\n\n背景（相关实现）：\n- 全屏模式由 selectHomeChatLayout 在 compact|fullscreen 间切换，全屏壳是 HomeChatWorkspace。\n- 全屏 Home Tab = 会话卡片网格 + 固定的 \"+\" 新建卡片；以及全屏的 session-tab 条；会话渲染抽到了 HomeAgentConversation。\n- 多线程相关：HomeThreadBar，线程注册表持久化在 <repo>/.kanban/workspaces/<id>/threads.json；关闭线程是 hard close，会停止进程、丢弃内存条目并通过 journal.clear(taskId) 删除 transcript。\n\n要做的事：\n- 复现：进入全屏模式，尝试删除一个 agent 会话/线程，确认入口是缺失还是点了无反应。\n- 在全屏模式（会话卡片网格 / session-tab 条）中补上或修好删除/关闭会话的入口，使其与非全屏模式行为一致（走同一条 close-thread / 删除会话的逻辑路径）。\n- 注意 useSyncExternalStore 的 per-slice 订阅约定：高频 slice 必须在叶子组件订阅；删除后正确刷新线程列表/标签条。\n- 删除应是真正的 hard close（停止会话、清理 transcript），不要只是从 UI 隐藏。\n\n先确认全屏模式下删除入口的现状与非全屏模式的差异，再实现修复。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782625847752,
+  "updatedAt": 1782625847752,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
