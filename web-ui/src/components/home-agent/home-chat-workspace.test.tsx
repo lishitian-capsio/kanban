@@ -177,7 +177,7 @@ describe("HomeChatWorkspace", () => {
 			);
 		});
 		const deleteButton = container.querySelector(
-			'[aria-label="Delete Refactor auth session"]',
+			'[aria-label="Close Refactor auth session"]',
 		) as HTMLButtonElement | null;
 		expect(deleteButton).not.toBeNull();
 		act(() => {
@@ -207,7 +207,7 @@ describe("HomeChatWorkspace", () => {
 				/>,
 			);
 		});
-		expect(container.querySelector('[aria-label="Delete Default session"]')).toBeNull();
+		expect(container.querySelector('[aria-label="Close Default session"]')).toBeNull();
 	});
 
 	it("reconciles the persisted tab set once on mount (entering fullscreen)", () => {

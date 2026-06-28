@@ -15,15 +15,17 @@
 // as the compact sidebar, so a session never tears down when switching presentations.
 import { createHomeAgentSessionId } from "@runtime-home-agent-session";
 import type { ReactElement } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
+import { notifyError } from "@/components/app-toaster";
 import { HomeAddSessionCard } from "@/components/home-agent/home-add-session-card";
 import { HomeAgentConversation } from "@/components/home-agent/home-agent-conversation";
 import { HomeSessionCard } from "@/components/home-agent/home-session-card";
-import { HomeThreadCloseDialog } from "@/components/home-agent/home-thread-close-dialog";
 import { SessionTabStrip } from "@/components/home-agent/session-tab-strip";
-import type { HomeThread, UseHomeThreadsResult } from "@/hooks/use-home-threads";
+import type { UseHomeThreadsResult } from "@/hooks/use-home-threads";
 import { useRefreshHomeThreadsOnSessionContextBump } from "@/hooks/use-refresh-home-threads-on-context-bump";
+import { estimateTaskSessionGeometry } from "@/runtime/task-session-geometry";
+import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeConfigResponse, RuntimeGitRepositoryInfo, RuntimeTaskSessionSummary } from "@/runtime/types";
 
 interface HomeChatWorkspaceProps {
@@ -43,10 +45,6 @@ export function HomeChatWorkspace({
 }: HomeChatWorkspaceProps): ReactElement | null {
 	// Keep agent-set titles fresh in the launcher cards + tab strip (mirrors the compact panel).
 	useRefreshHomeThreadsOnSessionContextBump(homeThreads.refresh);
-
-	// Hard-delete a session (stop the agent + delete its transcript). Reuses the exact compact
-	// flow: a confirmation dialog → homeThreads.closeThread, which also prunes any open tab.
-	const [closeTarget, setCloseTarget] = useState<HomeThread | null>(null);
 
 	// Continuity rule, docked → fullscreen: restore the persisted tab set, seeding the current
 	// docked conversation as the first tab when none is persisted. Run once on mount (= entering
@@ -81,6 +79,39 @@ export function HomeChatWorkspace({
 			}
 		},
 		[createThread, openSessionTab],
+	);
+
+	// Restart an errored session by re-launching its agent. Mirrors the lazy launch in
+	// use-home-agent-session (same baseRef + geometry); the refreshed summary reaches the
+	// cards through the runtime broadcast, so no local summary plumbing is needed here.
+	const { renameThread, closeThread } = homeThreads;
+	const handleRestartSession = useCallback(
+		async (threadId: string) => {
+			if (!currentProjectId) {
+				return;
+			}
+			const card = sessionCards.find((entry) => entry.thread.id === threadId);
+			if (!card) {
+				return;
+			}
+			const baseRef = workspaceGit?.currentBranch ?? workspaceGit?.defaultBranch ?? "HEAD";
+			const geometry = estimateTaskSessionGeometry(window.innerWidth, window.innerHeight);
+			try {
+				const response = await getRuntimeTrpcClient(currentProjectId).runtime.startTaskSession.mutate({
+					taskId: card.taskId,
+					prompt: "",
+					baseRef,
+					cols: geometry.cols,
+					rows: geometry.rows,
+				});
+				if (!response.ok) {
+					throw new Error(response.error ?? "Could not restart the session.");
+				}
+			} catch (error) {
+				notifyError(error instanceof Error ? error.message : String(error));
+			}
+		},
+		[currentProjectId, sessionCards, workspaceGit],
 	);
 
 	const { activeThreadId, openThreadIds } = homeThreads.fullscreenTabs;
@@ -127,7 +158,9 @@ export function HomeChatWorkspace({
 									summary={taskSessions[taskId] ?? null}
 									currentProjectId={currentProjectId}
 									onOpenSession={homeThreads.openSessionTab}
-									onDeleteSession={setCloseTarget}
+									onRename={renameThread}
+									onClose={closeThread}
+									onRestart={handleRestartSession}
 								/>
 							))}
 							<HomeAddSessionCard
@@ -150,16 +183,6 @@ export function HomeChatWorkspace({
 					/>
 				</div>
 			)}
-
-			<HomeThreadCloseDialog
-				thread={closeTarget}
-				onOpenChange={(open) => {
-					if (!open) {
-						setCloseTarget(null);
-					}
-				}}
-				onClose={homeThreads.closeThread}
-			/>
 		</div>
 	);
 }
