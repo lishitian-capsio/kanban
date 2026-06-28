@@ -35,14 +35,6 @@
       "createdAt": 1782626300759,
       "updatedAt": 1782626355310,
       "pendingNextStep": "Start task df1bc now"
-    },
-    {
-      "id": "a3b8e7f9-be31-4272-a40e-6fd18ddda0e1",
-      "agentId": "claude",
-      "name": "ok",
-      "titleSource": "auto",
-      "createdAt": 1782630807454,
-      "updatedAt": 1782630807454
     }
   ],
   "fullscreenTabs": {
@@ -50,8 +42,8 @@
       "24458522-d855-4e3d-a297-9ccda4e2b242",
       "85dc1623-012d-41e1-9691-99faaccc35d9",
       "fa897148-67f9-4e94-ba4f-d938d00e33db",
-      "a3b8e7f9-be31-4272-a40e-6fd18ddda0e1"
+      "15106867-d647-4337-8855-ce20d4f96d71"
     ],
-    "activeThreadId": "a3b8e7f9-be31-4272-a40e-6fd18ddda0e1"
+    "activeThreadId": "24458522-d855-4e3d-a297-9ccda4e2b242"
   }
 }
