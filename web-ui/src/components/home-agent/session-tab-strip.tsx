@@ -5,7 +5,7 @@
 // open thread, which the user switches between horizontally. Closing a session tab is a
 // UI-only collapse back to Home — it never hard-closes the thread (that stays an explicit
 // action in the launcher / thread bar). The strip scrolls horizontally when the tabs overflow.
-import { LayoutGrid, X } from "lucide-react";
+import { LayoutGrid, ListChecks, X } from "lucide-react";
 import type { ReactElement } from "react";
 
 import { ThreadAgentBadge } from "@/components/home-agent/thread-agent-badge";
@@ -18,8 +18,11 @@ interface SessionTabStripProps {
 	openThreadIds: string[];
 	/** The active tab's thread id, or null when the Home tab is active. */
 	activeThreadId: string | null;
+	/** Whether the fixed Task tab (active-task tracker) is the active tab. */
+	taskTabActive: boolean;
 	agents: RuntimeAgentDefinition[];
 	onActivateHome: () => void;
+	onActivateTask: () => void;
 	onActivateTab: (threadId: string) => void;
 	onCloseTab: (threadId: string) => void;
 }
@@ -28,12 +31,16 @@ export function SessionTabStrip({
 	threads,
 	openThreadIds,
 	activeThreadId,
+	taskTabActive,
 	agents,
 	onActivateHome,
+	onActivateTask,
 	onActivateTab,
 	onCloseTab,
 }: SessionTabStripProps): ReactElement {
-	const homeActive = activeThreadId === null;
+	// The Task tab is a peer of the Home tab; while it is active neither Home nor
+	// any session tab is highlighted.
+	const homeActive = activeThreadId === null && !taskTabActive;
 	return (
 		<div
 			role="tablist"
@@ -57,12 +64,29 @@ export function SessionTabStrip({
 				<span>Home</span>
 			</button>
 
+			<button
+				type="button"
+				role="tab"
+				aria-selected={taskTabActive}
+				onClick={onActivateTask}
+				title="Tasks — active task tracker"
+				className={cn(
+					"flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] outline-none transition-colors focus-visible:border-border-focus",
+					taskTabActive
+						? "bg-surface-2 font-medium text-text-primary"
+						: "text-text-secondary hover:bg-surface-2 hover:text-text-primary",
+				)}
+			>
+				<ListChecks size={14} className="shrink-0" aria-hidden="true" />
+				<span>Tasks</span>
+			</button>
+
 			{openThreadIds.map((threadId) => {
 				const thread = threads.find((candidate) => candidate.id === threadId);
 				if (!thread) {
 					return null;
 				}
-				const isActive = threadId === activeThreadId;
+				const isActive = threadId === activeThreadId && !taskTabActive;
 				return (
 					<div
 						key={threadId}

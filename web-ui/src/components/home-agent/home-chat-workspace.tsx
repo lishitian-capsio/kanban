@@ -15,9 +15,10 @@
 // as the compact sidebar, so a session never tears down when switching presentations.
 import { createHomeAgentSessionId } from "@runtime-home-agent-session";
 import type { ReactElement } from "react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { notifyError } from "@/components/app-toaster";
+import { ActiveTaskList } from "@/components/home-agent/active-task-list";
 import { HomeAddSessionCard } from "@/components/home-agent/home-add-session-card";
 import { HomeAgentConversation } from "@/components/home-agent/home-agent-conversation";
 import { HomeSessionCard } from "@/components/home-agent/home-session-card";
@@ -34,6 +35,8 @@ interface HomeChatWorkspaceProps {
 	homeThreads: UseHomeThreadsResult;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	workspaceGit: RuntimeGitRepositoryInfo | null;
+	/** Open a board task's detail/transcript from the Task tab (exits fullscreen so it shows). */
+	onOpenTask: (taskId: string) => void;
 }
 
 export function HomeChatWorkspace({
@@ -42,7 +45,13 @@ export function HomeChatWorkspace({
 	homeThreads,
 	taskSessions,
 	workspaceGit,
+	onOpenTask,
 }: HomeChatWorkspaceProps): ReactElement | null {
+	// The fixed Task tab is a transient, peer-of-Home view, not a persisted
+	// session tab — it lives next to the Home tab and the open session tabs but is
+	// tracked locally (it resets to off on re-entering fullscreen). Activating Home
+	// or any session tab clears it.
+	const [taskTabActive, setTaskTabActive] = useState(false);
 	// Keep agent-set titles fresh in the launcher cards + tab strip (mirrors the compact panel).
 	useRefreshHomeThreadsOnSessionContextBump(homeThreads.refresh);
 
@@ -127,8 +136,18 @@ export function HomeChatWorkspace({
 		return null;
 	}
 
-	// The Home tab shows when no session tab is active, or when the active tab's thread is gone.
-	const showHomeTab = activeTabThread === null;
+	// Activating Home or any session tab leaves the Task tab; activating Tasks enters it.
+	const handleActivateHome = () => {
+		setTaskTabActive(false);
+		homeThreads.activateHomeTab();
+	};
+	const handleActivateSessionTab = (threadId: string) => {
+		setTaskTabActive(false);
+		homeThreads.activateSessionTab(threadId);
+	};
+
+	// The Home launcher shows when neither the Task tab nor a session tab is active.
+	const showHomeTab = !taskTabActive && activeTabThread === null;
 
 	return (
 		<div className="flex h-full min-h-0 w-full flex-col gap-2">
@@ -136,13 +155,17 @@ export function HomeChatWorkspace({
 				threads={homeThreads.threads}
 				openThreadIds={openThreadIds}
 				activeThreadId={activeTabThread ? activeThreadId : null}
+				taskTabActive={taskTabActive}
 				agents={runtimeProjectConfig.agents}
-				onActivateHome={homeThreads.activateHomeTab}
-				onActivateTab={homeThreads.activateSessionTab}
+				onActivateHome={handleActivateHome}
+				onActivateTask={() => setTaskTabActive(true)}
+				onActivateTab={handleActivateSessionTab}
 				onCloseTab={homeThreads.closeSessionTab}
 			/>
 
-			{showHomeTab ? (
+			{taskTabActive ? (
+				<ActiveTaskList agents={runtimeProjectConfig.agents} onOpenTask={onOpenTask} />
+			) : showHomeTab ? (
 				<div className="flex min-h-0 flex-1 flex-col">
 					<div className="shrink-0 px-1 pb-3">
 						<h2 className="text-sm font-semibold text-text-primary">Sessions</h2>
