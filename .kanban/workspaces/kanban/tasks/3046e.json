@@ -1,7 +1,7 @@
 {
   "id": "3046e",
   "title": "滚动条改为悬停才显示的 overlay 样式（不占文档流）",
-  "prompt": "需求（UI 美化）：当前滚动区域的滚动条常驻显示且占据文档流（挤占内容宽度），影响美观。改成 overlay 风格的滚动条：默认隐藏 / 极淡，鼠标悬停在滚动区域（hover）时才显示出来；且滚动条**不占文档流**——出现/消失时内容宽度不发生位移、不被挤压。\n\n## 背景 / 触发场景\n最直接的场景是 kanban agent 全屏模式下 Home Tab 的会话卡网格（session-card 启动器）出现纵向滚动时（与任务 2cbf1 同一区域），但本任务聚焦滚动条的**视觉样式**，与 2cbf1 的滚动容器层级修复是两件事。\n\n## 实现方向\n- 用 CSS 实现 overlay + hover-reveal 滚动条，遵循 AGENTS.md 的 styling 约定：\n  - 「不占文档流」用  已废弃，改用现代方案：Firefox 用  + ；WebKit/Chromium 用  自定义，并配合 。关键是让 scrollbar 叠加在内容之上而不挤压布局——优先考虑 webkit 下  + 容器 hover 时才把 thumb 设为可见颜色（默认 transparent），thumb 颜色用设计 token （#3E464E，CLAUDE.md 标注为 scrollbars 用色），轨道透明。\n  - 默认态：thumb 透明 / 接近隐藏；容器 （或 /）时 thumb 显现。过渡可加轻微透明度 transition。\n- 评估是否抽成一个可复用的滚动样式（如一个 Tailwind 工具类 / globals.css 里的 utility class，例如 ），供 Home Tab 会话卡网格等滚动区域复用，而不是散落多处。这种复杂选择器（）按约定适合放在 globals.css。\n- 先确认浏览器目标：本应用是 dark theme 桌面/Web，主要 Chromium/WebKit + Firefox 都要可接受降级。\n\n## 范围 / 约束\n- 先应用到 Home Tab 会话卡网格滚动区；如果实现成可复用 utility，可一并用于其它明显受益的纵向滚动区，但不要为此大面积重构无关组件。\n- 不得影响滚动功能本身（仍可正常滚动、键盘/触控板滚动不受影响），只改外观与是否占位。\n- 不要破坏既有布局；overlay 后内容不应再因滚动条出现而横向位移。\n- 确认 web:typecheck 通过。",
+  "prompt": "需求（UI 美化）：当前滚动区域的滚动条常驻显示且占据文档流（挤占内容宽度），影响美观。改成 overlay 风格的滚动条：默认隐藏 / 极淡，鼠标悬停在滚动区域（hover）时才显示出来；且滚动条不占文档流——出现/消失时内容宽度不发生位移、不被挤压。\n\n## 背景 / 触发场景\n最直接的场景是 kanban agent 全屏模式下 Home Tab 的会话卡网格（session-card 启动器）出现纵向滚动时（与任务 2cbf1 同一区域），但本任务聚焦滚动条的视觉样式，与 2cbf1 的滚动容器层级修复是两件事。\n\n## 实现方向（遵循 AGENTS.md styling 约定）\n- 用 CSS 实现 overlay + hover-reveal 滚动条：\n  - 不占文档流：不要用已废弃的 overflow:overlay。Firefox 用 scrollbar-width:thin + scrollbar-color；Chromium/WebKit 用 ::-webkit-scrollbar 系列伪元素自定义，配合容器 overflow-y:auto。关键是滚动条叠加在内容之上、不挤压布局。\n  - 默认态：thumb 透明或接近隐藏，轨道透明；容器 hover（可考虑配合 focus-within）时 thumb 才显现，加轻微 opacity transition。\n  - thumb 颜色用设计 token surface-4（#3E464E，CLAUDE.md 标注为 scrollbars 用色）。\n- 评估抽成一个可复用样式（例如 globals.css 里一个 utility class，类似 scrollbar-overlay），供 Home Tab 会话卡网格等滚动区复用，避免散落多处。这类复杂伪元素选择器按约定放在 globals.css 而非内联。\n- 目标浏览器：dark theme 桌面/Web，Chromium/WebKit + Firefox 都要可接受降级。\n\n## 范围 / 约束\n- 先应用到 Home Tab 会话卡网格滚动区；若实现成可复用 utility，可一并用于其它明显受益的纵向滚动区，但不要为此大面积重构无关组件。\n- 不得影响滚动功能本身（鼠标/键盘/触控板滚动均正常），只改外观与是否占位。\n- overlay 后内容不应再因滚动条出现/消失而横向位移。\n- 确认 web:typecheck 通过。",
   "startInPlanMode": false,
   "autoReviewEnabled": false,
   "autoReviewMode": "commit",
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782648396085,
-  "updatedAt": 1782648396085,
+  "updatedAt": 1782648420164,
   "column": "backlog",
   "rank": "Zy",
   "dependsOn": []

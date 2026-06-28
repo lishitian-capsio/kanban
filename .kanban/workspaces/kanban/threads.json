@@ -65,10 +65,10 @@
     {
       "id": "7f175fd0-b7e1-40c0-bf02-638bb0a5e55a",
       "agentId": "claude",
-      "name": ".kanban/worktrees/__board__/kanban/.kanban/files/blobs/278c…",
+      "name": "修复 web-ui OSC52 复制",
       "titleSource": "auto",
       "createdAt": 1782648145207,
-      "updatedAt": 1782648145207
+      "updatedAt": 1782648421579
     },
     {
       "id": "64e7235d-6c2b-4575-90f6-e6f766c1de20",
