@@ -1,51 +1,6 @@
 {
   "threads": [
     {
-      "id": "24458522-d855-4e3d-a297-9ccda4e2b242",
-      "agentId": "claude",
-      "name": "Fix provider add fetch-models error",
-      "titleSource": "auto",
-      "createdAt": 1782551922032,
-      "updatedAt": 1782551955473,
-      "pendingNextStep": "启动任务 ccf7b"
-    },
-    {
-      "id": "85dc1623-012d-41e1-9691-99faaccc35d9",
-      "agentId": "claude",
-      "name": "Polish fullscreen session cards",
-      "titleSource": "auto",
-      "createdAt": 1782625829626,
-      "updatedAt": 1782626076937,
-      "pendingNextStep": "Create linked Kanban tasks for #1 (card actions menu: rename/close) and #3 (error retry + actionable review state)"
-    },
-    {
-      "id": "ae5cb359-53d3-44b4-aa37-636b852939ab",
-      "agentId": "claude",
-      "name": "全屏新增固定 Task tab",
-      "titleSource": "auto",
-      "createdAt": 1782631037415,
-      "updatedAt": 1782639513036,
-      "pendingNextStep": "启动任务 e3134"
-    },
-    {
-      "id": "49d1f6cb-8534-40b9-9847-01b90a2fae0e",
-      "agentId": "claude",
-      "name": "移除侧边栏 Sessions 文案",
-      "titleSource": "auto",
-      "createdAt": 1782632515057,
-      "updatedAt": 1782633016446,
-      "pendingNextStep": "启动任务 ea927 去修复卡片闪烁"
-    },
-    {
-      "id": "1ff463d8-42d5-4b24-8c47-c2cf3957768d",
-      "agentId": "claude",
-      "name": "Show provider/model/token on cards",
-      "titleSource": "auto",
-      "createdAt": 1782638627244,
-      "updatedAt": 1782638646010,
-      "pendingNextStep": "Start task b9a9d now"
-    },
-    {
       "id": "3434ae10-5e66-420a-8e03-7b70b3d73379",
       "agentId": "claude",
       "name": "Failed to fetch models: Connection refused at token-plan.cn…",
@@ -92,12 +47,8 @@
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "24458522-d855-4e3d-a297-9ccda4e2b242",
       "7f175fd0-b7e1-40c0-bf02-638bb0a5e55a",
       "64e7235d-6c2b-4575-90f6-e6f766c1de20",
-      "85dc1623-012d-41e1-9691-99faaccc35d9",
-      "49d1f6cb-8534-40b9-9847-01b90a2fae0e",
-      "ae5cb359-53d3-44b4-aa37-636b852939ab",
       "default",
       "4f4258a4-d3cb-48b6-99ed-3448706dc93e"
     ],
