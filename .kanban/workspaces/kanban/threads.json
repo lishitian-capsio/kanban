@@ -10,61 +10,19 @@
       "pendingNextStep": "Start task 1248a"
     },
     {
-      "id": "504301b2-6afd-47c1-9e97-ef6675adb0c2",
+      "id": "85dc1623-012d-41e1-9691-99faaccc35d9",
       "agentId": "claude",
-      "name": "provider与agent的关系",
+      "name": "kanban agent的全屏下，每个卡片还有哪些需要完善？",
       "titleSource": "auto",
-      "createdAt": 1782554189963,
-      "updatedAt": 1782554189963
-    },
-    {
-      "id": "10f1fd3a-8c2d-4bb8-b1cb-0112bb0ac518",
-      "agentId": "claude",
-      "name": "Gitee git auth (PAT) + host-keyed injector",
-      "titleSource": "auto",
-      "createdAt": 1782554248263,
-      "updatedAt": 1782567637287,
-      "pendingNextStep": "启动任务 5feb0 实现 Gitee PAT 认证 + host-keyed 注入器"
-    },
-    {
-      "id": "d6f6d516-d423-4a85-b006-4aef995def21",
-      "agentId": "claude",
-      "name": "Kanban agent 语音功能",
-      "titleSource": "auto",
-      "createdAt": 1782554264056,
-      "updatedAt": 1782554290229,
-      "pendingNextStep": "启动调研任务(语音方案选型)"
-    },
-    {
-      "id": "19f22f95-06a5-4f8c-af07-0b755d87b119",
-      "agentId": "claude",
-      "name": "Redesign home tab + session tabs",
-      "titleSource": "auto",
-      "createdAt": 1782569170541,
-      "updatedAt": 1782569239227,
-      "pendingNextStep": "Write this up as a decision doc, keeping session tabs in the sidebar with the opened conversation expanding to a wider view"
-    },
-    {
-      "id": "c66afd0f-f18d-4987-b069-5395eb50faf1",
-      "agentId": "claude",
-      "name": "看板列移动与 git 回退",
-      "titleSource": "auto",
-      "createdAt": 1782610761677,
-      "updatedAt": 1782610795146
-    },
-    {
-      "id": "05a72f62-f43c-4947-a337-da88f509ea2e",
-      "agentId": "claude",
-      "name": "ok",
-      "titleSource": "auto",
-      "createdAt": 1782610783474,
-      "updatedAt": 1782610783474
+      "createdAt": 1782625829626,
+      "updatedAt": 1782625829626
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "c66afd0f-f18d-4987-b069-5395eb50faf1"
+      "24458522-d855-4e3d-a297-9ccda4e2b242",
+      "85dc1623-012d-41e1-9691-99faaccc35d9"
     ],
-    "activeThreadId": "c66afd0f-f18d-4987-b069-5395eb50faf1"
+    "activeThreadId": "85dc1623-012d-41e1-9691-99faaccc35d9"
   }
 }

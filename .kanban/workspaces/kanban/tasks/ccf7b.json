@@ -1,0 +1,19 @@
+{
+  "id": "ccf7b",
+  "title": "重新排列 Kanban agent 侧边栏面板右上角的按钮",
+  "prompt": "调整 home（侧边栏）Kanban agent 面板头部右上角那一排操作按钮的排列顺序/布局。\n\n背景：\n- 该面板组件是 HomeSidebarAgentPanel（home chat 的侧边栏面板，可 left/right/float 停靠，并有全屏模式）。\n- 右上角按钮通常包括：停靠/布局切换、全屏切换、新建线程(thread)、以及其他会话操作等。\n\n要做的事：\n- 找到面板头部右上角按钮所在的组件，重新整理这些按钮的排列顺序与分组，使其更合理、视觉上更整齐（相关操作归组、主次分明、间距一致）。\n- 保持现有所有功能不变，仅调整布局/顺序/分组与样式。\n- 遵循项目的设计规范（Tailwind tokens、lucide-react 图标 14/16px、ui/ 下的 Button/Tooltip 等基础组件）。\n\n先实际打开该组件确认当前按钮有哪些、当前顺序是什么，再给出更合理的重排方案并实现。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782625836357,
+  "updatedAt": 1782625836357,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
