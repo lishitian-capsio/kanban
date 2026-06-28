@@ -69,6 +69,14 @@
       "titleSource": "auto",
       "createdAt": 1782648145207,
       "updatedAt": 1782648145207
+    },
+    {
+      "id": "64e7235d-6c2b-4575-90f6-e6f766c1de20",
+      "agentId": "claude",
+      "name": "修复 Home Tab 随会话列表滚动",
+      "titleSource": "auto",
+      "createdAt": 1782648248457,
+      "updatedAt": 1782648264562
     }
   ],
   "fullscreenTabs": {
@@ -79,8 +87,9 @@
       "1ff463d8-42d5-4b24-8c47-c2cf3957768d",
       "3434ae10-5e66-420a-8e03-7b70b3d73379",
       "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
-      "24458522-d855-4e3d-a297-9ccda4e2b242"
+      "24458522-d855-4e3d-a297-9ccda4e2b242",
+      "7f175fd0-b7e1-40c0-bf02-638bb0a5e55a"
     ],
-    "activeThreadId": "24458522-d855-4e3d-a297-9ccda4e2b242"
+    "activeThreadId": "7f175fd0-b7e1-40c0-bf02-638bb0a5e55a"
   }
 }
