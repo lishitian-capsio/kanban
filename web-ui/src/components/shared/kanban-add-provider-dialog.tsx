@@ -98,6 +98,12 @@ const VENDOR_PROVIDER_PROFILES: Record<AgentVendorId, VendorProviderProfile> = {
 			"Kiro uses its official login. Choose a model from Kiro's available models; the model is applied to " +
 			"Kiro's agent config. Custom provider endpoints and API keys are not configured here.",
 	},
+	qoder: {
+		usesApiKey: false,
+		note:
+			"Qoder uses its official login (run `qodercli login`, or set QODER_PERSONAL_ACCESS_TOKEN). " +
+			"Models come from your Qoder account; custom provider endpoints and API keys are not configured here.",
+	},
 };
 
 interface HeaderEntry {

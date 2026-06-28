@@ -158,7 +158,9 @@ function buildVendorProviderEnv(
 	if (vendor === "google") {
 		return buildGoogleVendorEnv(config, model);
 	}
-	// kiro (and any future vendor without env projection): no env, model via native config.
+	// kiro/qoder (and any future vendor without env projection): the agent uses its
+	// own official login, so inject no provider env. The model (when set) is applied
+	// by the agent adapter — Kiro via its native agent config, Qoder via `--model`.
 	return { env: {}, usesCustomProvider: false, resolvedModelId: model };
 }
 

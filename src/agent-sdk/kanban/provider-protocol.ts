@@ -67,6 +67,9 @@ export const AGENT_PROTOCOL_COMPATIBILITY: Record<string, ProviderProtocol[]> = 
 	gemini: [], // independent protocol
 	opencode: ["openai", "anthropic"],
 	kiro: ["anthropic"],
+	// Qoder authenticates against its own managed backend (official login); there is
+	// no generic BYOK endpoint, so it has no wire-protocol restriction to satisfy.
+	qoder: [],
 };
 
 /**
@@ -128,7 +131,7 @@ export class IncompatibleAgentProviderError extends Error {
 export type AgentProviderMode = "generic" | "vendor";
 
 /** Vendor identity for a {@link AgentProviderMode} `"vendor"` agent. */
-export type AgentVendorId = "google" | "kiro";
+export type AgentVendorId = "google" | "kiro" | "qoder";
 
 export interface AgentProviderCapability {
 	mode: AgentProviderMode;
@@ -156,6 +159,9 @@ export const AGENT_PROVIDER_CAPABILITY: Record<string, AgentProviderCapability> 
 	pi: { mode: "generic", protocols: ["openai"], officialLogin: false, customEndpoint: true },
 	gemini: { mode: "vendor", protocols: [], officialLogin: true, customEndpoint: false, vendor: "google" },
 	kiro: { mode: "vendor", protocols: [], officialLogin: true, customEndpoint: false, vendor: "kiro" },
+	// Qoder uses its official login (`qodercli login`) against the managed Qoder
+	// backend; like Kiro it exposes no custom endpoint and injects no provider env.
+	qoder: { mode: "vendor", protocols: [], officialLogin: true, customEndpoint: false, vendor: "qoder" },
 };
 
 /**

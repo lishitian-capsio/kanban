@@ -554,6 +554,17 @@ function normalizeCodexSessionId(sessionId: string | null | undefined): string |
 	return trimmed;
 }
 
+// Qoder (a Claude Code-compatible CLI) pins a session with `--session-id <uuid>` and
+// re-attaches with `--resume <uuid>`, both UUID-only — same contract as Claude — so a
+// recorded id is only usable if it still parses as a UUID.
+function normalizeQoderSessionId(sessionId: string | null | undefined): string | null {
+	const trimmed = sessionId?.trim();
+	if (!trimmed || !UUID_PATTERN.test(trimmed)) {
+		return null;
+	}
+	return trimmed;
+}
+
 const claudeAdapter: AgentSessionAdapter = {
 	async prepare(input) {
 		const args = [...input.args];
@@ -1495,6 +1506,168 @@ const kiroAdapter: AgentSessionAdapter = {
 	},
 };
 
+// Qoder CLI (`qodercli`) is a Claude Code-compatible terminal agent: it takes the
+// prompt as a positional arg, bypasses permissions with `--dangerously-skip-permissions`,
+// pins/resumes sessions with `--session-id`/`--resume`/`--continue`, accepts
+// `--append-system-prompt`, and reads native hooks from `~/.qoder/settings.json`
+// (same JSON shape and event names as Claude). So this adapter mirrors `claudeAdapter`.
+// Differences: it authenticates via its own `qodercli login` (vendor/official login →
+// no provider env is ever written here), and it has no `plan` permission-mode, so plan
+// mode is expressed as an instruction prompt (as for Kiro) rather than a CLI flag.
+const qoderAdapter: AgentSessionAdapter = {
+	async prepare(input) {
+		const args = [...input.args];
+		const env: Record<string, string | undefined> = {
+			FORCE_HYPERLINK: "1",
+		};
+		const appendedSystemPrompt = await resolveHomeAgentAppendSystemPrompt(input.taskId);
+
+		if (
+			input.autonomousModeEnabled &&
+			!input.startInPlanMode &&
+			!hasCliOption(args, "--dangerously-skip-permissions")
+		) {
+			args.push("--dangerously-skip-permissions");
+		}
+
+		// Pin a Kanban-owned session id so the conversation can be resumed precisely later.
+		// A recorded id re-attaches via `--resume`; a brand-new task gets a freshly minted
+		// UUID via `--session-id`; the legacy `--continue` "most recent" path is only used
+		// when resuming a session that predates session-id tracking.
+		const recordedSessionId = normalizeQoderSessionId(input.agentSessionId);
+		let assignedAgentSessionId: string | null = null;
+		const hasExplicitSessionFlag =
+			hasCliOption(args, "--session-id") || hasCliOption(args, "--resume") || hasCliOption(args, "--continue");
+		if (!hasExplicitSessionFlag) {
+			if (recordedSessionId) {
+				args.push("--resume", recordedSessionId);
+			} else if (input.resumeFromTrash) {
+				args.push("--continue");
+			} else {
+				assignedAgentSessionId = randomUUID();
+				args.push("--session-id", assignedAgentSessionId);
+			}
+		}
+		const boundAgentSessionId = assignedAgentSessionId ?? recordedSessionId ?? undefined;
+
+		const hooks = resolveHookContext(input);
+		if (hooks) {
+			// Merge hooks directly into ~/.qoder/settings.json — the native config file
+			// Qoder always reads (user-level source), no flag needed. Qoder is a
+			// vendor/official-login agent, so unlike Claude we never write provider env
+			// here; its own login state is authoritative.
+			const qoderSettingsPath = join(homedir(), ".qoder", "settings.json");
+			const qoderConfigDir = join(homedir(), ".qoder");
+
+			let currentSettings: Record<string, unknown> = {};
+			try {
+				const raw = await readFile(qoderSettingsPath, "utf8");
+				currentSettings = JSON.parse(raw) as Record<string, unknown>;
+			} catch {
+				// File doesn't exist or is invalid — start fresh.
+			}
+
+			currentSettings.hooks = {
+				Stop: [{ hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "qoder" }) }] }],
+				SubagentStop: [
+					{ hooks: [{ type: "command", command: buildHookCommand("activity", { source: "qoder" }) }] },
+				],
+				PreToolUse: [
+					{
+						matcher: "*",
+						hooks: [{ type: "command", command: buildHookCommand("activity", { source: "qoder" }) }],
+					},
+				],
+				PermissionRequest: [
+					{
+						matcher: "*",
+						hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "qoder" }) }],
+					},
+				],
+				PostToolUse: [
+					{
+						matcher: "*",
+						hooks: [{ type: "command", command: buildHookCommand("to_in_progress", { source: "qoder" }) }],
+					},
+				],
+				PostToolUseFailure: [
+					{
+						matcher: "*",
+						hooks: [{ type: "command", command: buildHookCommand("to_in_progress", { source: "qoder" }) }],
+					},
+				],
+				Notification: [
+					{
+						matcher: "permission_prompt",
+						hooks: [{ type: "command", command: buildHookCommand("to_review", { source: "qoder" }) }],
+					},
+					{
+						matcher: "*",
+						hooks: [{ type: "command", command: buildHookCommand("activity", { source: "qoder" }) }],
+					},
+				],
+				UserPromptSubmit: [
+					{
+						hooks: [{ type: "command", command: buildHookCommand("to_in_progress", { source: "qoder" }) }],
+					},
+				],
+			};
+
+			if (!existsSync(qoderConfigDir)) {
+				mkdirSync(qoderConfigDir, { recursive: true });
+			}
+			await ensureTextFile(qoderSettingsPath, JSON.stringify(currentSettings, null, 2));
+
+			Object.assign(
+				env,
+				createHookRuntimeEnv({
+					taskId: hooks.taskId,
+					workspaceId: hooks.workspaceId,
+				}),
+			);
+		}
+
+		if (
+			appendedSystemPrompt &&
+			!hasCliOption(args, "--append-system-prompt") &&
+			!hasCliOption(args, "--system-prompt")
+		) {
+			args.push("--append-system-prompt", appendedSystemPrompt);
+		}
+
+		// Qoder exposes its managed models via `--model`; apply a resolved model when one
+		// is selected (vendor/official login leaves it null, so nothing is pushed).
+		const qoderModel = input.model?.trim() || undefined;
+		if (qoderModel && !hasCliOption(args, "--model") && !hasCliOption(args, "-m")) {
+			args.push("--model", qoderModel);
+		}
+
+		// Qoder has no `plan` permission-mode, so express plan mode as an instruction
+		// prompt (as for Kiro) instead of a CLI flag.
+		const trimmedPrompt = input.prompt.trim();
+		const planPrompt = input.startInPlanMode
+			? [
+					"First, inspect the codebase and produce a clear implementation plan only.",
+					"Do not modify files, do not use write tools, and do not implement anything yet.",
+					"After you present the plan, ask for approval before making changes.",
+					trimmedPrompt
+						? `\n\nTask:\n${trimmedPrompt}`
+						: " Ask the user what they want planned if the task is unclear.",
+				].join(" ")
+			: input.prompt;
+
+		const withPromptLaunch = withPrompt(args, planPrompt, "append");
+		return {
+			...withPromptLaunch,
+			env: {
+				...withPromptLaunch.env,
+				...env,
+			},
+			agentSessionId: boundAgentSessionId,
+		};
+	},
+};
+
 const ADAPTERS: Record<RuntimeAgentId, AgentSessionAdapter> = {
 	claude: claudeAdapter,
 	codex: codexAdapter,
@@ -1502,6 +1675,7 @@ const ADAPTERS: Record<RuntimeAgentId, AgentSessionAdapter> = {
 	opencode: opencodeAdapter,
 	droid: droidAdapter,
 	kiro: kiroAdapter,
+	qoder: qoderAdapter,
 };
 
 export async function prepareAgentLaunch(input: AgentAdapterLaunchInput): Promise<PreparedAgentLaunch> {

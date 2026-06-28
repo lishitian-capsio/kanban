@@ -356,6 +356,19 @@ describe("provider-protocol", () => {
 			});
 		});
 
+		it("classifies qoder as a vendor agent (official login, no custom endpoint)", () => {
+			expect(getAgentProviderCapability("qoder")).toMatchObject({
+				mode: "vendor",
+				vendor: "qoder",
+				customEndpoint: false,
+				officialLogin: true,
+			});
+			expect(agentSupportsGenericProvider("qoder")).toBe(false);
+			expect(agentSupportsCustomEndpoint("qoder")).toBe(false);
+			expect(getAgentVendorId("qoder")).toBe("qoder");
+			expect(getAgentProtocols("qoder")).toEqual([]);
+		});
+
 		it("normalizes the agent id (casing/whitespace)", () => {
 			expect(getAgentProviderCapability("  Gemini ")?.vendor).toBe("google");
 			expect(getAgentProviderCapability("KIRO")?.mode).toBe("vendor");
