@@ -6,7 +6,7 @@
 // UI-only collapse back to Home — it never hard-closes the thread (that stays an explicit
 // action in the launcher / thread bar). The strip scrolls horizontally when the tabs overflow.
 import { LayoutGrid, ListChecks, X } from "lucide-react";
-import type { ReactElement } from "react";
+import { useEffect, useRef, type ReactElement } from "react";
 
 import { ThreadAgentBadge } from "@/components/home-agent/thread-agent-badge";
 import { cn } from "@/components/ui/cn";
@@ -41,8 +41,32 @@ export function SessionTabStrip({
 	// The Task tab is a peer of the Home tab; while it is active neither Home nor
 	// any session tab is highlighted.
 	const homeActive = activeThreadId === null && !taskTabActive;
+
+	// Keep the active tab scrolled into view: when many tabs overflow the strip,
+	// activating one (or opening a new one) that sits past the visible range would
+	// otherwise leave the user with no on-strip focus marker. We query the active
+	// tab via a data attribute on the container so a single ref covers the Home,
+	// Task, and session tabs without juggling element-typed refs. `inline/block:
+	// nearest` confines the scroll to the strip (no whole-page jump); the first
+	// paint uses `auto` so restoring persisted tabs doesn't animate.
+	const stripRef = useRef<HTMLDivElement | null>(null);
+	const hasScrolledRef = useRef(false);
+	useEffect(() => {
+		const activeTab = stripRef.current?.querySelector<HTMLElement>('[data-active-tab="true"]');
+		if (!activeTab) {
+			return;
+		}
+		activeTab.scrollIntoView({
+			behavior: hasScrolledRef.current ? "smooth" : "auto",
+			inline: "nearest",
+			block: "nearest",
+		});
+		hasScrolledRef.current = true;
+	}, [activeThreadId, taskTabActive]);
+
 	return (
 		<div
+			ref={stripRef}
 			role="tablist"
 			aria-label="Home agent sessions"
 			className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-b border-border pb-1"
@@ -51,6 +75,7 @@ export function SessionTabStrip({
 				type="button"
 				role="tab"
 				aria-selected={homeActive}
+				data-active-tab={homeActive ? "true" : undefined}
 				onClick={onActivateHome}
 				title="Home — all sessions"
 				className={cn(
@@ -68,6 +93,7 @@ export function SessionTabStrip({
 				type="button"
 				role="tab"
 				aria-selected={taskTabActive}
+				data-active-tab={taskTabActive ? "true" : undefined}
 				onClick={onActivateTask}
 				title="Tasks — active task tracker"
 				className={cn(
@@ -90,6 +116,7 @@ export function SessionTabStrip({
 				return (
 					<div
 						key={threadId}
+						data-active-tab={isActive ? "true" : undefined}
 						className={cn(
 							"flex shrink-0 items-center gap-1.5 rounded-md pl-2.5 pr-1.5 py-1.5 text-[13px] transition-colors",
 							isActive
