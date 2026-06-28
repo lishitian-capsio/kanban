@@ -56,10 +56,10 @@
     {
       "id": "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
       "agentId": "claude",
-      "name": "kanban agent，PI的没有多会话管理",
+      "name": "PI agent multi-session management",
       "titleSource": "auto",
       "createdAt": 1782639849269,
-      "updatedAt": 1782639849269
+      "updatedAt": 1782639913526
     }
   ],
   "fullscreenTabs": {
