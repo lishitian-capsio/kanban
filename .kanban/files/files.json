@@ -39,6 +39,14 @@
       "category": "image",
       "size": 52944,
       "addedAt": 1782372479763
+    },
+    {
+      "id": "278c6",
+      "name": "image.png",
+      "mime": "image/png",
+      "category": "image",
+      "size": 11880,
+      "addedAt": 1782648116147
     }
   ]
 }
