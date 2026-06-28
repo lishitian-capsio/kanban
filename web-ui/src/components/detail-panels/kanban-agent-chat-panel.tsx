@@ -95,6 +95,9 @@ export interface KanbanAgentChatPanelProps {
 	// next-step suggestion chip). The panel stays agnostic about what it is — the owner builds
 	// and wires it; omitted on surfaces that don't use it.
 	suggestionSlot?: ReactElement | null;
+	// When set, the composer shows a Chat/Command voice toggle and routes command-mode
+	// transcripts here instead of the draft. Wired only on the home chat (board control).
+	onVoiceCommand?: (transcript: string) => void;
 	taskKanbanSettings?: RuntimeTaskAgentSettings;
 	taskHasExplicitKanbanSettings?: boolean;
 	onKanbanSettingsSaved?: () => void;
@@ -136,6 +139,7 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 			runtimeConfig = null,
 			modelControlSlot = null,
 			suggestionSlot = null,
+			onVoiceCommand,
 			taskKanbanSettings,
 			taskHasExplicitKanbanSettings = false,
 			onKanbanSettingsSaved,
@@ -464,6 +468,7 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 						attachmentWarningMessage={attachmentWarningMessage}
 						workspaceId={workspaceId}
 						modelControlSlot={modelControlSlot}
+						onVoiceCommand={onVoiceCommand}
 					/>
 				</div>
 				{showActionFooter ? (

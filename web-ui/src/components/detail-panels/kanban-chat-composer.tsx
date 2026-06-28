@@ -73,6 +73,7 @@ export function KanbanChatComposer({
 	attachmentWarningMessage = null,
 	workspaceId = null,
 	modelControlSlot = null,
+	onVoiceCommand,
 }: {
 	taskId: string;
 	draft: string;
@@ -107,7 +108,12 @@ export function KanbanChatComposer({
 	// (e.g. the per-agent profile switcher). The model selector props are then
 	// owned by the slot's renderer.
 	modelControlSlot?: ReactElement | null;
+	// When provided, a Chat/Command voice toggle appears next to the mic. In Command
+	// mode the transcript is routed here (parse → confirm → execute) instead of being
+	// appended to the draft. Omitted (e.g. task chat) → the mic stays plain STT.
+	onVoiceCommand?: (transcript: string) => void;
 }): ReactElement {
+	const [voiceMode, setVoiceMode] = useState<"chat" | "command">("chat");
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 	const mentionSearchRequestIdRef = useRef(0);
 	const slashCommandsRequestIdRef = useRef(0);
@@ -364,6 +370,17 @@ export function KanbanChatComposer({
 		[draft, onDraftChange],
 	);
 
+	const handleMicTranscript = useCallback(
+		(text: string) => {
+			if (onVoiceCommand && voiceMode === "command") {
+				onVoiceCommand(text);
+				return;
+			}
+			handleVoiceTranscript(text);
+		},
+		[handleVoiceTranscript, onVoiceCommand, voiceMode],
+	);
+
 	const handleCompletionSelect = useCallback(
 		(item: InlineCompletionItem) => {
 			const suggestion = completionSuggestions.find((s) => s.id === item.id);
@@ -540,7 +557,52 @@ export function KanbanChatComposer({
 					</div>
 				)}
 				<div className="ml-auto flex shrink-0 items-center gap-2">
-					<VoiceInputButton workspaceId={workspaceId} onTranscript={handleVoiceTranscript} disabled={!canSend} />
+					{onVoiceCommand ? (
+						<Tooltip
+							side="top"
+							content={
+								voiceMode === "command"
+									? "命令模式:语音转看板指令(执行前确认)"
+									: "聊天模式:语音转文字填入输入框"
+							}
+						>
+							<div
+								className="inline-flex h-7 shrink-0 items-center rounded-md border border-border-bright bg-surface-3 p-0.5"
+								role="tablist"
+								aria-label="Voice mode"
+							>
+								<button
+									type="button"
+									role="tab"
+									aria-selected={voiceMode === "chat"}
+									className={cn(
+										"h-5 rounded-sm px-2 text-[11px] font-medium hover:cursor-pointer",
+										voiceMode === "chat"
+											? "bg-surface-1 text-text-primary"
+											: "text-text-secondary hover:bg-surface-4 hover:text-text-primary",
+									)}
+									onClick={() => setVoiceMode("chat")}
+								>
+									聊天
+								</button>
+								<button
+									type="button"
+									role="tab"
+									aria-selected={voiceMode === "command"}
+									className={cn(
+										"h-5 rounded-sm px-2 text-[11px] font-medium hover:cursor-pointer",
+										voiceMode === "command"
+											? "bg-surface-1 text-text-primary"
+											: "text-text-secondary hover:bg-surface-4 hover:text-text-primary",
+									)}
+									onClick={() => setVoiceMode("command")}
+								>
+									命令
+								</button>
+							</div>
+						</Tooltip>
+					) : null}
+					<VoiceInputButton workspaceId={workspaceId} onTranscript={handleMicTranscript} disabled={!canSend} />
 					{showModeToggle ? (
 						<Tooltip
 							side="top"
