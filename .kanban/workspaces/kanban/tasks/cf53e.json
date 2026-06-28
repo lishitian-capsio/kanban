@@ -1,0 +1,19 @@
+{
+  "id": "cf53e",
+  "title": "点击会话卡后将对应会话 tab 自动滚入可视区",
+  "prompt": "体验优化（全屏模式 home 会话标签条）：在 home 点击任意 agent 会话卡片时，当前行为是——若标签条上还没有这个会话 tab，就默认创建并打开；若已存在，就选中对应 tab。问题在于：当会话/标签很多、标签条出现横向滚动时，被选中的 tab 可能位于标签条已滚出可视范围的靠后位置，于是虽然会话被选中、内容也切换了，但用户在标签条上看不到这个 tab 的焦点/高亮，不知道当前选中的是哪个。\n\n## 期望\n点击会话卡（无论是选中已有 tab，还是新建 tab）后，标签条要自动滚动，使被选中的那个 tab 滚入可视区（scrollIntoView），让用户能在标签条上看到当前焦点 tab。新建 tab 的场景同样要保证新 tab 可见。\n\n## 排查方向 / 复用\n- 先阅读全屏会话标签条（home session tab strip）与会话卡网格（Home Tab 启动器）的现有实现，以及「点击会话卡 → 选中/新建对应 tab」的处理路径（参考已实现的全屏 session-tab strip、HomeAgentConversation 提取后的结构，以及会话卡入口逻辑）。\n- 在「选中的 tab 变化 / 新建 tab」时，对该 tab 的 DOM 节点调用 scrollIntoView（建议 behavior: smooth, inline: nearest, block: nearest），或用 ref 计算后设置标签条容器的 scrollLeft。优先用 React ref 指向当前活跃 tab 元素，在 activeTabId 变化的 effect 里滚入可视区。\n- 注意只在标签条容器内横向滚动，不要触发整页滚动；smooth 行为下避免与首次挂载冲突（首帧可用 auto）。\n\n## 约束\n- 不改变现有「无 tab 则创建并打开 / 有 tab 则选中」的语义，只补「滚动到该 tab 使其可见」。\n- 不要回归普通（非全屏）模式与其它标签（Home/Task tab）的行为。\n- 遵循 web-ui 既有技术栈与设计约定，不做无关重构。\n- 确认 web:typecheck 通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782649733713,
+  "updatedAt": 1782649733713,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}
