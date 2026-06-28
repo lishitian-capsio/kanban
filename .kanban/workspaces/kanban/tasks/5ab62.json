@@ -12,8 +12,8 @@
   },
   "baseRef": "main",
   "createdAt": 1782639957976,
-  "updatedAt": 1782657288536,
-  "column": "in_progress",
+  "updatedAt": 1782658199626,
+  "column": "review",
   "rank": "a9",
   "dependsOn": []
 }
