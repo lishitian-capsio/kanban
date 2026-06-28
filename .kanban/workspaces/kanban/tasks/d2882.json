@@ -1,0 +1,19 @@
+{
+  "id": "d2882",
+  "title": "Session card: live activity text (port board getCardSessionActivity)",
+  "prompt": "In web-ui, give the fullscreen Home Tab session card a real-time agent ACTIVITY line, like the board task card has.\n\nTarget file: web-ui/src/components/home-agent/home-session-card.tsx.\n\nReference: web-ui/src/components/board-card.tsx — getCardSessionActivity() (lines ~158-225) and its SESSION_ACTIVITY_COLOR map (lines ~51-59) and the single-line monospace activity row with a colored dot (lines ~797-819). This derives a short live status from the session summary: 'Thinking…', 'Read(file)', tool-call labels, 'Waiting for review', error/credit states, with a color (blue/green/gold/red/orange).\n\nWork:\n1. Extract the board's activity-derivation logic into a SHARED pure helper so both the board card and the session card use one source of truth (avoid duplicating getCardSessionActivity). Put it somewhere both can import (e.g. a shared util/derive module); board-card.tsx should be refactored to consume it with no behavior change.\n2. In the session card, render this live activity line (colored dot + truncated monospace text) driven by the session summary the card already has access to. It should COMPLEMENT, not necessarily replace, the existing history message preview — decide the cleanest layout: show live activity when the session is running/awaiting-review/error, fall back to the last-message preview when idle.\n3. Keep the existing status dot semantics consistent (don't regress home-session-card-derive.ts).\n\nAdd/extend unit tests for the shared helper and the card. Verify board-card tests still pass after the refactor (behavior-preserving extraction).",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782626681830,
+  "updatedAt": 1782626681830,
+  "column": "backlog",
+  "rank": "Zw",
+  "dependsOn": []
+}
