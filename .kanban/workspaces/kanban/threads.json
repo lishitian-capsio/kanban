@@ -44,6 +44,14 @@
       "createdAt": 1782638627244,
       "updatedAt": 1782638646010,
       "pendingNextStep": "Start task b9a9d now"
+    },
+    {
+      "id": "3434ae10-5e66-420a-8e03-7b70b3d73379",
+      "agentId": "claude",
+      "name": "Failed to fetch models: Connection refused at token-plan.cn…",
+      "titleSource": "auto",
+      "createdAt": 1782639747391,
+      "updatedAt": 1782639747391
     }
   ],
   "fullscreenTabs": {
@@ -51,8 +59,9 @@
       "85dc1623-012d-41e1-9691-99faaccc35d9",
       "49d1f6cb-8534-40b9-9847-01b90a2fae0e",
       "ae5cb359-53d3-44b4-aa37-636b852939ab",
-      "1ff463d8-42d5-4b24-8c47-c2cf3957768d"
+      "1ff463d8-42d5-4b24-8c47-c2cf3957768d",
+      "default"
     ],
-    "activeThreadId": "85dc1623-012d-41e1-9691-99faaccc35d9"
+    "activeThreadId": "default"
   }
 }
