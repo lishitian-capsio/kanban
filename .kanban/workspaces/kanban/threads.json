@@ -43,6 +43,28 @@
       "createdAt": 1782569170541,
       "updatedAt": 1782569239227,
       "pendingNextStep": "Write this up as a decision doc, keeping session tabs in the sidebar with the opened conversation expanding to a wider view"
+    },
+    {
+      "id": "c66afd0f-f18d-4987-b069-5395eb50faf1",
+      "agentId": "claude",
+      "name": "看板列移动与 git 回退",
+      "titleSource": "auto",
+      "createdAt": 1782610761677,
+      "updatedAt": 1782610795146
+    },
+    {
+      "id": "05a72f62-f43c-4947-a337-da88f509ea2e",
+      "agentId": "claude",
+      "name": "ok",
+      "titleSource": "auto",
+      "createdAt": 1782610783474,
+      "updatedAt": 1782610783474
     }
-  ]
+  ],
+  "fullscreenTabs": {
+    "openThreadIds": [
+      "c66afd0f-f18d-4987-b069-5395eb50faf1"
+    ],
+    "activeThreadId": "c66afd0f-f18d-4987-b069-5395eb50faf1"
+  }
 }
