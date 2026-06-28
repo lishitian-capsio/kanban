@@ -21,11 +21,11 @@
     {
       "id": "ae5cb359-53d3-44b4-aa37-636b852939ab",
       "agentId": "claude",
-      "name": "全屏模式跟踪任务执行",
+      "name": "全屏新增固定 Task tab",
       "titleSource": "auto",
       "createdAt": 1782631037415,
-      "updatedAt": 1782631067752,
-      "pendingNextStep": "帮我创建第一个任务并启动它"
+      "updatedAt": 1782639513036,
+      "pendingNextStep": "启动任务 e3134"
     },
     {
       "id": "49d1f6cb-8534-40b9-9847-01b90a2fae0e",
