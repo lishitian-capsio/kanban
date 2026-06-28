@@ -1,0 +1,19 @@
+{
+  "id": "df1bc",
+  "title": "Fix xterm ClipboardAddon crash when navigator.clipboard is undefined (non-secure…",
+  "prompt": "Bug: the terminal panel throws an uncaught TypeError whenever a terminal program emits an OSC 52 clipboard-write sequence while the web-ui is served over a non-secure context (plain HTTP over a LAN, i.e. not localhost/HTTPS).\n\nStack trace seen in the browser console:\n  Uncaught TypeError: Cannot read properties of undefined (reading 'writeText')\n    at g.writeText (addon-clipboard.mjs)\n    at j._setOrReportClipboard (addon-clipboard.mjs)\n    at pe._handler (addon-clipboard.mjs)\n    at ... xterm.mjs parse/_innerWrite ...\n    at persistent-terminal-manager.ts:293  (this.terminal.write(data, ...))\n\nRoot cause: web-ui/src/terminal/persistent-terminal-manager.ts loads '@xterm/addon-clipboard' ClipboardAddon unconditionally (around line 190: this.terminal.loadAddon(new ClipboardAddon())). The default clipboard provider calls navigator.clipboard.writeText(), but navigator.clipboard is only defined in a secure context (HTTPS or localhost). Over plain HTTP on a LAN it is undefined, so when incoming terminal output (parsed in this.terminal.write at persistent-terminal-manager.ts:293) contains an OSC 52 sequence, the addon throws and the error surfaces as an uncaught exception. This is the same secure-context class of bug already handled elsewhere for crypto.randomUUID (safeRandomUUID) and getUserMedia (voice input button renders null when unsupported).\n\nWhat to do:\n- Make the clipboard addon resilient when navigator.clipboard is unavailable. Preferred approach: pass a custom IClipboardProvider to ClipboardAddon (its constructor accepts (base64?, provider?)) whose writeText/readText safely no-op (or fall back to a guarded document.execCommand path) when navigator.clipboard is undefined, instead of throwing. Alternatively, skip loading the addon entirely when navigator.clipboard is unavailable. Either way the terminal must keep rendering output without an uncaught exception.\n- Check the @xterm/addon-clipboard types in node_modules to use the SDK-provided IClipboardProvider interface rather than redefining it.\n- Verify the fix by exercising an OSC 52 write (e.g. printf '\\033]52;c;SGVsbG8=\\007') in a terminal session while navigator.clipboard is forced undefined, and confirm no console error and the terminal keeps working. Also confirm clipboard copy still works normally in a real secure context (localhost/HTTPS).\n- Follow the project logging facade (web-ui/src/utils/logger.ts) instead of console.* if you need to log the degraded path.\n\nFiles: primarily web-ui/src/terminal/persistent-terminal-manager.ts (lines ~190 and ~293). There is an existing test web-ui/src/terminal/use-persistent-terminal-session.test.tsx for reference.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782626368665,
+  "updatedAt": 1782626368665,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}
