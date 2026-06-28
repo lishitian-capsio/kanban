@@ -347,6 +347,45 @@ body,
 	background: var(--color-text-tertiary);
 }
 
+/*
+ * Overlay scrollbar: faint/hidden by default, revealed on hover or focus-within,
+ * and never shifts content. `scrollbar-gutter: stable` reserves a constant lane on
+ * platforms with classic scrollbars (Chromium/Linux/Win) so toggling overflow can't
+ * squeeze content; platforms with native overlay scrollbars (macOS) ignore it and
+ * float the bar on top — both cases keep content width fixed. The thumb fades in
+ * rather than appearing/disappearing, so no `overflow: overlay` (deprecated) needed.
+ */
+.scrollbar-overlay {
+	scrollbar-gutter: stable;
+	scrollbar-width: thin;
+	scrollbar-color: transparent transparent;
+}
+
+.scrollbar-overlay:hover,
+.scrollbar-overlay:focus-within {
+	scrollbar-color: var(--color-surface-4) transparent;
+}
+
+.scrollbar-overlay::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.scrollbar-overlay::-webkit-scrollbar-thumb {
+	background: transparent;
+	border-radius: 4px;
+	transition: background 0.16s ease;
+}
+
+.scrollbar-overlay:hover::-webkit-scrollbar-thumb,
+.scrollbar-overlay:focus-within::-webkit-scrollbar-thumb {
+	background: var(--color-surface-4);
+}
+
+.scrollbar-overlay:hover::-webkit-scrollbar-thumb:hover,
+.scrollbar-overlay:focus-within::-webkit-scrollbar-thumb:hover {
+	background: var(--color-text-tertiary);
+}
+
 /* -- Card shell -- */
 
 .kb-board-card-shell {
