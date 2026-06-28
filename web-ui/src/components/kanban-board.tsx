@@ -9,15 +9,17 @@ import {
 	type SnapDragActions,
 } from "@hello-pangea/dnd";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { BoardColumn } from "@/components/board-column";
 import { DependencyOverlay } from "@/components/dependencies/dependency-overlay";
 import { useDependencyLinking } from "@/components/dependencies/use-dependency-linking";
 import type { RuntimeTaskSessionSummary } from "@/runtime/types";
+import { findColumnChangedCardIds } from "@/state/board-card-moves";
 import { canCreateTaskDependency } from "@/state/board-state";
 import { findCardColumnId, type ProgrammaticCardMoveInFlight } from "@/state/drag-rules";
 import type { BoardCard, BoardColumnId, BoardData, BoardDependency } from "@/types";
+import { usePrevious } from "@/utils/react-use";
 
 const BOARD_COLUMN_ORDER: BoardColumnId[] = ["backlog", "in_progress", "review", "trash"];
 
@@ -380,6 +382,16 @@ export function KanbanBoard({
 		programmaticCardMoveInFlight?.toColumnId ??
 		(activeDragTaskId !== null && activeDragSourceColumnId === "backlog" ? "in_progress" : null);
 
+	// A card that changes column re-parents into a different `<Droppable>`, so React
+	// mounts a fresh element for it in the destination column. That fresh element's
+	// `content-visibility: auto` body has no remembered intrinsic size yet, so the
+	// browser skips painting it for one frame — the card visibly flickers (collapses
+	// then pops in) on every column transition. `usePrevious(data)` returns last
+	// render's board, so on the render where the move lands we know exactly which card
+	// just moved and tell it to skip culling for that single first paint.
+	const previousData = usePrevious(data);
+	const recentlyMovedCardIds = useMemo(() => findColumnChangedCardIds(previousData, data), [previousData, data]);
+
 	return (
 		<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 			<DragDropContext
@@ -398,6 +410,7 @@ export function KanbanBoard({
 							key={column.id}
 							column={column}
 							taskSessions={taskSessions}
+							recentlyMovedCardIds={recentlyMovedCardIds}
 							onCreateTask={column.id === "backlog" ? onCreateTask : undefined}
 							onStartTask={column.id === "backlog" ? onStartTask : undefined}
 							onStartAllTasks={column.id === "backlog" ? onStartAllTasks : undefined}

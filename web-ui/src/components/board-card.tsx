@@ -70,6 +70,7 @@ function BoardCardComponent({
 	card,
 	index,
 	columnId,
+	suppressCulling = false,
 	sessionSummary,
 	selected = false,
 	onActivate,
@@ -95,6 +96,7 @@ function BoardCardComponent({
 	card: BoardCardModel;
 	index: number;
 	columnId: BoardColumnId;
+	suppressCulling?: boolean;
 	sessionSummary?: RuntimeTaskSessionSummary;
 	selected?: boolean;
 	onActivate?: (card: BoardCardModel) => void;
@@ -423,6 +425,11 @@ function BoardCardComponent({
 								isDependencySource && "kb-board-card-dependency-source",
 								isDependencyTarget && "kb-board-card-dependency-target",
 							)}
+							// A card that just changed column is a freshly-mounted element with no
+							// remembered intrinsic size, so `content-visibility: auto` would skip
+							// painting it for one frame (a visible flicker). Render it eagerly for that
+							// first paint; culling re-enables on the next render once it has painted.
+							style={suppressCulling ? { contentVisibility: "visible" } : undefined}
 						>
 							<div className="flex items-center gap-2" style={{ minHeight: 24 }}>
 								{statusMarker ? <div className="inline-flex items-center">{statusMarker}</div> : null}

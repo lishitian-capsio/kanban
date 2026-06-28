@@ -10,6 +10,7 @@ import {
 	useLocalStorage as useReactUseLocalStorage,
 	useMeasure as useReactUseMeasure,
 	useMedia as useReactUseMedia,
+	usePrevious as useReactUsePrevious,
 	useTitle as useReactUseTitle,
 	useUnmount as useReactUseUnmount,
 } from "react-use";
@@ -136,6 +137,10 @@ export function useUnmount(fn: () => void): void {
 
 export function useMedia(query: string, defaultState?: boolean): boolean {
 	return useReactUseMedia(query, defaultState);
+}
+
+export function usePrevious<T>(value: T): T | undefined {
+	return useReactUsePrevious(value);
 }
 
 interface DropAreaCallbacks {

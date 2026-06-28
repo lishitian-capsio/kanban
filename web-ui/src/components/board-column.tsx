@@ -16,6 +16,7 @@ import type { BoardCard as BoardCardModel, BoardColumnId, BoardColumn as BoardCo
 export function BoardColumn({
 	column,
 	taskSessions,
+	recentlyMovedCardIds,
 	onCreateTask,
 	onStartTask,
 	onStartAllTasks,
@@ -46,6 +47,7 @@ export function BoardColumn({
 }: {
 	column: BoardColumnModel;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
+	recentlyMovedCardIds: ReadonlySet<string>;
 	onCreateTask?: () => void;
 	onStartTask?: (taskId: string) => void;
 	onStartAllTasks?: () => void;
@@ -204,6 +206,7 @@ export function BoardColumn({
 											card={card}
 											index={draggableIndex}
 											columnId={column.id}
+											suppressCulling={recentlyMovedCardIds.has(card.id)}
 											sessionSummary={taskSessions[card.id]}
 											onStart={onStartTask}
 											onMoveToTrash={onMoveToTrashTask}
