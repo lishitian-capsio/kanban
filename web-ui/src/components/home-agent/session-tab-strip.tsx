@@ -5,7 +5,7 @@
 // open thread, which the user switches between horizontally. Closing a session tab is a
 // UI-only collapse back to Home — it never hard-closes the thread (that stays an explicit
 // action in the launcher / thread bar). The strip scrolls horizontally when the tabs overflow.
-import { LayoutGrid, ListChecks, X } from "lucide-react";
+import { Bot, LayoutGrid, ListChecks, X } from "lucide-react";
 import { useEffect, useRef, type ReactElement } from "react";
 
 import { ThreadAgentBadge } from "@/components/home-agent/thread-agent-badge";
@@ -20,8 +20,11 @@ interface SessionTabStripProps {
 	activeThreadId: string | null;
 	/** Whether the fixed Task tab (active-task tracker) is the active tab. */
 	taskTabActive: boolean;
+	/** Whether the fixed Pi tab (native-agent multi-session workspace) is the active tab. */
+	piTabActive: boolean;
 	agents: RuntimeAgentDefinition[];
 	onActivateHome: () => void;
+	onActivatePi: () => void;
 	onActivateTask: () => void;
 	onActivateTab: (threadId: string) => void;
 	onCloseTab: (threadId: string) => void;
@@ -32,21 +35,23 @@ export function SessionTabStrip({
 	openThreadIds,
 	activeThreadId,
 	taskTabActive,
+	piTabActive,
 	agents,
 	onActivateHome,
+	onActivatePi,
 	onActivateTask,
 	onActivateTab,
 	onCloseTab,
 }: SessionTabStripProps): ReactElement {
-	// The Task tab is a peer of the Home tab; while it is active neither Home nor
-	// any session tab is highlighted.
-	const homeActive = activeThreadId === null && !taskTabActive;
+	// The Pi and Task tabs are peers of the Home tab; while either is active neither Home
+	// nor any session tab is highlighted.
+	const homeActive = activeThreadId === null && !taskTabActive && !piTabActive;
 
 	// Keep the active tab scrolled into view: when many tabs overflow the strip,
 	// activating one (or opening a new one) that sits past the visible range would
 	// otherwise leave the user with no on-strip focus marker. We query the active
 	// tab via a data attribute on the container so a single ref covers the Home,
-	// Task, and session tabs without juggling element-typed refs. `inline/block:
+	// Pi, Task, and session tabs without juggling element-typed refs. `inline/block:
 	// nearest` confines the scroll to the strip (no whole-page jump); the first
 	// paint uses `auto` so restoring persisted tabs doesn't animate.
 	const stripRef = useRef<HTMLDivElement | null>(null);
@@ -62,7 +67,7 @@ export function SessionTabStrip({
 			block: "nearest",
 		});
 		hasScrolledRef.current = true;
-	}, [activeThreadId, taskTabActive]);
+	}, [activeThreadId, taskTabActive, piTabActive]);
 
 	return (
 		<div
@@ -92,6 +97,24 @@ export function SessionTabStrip({
 			<button
 				type="button"
 				role="tab"
+				aria-selected={piTabActive}
+				data-active-tab={piTabActive ? "true" : undefined}
+				onClick={onActivatePi}
+				title="Pi — native agent sessions"
+				className={cn(
+					"flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] outline-none transition-colors focus-visible:border-border-focus",
+					piTabActive
+						? "bg-surface-2 font-medium text-text-primary"
+						: "text-text-secondary hover:bg-surface-2 hover:text-text-primary",
+				)}
+			>
+				<Bot size={14} className="shrink-0" aria-hidden="true" />
+				<span>Pi</span>
+			</button>
+
+			<button
+				type="button"
+				role="tab"
 				aria-selected={taskTabActive}
 				data-active-tab={taskTabActive ? "true" : undefined}
 				onClick={onActivateTask}
@@ -112,7 +135,7 @@ export function SessionTabStrip({
 				if (!thread) {
 					return null;
 				}
-				const isActive = threadId === activeThreadId && !taskTabActive;
+				const isActive = threadId === activeThreadId && !taskTabActive && !piTabActive;
 				return (
 					<div
 						key={threadId}

@@ -86,11 +86,16 @@ describe("HomeChatWorkspace", () => {
 	let container: HTMLDivElement;
 	let root: Root;
 	let previousActEnvironment: boolean | undefined;
+	let previousScrollIntoView: typeof Element.prototype.scrollIntoView | undefined;
 
 	beforeEach(() => {
 		previousActEnvironment = (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
 			.IS_REACT_ACT_ENVIRONMENT;
 		(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+		// jsdom does not implement scrollIntoView; the strip's active-tab auto-scroll effect
+		// calls it on mount/tab-switch. Stub it so the effect is a no-op in tests.
+		previousScrollIntoView = Element.prototype.scrollIntoView;
+		Element.prototype.scrollIntoView = vi.fn();
 		container = document.createElement("div");
 		document.body.appendChild(container);
 		root = createRoot(container);
@@ -101,6 +106,7 @@ describe("HomeChatWorkspace", () => {
 			root.unmount();
 		});
 		container.remove();
+		Element.prototype.scrollIntoView = previousScrollIntoView ?? vi.fn();
 		(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
 			previousActEnvironment;
 	});
@@ -300,6 +306,73 @@ describe("HomeChatWorkspace", () => {
 		// The open session tab is in the strip and selected.
 		const activeTab = container.querySelector('[role="tab"][aria-selected="true"]');
 		expect(activeTab?.textContent).toContain("Refactor auth");
+	});
+
+	it("opens the Pi tab as a pi-scoped session workspace (base active, non-pi threads excluded)", () => {
+		const threads = [
+			// The workspace-global default is claude here; the Pi tab still pins its own pi base.
+			makeThread(DEFAULT_HOME_THREAD_ID, "Default", "claude", true),
+			makeThread("pi-1", "Fix tests", "pi", false),
+			makeThread("claude-1", "Other agent", "claude", false),
+		];
+		act(() => {
+			root.render(
+				<HomeChatWorkspace
+					currentProjectId={WORKSPACE_ID}
+					runtimeProjectConfig={RUNTIME_CONFIG}
+					homeThreads={makeHomeThreads(threads)}
+					taskSessions={{}}
+					workspaceGit={null}
+					onOpenTask={() => {}}
+				/>,
+			);
+		});
+		const piTab = [...container.querySelectorAll('[role="tab"]')].find(
+			(tab) => tab.textContent === "Pi",
+		) as HTMLButtonElement;
+		act(() => {
+			piTab.click();
+		});
+		expect(piTab.getAttribute("aria-selected")).toBe("true");
+		// The base pi session is active in the conversation (legacy default thread id).
+		expect(container.querySelector('[data-testid="conversation"]')?.textContent).toBe(
+			`conversation:${DEFAULT_HOME_THREAD_ID}`,
+		);
+		// The rail lists pi sessions only — the created pi thread, never the claude one.
+		expect(container.textContent).toContain("Fix tests");
+		expect(container.textContent).not.toContain("Other agent");
+		// The Home launcher add-card is gone while the Pi tab is active.
+		expect(container.querySelector('[aria-label="New chat session"]')).toBeNull();
+	});
+
+	it("creates a blank pi session from the Pi tab rail (name-only, no kickoff prompt)", async () => {
+		const createThread = vi.fn().mockResolvedValue(null);
+		const threads = [makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)];
+		act(() => {
+			root.render(
+				<HomeChatWorkspace
+					currentProjectId={WORKSPACE_ID}
+					runtimeProjectConfig={RUNTIME_CONFIG}
+					homeThreads={makeHomeThreads(threads, { createThread })}
+					taskSessions={{}}
+					workspaceGit={null}
+					onOpenTask={() => {}}
+				/>,
+			);
+		});
+		const piTab = [...container.querySelectorAll('[role="tab"]')].find(
+			(tab) => tab.textContent === "Pi",
+		) as HTMLButtonElement;
+		act(() => {
+			piTab.click();
+		});
+		const newButton = [...container.querySelectorAll("button")].find(
+			(button) => button.textContent === "New session",
+		) as HTMLButtonElement;
+		await act(async () => {
+			newButton.click();
+		});
+		expect(createThread).toHaveBeenCalledWith({ name: "New session", agentId: "pi" });
 	});
 
 	it("renders nothing without a project or config", () => {

@@ -55,8 +55,12 @@ export interface UseHomeThreadsResult {
 	activeThread: HomeThread | null;
 	activeThreadId: string;
 	setActiveThread: (threadId: string) => void;
-	/** Create a thread (and kick off its first turn from `description`). Resolves to the new thread id, or null on failure. */
-	createThread: (input: { description: string; agentId: RuntimeAgentId }) => Promise<string | null>;
+	/**
+	 * Create a thread. With a `description` it kicks off the thread's first turn (and seeds a
+	 * provisional `auto` title); with only a `name` it creates a blank session (no kickoff) — the
+	 * Pi tab's "New session" uses the latter. Resolves to the new thread id, or null on failure.
+	 */
+	createThread: (input: { description?: string; name?: string; agentId: RuntimeAgentId }) => Promise<string | null>;
 	renameThread: (threadId: string, name: string) => Promise<void>;
 	closeThread: (threadId: string) => Promise<void>;
 	/**
@@ -224,15 +228,22 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 	);
 
 	const createThread = useCallback(
-		async ({ description, agentId }: { description: string; agentId: RuntimeAgentId }): Promise<string | null> => {
+		async ({
+			description,
+			name,
+			agentId,
+		}: { description?: string; name?: string; agentId: RuntimeAgentId }): Promise<string | null> => {
 			if (!currentProjectId) {
 				return null;
 			}
 			try {
 				// `description` becomes the thread's kickoff prompt and the seed for a provisional
-				// title; the thread's own agent self-titles it shortly after its first turn.
+				// title; the thread's own agent self-titles it shortly after its first turn. A
+				// `name`-only create makes a blank session (no kickoff) — the backend requires at
+				// least one of the two.
 				const response = await getRuntimeTrpcClient(currentProjectId).runtime.createHomeThread.mutate({
 					description,
+					name,
 					agentId,
 				});
 				if (!response.ok || !response.thread) {
