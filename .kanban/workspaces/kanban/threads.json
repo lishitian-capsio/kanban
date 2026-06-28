@@ -19,15 +19,6 @@
       "pendingNextStep": "Create linked Kanban tasks for #1 (card actions menu: rename/close) and #3 (error retry + actionable review state)"
     },
     {
-      "id": "15106867-d647-4337-8855-ce20d4f96d71",
-      "agentId": "claude",
-      "name": "修复全屏新建会话关闭所有tab",
-      "titleSource": "auto",
-      "createdAt": 1782625940583,
-      "updatedAt": 1782625959678,
-      "pendingNextStep": "开始处理任务 701e2"
-    },
-    {
       "id": "fa897148-67f9-4e94-ba4f-d938d00e33db",
       "agentId": "claude",
       "name": "Fix xterm clipboard crash (non-secure ctx)",
@@ -41,9 +32,8 @@
     "openThreadIds": [
       "24458522-d855-4e3d-a297-9ccda4e2b242",
       "85dc1623-012d-41e1-9691-99faaccc35d9",
-      "fa897148-67f9-4e94-ba4f-d938d00e33db",
-      "15106867-d647-4337-8855-ce20d4f96d71"
+      "fa897148-67f9-4e94-ba4f-d938d00e33db"
     ],
-    "activeThreadId": "24458522-d855-4e3d-a297-9ccda4e2b242"
+    "activeThreadId": null
   }
 }
