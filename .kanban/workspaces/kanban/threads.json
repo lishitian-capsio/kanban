@@ -26,14 +26,24 @@
       "createdAt": 1782626300759,
       "updatedAt": 1782626355310,
       "pendingNextStep": "Start task df1bc now"
+    },
+    {
+      "id": "ae5cb359-53d3-44b4-aa37-636b852939ab",
+      "agentId": "claude",
+      "name": "全屏模式跟踪任务执行",
+      "titleSource": "auto",
+      "createdAt": 1782631037415,
+      "updatedAt": 1782631067752,
+      "pendingNextStep": "帮我创建第一个任务并启动它"
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
       "24458522-d855-4e3d-a297-9ccda4e2b242",
       "85dc1623-012d-41e1-9691-99faaccc35d9",
-      "fa897148-67f9-4e94-ba4f-d938d00e33db"
+      "fa897148-67f9-4e94-ba4f-d938d00e33db",
+      "ae5cb359-53d3-44b4-aa37-636b852939ab"
     ],
-    "activeThreadId": null
+    "activeThreadId": "ae5cb359-53d3-44b4-aa37-636b852939ab"
   }
 }
