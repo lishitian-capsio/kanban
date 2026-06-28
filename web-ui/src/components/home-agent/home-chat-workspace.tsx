@@ -15,13 +15,14 @@
 // as the compact sidebar, so a session never tears down when switching presentations.
 import { createHomeAgentSessionId } from "@runtime-home-agent-session";
 import type { ReactElement } from "react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { HomeAddSessionCard } from "@/components/home-agent/home-add-session-card";
 import { HomeAgentConversation } from "@/components/home-agent/home-agent-conversation";
 import { HomeSessionCard } from "@/components/home-agent/home-session-card";
+import { HomeThreadCloseDialog } from "@/components/home-agent/home-thread-close-dialog";
 import { SessionTabStrip } from "@/components/home-agent/session-tab-strip";
-import type { UseHomeThreadsResult } from "@/hooks/use-home-threads";
+import type { HomeThread, UseHomeThreadsResult } from "@/hooks/use-home-threads";
 import { useRefreshHomeThreadsOnSessionContextBump } from "@/hooks/use-refresh-home-threads-on-context-bump";
 import type { RuntimeConfigResponse, RuntimeGitRepositoryInfo, RuntimeTaskSessionSummary } from "@/runtime/types";
 
@@ -42,6 +43,10 @@ export function HomeChatWorkspace({
 }: HomeChatWorkspaceProps): ReactElement | null {
 	// Keep agent-set titles fresh in the launcher cards + tab strip (mirrors the compact panel).
 	useRefreshHomeThreadsOnSessionContextBump(homeThreads.refresh);
+
+	// Hard-delete a session (stop the agent + delete its transcript). Reuses the exact compact
+	// flow: a confirmation dialog → homeThreads.closeThread, which also prunes any open tab.
+	const [closeTarget, setCloseTarget] = useState<HomeThread | null>(null);
 
 	// Continuity rule, docked → fullscreen: restore the persisted tab set, seeding the current
 	// docked conversation as the first tab when none is persisted. Run once on mount (= entering
@@ -122,6 +127,7 @@ export function HomeChatWorkspace({
 									summary={taskSessions[taskId] ?? null}
 									currentProjectId={currentProjectId}
 									onOpenSession={homeThreads.openSessionTab}
+									onDeleteSession={setCloseTarget}
 								/>
 							))}
 							<HomeAddSessionCard
@@ -144,6 +150,16 @@ export function HomeChatWorkspace({
 					/>
 				</div>
 			)}
+
+			<HomeThreadCloseDialog
+				thread={closeTarget}
+				onOpenChange={(open) => {
+					if (!open) {
+						setCloseTarget(null);
+					}
+				}}
+				onClose={homeThreads.closeThread}
+			/>
 		</div>
 	);
 }

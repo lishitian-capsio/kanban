@@ -159,6 +159,57 @@ describe("HomeChatWorkspace", () => {
 		expect(openSessionTab).toHaveBeenCalledWith(DEFAULT_HOME_THREAD_ID);
 	});
 
+	it("hard-deletes a non-default session from its launcher card (same closeThread path as compact)", () => {
+		const closeThread = vi.fn();
+		const threads = [
+			makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true),
+			makeThread("thread-2", "Refactor auth", "claude", false),
+		];
+		act(() => {
+			root.render(
+				<HomeChatWorkspace
+					currentProjectId={WORKSPACE_ID}
+					runtimeProjectConfig={RUNTIME_CONFIG}
+					homeThreads={makeHomeThreads(threads, { closeThread })}
+					taskSessions={{}}
+					workspaceGit={null}
+				/>,
+			);
+		});
+		const deleteButton = container.querySelector(
+			'[aria-label="Delete Refactor auth session"]',
+		) as HTMLButtonElement | null;
+		expect(deleteButton).not.toBeNull();
+		act(() => {
+			deleteButton?.click();
+		});
+		// The destructive-confirm dialog (Radix portal → document.body) mirrors the compact close flow.
+		const confirm = [...document.querySelectorAll("button")].find(
+			(button) => button.textContent === "Close thread",
+		) as HTMLButtonElement | undefined;
+		expect(confirm).not.toBeUndefined();
+		act(() => {
+			confirm?.click();
+		});
+		expect(closeThread).toHaveBeenCalledWith("thread-2");
+	});
+
+	it("does not render a delete affordance on the default session card", () => {
+		const threads = [makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)];
+		act(() => {
+			root.render(
+				<HomeChatWorkspace
+					currentProjectId={WORKSPACE_ID}
+					runtimeProjectConfig={RUNTIME_CONFIG}
+					homeThreads={makeHomeThreads(threads)}
+					taskSessions={{}}
+					workspaceGit={null}
+				/>,
+			);
+		});
+		expect(container.querySelector('[aria-label="Delete Default session"]')).toBeNull();
+	});
+
 	it("reconciles the persisted tab set once on mount (entering fullscreen)", () => {
 		const reconcileFullscreenTabsOnEnter = vi.fn();
 		act(() => {

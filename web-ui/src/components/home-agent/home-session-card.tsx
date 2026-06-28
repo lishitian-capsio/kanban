@@ -6,7 +6,7 @@
 // session/transcript state (see use-home-session-card / home-session-card-derive),
 // adding no data model. Clicking it hands the thread id to `onOpenSession`; the
 // session-tab wiring that consumes it lands in a follow-up task.
-import { Bot } from "lucide-react";
+import { Bot, X } from "lucide-react";
 import { useMemo } from "react";
 
 import {
@@ -26,6 +26,11 @@ interface HomeSessionCardProps {
 	summary: RuntimeTaskSessionSummary | null;
 	currentProjectId: string;
 	onOpenSession: (threadId: string) => void;
+	/**
+	 * Hard-delete the session (stop the agent + delete its transcript) via the shared
+	 * close-thread flow. The default thread is not deletable, so this is omitted/inert for it.
+	 */
+	onDeleteSession: (thread: HomeThread) => void;
 }
 
 export function HomeSessionCard({
@@ -35,6 +40,7 @@ export function HomeSessionCard({
 	summary,
 	currentProjectId,
 	onOpenSession,
+	onDeleteSession,
 }: HomeSessionCardProps): React.ReactElement {
 	const { preview, isLoadingHistory } = useHomeSessionCard(currentProjectId, taskId);
 	const status = useMemo(() => deriveHomeSessionCardStatus(summary), [summary]);
@@ -45,45 +51,63 @@ export function HomeSessionCard({
 	const timeAgo = formatHomeSessionCardTimeAgo(lastActivityAt, Date.now());
 
 	return (
-		<button
-			type="button"
-			onClick={() => onOpenSession(thread.id)}
-			className="group flex h-40 cursor-pointer flex-col gap-2 rounded-lg border border-border bg-surface-2 p-3 text-left transition-colors hover:border-border-bright hover:bg-surface-3 focus:outline-none focus-visible:border-border-focus"
-			aria-label={`Open ${thread.name} session`}
-		>
-			<div className="flex items-center gap-2">
-				<span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-surface-1 text-text-secondary">
-					<Bot size={16} aria-hidden="true" />
-				</span>
-				<span className="min-w-0 flex-1 truncate text-[13px] font-medium text-text-primary">{thread.name}</span>
-				<span
-					className={cn("size-2 shrink-0 rounded-full", status.dotClassName, status.pulse && "animate-pulse")}
-					role="img"
-					aria-label={status.label}
-					title={status.label}
-				/>
-			</div>
+		<div className="group relative">
+			<button
+				type="button"
+				onClick={() => onOpenSession(thread.id)}
+				className="flex h-40 w-full cursor-pointer flex-col gap-2 rounded-lg border border-border bg-surface-2 p-3 text-left transition-colors hover:border-border-bright hover:bg-surface-3 focus:outline-none focus-visible:border-border-focus"
+				aria-label={`Open ${thread.name} session`}
+			>
+				<div className="flex items-center gap-2">
+					<span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-surface-1 text-text-secondary">
+						<Bot size={16} aria-hidden="true" />
+					</span>
+					<span className="min-w-0 flex-1 truncate text-[13px] font-medium text-text-primary">{thread.name}</span>
+					<span
+						className={cn("size-2 shrink-0 rounded-full", status.dotClassName, status.pulse && "animate-pulse")}
+						role="img"
+						aria-label={status.label}
+						title={status.label}
+					/>
+				</div>
 
-			<div className="min-h-0 flex-1 overflow-hidden text-[12px] leading-snug">
-				{isLoadingHistory && !preview ? (
-					<div className="flex flex-col gap-1.5 pt-0.5" aria-hidden="true">
-						<span className="h-2.5 w-full animate-pulse rounded-full bg-surface-4" />
-						<span className="h-2.5 w-4/5 animate-pulse rounded-full bg-surface-4" />
-					</div>
-				) : preview ? (
-					<p className="line-clamp-3 text-text-secondary">
-						<span className="text-text-tertiary">{preview.role === "user" ? "You: " : "Agent: "}</span>
-						{preview.text}
-					</p>
-				) : (
-					<p className="text-text-tertiary italic">No messages yet</p>
-				)}
-			</div>
+				<div className="min-h-0 flex-1 overflow-hidden text-[12px] leading-snug">
+					{isLoadingHistory && !preview ? (
+						<div className="flex flex-col gap-1.5 pt-0.5" aria-hidden="true">
+							<span className="h-2.5 w-full animate-pulse rounded-full bg-surface-4" />
+							<span className="h-2.5 w-4/5 animate-pulse rounded-full bg-surface-4" />
+						</div>
+					) : preview ? (
+						<p className="line-clamp-3 text-text-secondary">
+							<span className="text-text-tertiary">{preview.role === "user" ? "You: " : "Agent: "}</span>
+							{preview.text}
+						</p>
+					) : (
+						<p className="text-text-tertiary italic">No messages yet</p>
+					)}
+				</div>
 
-			<div className="flex items-center justify-between gap-2">
-				<ThreadAgentBadge agents={agents} agentId={thread.agentId} />
-				{timeAgo ? <span className="shrink-0 text-[11px] text-text-tertiary">{timeAgo}</span> : null}
-			</div>
-		</button>
+				<div className="flex items-center justify-between gap-2">
+					<ThreadAgentBadge agents={agents} agentId={thread.agentId} />
+					{timeAgo ? <span className="shrink-0 text-[11px] text-text-tertiary">{timeAgo}</span> : null}
+				</div>
+			</button>
+			{thread.isDefault ? null : (
+				// Sibling (not nested) of the card button to keep the HTML valid; revealed on
+				// card hover / when focused. Routes through the same hard-close flow as compact.
+				<button
+					type="button"
+					aria-label={`Delete ${thread.name} session`}
+					title="Delete session"
+					onClick={(event) => {
+						event.stopPropagation();
+						onDeleteSession(thread);
+					}}
+					className="absolute right-2 top-2 flex cursor-pointer items-center rounded-sm bg-surface-1 p-1 text-text-tertiary opacity-0 transition-opacity hover:bg-surface-4 hover:text-status-red focus:opacity-100 focus:outline-none focus-visible:border-border-focus group-hover:opacity-100"
+				>
+					<X size={14} />
+				</button>
+			)}
+		</div>
 	);
 }
