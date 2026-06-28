@@ -1,0 +1,19 @@
+{
+  "id": "0572a",
+  "title": "Session card: prominent error/running marker + 'open' highlight",
+  "prompt": "In web-ui, polish the fullscreen Home Tab session card's state indicators to match the board task card.\n\nTarget file: web-ui/src/components/home-agent/home-session-card.tsx (and home-session-card-derive.ts if needed). NOTE: this builds on top of the prior session-card tasks that already added inline rename/actions and the live activity line — work from current main and integrate cleanly.\n\nReference: web-ui/src/components/board-card.tsx — its header status marker (lines ~426-432: a Spinner while running, a red AlertCircle on failure, an orange AlertTriangle for credit-limit/out-of-credits) and its selected highlight via data-selected → accent border (globals.css ~362-365).\n\nWork:\n1. Replace the session card's plain colored status dot (or augment it) with the board-style marker: a real Spinner when running, a red AlertCircle icon when failed/interrupted, orange AlertTriangle for credit-limit/out-of-credits. Reuse the same icons/Spinner component and status tokens the board card uses.\n2. Add an 'already open' highlight: when a session is currently open in a fullscreen tab, give its grid card an accent border (mirror board-card's data-selected styling). The fullscreen tab state (open tab ids / active tab) is in home-fullscreen-tabs.ts and home-chat-workspace.tsx — thread that 'is this thread open' info down to the card and apply the highlight.\n\nKeep accessibility (aria-label/title on the marker). Add/extend the home-session-card tests for the new marker states and the open-highlight.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782626698478,
+  "updatedAt": 1782626698478,
+  "column": "backlog",
+  "rank": "Zv",
+  "dependsOn": []
+}
