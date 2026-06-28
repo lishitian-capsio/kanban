@@ -1,0 +1,19 @@
+{
+  "id": "e4f06",
+  "title": "Session card: inline rename + hover action buttons (close/restart)",
+  "prompt": "In web-ui, enhance the fullscreen Home Tab session card so it gains the same affordances the board task card already has.\n\nTarget file: web-ui/src/components/home-agent/home-session-card.tsx (currently a single onClick→onOpenSession button at lines ~47-89).\n\nReference implementation to mirror (do NOT copy blindly — match its patterns/styling/tokens): web-ui/src/components/board-card.tsx — its hover-revealed pencil inline-title-edit (lines ~598-646) and its per-context action buttons (lines ~648-706).\n\nAdd to the session card, following the board-card paradigm (explicit hover-revealed icon buttons, NO new dropdown-menu component):\n1. Inline RENAME: a hover-revealed pencil (✏️) icon that turns the thread name into an input; Enter/blur submits, Escape cancels. Wire to the existing home-thread rename path (thread registry rename — find the tRPC/runtime call the compact HomeThreadBar already uses for rename and reuse it).\n2. A hover-revealed CLOSE (✕) action that closes/deletes the thread via the existing HomeThreadStore hard-close path (same call the HomeThreadBar uses to close a thread). Confirm with an AlertDialog before closing (destructive — it stops the process and deletes the transcript).\n3. A hover-revealed RESTART action ONLY when the session is in an error state (failed/interrupted) — re-launch the thread's agent session.\n\nConstraints: the card is itself a <button>; nested interactive controls must stopPropagation so clicking an action does NOT also trigger onOpenSession. Reuse design tokens and the opacity-0→group-hover:opacity-100 reveal pattern from board-card. Keep the card MVP layout (status dot, name, preview, agent badge, time) intact. Add/extend tests alongside the existing home-session-card tests.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782626674002,
+  "updatedAt": 1782626674002,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}
