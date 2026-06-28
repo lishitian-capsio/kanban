@@ -1,7 +1,7 @@
 {
   "id": "5ab62",
-  "title": "pi 会话 tab 的会话管理补齐",
-  "prompt": "目标：补齐 **pi（native）agent 在自己的会话 tab 上的会话管理**——即 pi 的会话标签 / 会话卡上的会话管理操作（重命名、关闭、重启等 affordance），当前在 pi 上不可用 / 不完整 / 行为不对，需对齐 CLI agent（如 claude）。范围聚焦 pi 自己的（default home）会话，不是多 thread。\n\n## 任务（先诊断，后修）\n进入 home agent 为 pi 的场景，检查 pi 会话 tab / 会话卡上的会话管理是否齐全、是否走对 agent 与 id，定位缺失/错误并修复，使其与 CLI agent 的会话 tab 管理一致：\n- 会话 tab / 会话卡的管理 affordance：内联重命名、确认关闭（硬关闭）、错误态重启等（参考已实现的会话卡 affordance：内联 rename / confirm-close / error-restart）。\n- 全屏会话标签条（home session tab strip）与会话卡入口对 pi 是否正常呈现、可操作；tab-strip 的 X 是软收起、launcher 卡上的 ✕ 是硬关闭（closeThread），确认这两类语义对 pi 都正确。\n- 操作是否路由到正确的 agent / 会话 id（不要走错成 claude 或走错 id）。\n\n## 已知排查 seam\n- 前端会话卡 / 会话标签组件与其管理 affordance（内联 rename、confirm-close、error-restart；软收起 vs 硬关闭 closeThread）。\n- 合成 home session id：src/core/home-agent-session.ts 三段式（default）id 与 parseHomeAgentSessionId 路由；home agent 为 pi 时 id 生成/解析与会话清理路由（runtime-server.ts getScopedHomeThreadStore / onCloseSession 经 parseHomeAgentSessionId）要落到 pi。\n- pi 会话服务 InMemoryPiTaskSessionService 的 closeTaskSession 硬关闭（停进程 / 丢内存条目 / journal.clear）与 transcript journal 是否对 default home 会话生效；与 TerminalSessionManager 逐项对比。\n- append-system-prompt.ts 的 agentId 查找用 parser，而非 parts.at(-1)。\n\n## 约束 / 注意\n- 向后兼容载重：default 会话用三段式旧 id，不能改动；已有 pi transcript / sessions.json / resume 不能失效。\n- 遵循 per-agent 独立 transcript 约定（按 agentId 区分，不做跨 agent 会话共享）。\n- pi service 在 vitest 下无法 import（agent-sdk 在 import 期触碰 Bun.env），pi 持久化用 Bun round-trip 覆盖，不要硬塞 vitest。\n- 不做与本功能无关的重构；多 thread 不在本任务内。完成后确认相关 typecheck（含 web:typecheck）与测试通过。",
+  "title": "pi 默认 tab 内部的多会话管理",
+  "prompt": "目标：在 home 全屏里 pi（native agent）那个**默认 tab 内部**，提供 pi 自己的**多会话管理**——即在这一个 pi tab 之内，能列出 / 切换 / 新建 / 关闭 pi 自己的多个会话。注意：是**嵌在 pi 这个 tab 内部**的多会话管理，**不是**工作区级、横跨各 agent 的 home thread bar。\n\n## 背景 / 现有结构（先读，复用，别新造）\n- home 全屏当前有：Home tab（会话卡启动器）、若干 home 会话标签条（home session tab strip，提交 ac06e，已抽出 HomeAgentConversation 紧凑+全屏共用）、固定 Tasks tab（提交 e3134）。\n- 工作区级多 thread（HomeThreadBar，提交 672ff）已存在，但那是**横跨 agent 的会话条**；本任务不同——要的是在 pi 的那个 tab **内部**管理 pi 自己的多个会话。先确认两者关系，避免重复或冲突。\n- 合成 home session id：src/core/home-agent-session.ts 已支持四段式 __home_agent__:<workspaceId>:<agentId>:<threadId>，省略/为 'default' 时回落三段式（向后兼容载重）；parseHomeAgentSessionId 按位置解析。pi 会话服务是 InMemoryPiTaskSessionService，关闭走 closeTaskSession 硬关闭（停进程/丢内存条目/journal.clear），transcript 走 session journal。\n\n## 任务（先诊断/设计，后实现）\n1. 先搞清现状：home agent 为 pi 时，pi 的默认 tab 当前是单会话还是已有某种多会话入口？工作区级 thread bar 与「pi tab 内部多会话」如何取舍？把方案先说清楚（建议最简实现，避免过度设计）。\n2. 在 pi 默认 tab 内部实现多会话管理 UI 与交互：\n   - 列出 pi 自己的多个会话；\n   - 切换当前会话（各会话独立 transcript）；\n   - 新建会话；\n   - 关闭会话（硬关闭：停 pi 进程 / 丢内存条目 / journal.clear 删 transcript）。\n3. 后端打通：复用四段式 home session id（pi 作为 agentId，threadId 区分 pi tab 内的多个会话）、会话注册/持久化、清理路由（runtime-server.ts getScopedHomeThreadStore / onCloseSession 经 parseHomeAgentSessionId 落到 pi）。确认 InMemoryPiTaskSessionService 起会话/关闭/journal 对每个会话都生效。\n4. append-system-prompt.ts 的 agentId 查找用 parser（非 parts.at(-1)，四段式会取到 threadId）。\n\n## 约束 / 注意\n- 向后兼容载重：default 会话仍用三段式旧 id，已有 pi transcript / sessions.json / resume 不能失效。\n- per-agent 独立 transcript（按 agentId 区分，不做跨 agent 会话共享）。\n- pi service 在 vitest 下无法 import（agent-sdk 在 import 期触碰 Bun.env），pi 持久化用 Bun round-trip 覆盖，不要硬塞 vitest。\n- 复用全屏会话标签条 / 会话卡 / HomeAgentConversation 既有模式，不重建看板逻辑；避免过度设计，先出最简可用方案。\n- 完成后确认相关 typecheck（含 web:typecheck）与测试通过。",
   "startInPlanMode": false,
   "autoReviewEnabled": false,
   "autoReviewMode": "commit",
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782639957976,
-  "updatedAt": 1782648096921,
+  "updatedAt": 1782649399932,
   "column": "backlog",
   "rank": "a0",
   "dependsOn": []
