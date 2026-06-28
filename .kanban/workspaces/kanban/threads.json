@@ -79,19 +79,27 @@
       "createdAt": 1782648248457,
       "updatedAt": 1782648264562,
       "pendingNextStep": "启动 cf53e tab 自动滚入可视区任务"
+    },
+    {
+      "id": "4f4258a4-d3cb-48b6-99ed-3448706dc93e",
+      "agentId": "claude",
+      "name": "我想要增加qoder cli作为新的agent",
+      "titleSource": "auto",
+      "createdAt": 1782649969582,
+      "updatedAt": 1782649969582
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
       "24458522-d855-4e3d-a297-9ccda4e2b242",
       "7f175fd0-b7e1-40c0-bf02-638bb0a5e55a",
       "64e7235d-6c2b-4575-90f6-e6f766c1de20",
       "85dc1623-012d-41e1-9691-99faaccc35d9",
       "49d1f6cb-8534-40b9-9847-01b90a2fae0e",
       "ae5cb359-53d3-44b4-aa37-636b852939ab",
-      "default"
+      "default",
+      "4f4258a4-d3cb-48b6-99ed-3448706dc93e"
     ],
-    "activeThreadId": null
+    "activeThreadId": "4f4258a4-d3cb-48b6-99ed-3448706dc93e"
   }
 }
