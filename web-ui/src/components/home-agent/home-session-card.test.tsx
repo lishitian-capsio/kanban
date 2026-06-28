@@ -37,7 +37,10 @@ function makeThread(overrides: Partial<HomeThread> = {}): HomeThread {
 	};
 }
 
-function makeSummary(state: RuntimeTaskSessionState): RuntimeTaskSessionSummary {
+function makeSummary(
+	state: RuntimeTaskSessionState,
+	overrides: Partial<RuntimeTaskSessionSummary> = {},
+): RuntimeTaskSessionSummary {
 	return {
 		taskId: TASK_ID,
 		state,
@@ -52,12 +55,24 @@ function makeSummary(state: RuntimeTaskSessionState): RuntimeTaskSessionSummary 
 		lastHookAt: null,
 		latestHookActivity: null,
 		warningMessage: null,
+		...overrides,
 	};
 }
+
+const CREDIT_LIMIT_ACTIVITY: RuntimeTaskSessionSummary["latestHookActivity"] = {
+	activityText: "Out of credits",
+	toolName: null,
+	toolInputSummary: null,
+	finalMessage: null,
+	hookEventName: "notification",
+	notificationType: "credit_limit",
+	source: "pi",
+};
 
 interface RenderOptions {
 	thread?: HomeThread;
 	summary?: RuntimeTaskSessionSummary | null;
+	isOpen?: boolean;
 	onOpenSession?: (threadId: string) => void;
 	onRename?: (threadId: string, name: string) => void | Promise<void>;
 	onClose?: (threadId: string) => void | Promise<void>;
@@ -96,6 +111,7 @@ describe("HomeSessionCard", () => {
 					taskId={TASK_ID}
 					agents={AGENTS}
 					summary={options.summary ?? makeSummary("idle")}
+					isOpen={options.isOpen ?? false}
 					currentProjectId={WORKSPACE_ID}
 					onOpenSession={options.onOpenSession ?? vi.fn()}
 					onRename={options.onRename ?? vi.fn()}
@@ -136,6 +152,26 @@ describe("HomeSessionCard", () => {
 		expect(byAriaLabel("Agent activity")).not.toBeNull();
 		expect(container.textContent).toContain("Thinking...");
 		expect(container.textContent).not.toContain("hello from the agent");
+	});
+
+	it("renders a spinner status marker while running (mirrors the board task card)", () => {
+		renderCard({ summary: makeSummary("running") });
+		const marker = byAriaLabel("Running");
+		expect(marker?.querySelector("svg.animate-spin")).not.toBeNull();
+	});
+
+	it("renders a red alert-circle status marker when failed/interrupted", () => {
+		renderCard({ summary: makeSummary("failed") });
+		const marker = byAriaLabel("Failed");
+		expect(marker).not.toBeNull();
+		expect(marker?.querySelector("svg.text-status-red")).not.toBeNull();
+	});
+
+	it("renders an orange alert-triangle 'Out of credits' marker on a credit-limit error", () => {
+		renderCard({ summary: makeSummary("failed", { latestHookActivity: CREDIT_LIMIT_ACTIVITY }) });
+		const marker = byAriaLabel("Out of credits");
+		expect(marker).not.toBeNull();
+		expect(marker?.querySelector("svg.text-status-orange")).not.toBeNull();
 	});
 
 	it("surfaces a derived tool-call label as the live activity text", () => {
@@ -236,6 +272,20 @@ describe("HomeSessionCard", () => {
 		renderCard({ thread: makeThread({ id: "default", name: "Default", isDefault: true }) });
 		expect(byAriaLabel("Rename Default session")).toBeNull();
 		expect(byAriaLabel("Close Default session")).toBeNull();
+	});
+
+	it("applies an accent 'already open' highlight when the thread is open in a tab", () => {
+		renderCard({ isOpen: true });
+		const card = byAriaLabel<HTMLDivElement>("Open Refactor auth session");
+		expect(card?.dataset.open).toBe("true");
+		expect(card?.className).toContain("border-accent");
+	});
+
+	it("uses the resting border (no accent highlight) when the thread is not open", () => {
+		renderCard({ isOpen: false });
+		const card = byAriaLabel<HTMLDivElement>("Open Refactor auth session");
+		expect(card?.dataset.open).toBe("false");
+		expect(card?.className).not.toContain("border-accent");
 	});
 
 	it("shows a restart action only when the session is in an error state", () => {

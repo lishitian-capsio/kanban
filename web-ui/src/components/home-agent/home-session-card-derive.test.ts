@@ -8,7 +8,10 @@ import {
 } from "@/components/home-agent/home-session-card-derive";
 import type { RuntimeTaskChatMessage, RuntimeTaskSessionState, RuntimeTaskSessionSummary } from "@/runtime/types";
 
-function makeSummary(state: RuntimeTaskSessionState): RuntimeTaskSessionSummary {
+function makeSummary(
+	state: RuntimeTaskSessionState,
+	overrides: Partial<RuntimeTaskSessionSummary> = {},
+): RuntimeTaskSessionSummary {
 	return {
 		taskId: "t",
 		state,
@@ -23,6 +26,19 @@ function makeSummary(state: RuntimeTaskSessionState): RuntimeTaskSessionSummary 
 		lastHookAt: null,
 		latestHookActivity: null,
 		warningMessage: null,
+		...overrides,
+	};
+}
+
+function creditLimitActivity(): RuntimeTaskSessionSummary["latestHookActivity"] {
+	return {
+		activityText: "Out of credits",
+		toolName: null,
+		toolInputSummary: null,
+		finalMessage: null,
+		hookEventName: "notification",
+		notificationType: "credit_limit",
+		source: "pi",
 	};
 }
 
@@ -37,28 +53,39 @@ function makeMessage(overrides: Partial<RuntimeTaskChatMessage> & { id: string }
 }
 
 describe("deriveHomeSessionCardStatus", () => {
-	it("maps running to a pulsing blue dot", () => {
+	it("maps running to a spinner marker (mirrors the board task card)", () => {
 		const descriptor = deriveHomeSessionCardStatus(makeSummary("running"));
 		expect(descriptor.status).toBe("running");
-		expect(descriptor.pulse).toBe(true);
-		expect(descriptor.dotClassName).toContain("status-blue");
+		expect(descriptor.marker).toBe("spinner");
 	});
 
 	it("maps awaiting_review to an orange dot, no pulse", () => {
 		const descriptor = deriveHomeSessionCardStatus(makeSummary("awaiting_review"));
 		expect(descriptor.status).toBe("awaiting-review");
 		expect(descriptor.pulse).toBe(false);
-		expect(descriptor.dotClassName).toContain("status-orange");
+		expect(descriptor.marker).toBe("dot");
+		expect(descriptor.markerClassName).toContain("status-orange");
 	});
 
-	it("maps failed and interrupted to the error bucket (red)", () => {
-		expect(deriveHomeSessionCardStatus(makeSummary("failed")).status).toBe("error");
-		expect(deriveHomeSessionCardStatus(makeSummary("interrupted")).status).toBe("error");
-		expect(deriveHomeSessionCardStatus(makeSummary("failed")).dotClassName).toContain("status-red");
+	it("maps failed and interrupted to a red alert-circle marker", () => {
+		const failed = deriveHomeSessionCardStatus(makeSummary("failed"));
+		const interrupted = deriveHomeSessionCardStatus(makeSummary("interrupted"));
+		expect(failed.status).toBe("error");
+		expect(interrupted.status).toBe("error");
+		expect(failed.marker).toBe("alert-circle");
+		expect(failed.markerClassName).toContain("status-red");
+	});
+
+	it("maps a credit-limit error to an orange alert-triangle 'Out of credits' marker", () => {
+		const descriptor = deriveHomeSessionCardStatus(makeSummary("failed", { latestHookActivity: creditLimitActivity() }));
+		expect(descriptor.marker).toBe("alert-triangle");
+		expect(descriptor.markerClassName).toContain("status-orange");
+		expect(descriptor.label).toBe("Out of credits");
 	});
 
 	it("treats idle and a missing summary as the muted idle dot", () => {
 		expect(deriveHomeSessionCardStatus(makeSummary("idle")).status).toBe("idle");
+		expect(deriveHomeSessionCardStatus(makeSummary("idle")).marker).toBe("dot");
 		expect(deriveHomeSessionCardStatus(null).status).toBe("idle");
 		expect(deriveHomeSessionCardStatus(null).pulse).toBe(false);
 	});

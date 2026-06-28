@@ -115,6 +115,9 @@ export function HomeChatWorkspace({
 	);
 
 	const { activeThreadId, openThreadIds } = homeThreads.fullscreenTabs;
+	// Threads already open in a session tab get the accent "already open" highlight on
+	// their launcher card (mirrors the board task card's selected styling).
+	const openThreadIdSet = useMemo(() => new Set(openThreadIds), [openThreadIds]);
 	const activeTabThread = useMemo(
 		() => (activeThreadId === null ? null : (homeThreads.threads.find((t) => t.id === activeThreadId) ?? null)),
 		[activeThreadId, homeThreads.threads],
@@ -156,6 +159,7 @@ export function HomeChatWorkspace({
 									taskId={taskId}
 									agents={runtimeProjectConfig.agents}
 									summary={taskSessions[taskId] ?? null}
+									isOpen={openThreadIdSet.has(thread.id)}
 									currentProjectId={currentProjectId}
 									onOpenSession={homeThreads.openSessionTab}
 									onRename={renameThread}

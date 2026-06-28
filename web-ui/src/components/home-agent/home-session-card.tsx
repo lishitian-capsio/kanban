@@ -13,15 +13,17 @@
 // a `role="button"` div (not a `<button>` — an `<input>`/`<button>` nested inside a
 // real button is invalid DOM); each control stops propagation so acting on it never
 // also triggers `onOpenSession`.
-import { Bot, Pencil, RotateCcw, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, Bot, Pencil, RotateCcw, X } from "lucide-react";
 import { type KeyboardEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
 	deriveHomeSessionCardStatus,
 	formatHomeSessionCardTimeAgo,
+	type HomeSessionCardStatusDescriptor,
 } from "@/components/home-agent/home-session-card-derive";
 import { HomeThreadCloseDialog } from "@/components/home-agent/home-thread-close-dialog";
 import { ThreadAgentBadge } from "@/components/home-agent/thread-agent-badge";
 import { cn } from "@/components/ui/cn";
+import { Spinner } from "@/components/ui/spinner";
 import { useHomeSessionCard } from "@/hooks/use-home-session-card";
 import type { HomeThread } from "@/hooks/use-home-threads";
 import type { RuntimeAgentDefinition, RuntimeTaskSessionSummary } from "@/runtime/types";
@@ -32,6 +34,8 @@ interface HomeSessionCardProps {
 	taskId: string;
 	agents: RuntimeAgentDefinition[];
 	summary: RuntimeTaskSessionSummary | null;
+	/** Whether this thread is currently open in a fullscreen session tab — drives the accent highlight. */
+	isOpen: boolean;
 	currentProjectId: string;
 	onOpenSession: (threadId: string) => void;
 	/** Rename the thread (registry rename). Not offered for the default thread. */
@@ -50,6 +54,7 @@ export function HomeSessionCard({
 	taskId,
 	agents,
 	summary,
+	isOpen,
 	currentProjectId,
 	onOpenSession,
 	onRename,
@@ -148,6 +153,7 @@ export function HomeSessionCard({
 			role="button"
 			tabIndex={0}
 			aria-label={`Open ${thread.name} session`}
+			data-open={isOpen}
 			onClick={(event) => {
 				const target = event.target as HTMLElement | null;
 				// Clicks on the nested controls (rename/close/restart, the edit input) must
@@ -166,7 +172,13 @@ export function HomeSessionCard({
 					openSession();
 				}
 			}}
-			className="group flex h-40 cursor-pointer flex-col gap-2 rounded-lg border border-border bg-surface-2 p-3 text-left transition-colors hover:border-border-bright hover:bg-surface-3 focus:outline-none focus-visible:border-border-focus"
+			className={cn(
+				"group flex h-40 cursor-pointer flex-col gap-2 rounded-lg border bg-surface-2 p-3 text-left transition-colors hover:bg-surface-3 focus:outline-none focus-visible:border-border-focus",
+				// An "already open" thread gets the board task card's accent highlight so the
+				// launcher reads which conversations are live in a tab. The accent border wins
+				// over hover so the highlight is stable while pointing at the card.
+				isOpen ? "border-accent hover:border-accent" : "border-border hover:border-border-bright",
+			)}
 		>
 			<div className="flex items-center gap-2">
 				<span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-surface-1 text-text-secondary">
@@ -237,11 +249,13 @@ export function HomeSessionCard({
 						</button>
 					) : null}
 					<span
-						className={cn("size-2 shrink-0 rounded-full", status.dotClassName, status.pulse && "animate-pulse")}
+						className="flex size-4 shrink-0 items-center justify-center"
 						role="img"
 						aria-label={status.label}
 						title={status.label}
-					/>
+					>
+						<HomeSessionCardStatusMarker status={status} />
+					</span>
 				</span>
 			</div>
 
@@ -285,4 +299,29 @@ export function HomeSessionCard({
 			/>
 		</div>
 	);
+}
+
+/**
+ * The status-slot glyph, mirroring the board task card's header marker: a real
+ * spinner while running, a red alert-circle on failure, an orange alert-triangle
+ * for a credit-limit error, and a plain colored dot for the quiet states. The
+ * accessible name lives on the wrapping `<span role="img">`, so the glyphs are
+ * `aria-hidden`.
+ */
+function HomeSessionCardStatusMarker({ status }: { status: HomeSessionCardStatusDescriptor }): React.ReactElement {
+	switch (status.marker) {
+		case "spinner":
+			return <Spinner size={12} className={status.markerClassName || undefined} />;
+		case "alert-circle":
+			return <AlertCircle size={12} className={status.markerClassName} aria-hidden="true" />;
+		case "alert-triangle":
+			return <AlertTriangle size={12} className={status.markerClassName} aria-hidden="true" />;
+		default:
+			return (
+				<span
+					aria-hidden="true"
+					className={cn("size-2 rounded-full", status.markerClassName, status.pulse && "animate-pulse")}
+				/>
+			);
+	}
 }

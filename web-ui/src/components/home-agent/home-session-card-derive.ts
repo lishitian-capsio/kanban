@@ -7,49 +7,100 @@
 // panel size" decision). Keeping the derivation pure makes the status semantics
 // unit-testable and decoupled from React.
 import type { RuntimeTaskChatMessage, RuntimeTaskSessionState, RuntimeTaskSessionSummary } from "@/runtime/types";
+import { isCardCreditLimitError } from "@/utils/session-activity";
 
 /**
- * The status-dot vocabulary surfaced on a session card. Collapses the richer
- * runtime session states into the three dashboard semantics the decision calls
- * out (running / awaiting-review / idle) plus an explicit error bucket so a
+ * The status vocabulary surfaced on a session card. Collapses the richer runtime
+ * session states into the three dashboard semantics the decision calls out
+ * (running / awaiting-review / idle) plus an explicit error bucket so a
  * failed/interrupted session is never silently shown as idle.
  */
 export type HomeSessionCardStatus = "running" | "awaiting-review" | "idle" | "error";
 
+/**
+ * Which visual marker the card renders in its status slot, mirroring the board
+ * task card (`board-card.tsx`): a real `Spinner` while running, a red
+ * `AlertCircle` on failure, an orange `AlertTriangle` for credit-limit, and a
+ * plain colored dot for the quiet states (awaiting-review / idle).
+ */
+export type HomeSessionCardMarker = "spinner" | "alert-circle" | "alert-triangle" | "dot";
+
 export interface HomeSessionCardStatusDescriptor {
 	status: HomeSessionCardStatus;
-	/** Human label for the dot (also the dot's accessible name). */
+	/** Human label for the marker (also its accessible name). */
 	label: string;
-	/** Tailwind background-color class for the dot. */
-	dotClassName: string;
-	/** Whether the dot animates — reserved for active work (running). */
+	/** Which marker to render in the status slot. */
+	marker: HomeSessionCardMarker;
+	/**
+	 * Tailwind color class for the marker: a `bg-*` for the `dot` kind, a `text-*`
+	 * for the icon kinds. Empty for the default-tinted spinner (matches the board card).
+	 */
+	markerClassName: string;
+	/** Whether a `dot` marker animates. The spinner animates on its own, so it never pulses. */
 	pulse: boolean;
 }
 
 /**
  * Map a thread's session summary to its dashboard status descriptor.
  *
- * Semantics (recorded here as the source of truth for the card):
- *   - `running`          → the agent is actively working — blue, pulsing.
- *   - `awaiting_review`  → the agent finished a turn and wants attention — orange.
- *   - `failed`/`interrupted` → something went wrong / was cut off — red.
- *   - `idle` or no session yet → quiet, never started or settled — muted gray.
+ * Semantics (recorded here as the source of truth for the card; the marker
+ * kinds/tokens mirror the board task card so the two read identically):
+ *   - `running`              → the agent is actively working — a spinner.
+ *   - `awaiting_review`      → finished a turn, wants attention — orange dot.
+ *   - `failed`/`interrupted` → something went wrong / was cut off — red alert-circle.
+ *   - credit-limit error     → provider out of credits — orange alert-triangle (takes
+ *                              priority over the underlying failed/awaiting state, like the board card).
+ *   - `idle` or no session    → quiet, never started or settled — muted gray dot.
  */
 export function deriveHomeSessionCardStatus(
 	summary: RuntimeTaskSessionSummary | null,
 ): HomeSessionCardStatusDescriptor {
-	const state: RuntimeTaskSessionState | null = summary?.state ?? null;
+	const base = deriveBaseStatus(summary?.state ?? null);
+	// A credit-limit error overrides only the marker + label, keeping the underlying
+	// status bucket (so a failed-on-credits session still offers restart). Checked
+	// first because it can ride on either a failed/interrupted or awaiting_review state.
+	if (isCardCreditLimitError(summary)) {
+		return {
+			...base,
+			label: "Out of credits",
+			marker: "alert-triangle",
+			markerClassName: "text-status-orange",
+			pulse: false,
+		};
+	}
+	return base;
+}
+
+function deriveBaseStatus(state: RuntimeTaskSessionState | null): HomeSessionCardStatusDescriptor {
 	switch (state) {
 		case "running":
-			return { status: "running", label: "Running", dotClassName: "bg-status-blue", pulse: true };
+			return { status: "running", label: "Running", marker: "spinner", markerClassName: "", pulse: false };
 		case "awaiting_review":
-			return { status: "awaiting-review", label: "Awaiting review", dotClassName: "bg-status-orange", pulse: false };
+			return {
+				status: "awaiting-review",
+				label: "Awaiting review",
+				marker: "dot",
+				markerClassName: "bg-status-orange",
+				pulse: false,
+			};
 		case "failed":
-			return { status: "error", label: "Failed", dotClassName: "bg-status-red", pulse: false };
+			return {
+				status: "error",
+				label: "Failed",
+				marker: "alert-circle",
+				markerClassName: "text-status-red",
+				pulse: false,
+			};
 		case "interrupted":
-			return { status: "error", label: "Interrupted", dotClassName: "bg-status-red", pulse: false };
+			return {
+				status: "error",
+				label: "Interrupted",
+				marker: "alert-circle",
+				markerClassName: "text-status-red",
+				pulse: false,
+			};
 		default:
-			return { status: "idle", label: "Idle", dotClassName: "bg-text-tertiary", pulse: false };
+			return { status: "idle", label: "Idle", marker: "dot", markerClassName: "bg-text-tertiary", pulse: false };
 	}
 }
 
