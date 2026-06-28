@@ -13,6 +13,7 @@ import type {
 	RuntimeTerminalWsClientMessage,
 	RuntimeTerminalWsServerMessage,
 } from "@/runtime/types";
+import { createSafeClipboardProvider } from "@/terminal/safe-clipboard-provider";
 import { clearTerminalGeometry, reportTerminalGeometry } from "@/terminal/terminal-geometry-registry";
 import { createKanbanTerminalOptions } from "@/terminal/terminal-options";
 import {
@@ -187,7 +188,10 @@ class PersistentTerminal {
 			rows: initialGeometry.rows,
 		});
 		this.terminal.loadAddon(this.fitAddon);
-		this.terminal.loadAddon(new ClipboardAddon());
+		// Custom provider so an OSC 52 clipboard write doesn't throw an uncaught
+		// TypeError mid-parse when navigator.clipboard is absent (non-secure
+		// context, e.g. plain HTTP over a LAN). See safe-clipboard-provider.ts.
+		this.terminal.loadAddon(new ClipboardAddon(undefined, createSafeClipboardProvider()));
 		this.terminal.loadAddon(new WebLinksAddon());
 		this.terminal.loadAddon(this.unicode11Addon);
 		this.terminal.unicode.activeVersion = "11";
@@ -210,9 +214,13 @@ class PersistentTerminal {
 				return false;
 			}
 			if (isCopyShortcut(event) && this.terminal.hasSelection()) {
-				void navigator.clipboard.writeText(this.terminal.getSelection()).catch(() => {
-					// Ignore clipboard failures.
-				});
+				// navigator.clipboard is undefined in a non-secure context; guard so
+				// the copy shortcut degrades to a no-op instead of throwing.
+				if (typeof navigator.clipboard?.writeText === "function") {
+					void navigator.clipboard.writeText(this.terminal.getSelection()).catch(() => {
+						// Ignore clipboard failures.
+					});
+				}
 				return false;
 			}
 			return true;
