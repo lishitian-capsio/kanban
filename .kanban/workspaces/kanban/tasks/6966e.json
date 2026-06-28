@@ -1,0 +1,19 @@
+{
+  "id": "6966e",
+  "title": "移除侧边栏 Sessions 空状态文案",
+  "prompt": "在 web-ui 侧边栏的 Sessions 区域，移除这段提示文案：\"Sessions — Your Kanban Agent conversations. Open one, or start a new session.\"（中文环境下对应的同一段空状态/标题说明文字）。\\n\\n要求：\\n- 先在 web-ui 源码中搜索定位这句话（关键词如 \"Your Kanban Agent conversations\"、\"start a new session\"、\"Sessions\"），找到对应的组件。\\n- 只去掉这段说明性文案，保留 Sessions 列表本身以及新建会话的入口/按钮，不要破坏布局或交互。\\n- 确认 web:typecheck 通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782633003349,
+  "updatedAt": 1782633003349,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
