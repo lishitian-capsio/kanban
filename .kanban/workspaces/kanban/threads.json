@@ -86,7 +86,8 @@
       "name": "新增 qoder CLI agent",
       "titleSource": "auto",
       "createdAt": 1782649969582,
-      "updatedAt": 1782650033873
+      "updatedAt": 1782650033873,
+      "pendingNextStep": "开始执行任务 ca58f（新增 qoder CLI agent）"
     }
   ],
   "fullscreenTabs": {
