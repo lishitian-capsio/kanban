@@ -30,10 +30,11 @@
     {
       "id": "49d1f6cb-8534-40b9-9847-01b90a2fae0e",
       "agentId": "claude",
-      "name": "Sessions",
+      "name": "移除侧边栏 Sessions 文案",
       "titleSource": "auto",
       "createdAt": 1782632515057,
-      "updatedAt": 1782632515057
+      "updatedAt": 1782633016446,
+      "pendingNextStep": "启动任务 6966e 去移除这段文案"
     }
   ],
   "fullscreenTabs": {
@@ -42,6 +43,6 @@
       "ae5cb359-53d3-44b4-aa37-636b852939ab",
       "49d1f6cb-8534-40b9-9847-01b90a2fae0e"
     ],
-    "activeThreadId": "ae5cb359-53d3-44b4-aa37-636b852939ab"
+    "activeThreadId": "85dc1623-012d-41e1-9691-99faaccc35d9"
   }
 }
