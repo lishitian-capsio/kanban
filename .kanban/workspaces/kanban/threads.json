@@ -30,17 +30,10 @@
     {
       "id": "fa897148-67f9-4e94-ba4f-d938d00e33db",
       "agentId": "claude",
-      "name": "addon-clipboard.mjs:17",
+      "name": "Fix xterm clipboard crash (non-secure ctx)",
       "titleSource": "auto",
       "createdAt": 1782626300759,
-      "updatedAt": 1782626300759
+      "updatedAt": 1782626355310
     }
-  ],
-  "fullscreenTabs": {
-    "openThreadIds": [
-      "24458522-d855-4e3d-a297-9ccda4e2b242",
-      "85dc1623-012d-41e1-9691-99faaccc35d9"
-    ],
-    "activeThreadId": "85dc1623-012d-41e1-9691-99faaccc35d9"
-  }
+  ]
 }
