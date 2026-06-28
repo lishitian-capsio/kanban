@@ -1,0 +1,19 @@
+{
+  "id": "2cbf1",
+  "title": "修复全屏 Home Tab 随会话卡列表一起滚动",
+  "prompt": "Bug：在 kanban agent 全屏模式下，当打开的会话 agent 过多、会话卡列表（Home Tab 的 session-card 启动器网格）超出可视高度出现滚动条时，向下滚动会连带把 Home Tab（顶部的标签 / Home 标签头，或整页头部）一起滚走，导致标签栏/页头无法常驻可见。期望：滚动只发生在会话卡内容区，Home Tab 标签条 / 页头保持固定（sticky）不随内容滚动。\n\n## 复现\n1. 进入 kanban agent 全屏模式（Home Tab = 会话卡网格 + 「+」卡）。\n2. 打开足够多的会话 agent，使会话卡网格高度超过视口、出现滚动条。\n3. 向下滚动列表，观察 Home Tab / 顶部标签条是否跟着一起被滚走。\n\n## 排查方向\n- 这是典型的滚动容器层级问题：很可能整个全屏面板（含标签条/页头 + 会话卡网格）共用了一个外层滚动容器，导致页头一起滚动。应改为页头/标签条固定，仅会话卡网格区域 overflow-y:auto 独立滚动；或给标签条加 sticky 定位。\n- 先阅读全屏标签栏 / Home Tab 启动器 / 会话卡网格的现有实现（参考已实现的全屏 Home Tab 启动器 = session-card grid + 「+」卡，以及全屏会话标签条 home session tab strip / HomeAgentConversation 提取后的结构），定位滚动容器与页头的 DOM/flex 层级。\n- 修复时优先用 Tailwind 布局（flex column + min-h-0 + flex-1 overflow-y-auto 的标准模式，或 sticky top-0），避免写死高度；遵循 AGENTS.md 的 styling 约定（Tailwind 优先、dark theme、不要 inline style 除非动态值）。\n\n## 要求\n- 让会话卡列表在容器内独立滚动，Home Tab 标签条 / 页头在滚动时保持常驻可见。\n- 不要回归普通（非全屏）模式、以及会话标签 / Task tab 等其它全屏标签的布局与滚动行为。\n- 不做与本 bug 无关的重构。\n- 确认 web:typecheck 通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782648293943,
+  "updatedAt": 1782648293943,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
