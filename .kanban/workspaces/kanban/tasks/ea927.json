@@ -1,0 +1,19 @@
+{
+  "id": "ea927",
+  "title": "修复全屏模式下看板任务卡片状态切换时闪烁",
+  "prompt": "Bug：在 kanban agent 全屏模式下，当看板上某个任务发生状态转化（在 backlog / in_progress / review / done 列之间移动）时，对应的看板任务卡片会闪一下（短暂消失再出现 / 重新渲染 / 闪烁）。\n\n复现：进入 kanban agent 全屏模式，触发任意任务的列切换（例如 task start、auto-review 转 review、move to done，或拖拽），观察该任务卡片在切换瞬间的闪烁。\n\n排查方向：\n- 这很可能是状态切换时卡片被卸载再挂载、或父级发生不必要的 re-render 导致的视觉闪烁。\n- 看板状态走 task_sessions_updated / workspace_state_updated → workspaceState → useWorkspaceSync → 本地 board/sessions state（board ref 由 revision 守护）。检查列切换时 board 是否被整体替换、卡片 key 是否稳定（应以 taskId 为 key，而非随列表索引或列变化）、以及全屏布局下卡片组件是否在跨列移动时丢失 React identity。\n- 参考运行时 store 的 granular selector 模型（runtime/runtime-stream-store.ts、stores/workspace-metadata-store.ts），确认状态转化只唤醒必要的 listener，没有触发整棵树或整列重渲染。\n\n要求：\n- 定位闪烁根因并修复，使任务卡片在跨列移动时平滑过渡、不闪烁、不重新挂载。\n- 不要回归普通（非全屏）模式下的行为。\n- 确认 web:typecheck 通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782638696114,
+  "updatedAt": 1782638696114,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}

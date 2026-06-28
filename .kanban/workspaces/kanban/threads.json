@@ -42,14 +42,16 @@
       "name": "Show provider/model/token on cards",
       "titleSource": "auto",
       "createdAt": 1782638627244,
-      "updatedAt": 1782638646010
+      "updatedAt": 1782638646010,
+      "pendingNextStep": "Start task b9a9d now"
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
       "85dc1623-012d-41e1-9691-99faaccc35d9",
-      "49d1f6cb-8534-40b9-9847-01b90a2fae0e"
+      "49d1f6cb-8534-40b9-9847-01b90a2fae0e",
+      "ae5cb359-53d3-44b4-aa37-636b852939ab"
     ],
-    "activeThreadId": null
+    "activeThreadId": "ae5cb359-53d3-44b4-aa37-636b852939ab"
   }
 }
