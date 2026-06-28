@@ -7,7 +7,7 @@
       "titleSource": "auto",
       "createdAt": 1782551922032,
       "updatedAt": 1782551955473,
-      "pendingNextStep": "Start task 1248a"
+      "pendingNextStep": "启动任务 ccf7b"
     },
     {
       "id": "85dc1623-012d-41e1-9691-99faaccc35d9",
@@ -20,8 +20,8 @@
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "85dc1623-012d-41e1-9691-99faaccc35d9",
-      "24458522-d855-4e3d-a297-9ccda4e2b242"
+      "24458522-d855-4e3d-a297-9ccda4e2b242",
+      "85dc1623-012d-41e1-9691-99faaccc35d9"
     ],
     "activeThreadId": "85dc1623-012d-41e1-9691-99faaccc35d9"
   }
