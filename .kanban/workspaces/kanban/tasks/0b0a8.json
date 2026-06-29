@@ -1,0 +1,19 @@
+{
+  "id": "0b0a8",
+  "title": "任务记录发起它的会话 thread（originThreadId 来源标记）",
+  "prompt": "目标：给每个任务记录「是哪个 home-chat 会话(thread)发起的」，这样全屏 UI 才能按会话 agent 归类任务。\n\n现状（已确认）：任务 shard 只记了 agentId（执行用的 agent 类型，如 claude/pi）和 owner（人的 git 身份）。多个 thread 可以都用 claude，所以 agentId 区分不了会话；owner 也不是会话。当前没有任何字段记录发起任务的 thread。\n\n要做：\n1. 在任务持久化 spec（见 src/state/task-shard-store.ts 的 durable spec）和对外 wire 契约（runtimeBoardDataSchema 暴露的 task 形状、以及 task list 用的 task summary）里，新增一个可选字段 originThreadId。必须向后兼容：老的没有该字段的 task shard 仍然有效（视为「未归属」）。\n2. 在任务创建时盖上这个来源标记——把发起的 threadId 穿过创建路径。两个创建入口：(a) web-ui 从某个 home thread 打开的「新建任务」对话框；(b) task create 的 CLI / tRPC 路径。home-thread 系列 CLI 命令已经能从所在 session 解析出当前 threadId（参考 home-thread set-title / suggest-next 的实现），复用同一套解析，让侧栏 agent 在某个 thread 里创建的任务被正确盖戳。同时给 task create 增加一个显式 --origin-thread-id 选项，供已知 threadId 的调用方使用。当无法确定发起 thread 时（board 上直接建、纯 CLI 无 session），保持不设置。\n3. 把 originThreadId 暴露到前端读取的 task 数据上（board data 的 task 和/或 task summary），供下一个前端任务按它分组。\n\n参考：thread id 方案是 __home_agent__:<workspaceId>:<agentId>:<threadId>；thread 注册表在 src/session/home-thread-registry.ts（threads.json）。\n\n重要边界：这是「发起时一次性写下的声明式来源标记」，不是运行时的 agent 间活通道（见 vault decision 10c53 / bccca 已锁定「不建通道」）——只加一个记录字段，不要引入任何 session 与 task 之间的运行时通道。\n\n补充测试，保持契约向后兼容。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782700754873,
+  "updatedAt": 1782700754873,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
