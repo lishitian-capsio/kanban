@@ -60,6 +60,7 @@ import { useTaskEditor } from "@/hooks/use-task-editor";
 import { useTaskSessions } from "@/hooks/use-task-sessions";
 import { useTaskStartActions } from "@/hooks/use-task-start-actions";
 import { useTerminalPanels } from "@/hooks/use-terminal-panels";
+import { useTerminalSessionAutoResume } from "@/hooks/use-terminal-session-auto-resume";
 import { useWorkspaceSync } from "@/hooks/use-workspace-sync";
 import { LayoutCustomizationsProvider } from "@/resize/layout-customizations";
 import { ResizableBottomPane } from "@/resize/resizable-bottom-pane";
@@ -232,6 +233,16 @@ export default function App(): ReactElement {
 		onDetailClosed: () => {
 			setIsGitHistoryOpen(false);
 		},
+	});
+
+	// Reopening a task whose terminal agent died with the runtime (force-kill / crash)
+	// relaunches the session — resuming the conversation where the agent supports it —
+	// instead of attaching to a dead PTY and getting stuck on "Terminal stream closed".
+	useTerminalSessionAutoResume({
+		selectedCard,
+		sessions,
+		startTaskSession,
+		enabled: currentProjectId !== null,
 	});
 
 	// Vault is a workspace-level, cross-task knowledge surface; it has no place inside a

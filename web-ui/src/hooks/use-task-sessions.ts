@@ -49,6 +49,14 @@ interface StartTaskSessionResult {
 
 interface StartTaskSessionOptions {
 	resumeFromTrash?: boolean;
+	/**
+	 * Relaunch a session whose PTY died with the runtime (force-kill / crash) when
+	 * the user reopens the task. Like a resume, it sends no kickoff prompt so the
+	 * agent reattaches its conversation (claude `--resume`, codex `resume <id>`)
+	 * instead of re-running the task; unlike trash-restore it has no trash side
+	 * effects. Agents with no recorded session id start a fresh session.
+	 */
+	reconnect?: boolean;
 }
 
 export interface UseTaskSessionsResult {
@@ -153,7 +161,10 @@ export function useTaskSessions({ currentProjectId, setSessions }: UseTaskSessio
 				return { ok: false, message: "No project selected." };
 			}
 			try {
-				const kickoffPrompt = options?.resumeFromTrash ? "" : task.prompt.trim();
+				// A reconnect relaunch behaves like a resume for the launch payload (no
+				// kickoff prompt / images / plan mode) but carries no trash semantics.
+				const isResumeLaunch = options?.resumeFromTrash === true || options?.reconnect === true;
+				const kickoffPrompt = isResumeLaunch ? "" : task.prompt.trim();
 				const trpcClient = getRuntimeTrpcClient(currentProjectId);
 				const geometry =
 					getTerminalGeometry(task.id) ?? estimateTaskSessionGeometry(window.innerWidth, window.innerHeight);
@@ -161,8 +172,8 @@ export function useTaskSessions({ currentProjectId, setSessions }: UseTaskSessio
 					taskId: task.id,
 					prompt: kickoffPrompt,
 					taskTitle: task.title,
-					images: options?.resumeFromTrash ? undefined : task.images,
-					startInPlanMode: options?.resumeFromTrash ? undefined : task.startInPlanMode,
+					images: isResumeLaunch ? undefined : task.images,
+					startInPlanMode: isResumeLaunch ? undefined : task.startInPlanMode,
 					resumeFromTrash: options?.resumeFromTrash,
 					baseRef: task.baseRef,
 					cols: geometry.cols,
