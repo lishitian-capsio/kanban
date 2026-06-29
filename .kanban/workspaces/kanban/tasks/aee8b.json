@@ -1,0 +1,20 @@
+{
+  "id": "aee8b",
+  "title": "调研: 运行时/后端性能瓶颈",
+  "prompt": "对 Kanban Bun 运行时/后端做性能调研，产出书面瓶颈清单（写到 .plan/docs/perf-runtime-findings.md），不要改业务代码。\n\n重点排查方向（自行核实）：\n- 事件循环阻塞：复核是否还有同步子进程（spawnSync/execSync）或同步 CPU 热点在异步热路径上（既有 P0：detectGitRepositoryInfo/resolveWorkspacePath 的 spawnSync git 已改异步）。利用 src/server/event-loop-stall-watchdog.ts 的告警思路找剩余同步热点。\n- 广播频率：task_chat_message / workspace_state_updated / board_sync_status_updated 等 ws 广播是否过于频繁、是否有不必要的全量快照重算（buildWorkspaceStateSnapshot → loadWorkspaceState 链路）。\n- 分片读写：src/state/task-shard-store.ts、requirement-store.ts、sharded-json-store.ts 的读写是否在热路径上重复全量扫描；board 组装/拆解开销。\n- git 操作：board-sync 提交/推送、worktree 操作的串行化与开销。\n- 日志/journal：session-message-journal 的写入 coalescing 是否生效，有无热点。\n\n产出：「现象→定位证据→影响范围→建议修复→预估收益/风险」+ 优先级。作为实现任务输入。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6a585585-b1b3-41e5-8785-009188294312",
+  "baseRef": "main",
+  "createdAt": 1782713829626,
+  "updatedAt": 1782713829626,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
