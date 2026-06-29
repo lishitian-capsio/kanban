@@ -1,0 +1,20 @@
+{
+  "id": "f7513",
+  "title": "修复全屏会话 tab 隐藏滚动条仍占文档流致内容上移",
+  "prompt": "Bug（kanban agent 全屏会话模式下的布局错位）：\n\n现象：\n- 全屏会话模式下，固定的 Home tab、Pi tab 没有滚动条。\n- 会话 agent 的 tab 也隐藏了滚动条，但**隐藏的滚动条仍占据文档流 / 仍保留了滚动条所占空间（gutter）**。\n- 结果：会话 agent tab 的内容相对 Home / Pi 固定 tab **整体向上移动了一点点**，三类 tab 内容对不齐 / 有轻微跳动。\n\n复现：进入 kanban agent 全屏会话模式，在 Home tab / Pi tab（固定）与某个会话 agent tab 之间切换，观察会话 agent tab 的内容顶部相对固定 tab 略微上移、不对齐。\n\n排查方向（自行核实，不要照搬）：\n- 这是典型的「滚动条隐藏方式不一致 + 占位」问题：某个 tab 用了会占布局空间的隐藏方式（如 overflow:scroll 但视觉隐藏 / scrollbar-gutter: stable 只加在部分容器 / 仅靠 ::-webkit-scrollbar 隐藏但仍 reserve 空间），而固定 tab 没有，导致可用高度/宽度差一条滚动条，内容位移。\n- 统一三类 tab（Home 固定、Pi 固定、会话 agent）容器的滚动/溢出处理：要么都用 scrollbar-gutter: stable 预留、要么都不预留，保证可用区域一致、内容顶端对齐、切换不跳动。\n- 优先排查全屏会话相关组件与其容器样式：session-tab-strip.tsx、home tab launcher（home-session-card 等）、Pi 固定 tab、HomeAgentConversation（紧凑+全屏共用）及其外层滚动容器；以及 globals.css 里相关的滚动条样式。\n- 注意是『隐藏滚动条仍占文档流』，不是真的需要显示滚动条——目标是消除占位差异，而不是把滚动条显示出来。\n\n要求：\n- 定位根因并修复，使三类 tab 切换时内容顶端对齐、无上移/跳动，且滚动行为正常（需要滚动时仍能滚）。\n- 遵循 web-ui 既有栈与设计 token（Tailwind v4、dark theme、不要 dark: 前缀），优先 Tailwind/cn 条件类而非新增 globals.css，除非确实是 Tailwind 表达不了的滚动条选择器。\n- 不做与本 bug 无关的重构。\n- 确认 web:typecheck 通过；若有相关组件测试按需更新。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
+  "baseRef": "main",
+  "createdAt": 1782720882033,
+  "updatedAt": 1782720882033,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
