@@ -1,0 +1,19 @@
+{
+  "id": "99cf9",
+  "title": "标签条：固定 Home/Pi/Tasks + 横向滚动条 overlay 悬停显示",
+  "prompt": "全屏模式标签条（home/pi 等顶部 tab 行）两个问题：\n\n## 问题 1：Home / Pi / Tasks 固定标签会随横向滚动一起滚走\n当会话标签多、标签条出现横向滚动时，Home、Pi、Tasks 这几个固定（常驻、不可关闭）标签会跟着一起横向滚动出可视区。期望：这几个锚定标签保持常驻可见（pin 住），只有后面的会话标签区域横向滚动。\n\n## 问题 2：横向滚动条占用文档流且常驻\n标签条内容超过宽度后出现的横向滚动条常驻显示、占用文档流（挤占高度/布局）。期望：改成 overlay 风格——默认隐藏，鼠标悬停在标签条上才显示，且不占文档流（出现/消失不引起布局位移）。这与任务 3046e（竖向滚动条 overlay）诉求一致，应复用 3046e 实现的可复用滚动条样式（如 globals.css 的 scrollbar-overlay utility），horizontal 方向同样适用，不要另写一套。\n\n## 排查方向 / 复用\n- 先阅读全屏标签栏 / 会话标签条（home session tab strip）的现有实现与 DOM/flex 结构，定位 Home/Pi/Tasks 锚定标签与可滚动会话标签区是否在同一个横向滚动容器内。\n- 问题 1：把固定标签（Home/Pi/Tasks）与可滚动的会话标签区拆成「固定区 + 独立横向滚动区」两段——固定标签放在不滚动的容器里，仅会话标签区 overflow-x:auto；或用 sticky 让锚定标签吸附。用 Tailwind flex 布局（固定区 flex-none + 滚动区 flex-1 min-w-0 overflow-x-auto），避免写死宽度。\n- 问题 2：横向滚动条套用 3046e 的 overlay/hover-reveal 滚动条样式（thumb 默认透明、hover 显现、surface-4 颜色、不占文档流），作用于会话标签的横向滚动区。\n\n## 约束\n- 不改变标签的点击/选中/新建/关闭等既有语义（与 cf53e 的 tab 自动滚入可视区不冲突，二者可叠加）。\n- 不要回归普通（非全屏）模式与其它视图的布局。\n- 遵循 AGENTS.md styling 约定（Tailwind 优先、dark theme、复杂伪元素选择器放 globals.css）。\n- 不做无关重构；确认 web:typecheck 通过。\n\n## 依赖建议\n本任务问题 2 复用 3046e 的滚动条 utility，建议在 3046e 完成后再做本任务，避免重复实现与冲突。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782697642372,
+  "updatedAt": 1782697642372,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
