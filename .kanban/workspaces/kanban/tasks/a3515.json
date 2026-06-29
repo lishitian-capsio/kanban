@@ -1,0 +1,19 @@
+{
+  "id": "a3515",
+  "title": "全屏 Home Tab 会话卡片显示该会话发起的任务（按状态分组计数）",
+  "prompt": "目标：在 kanban agent 全屏模式的 Home Tab 启动器里，每张会话卡片底部显示「该会话(thread)发起的任务」的按状态分组计数：进行(in_progress) / 待审(review) / 完成(done)。\n\n依赖：board 的 task 数据已带 originThreadId 字段（由链接的后端任务提供）。按 originThreadId 把 board 任务分组，匹配到卡片对应的 threadId，按列统计渲染计数。\n\n要做：\n1. 在全屏 Home Tab 会话卡片底部加一行紧凑的状态计数行（进行/待审/完成）。与现有卡片设计一致——卡片已有 agent 图标、状态点、标题、最近消息摘要（见 vault decision 1902b 与会话卡片组件，参考记忆里 home-tab-launcher / home-session-card-affordances 对应的组件）。单行、不要撑高卡片。\n2. 暗色主题、用 Tailwind 设计 token：完成用 status-green、待审用 status-orange、进行用 accent/status-blue（按 globals.css 的 @theme token）。\n3. 计数为 0 的处理：整行隐藏，或显示一个 muted 的「无任务」——挑更干净的那种，别显示一排吵闹的 0。\n4. 只改全屏 Home Tab；不要影响 docked/compact 布局（HomeThreadBar 那套）。\n5. 数据来源走现有 runtime store 的 board/task 选择器，按「在叶子组件里订阅」的既有规矩（见记忆 perf10 / runtime store selectors），不要在 App 层订阅高频 slice。\n\n可选后续（本任务不要求实现，留个干净接口即可）：点击某个计数把 board 筛选成「只看该会话发起的任务」。\n\n合理处补测试。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782700763465,
+  "updatedAt": 1782700763465,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
