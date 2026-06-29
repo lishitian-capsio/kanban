@@ -132,7 +132,6 @@ describe("HomeChatWorkspace", () => {
 						[secondTaskId]: makeSummary(secondTaskId, "awaiting_review"),
 					}}
 					workspaceGit={null}
-					onOpenTask={() => {}}
 				/>,
 			);
 		});
@@ -145,46 +144,6 @@ describe("HomeChatWorkspace", () => {
 		expect(homeTab?.textContent).toContain("Home");
 		// No conversation while on the Home tab.
 		expect(container.querySelector('[data-testid="conversation"]')).toBeNull();
-		// The fixed Task tab sits next to Home and is not selected by default.
-		const tabs = [...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent);
-		expect(tabs).toContain("Tasks");
-	});
-
-	it("switches to the active-task tracker when the Task tab is clicked, and back to Home", () => {
-		const threads = [makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)];
-		act(() => {
-			root.render(
-				<HomeChatWorkspace
-					currentProjectId={WORKSPACE_ID}
-					runtimeProjectConfig={RUNTIME_CONFIG}
-					homeThreads={makeHomeThreads(threads)}
-					taskSessions={{}}
-					workspaceGit={null}
-					onOpenTask={() => {}}
-				/>,
-			);
-		});
-		const taskTab = [...container.querySelectorAll('[role="tab"]')].find(
-			(tab) => tab.textContent === "Tasks",
-		) as HTMLButtonElement;
-		act(() => {
-			taskTab.click();
-		});
-		// The Task tab is now selected and shows the (empty, no store) active-task panel —
-		// the launcher's add-session card is gone.
-		expect(taskTab.getAttribute("aria-selected")).toBe("true");
-		expect(container.textContent).toContain("No active tasks");
-		expect(container.querySelector('[aria-label="New chat session"]')).toBeNull();
-
-		// Clicking Home leaves the Task tab.
-		const homeTab = [...container.querySelectorAll('[role="tab"]')].find(
-			(tab) => tab.textContent === "Home",
-		) as HTMLButtonElement;
-		act(() => {
-			homeTab.click();
-		});
-		expect(homeTab.getAttribute("aria-selected")).toBe("true");
-		expect(container.textContent).not.toContain("No active tasks");
 	});
 
 	it("opens the clicked card as a session tab (onOpenSession → openSessionTab)", () => {
@@ -198,7 +157,6 @@ describe("HomeChatWorkspace", () => {
 					homeThreads={makeHomeThreads(threads, { openSessionTab })}
 					taskSessions={{}}
 					workspaceGit={null}
-					onOpenTask={() => {}}
 				/>,
 			);
 		});
@@ -223,7 +181,6 @@ describe("HomeChatWorkspace", () => {
 					homeThreads={makeHomeThreads(threads, { closeThread })}
 					taskSessions={{}}
 					workspaceGit={null}
-					onOpenTask={() => {}}
 				/>,
 			);
 		});
@@ -255,7 +212,6 @@ describe("HomeChatWorkspace", () => {
 					homeThreads={makeHomeThreads(threads)}
 					taskSessions={{}}
 					workspaceGit={null}
-					onOpenTask={() => {}}
 				/>,
 			);
 		});
@@ -274,7 +230,6 @@ describe("HomeChatWorkspace", () => {
 					})}
 					taskSessions={{}}
 					workspaceGit={null}
-					onOpenTask={() => {}}
 				/>,
 			);
 		});
@@ -296,7 +251,6 @@ describe("HomeChatWorkspace", () => {
 					})}
 					taskSessions={{}}
 					workspaceGit={null}
-					onOpenTask={() => {}}
 				/>,
 			);
 		});
@@ -323,7 +277,6 @@ describe("HomeChatWorkspace", () => {
 					homeThreads={makeHomeThreads(threads)}
 					taskSessions={{}}
 					workspaceGit={null}
-					onOpenTask={() => {}}
 				/>,
 			);
 		});
@@ -356,7 +309,6 @@ describe("HomeChatWorkspace", () => {
 					homeThreads={makeHomeThreads(threads, { createThread })}
 					taskSessions={{}}
 					workspaceGit={null}
-					onOpenTask={() => {}}
 				/>,
 			);
 		});
@@ -384,7 +336,6 @@ describe("HomeChatWorkspace", () => {
 					homeThreads={makeHomeThreads([])}
 					taskSessions={{}}
 					workspaceGit={null}
-					onOpenTask={() => {}}
 				/>,
 			);
 		});

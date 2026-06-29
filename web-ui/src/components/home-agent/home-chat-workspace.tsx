@@ -18,7 +18,6 @@ import type { ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { notifyError } from "@/components/app-toaster";
-import { ActiveTaskList } from "@/components/home-agent/active-task-list";
 import { HomeAddSessionCard } from "@/components/home-agent/home-add-session-card";
 import { HomeAgentConversation } from "@/components/home-agent/home-agent-conversation";
 import { HomeSessionCard } from "@/components/home-agent/home-session-card";
@@ -36,8 +35,6 @@ interface HomeChatWorkspaceProps {
 	homeThreads: UseHomeThreadsResult;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	workspaceGit: RuntimeGitRepositoryInfo | null;
-	/** Open a board task's detail/transcript from the Task tab (exits fullscreen so it shows). */
-	onOpenTask: (taskId: string) => void;
 }
 
 export function HomeChatWorkspace({
@@ -46,15 +43,10 @@ export function HomeChatWorkspace({
 	homeThreads,
 	taskSessions,
 	workspaceGit,
-	onOpenTask,
 }: HomeChatWorkspaceProps): ReactElement | null {
-	// The fixed Task tab is a transient, peer-of-Home view, not a persisted
-	// session tab — it lives next to the Home tab and the open session tabs but is
-	// tracked locally (it resets to off on re-entering fullscreen). Activating Home
-	// or any session tab clears it.
-	const [taskTabActive, setTaskTabActive] = useState(false);
-	// The fixed Pi tab — the native-agent multi-session workspace — is a peer of the Home and
-	// Task tabs, tracked locally the same way (resets to off on re-entering fullscreen).
+	// The fixed Pi tab — the native-agent multi-session workspace — is a peer of the Home tab,
+	// tracked locally (resets to off on re-entering fullscreen). Activating Home or any session
+	// tab clears it.
 	const [piTabActive, setPiTabActive] = useState(false);
 	// Keep agent-set titles fresh in the launcher cards + tab strip (mirrors the compact panel).
 	useRefreshHomeThreadsOnSessionContextBump(homeThreads.refresh);
@@ -140,28 +132,21 @@ export function HomeChatWorkspace({
 		return null;
 	}
 
-	// Activating Home or any session tab leaves the Pi and Task tabs; activating Pi/Tasks enters it.
+	// Activating Home or any session tab leaves the Pi tab; activating Pi enters it.
 	const handleActivateHome = () => {
-		setTaskTabActive(false);
 		setPiTabActive(false);
 		homeThreads.activateHomeTab();
 	};
 	const handleActivateSessionTab = (threadId: string) => {
-		setTaskTabActive(false);
 		setPiTabActive(false);
 		homeThreads.activateSessionTab(threadId);
 	};
 	const handleActivatePi = () => {
-		setTaskTabActive(false);
 		setPiTabActive(true);
 	};
-	const handleActivateTask = () => {
-		setPiTabActive(false);
-		setTaskTabActive(true);
-	};
 
-	// The Home launcher shows when none of the Pi tab, the Task tab, or a session tab is active.
-	const showHomeTab = !taskTabActive && !piTabActive && activeTabThread === null;
+	// The Home launcher shows when neither the Pi tab nor a session tab is active.
+	const showHomeTab = !piTabActive && activeTabThread === null;
 
 	return (
 		<div className="flex h-full min-h-0 w-full flex-col gap-2">
@@ -169,12 +154,10 @@ export function HomeChatWorkspace({
 				threads={homeThreads.threads}
 				openThreadIds={openThreadIds}
 				activeThreadId={activeTabThread ? activeThreadId : null}
-				taskTabActive={taskTabActive}
 				piTabActive={piTabActive}
 				agents={runtimeProjectConfig.agents}
 				onActivateHome={handleActivateHome}
 				onActivatePi={handleActivatePi}
-				onActivateTask={handleActivateTask}
 				onActivateTab={handleActivateSessionTab}
 				onCloseTab={homeThreads.closeSessionTab}
 			/>
@@ -187,8 +170,6 @@ export function HomeChatWorkspace({
 					taskSessions={taskSessions}
 					workspaceGit={workspaceGit}
 				/>
-			) : taskTabActive ? (
-				<ActiveTaskList agents={runtimeProjectConfig.agents} onOpenTask={onOpenTask} />
 			) : showHomeTab ? (
 				<div className="flex min-h-0 flex-1 flex-col">
 					<div className="shrink-0 px-1 pb-3">

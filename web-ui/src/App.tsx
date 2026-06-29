@@ -465,18 +465,6 @@ export default function App(): ReactElement {
 			chatDock.reopen();
 		}
 	}, [chatDock]);
-	// Opening a task from the fullscreen Task tab jumps into its detail/transcript.
-	// The detail view renders below the fullscreen overlay (z-40), so exit
-	// fullscreen first to reveal it — mirroring the board card's selection side
-	// effects (collapse git history).
-	const handleOpenTaskFromHomeChat = useCallback(
-		(taskId: string) => {
-			chatDock.exitFullscreen();
-			setIsGitHistoryOpen(false);
-			setSelectedTaskId(taskId);
-		},
-		[chatDock, setSelectedTaskId],
-	);
 	const { runningShortcutLabel, handleSelectShortcutLabel, handleRunShortcut, handleCreateShortcut } =
 		useShortcutActions({
 			currentProjectId,
@@ -871,7 +859,6 @@ export default function App(): ReactElement {
 								homeThreads={homeThreads}
 								taskSessions={sessions}
 								workspaceGit={workspaceGit}
-								onOpenTask={handleOpenTaskFromHomeChat}
 							/>
 						}
 					>

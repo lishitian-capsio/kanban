@@ -1,13 +1,12 @@
 // The horizontal tab strip for the fullscreen home workspace (decision 1902b).
 //
-// The leftmost tabs are the permanent anchors — Home (the launcher / session-card dashboard),
-// Pi (native-agent workspace), and Tasks (active-task tracker); they are always present and
-// cannot be closed. To their right sit the coexisting session tabs, one per open thread, which
-// the user switches between horizontally. Closing a session tab is a UI-only collapse back to
-// Home — it never hard-closes the thread (that stays an explicit action in the launcher /
-// thread bar). Only the session-tab region scrolls horizontally when the tabs overflow; the
-// anchored tabs stay pinned and visible.
-import { Bot, LayoutGrid, ListChecks, X } from "lucide-react";
+// The leftmost tabs are the permanent anchors — Home (the launcher / session-card dashboard)
+// and Pi (native-agent workspace); they are always present and cannot be closed. To their
+// right sit the coexisting session tabs, one per open thread, which the user switches between
+// horizontally. Closing a session tab is a UI-only collapse back to Home — it never hard-closes
+// the thread (that stays an explicit action in the launcher / thread bar). Only the session-tab
+// region scrolls horizontally when the tabs overflow; the anchored tabs stay pinned and visible.
+import { Bot, LayoutGrid, X } from "lucide-react";
 import { useEffect, useRef, type ReactElement } from "react";
 
 import { ThreadAgentBadge } from "@/components/home-agent/thread-agent-badge";
@@ -20,14 +19,11 @@ interface SessionTabStripProps {
 	openThreadIds: string[];
 	/** The active tab's thread id, or null when the Home tab is active. */
 	activeThreadId: string | null;
-	/** Whether the fixed Task tab (active-task tracker) is the active tab. */
-	taskTabActive: boolean;
 	/** Whether the fixed Pi tab (native-agent multi-session workspace) is the active tab. */
 	piTabActive: boolean;
 	agents: RuntimeAgentDefinition[];
 	onActivateHome: () => void;
 	onActivatePi: () => void;
-	onActivateTask: () => void;
 	onActivateTab: (threadId: string) => void;
 	onCloseTab: (threadId: string) => void;
 }
@@ -36,24 +32,22 @@ export function SessionTabStrip({
 	threads,
 	openThreadIds,
 	activeThreadId,
-	taskTabActive,
 	piTabActive,
 	agents,
 	onActivateHome,
 	onActivatePi,
-	onActivateTask,
 	onActivateTab,
 	onCloseTab,
 }: SessionTabStripProps): ReactElement {
-	// The Pi and Task tabs are peers of the Home tab; while either is active neither Home
+	// The Pi tab is a peer of the Home tab; while it is active neither Home
 	// nor any session tab is highlighted.
-	const homeActive = activeThreadId === null && !taskTabActive && !piTabActive;
+	const homeActive = activeThreadId === null && !piTabActive;
 
 	// Keep the active tab scrolled into view: when many session tabs overflow their
 	// scroll region, activating one (or opening a new one) that sits past the visible
 	// range would otherwise leave the user with no on-strip focus marker. We query the
 	// active tab via a data attribute on the container so a single ref covers the Home,
-	// Pi, Task, and session tabs without juggling element-typed refs. `scrollIntoView`
+	// Pi, and session tabs without juggling element-typed refs. `scrollIntoView`
 	// targets the nearest scrollable ancestor, so it's a no-op for the pinned anchor
 	// tabs and only scrolls the session-tab region. `inline/block: nearest` confines
 	// the scroll to that region (no whole-page jump); the first paint uses `auto` so
@@ -71,7 +65,7 @@ export function SessionTabStrip({
 			block: "nearest",
 		});
 		hasScrolledRef.current = true;
-	}, [activeThreadId, taskTabActive, piTabActive]);
+	}, [activeThreadId, piTabActive]);
 
 	return (
 		<div
@@ -117,24 +111,6 @@ export function SessionTabStrip({
 					<Bot size={14} className="shrink-0" aria-hidden="true" />
 					<span>Pi</span>
 				</button>
-
-				<button
-					type="button"
-					role="tab"
-					aria-selected={taskTabActive}
-					data-active-tab={taskTabActive ? "true" : undefined}
-					onClick={onActivateTask}
-					title="Tasks — active task tracker"
-					className={cn(
-						"flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] outline-none transition-colors focus-visible:border-border-focus",
-						taskTabActive
-							? "bg-surface-2 font-medium text-text-primary"
-							: "text-text-secondary hover:bg-surface-2 hover:text-text-primary",
-					)}
-				>
-					<ListChecks size={14} className="shrink-0" aria-hidden="true" />
-					<span>Tasks</span>
-				</button>
 			</div>
 
 			{/* Session tabs scroll horizontally; the overlay scrollbar is hidden until hover. */}
@@ -144,7 +120,7 @@ export function SessionTabStrip({
 					if (!thread) {
 						return null;
 					}
-					const isActive = threadId === activeThreadId && !taskTabActive && !piTabActive;
+					const isActive = threadId === activeThreadId && !piTabActive;
 					return (
 						<div
 							key={threadId}
