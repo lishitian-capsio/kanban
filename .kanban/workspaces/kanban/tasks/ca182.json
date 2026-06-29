@@ -1,0 +1,20 @@
+{
+  "id": "ca182",
+  "title": "修复 home 会话卡片显示 Thinking… 但实际在等用户输入",
+  "prompt": "Bug：home/sidebar 会话 agent 的会话卡片(全屏 Home-tab 启动器 tile)显示实时活动 Thinking…，但点进去该会话其实已经结束回合、在等用户输入(空闲)。卡片谎报 agent 在工作。\n\n先验证、别照搬假设。关键事实链：\n- 之前一个修复已把 Thinking… 文案收紧到只有 summary.state===running 才渲染(session-activity.ts 约 191-192 行硬编码 Thinking… 仅 running；135-139 行把 running-indicator 文案在 state!==running 时过滤掉)。\n- 既然你仍看到 Thinking…，说明这个 home 会话的 summary.state 实际卡在 running——也就是 agent 停了、在等输入，但状态没结算。所以这更可能是【后端状态没落定】，不是单纯前端 gate。\n- 第一步：复现并确认一个【正在等用户输入的 home 会话】其 summary.state 到底是什么(running 还是 awaiting_review)。加临时日志/断点看真实值，按结果决定改哪层，别猜。\n\n产品意图：home 聊天没有 review 概念。home 会话在 agent 回合结束、等待用户输入时，卡片应读作【空闲/该你了】——不显示 spinner、不显示 Thinking…、也不显示 Waiting for review。只显示安静的状态点 + 最近消息预览。\n\n按真实 state 对症：\nA. 若 state 卡在 running(很可能)：后端要让 home 会话在回合结束(Stop hook / turn 边界)结算到非 running 状态——和普通 task 会话一样会经 transitionToReview，但 home 会话似乎没走到/没落定。查 src/terminal/session-state-machine.ts、src/terminal/session-manager.ts、src/trpc/hooks-api.ts(event to_review→transitionToReview)，以及 home-agent 合成会话(__home_agent__)的状态接线——确认 home 会话的 Stop hook 是否触发、为何不离开 running。\nB. 若 state 是 awaiting_review：前端要为 home agent 把 awaiting_review 当成【等你输入】渲染——home-session-card.tsx 约 82-83 行 showLiveActivity = status.status !== idle 太宽，应只在 running(以及 error)时显示实时活动行，awaiting/idle 显示预览；并修掉对 home 会话显示 Waiting for review 的文案(home 无 review)。涉及 home-session-card-derive.ts 的 deriveHomeSessionCardStatus(约 55-105 行)与 session-activity.ts getCardSessionActivity(约 135-196 行)。\n\n很可能 A+B 都要：后端结算状态 + 前端把 home 会话的等待态渲染为空闲/该你了。\n\n协调：任务 18a65(统一会话 agent 表示)刚重构了 home-session-card 和状态标记(抽出 SessionAgentIdentity / AgentAvatar / 状态徽章)，分支 feat/unify-session-agent-identity。本修复要在其结构之上改、避免冲突，复用其状态徽章。\n\n复现验证根因后再改，补测试，最后说明真实 state 是什么、最终改在哪层。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "be8da62b-73a2-48bf-99f8-7aa66272411b",
+  "baseRef": "main",
+  "createdAt": 1782742680528,
+  "updatedAt": 1782742680528,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
