@@ -109,10 +109,10 @@
     {
       "id": "6588c4a9-28df-4a75-9774-172e2bb7832c",
       "agentId": "claude",
-      "name": "vault的file我想单独移出来设计及开发",
+      "name": "File 轻量弹窗设计与开发",
       "titleSource": "auto",
       "createdAt": 1782717051577,
-      "updatedAt": 1782717051577
+      "updatedAt": 1782717834150
     }
   ],
   "fullscreenTabs": {
