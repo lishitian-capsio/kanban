@@ -1,0 +1,19 @@
+{
+  "id": "cc410",
+  "title": "Tasks tab 展示任务依赖关系与 auto-review 标识",
+  "prompt": "需求：kanban agent 全屏模式下的 Tasks tab，目前看不出两类信息，希望补上：\n1) **任务之间的依赖关系**：哪个任务依赖/等待哪个任务（看板上是用箭头表示的 dependency link）。在 Tasks tab 里应能看出这种关系（例如标出\"等待 #XXXX 完成\"或分组/连线/标识）。\n2) **auto 标识**：某个任务是否开启了 auto-review（自动 commit 或自动开 PR）。Tasks tab 上应有一个轻量标识表明该任务完成后会自动 commit / 自动 PR。\n\n背景：\n- 任务依赖（dependsOn）是单向的 backlog→非backlog 链接；任务完成进入 done 时会自动启动被链接的 backlog 任务。看板视图用箭头表示，箭头指向必须先完成的前置任务。\n- auto-review 有 autoReviewEnabled + autoReviewMode（commit | pr），task list 输出里能拿到这些字段。\n- **协调提示**：任务 #ae0db 正在给同一个全屏 Tasks tab 组件加入 backlog 任务的展示，二者改动区域重叠；实现时请基于/兼容 #ae0db 的改动，避免冲突或互相覆盖。\n\n实现要点（供参考，不限定）：\n- 定位全屏 Tasks tab 组件及其数据源（task list / board dependencies 数据）。\n- 在任务行/卡片上以低调可读的方式呈现：依赖关系（如\"⛓ 等待 #XXXX\"或前置/后继标识）+ auto 标识（如 auto-commit / auto-PR 小徽标）。\n- 与现有的状态点、活动行排版协调，保持只读语义。\n\n期望结果：Tasks tab 能直观看出任务间依赖关系，以及哪些任务开启了 auto-commit / auto-PR。涉及 web-ui Tasks tab 组件与依赖/auto-review 数据展示。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782698042092,
+  "updatedAt": 1782698042092,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
