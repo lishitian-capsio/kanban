@@ -9,9 +9,11 @@ import { AddProjectDialog } from "@/components/add-project-dialog";
 import { notifyError, showAppToast } from "@/components/app-toaster";
 import { CardDetailView } from "@/components/card-detail-view";
 import { ClearTrashDialog } from "@/components/clear-trash-dialog";
+import { DatabaseView } from "@/components/database/database-view";
 import { DebugDialog } from "@/components/debug-dialog";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
 import { GitHistoryView } from "@/components/git-history-view";
+import { selectHomeChatLayout } from "@/components/home-agent/chat-dock-state";
 import { DockableChatPanel } from "@/components/home-agent/dockable-chat-panel";
 import { HomeChatWorkspace } from "@/components/home-agent/home-chat-workspace";
 import { HomeSidebarAgentPanel } from "@/components/home-agent/home-sidebar-agent-panel";
@@ -33,7 +35,6 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { UpdateNotificationController } from "@/components/update-notification-controller";
-import { DatabaseView } from "@/components/database/database-view";
 import { VaultView } from "@/components/vault/vault-view";
 import { createInitialBoardData } from "@/data/board-data";
 import { createIdleTaskSession } from "@/hooks/app-utils";
@@ -458,6 +459,15 @@ export default function App(): ReactElement {
 	// HomeSidebarAgentPanel renders null exactly when hasNoProjects || !currentProjectId,
 	// so mirror that gate here rather than instantiating the panel to test for null.
 	const isHomeChatAvailable = !selectedCard && !hasNoProjects && !!currentProjectId;
+	// When the home chat is in its fullscreen layout it covers the viewport with an
+	// opaque `fixed inset-0` overlay. The board sits behind that overlay, so on the
+	// enter-fullscreen frame the board reflows to full width and its
+	// `content-visibility: auto` cards repaint before the freshly-mounted overlay
+	// composites over them — a one-frame flash. Gate the board content off the same
+	// state so it is simply not rendered while fullscreen is active (atomic, no race),
+	// rather than rendered-then-covered. The live home terminal sibling stays mounted.
+	const isHomeChatFullscreen =
+		isHomeChatAvailable && chatDock.open && selectHomeChatLayout(chatDock.position) === "fullscreen";
 	const handleToggleHomeChat = useCallback(() => {
 		if (chatDock.open) {
 			chatDock.hide();
@@ -966,56 +976,60 @@ export default function App(): ReactElement {
 								</div>
 							) : (
 								<div className="flex flex-1 flex-col min-h-0 min-w-0">
-									<div className="flex flex-1 min-h-0 min-w-0">
-										{isVaultOpen ? (
-											<VaultView workspaceId={currentProjectId} initialView="requirements" />
-										) : isDatabaseOpen ? (
-											<DatabaseView workspaceId={currentProjectId} />
-										) : isGitHistoryOpen ? (
-											<GitHistoryView
-												workspaceId={currentProjectId}
-												gitHistory={gitHistory}
-												onCheckoutBranch={(branch) => {
-													void switchHomeBranch(branch);
-												}}
-												onDiscardWorkingChanges={() => {
-													void discardHomeWorkingChanges();
-												}}
-												isDiscardWorkingChangesPending={isDiscardingHomeWorkingChanges}
-											/>
-										) : (
-											<KanbanBoard
-												data={board}
-												taskSessions={sessions}
-												workspacePath={workspacePath}
-												onCardSelect={handleCardSelect}
-												onCreateTask={handleOpenCreateTask}
-												onStartTask={handleStartTaskFromBoard}
-												onStartAllTasks={handleStartAllBacklogTasksFromBoard}
-												onClearTrash={handleOpenClearTrash}
-												editingTaskId={editingTaskId}
-												inlineTaskEditor={inlineTaskEditor}
-												onEditTask={handleOpenEditTask}
-												onSaveTaskTitle={handleSaveTaskTitle}
-												onCommitTask={handleCommitTask}
-												onOpenPrTask={handleOpenPrTask}
-												onCancelAutomaticTaskAction={handleCancelAutomaticTaskAction}
-												commitTaskLoadingById={commitTaskLoadingById}
-												openPrTaskLoadingById={openPrTaskLoadingById}
-												moveToTrashLoadingById={moveToTrashLoadingById}
-												onMoveToTrashTask={handleMoveReviewCardToTrash}
-												onRestoreFromTrashTask={handleRestoreTaskFromTrash}
-												dependencies={board.dependencies}
-												onCreateDependency={handleCreateDependency}
-												onDeleteDependency={handleDeleteDependency}
-												onRequestProgrammaticCardMoveReady={
-													selectedCard ? undefined : handleProgrammaticCardMoveReady
-												}
-												onDragEnd={handleDragEnd}
-												defaultKanbanModelId={runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null}
-											/>
-										)}
-									</div>
+									{isHomeChatFullscreen ? null : (
+										<div className="flex flex-1 min-h-0 min-w-0">
+											{isVaultOpen ? (
+												<VaultView workspaceId={currentProjectId} initialView="requirements" />
+											) : isDatabaseOpen ? (
+												<DatabaseView workspaceId={currentProjectId} />
+											) : isGitHistoryOpen ? (
+												<GitHistoryView
+													workspaceId={currentProjectId}
+													gitHistory={gitHistory}
+													onCheckoutBranch={(branch) => {
+														void switchHomeBranch(branch);
+													}}
+													onDiscardWorkingChanges={() => {
+														void discardHomeWorkingChanges();
+													}}
+													isDiscardWorkingChangesPending={isDiscardingHomeWorkingChanges}
+												/>
+											) : (
+												<KanbanBoard
+													data={board}
+													taskSessions={sessions}
+													workspacePath={workspacePath}
+													onCardSelect={handleCardSelect}
+													onCreateTask={handleOpenCreateTask}
+													onStartTask={handleStartTaskFromBoard}
+													onStartAllTasks={handleStartAllBacklogTasksFromBoard}
+													onClearTrash={handleOpenClearTrash}
+													editingTaskId={editingTaskId}
+													inlineTaskEditor={inlineTaskEditor}
+													onEditTask={handleOpenEditTask}
+													onSaveTaskTitle={handleSaveTaskTitle}
+													onCommitTask={handleCommitTask}
+													onOpenPrTask={handleOpenPrTask}
+													onCancelAutomaticTaskAction={handleCancelAutomaticTaskAction}
+													commitTaskLoadingById={commitTaskLoadingById}
+													openPrTaskLoadingById={openPrTaskLoadingById}
+													moveToTrashLoadingById={moveToTrashLoadingById}
+													onMoveToTrashTask={handleMoveReviewCardToTrash}
+													onRestoreFromTrashTask={handleRestoreTaskFromTrash}
+													dependencies={board.dependencies}
+													onCreateDependency={handleCreateDependency}
+													onDeleteDependency={handleDeleteDependency}
+													onRequestProgrammaticCardMoveReady={
+														selectedCard ? undefined : handleProgrammaticCardMoveReady
+													}
+													onDragEnd={handleDragEnd}
+													defaultKanbanModelId={
+														runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null
+													}
+												/>
+											)}
+										</div>
+									)}
 									{showHomeBottomTerminal ? (
 										<ResizableBottomPane
 											minHeight={200}
