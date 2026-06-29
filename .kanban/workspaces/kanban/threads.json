@@ -56,10 +56,11 @@
     {
       "id": "09cbba03-af49-47b6-9e38-85e50946643b",
       "agentId": "claude",
-      "name": "kanban agent的底部的cpu、内存等，是否可以看到趋势图？",
+      "name": "侧栏 ops 状态栏趋势图",
       "titleSource": "auto",
       "createdAt": 1782698449665,
-      "updatedAt": 1782698449665
+      "updatedAt": 1782699411767,
+      "pendingNextStep": "启动任务 b6c80"
     }
   ],
   "fullscreenTabs": {
@@ -72,6 +73,6 @@
       "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
       "09cbba03-af49-47b6-9e38-85e50946643b"
     ],
-    "activeThreadId": "4f4258a4-d3cb-48b6-99ed-3448706dc93e"
+    "activeThreadId": "be8da62b-73a2-48bf-99f8-7aa66272411b"
   }
 }
