@@ -24,6 +24,7 @@ import {
 	getKanbanRuntimeTls,
 	isKanbanRemoteHost,
 } from "../core/runtime-endpoint";
+import { findOpenTasksForOriginThread } from "../core/task-board-mutations";
 import {
 	checkRateLimit,
 	clearRateLimit,
@@ -38,7 +39,11 @@ import {
 } from "../security/passcode-manager";
 import { createWorkspaceHomeThreadStore, type HomeThreadStore } from "../session/home-thread-store";
 import { FileSessionMessageJournal } from "../session/session-message-journal";
-import { getWorkspaceSessionMessagesDirPath, loadWorkspaceContextById } from "../state/workspace-state";
+import {
+	getWorkspaceSessionMessagesDirPath,
+	loadWorkspaceBoardById,
+	loadWorkspaceContextById,
+} from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { createTerminalWebSocketBridge } from "../terminal/ws-server";
 import { type RuntimeTrpcContext, type RuntimeTrpcWorkspaceScope, runtimeAppRouter } from "../trpc/app-router";
@@ -190,6 +195,16 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		let store = homeThreadStoreByWorkspaceId.get(scope.workspaceId);
 		if (!store) {
 			store = createWorkspaceHomeThreadStore(scope.workspaceId, {
+				// Block a hard close while the thread still has unfinished tasks it
+				// originated (any task in a non-terminal column). Reads the live board so
+				// the check reflects the current column of each task.
+				getOpenOriginTasks: async (threadId) => {
+					const board = await loadWorkspaceBoardById(scope.workspaceId);
+					return findOpenTasksForOriginThread(board, threadId).map((card) => ({
+						id: card.id,
+						title: card.title,
+					}));
+				},
 				onCloseSession: async (sessionId) => {
 					// Route cleanup to the agent that actually backs the session, so
 					// closing a thread never lazily spins up the other manager.

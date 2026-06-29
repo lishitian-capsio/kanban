@@ -31,6 +31,38 @@ export interface HomeThreadPersistence {
 	mutate(fn: (current: RuntimeHomeChatThreadsData) => RuntimeHomeChatThreadsData): Promise<RuntimeHomeChatThreadsData>;
 }
 
+/** A minimal reference to a task that blocks a thread close. */
+export interface HomeThreadOpenTask {
+	id: string;
+	title: string;
+}
+
+/**
+ * Thrown by {@link HomeThreadStore.close} when the thread still has open
+ * (non-terminal) tasks it originated. The hard close is refused so the thread's
+ * session/transcript is never destroyed while its work is unfinished.
+ */
+export class HomeThreadCloseBlockedError extends Error {
+	readonly openTasks: HomeThreadOpenTask[];
+
+	constructor(openTasks: HomeThreadOpenTask[]) {
+		super(formatBlockedMessage(openTasks));
+		this.name = "HomeThreadCloseBlockedError";
+		this.openTasks = openTasks;
+	}
+}
+
+function formatBlockedMessage(openTasks: HomeThreadOpenTask[]): string {
+	const count = openTasks.length;
+	const noun = count === 1 ? "task" : "tasks";
+	const preview = openTasks
+		.slice(0, 3)
+		.map((task) => `"${task.title}"`)
+		.join(", ");
+	const suffix = count > 3 ? `, and ${count - 3} more` : "";
+	return `Cannot close this thread: it still has ${count} unfinished ${noun} (${preview}${suffix}). Move them to Done first, then close the thread.`;
+}
+
 export interface HomeThreadStoreOptions {
 	workspaceId: string;
 	persistence: HomeThreadPersistence;
@@ -41,6 +73,14 @@ export interface HomeThreadStoreOptions {
 	 * to the session managers in the workspace registry.
 	 */
 	onCloseSession?: (sessionId: string) => Promise<void> | void;
+	/**
+	 * Returns the open (non-terminal) tasks the thread originated. When this is
+	 * provided and returns a non-empty list, {@link HomeThreadStore.close} refuses
+	 * the hard close (throws {@link HomeThreadCloseBlockedError}). Injected so the
+	 * store stays I/O-free and unit-testable; the runtime wires it to the
+	 * workspace board.
+	 */
+	getOpenOriginTasks?: (threadId: string) => Promise<HomeThreadOpenTask[]> | HomeThreadOpenTask[];
 	now?: () => number;
 	generateId?: () => string;
 }
@@ -68,6 +108,7 @@ export class HomeThreadStore {
 	private readonly workspaceId: string;
 	private readonly persistence: HomeThreadPersistence;
 	private readonly onCloseSession?: (sessionId: string) => Promise<void> | void;
+	private readonly getOpenOriginTasks?: (threadId: string) => Promise<HomeThreadOpenTask[]> | HomeThreadOpenTask[];
 	private readonly now: () => number;
 	private readonly generateId: () => string;
 
@@ -75,6 +116,7 @@ export class HomeThreadStore {
 		this.workspaceId = options.workspaceId;
 		this.persistence = options.persistence;
 		this.onCloseSession = options.onCloseSession;
+		this.getOpenOriginTasks = options.getOpenOriginTasks;
 		this.now = options.now ?? (() => Date.now());
 		this.generateId = options.generateId ?? (() => randomUUID());
 	}
@@ -162,6 +204,16 @@ export class HomeThreadStore {
 	}
 
 	async close(id: string): Promise<RuntimeHomeChatThread> {
+		// Refuse a hard close (which stops the process and deletes the transcript)
+		// while the thread still has unfinished tasks it originated. The check runs
+		// before any mutation so a blocked close leaves the registry and session
+		// untouched.
+		if (this.getOpenOriginTasks) {
+			const openTasks = await this.getOpenOriginTasks(id);
+			if (openTasks.length > 0) {
+				throw new HomeThreadCloseBlockedError(openTasks);
+			}
+		}
 		let removed: RuntimeHomeChatThread | undefined;
 		await this.persistence.mutate((current) => {
 			const result = closeHomeThread(current, id);
@@ -180,6 +232,7 @@ export class HomeThreadStore {
 
 export interface CreateWorkspaceHomeThreadStoreOptions {
 	onCloseSession?: (sessionId: string) => Promise<void> | void;
+	getOpenOriginTasks?: (threadId: string) => Promise<HomeThreadOpenTask[]> | HomeThreadOpenTask[];
 }
 
 /** Build a `threads.json`-backed store for a workspace. */
@@ -194,5 +247,6 @@ export function createWorkspaceHomeThreadStore(
 			mutate: (fn) => mutateWorkspaceHomeThreads(workspaceId, fn),
 		},
 		onCloseSession: options.onCloseSession,
+		getOpenOriginTasks: options.getOpenOriginTasks,
 	});
 }

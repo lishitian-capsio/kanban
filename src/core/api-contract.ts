@@ -134,6 +134,16 @@ export const runtimeBoardColumnIdSchema = z.preprocess(
 );
 export type RuntimeBoardColumnId = z.infer<typeof runtimeBoardColumnIdEnum>;
 
+/**
+ * Whether a column is the terminal bucket. `done` and `trash` are the same
+ * terminal bucket (the schema aliases `done` → `trash`), so the only terminal
+ * column id is `trash`. A task in any other column (`backlog`/`in_progress`/
+ * `review`) is still "open" / unfinished.
+ */
+export function isTerminalBoardColumn(columnId: RuntimeBoardColumnId): boolean {
+	return columnId === "trash";
+}
+
 const runtimeTaskAutoReviewModeEnum = z.enum(["commit", "pr"]);
 export const runtimeTaskAutoReviewModeSchema = z.preprocess(
 	(val) => (val === "move_to_trash" || val === "move_to_done" ? "commit" : val),
@@ -242,8 +252,9 @@ export const runtimeBoardCardObjectSchema = z.object({
 	// The home (sidebar) chat thread that originated this task, when known. A
 	// declarative, write-once provenance stamp set at creation (NOT a live channel:
 	// see decisions 10c53/bccca) so the fullscreen UI can group tasks by the session
-	// that spawned them. Optional + back-compat: tasks created on the board directly,
-	// or by a plain CLI invocation with no home session, simply omit it.
+	// that spawned them, and so a hard thread close can be blocked while the thread
+	// still has unfinished tasks. Optional + back-compat: tasks created on the board
+	// directly, or by a plain CLI invocation with no home session, simply omit it.
 	originThreadId: z.string().optional(),
 	baseRef: z.string(),
 	createdAt: z.number(),
@@ -405,9 +416,7 @@ export type RuntimeHomeChatThreadMutationResponse = z.infer<typeof runtimeHomeCh
 // UI state, so the request IS the new {@link RuntimeHomeChatFullscreenTabs}; the runtime
 // sanitizes it (drops tabs for threads that no longer exist) before writing.
 export const runtimeHomeChatFullscreenTabsSaveRequestSchema = runtimeHomeChatFullscreenTabsSchema;
-export type RuntimeHomeChatFullscreenTabsSaveRequest = z.infer<
-	typeof runtimeHomeChatFullscreenTabsSaveRequestSchema
->;
+export type RuntimeHomeChatFullscreenTabsSaveRequest = z.infer<typeof runtimeHomeChatFullscreenTabsSaveRequestSchema>;
 
 export const runtimeHomeChatFullscreenTabsResponseSchema = z.object({
 	ok: z.boolean(),

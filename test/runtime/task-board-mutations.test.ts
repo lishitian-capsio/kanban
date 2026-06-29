@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type { RuntimeBoardData } from "../../src/core/api-contract";
+import { isTerminalBoardColumn, type RuntimeBoardData } from "../../src/core/api-contract";
 import {
 	addTaskDependency,
 	addTaskToColumn,
 	deleteTasksFromBoard,
+	findOpenTasksForOriginThread,
 	moveTaskToColumn,
 	trashTaskAndGetReadyLinkedTaskIds,
 	updateTask,
@@ -130,6 +131,89 @@ describe("task images", () => {
 				mimeType: "image/jpeg",
 			},
 		]);
+	});
+});
+
+describe("isTerminalBoardColumn", () => {
+	it("treats trash (the done/trash terminal bucket) as terminal", () => {
+		expect(isTerminalBoardColumn("trash")).toBe(true);
+	});
+
+	it("treats backlog, in_progress and review as non-terminal", () => {
+		expect(isTerminalBoardColumn("backlog")).toBe(false);
+		expect(isTerminalBoardColumn("in_progress")).toBe(false);
+		expect(isTerminalBoardColumn("review")).toBe(false);
+	});
+});
+
+describe("findOpenTasksForOriginThread", () => {
+	function boardWithOriginTasks() {
+		let board = createBoard();
+		const backlog = addTaskToColumn(
+			board,
+			"backlog",
+			{ prompt: "Backlog task", baseRef: "main", originThreadId: "t1" },
+			() => "aaaaa111",
+		);
+		board = backlog.board;
+		const wip = addTaskToColumn(
+			board,
+			"in_progress",
+			{ prompt: "WIP task", baseRef: "main", originThreadId: "t1" },
+			() => "bbbbb111",
+		);
+		board = wip.board;
+		const review = addTaskToColumn(
+			board,
+			"review",
+			{ prompt: "Review task", baseRef: "main", originThreadId: "t1" },
+			() => "ccccc111",
+		);
+		board = review.board;
+		const done = addTaskToColumn(
+			board,
+			"trash",
+			{ prompt: "Done task", baseRef: "main", originThreadId: "t1" },
+			() => "ddddd111",
+		);
+		board = done.board;
+		const otherThread = addTaskToColumn(
+			board,
+			"backlog",
+			{ prompt: "Other thread task", baseRef: "main", originThreadId: "t2" },
+			() => "eeeee111",
+		);
+		board = otherThread.board;
+		const threadless = addTaskToColumn(
+			board,
+			"backlog",
+			{ prompt: "Threadless task", baseRef: "main" },
+			() => "fffff111",
+		);
+		board = threadless.board;
+		return { board, backlog, wip, review, done, otherThread };
+	}
+
+	it("returns only non-terminal tasks originated by the given thread", () => {
+		const { board, backlog, wip, review } = boardWithOriginTasks();
+		const open = findOpenTasksForOriginThread(board, "t1");
+		expect(open.map((card) => card.id).sort()).toEqual([backlog.task.id, wip.task.id, review.task.id].sort());
+	});
+
+	it("excludes tasks in the done/trash terminal bucket", () => {
+		const { board, done } = boardWithOriginTasks();
+		const open = findOpenTasksForOriginThread(board, "t1");
+		expect(open.some((card) => card.id === done.task.id)).toBe(false);
+	});
+
+	it("ignores tasks from other threads and threadless tasks", () => {
+		const { board, otherThread } = boardWithOriginTasks();
+		const open = findOpenTasksForOriginThread(board, "t2");
+		expect(open.map((card) => card.id)).toEqual([otherThread.task.id]);
+	});
+
+	it("returns an empty array when the thread has no open tasks", () => {
+		expect(findOpenTasksForOriginThread(createBoard(), "nobody")).toEqual([]);
 	});
 });
 

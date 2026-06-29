@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { RuntimeHomeChatThreadsData } from "../../../src/core/api-contract";
-import { type HomeThreadPersistence, HomeThreadStore } from "../../../src/session/home-thread-store";
+import {
+	HomeThreadCloseBlockedError,
+	type HomeThreadPersistence,
+	HomeThreadStore,
+} from "../../../src/session/home-thread-store";
 
 function inMemoryPersistence(initial: RuntimeHomeChatThreadsData = { threads: [] }): HomeThreadPersistence {
 	let data = initial;
@@ -96,6 +100,51 @@ describe("HomeThreadStore", () => {
 		expect(await store.list()).toHaveLength(0);
 		// Non-default thread id => four-segment session id.
 		expect(onCloseSession).toHaveBeenCalledWith(`__home_agent__:workspace-1:claude:${created.id}`);
+	});
+
+	it("blocks a hard close while the thread still has open origin tasks, and does not remove it or touch the session", async () => {
+		const onCloseSession = vi.fn(async () => undefined);
+		const getOpenOriginTasks = vi.fn(async () => [
+			{ id: "task-a", title: "Wire the API" },
+			{ id: "task-b", title: "Add the button" },
+		]);
+		const { store } = makeStore({ onCloseSession, getOpenOriginTasks });
+		const created = await store.create({ agentId: "pi", name: "Busy" });
+
+		await expect(store.close(created.id)).rejects.toBeInstanceOf(HomeThreadCloseBlockedError);
+
+		// The thread survives and the backing session is never cleaned up.
+		expect(await store.list()).toHaveLength(1);
+		expect(onCloseSession).not.toHaveBeenCalled();
+		expect(getOpenOriginTasks).toHaveBeenCalledWith(created.id);
+	});
+
+	it("reports the count of unfinished tasks in the block error", async () => {
+		const getOpenOriginTasks = vi.fn(async () => [
+			{ id: "task-a", title: "Wire the API" },
+			{ id: "task-b", title: "Add the button" },
+		]);
+		const { store } = makeStore({ getOpenOriginTasks });
+		const created = await store.create({ agentId: "pi", name: "Busy" });
+
+		const error = await store.close(created.id).catch((err: unknown) => err);
+		expect(error).toBeInstanceOf(HomeThreadCloseBlockedError);
+		const blocked = error as HomeThreadCloseBlockedError;
+		expect(blocked.openTasks).toHaveLength(2);
+		expect(blocked.message).toContain("2");
+	});
+
+	it("allows a hard close when the thread has no open origin tasks", async () => {
+		const onCloseSession = vi.fn(async () => undefined);
+		const getOpenOriginTasks = vi.fn(async () => []);
+		const { store } = makeStore({ onCloseSession, getOpenOriginTasks });
+		const created = await store.create({ agentId: "pi", name: "Idle" });
+
+		const removed = await store.close(created.id);
+
+		expect(removed.id).toBe(created.id);
+		expect(await store.list()).toHaveLength(0);
+		expect(onCloseSession).toHaveBeenCalledTimes(1);
 	});
 
 	it("lists threads sorted by creation time", async () => {

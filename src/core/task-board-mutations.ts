@@ -9,6 +9,7 @@ import type {
 	RuntimeTaskImage,
 	RuntimeTaskOwner,
 } from "./api-contract";
+import { isTerminalBoardColumn } from "./api-contract";
 import { safeRandomUUID } from "./safe-uuid";
 import { createUniqueTaskId } from "./task-id";
 import { resolveTaskTitle } from "./task-title";
@@ -24,7 +25,7 @@ export interface RuntimeCreateTaskInput {
 	agentId?: RuntimeAgentId;
 	agentSettings?: RuntimeTaskAgentSettings;
 	owner?: RuntimeTaskOwner;
-	/** Home chat thread that originated the task; omitted/blank leaves the task unattributed. */
+	/** Home chat thread that originated the task (see `RuntimeBoardCard.originThreadId`); omitted/blank leaves it unattributed. */
 	originThreadId?: string;
 	baseRef: string;
 }
@@ -359,6 +360,27 @@ export function addTaskToColumn(
 		},
 		task,
 	};
+}
+
+/**
+ * The open (non-terminal) tasks a home chat thread originated. A task is open
+ * when its column is not the terminal `done`/`trash` bucket
+ * ({@link isTerminalBoardColumn}). Used to block a hard thread close while the
+ * thread still has unfinished work.
+ */
+export function findOpenTasksForOriginThread(board: RuntimeBoardData, threadId: string): RuntimeBoardCard[] {
+	const open: RuntimeBoardCard[] = [];
+	for (const column of board.columns) {
+		if (isTerminalBoardColumn(column.id)) {
+			continue;
+		}
+		for (const card of column.cards) {
+			if (card.originThreadId === threadId) {
+				open.push(card);
+			}
+		}
+	}
+	return open;
 }
 
 export function getTaskColumnId(board: RuntimeBoardData, taskId: string): RuntimeBoardColumnId | null {
