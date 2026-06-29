@@ -47,10 +47,10 @@
     {
       "id": "be8da62b-73a2-48bf-99f8-7aa66272411b",
       "agentId": "claude",
-      "name": "会话 agent 与任务 agent 的关系",
+      "name": "全屏下按会话 agent 归类任务",
       "titleSource": "auto",
       "createdAt": 1782698377856,
-      "updatedAt": 1782698412557,
+      "updatedAt": 1782700538886,
       "pendingNextStep": "建个任务：在 decision 和 note 类型的 authoring 提示里补上 related_tasks 约定"
     },
     {
