@@ -1,10 +1,10 @@
 // The left rail of the fullscreen Pi tab: pi's own session list.
 //
-// Lists every pi session (the pinned base + created pi threads), lets the user switch
-// between them, create a new blank one ("+"), and hard-close a created one (gated by the
-// shared confirm dialog). The status marker mirrors the launcher card's semantics, derived
-// from the same per-session summary the rest of the app already streams. The base session
-// (DEFAULT_HOME_THREAD_ID) is never closable.
+// Lists every pi session (created pi threads), lets the user switch between them, create a
+// new blank one ("+"), and hard-close one (gated by the shared confirm dialog). The status
+// marker mirrors the launcher card's semantics, derived from the same per-session summary the
+// rest of the app already streams. Every listed session is a real, closeable thread (the
+// synthetic default is excluded from the Pi tab — see pi-sessions.ts).
 import { createHomeAgentSessionId } from "@runtime-home-agent-session";
 import { Plus, X } from "lucide-react";
 import { type ReactElement, useState } from "react";
@@ -19,7 +19,7 @@ import { deriveSessionShortId } from "@/utils/session-short-id";
 
 interface PiSessionRailProps {
 	sessions: HomeThread[];
-	activeId: string;
+	activeId: string | null;
 	currentProjectId: string;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	onSelect: (threadId: string) => void;
@@ -86,17 +86,15 @@ export function PiSessionRail({
 								#{shortId}
 							</span>
 						</button>
-						{!session.isDefault ? (
-							<button
-								type="button"
-								aria-label={`Close ${label} session`}
-								title="Close session"
-								onClick={() => setCloseTarget(session)}
-								className="shrink-0 cursor-pointer rounded-sm p-0.5 text-text-tertiary opacity-0 transition-opacity hover:bg-surface-4 hover:text-status-red focus-visible:opacity-100 group-hover:opacity-100"
-							>
-								<X size={13} />
-							</button>
-						) : null}
+						<button
+							type="button"
+							aria-label={`Close ${label} session`}
+							title="Close session"
+							onClick={() => setCloseTarget(session)}
+							className="shrink-0 cursor-pointer rounded-sm p-0.5 text-text-tertiary opacity-0 transition-opacity hover:bg-surface-4 hover:text-status-red focus-visible:opacity-100 group-hover:opacity-100"
+						>
+							<X size={13} />
+						</button>
 					</div>
 				);
 			})}

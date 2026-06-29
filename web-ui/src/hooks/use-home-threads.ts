@@ -420,7 +420,10 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		[applyFullscreenTabs],
 	);
 
-	const seedActiveThreadId = activeThread?.id ?? null;
+	// The fullscreen workspace never exposes the synthetic default thread, so entering
+	// fullscreen while the docked default chat is active seeds the Home launcher (null), not a
+	// stale "default" session tab. Created threads still seed their own tab on enter.
+	const seedActiveThreadId = activeThread && !activeThread.isDefault ? activeThread.id : null;
 	const reconcileFullscreenTabsOnEnter = useCallback(
 		() => applyFullscreenTabs((current) => reconcileOnEnterFullscreen(current, seedActiveThreadId)),
 		[applyFullscreenTabs, seedActiveThreadId],

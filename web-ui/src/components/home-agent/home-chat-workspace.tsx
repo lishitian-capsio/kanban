@@ -76,17 +76,26 @@ export function HomeChatWorkspace({
 		reconcileRef.current();
 	}, []);
 
+	// The fullscreen experience does not expose the synthetic always-present default thread
+	// (retired here — the Pi tab + created session threads replace it); it stays reachable in
+	// the compact sidebar for cross-agent / legacy-transcript continuity. So the launcher cards,
+	// the tab strip, and the active-tab lookup all draw from the default-free list.
+	const fullscreenThreads = useMemo(
+		() => homeThreads.threads.filter((thread) => !thread.isDefault),
+		[homeThreads.threads],
+	);
+
 	// Pre-resolve each thread's synthetic session id so the cards (and the session
 	// lookup) agree on the same identity the active surface uses.
 	const sessionCards = useMemo(() => {
 		if (!currentProjectId) {
 			return [];
 		}
-		return homeThreads.threads.map((thread) => ({
+		return fullscreenThreads.map((thread) => ({
 			thread,
 			taskId: createHomeAgentSessionId(currentProjectId, thread.agentId, thread.id),
 		}));
-	}, [currentProjectId, homeThreads.threads]);
+	}, [currentProjectId, fullscreenThreads]);
 
 	// Creating from the "+" card opens the new session straight into its own tab (the
 	// browser-new-tab idiom), not just the launcher grid. Opening a tab is two moves: add it to
@@ -148,13 +157,12 @@ export function HomeChatWorkspace({
 	// Threads already open in a session tab get the accent "already open" highlight on
 	// their launcher card (mirrors the board task card's selected styling).
 	const openThreadIdSet = useMemo(() => new Set(openThreadIds), [openThreadIds]);
-	const { threads } = homeThreads;
 	const activeTabThread = useMemo(
 		() =>
 			activeSessionThreadId === null
 				? null
-				: (threads.find((t) => t.id === activeSessionThreadId) ?? null),
-		[activeSessionThreadId, threads],
+				: (fullscreenThreads.find((t) => t.id === activeSessionThreadId) ?? null),
+		[activeSessionThreadId, fullscreenThreads],
 	);
 
 	// A session tab named in the URL must be in the open-tab set so it shows in the strip
@@ -165,13 +173,15 @@ export function HomeChatWorkspace({
 		}
 	}, [activeTabThread, openThreadIdSet, openSessionTab]);
 
-	// A URL pointing at a session that no longer exists (closed elsewhere, or a stale deep link)
-	// falls back to the Home launcher in place rather than rendering an empty conversation.
+	// A URL pointing at a session not reachable in fullscreen — closed elsewhere, a stale deep
+	// link, or the retired default thread — falls back to the Home launcher in place rather than
+	// rendering an empty conversation. The guard keys on the full loaded thread list (which
+	// includes the synthetic default) so it means "threads have loaded", not "has a session tab".
 	useEffect(() => {
-		if (activeSessionThreadId !== null && threads.length > 0 && activeTabThread === null) {
+		if (activeSessionThreadId !== null && homeThreads.threads.length > 0 && activeTabThread === null) {
 			onReplaceFullscreenTab("home");
 		}
-	}, [activeSessionThreadId, threads.length, activeTabThread, onReplaceFullscreenTab]);
+	}, [activeSessionThreadId, homeThreads.threads.length, activeTabThread, onReplaceFullscreenTab]);
 
 	if (!currentProjectId || !runtimeProjectConfig) {
 		return null;
@@ -202,7 +212,7 @@ export function HomeChatWorkspace({
 	return (
 		<div className="flex h-full min-h-0 w-full flex-col gap-2">
 			<SessionTabStrip
-				threads={homeThreads.threads}
+				threads={fullscreenThreads}
 				openThreadIds={openThreadIds}
 				activeThreadId={activeTabThread ? activeSessionThreadId : null}
 				piTabActive={piTabActive}

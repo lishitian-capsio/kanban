@@ -5,7 +5,8 @@
 // HomeAgentConversation (only one mounts at a time, so no double chat subscription) and the
 // existing thread backend (create/close route to the pi session service). The active-session
 // selection is local transient state; the session list itself is persisted via the registry.
-import { DEFAULT_HOME_THREAD_ID } from "@runtime-home-agent-session";
+// The Pi tab starts empty (no pinned default session) — the user creates the first session.
+import { Plus } from "lucide-react";
 import { type ReactElement, useCallback, useMemo, useState } from "react";
 
 import { HomeAgentConversation } from "@/components/home-agent/home-agent-conversation";
@@ -16,6 +17,7 @@ import {
 	PI_AGENT_ID,
 	resolveActivePiSessionId,
 } from "@/components/home-agent/pi-sessions";
+import { Button } from "@/components/ui/button";
 import type { UseHomeThreadsResult } from "@/hooks/use-home-threads";
 import type { RuntimeConfigResponse, RuntimeGitRepositoryInfo, RuntimeTaskSessionSummary } from "@/runtime/types";
 
@@ -35,10 +37,10 @@ export function PiTabPanel({
 	workspaceGit,
 }: PiTabPanelProps): ReactElement {
 	const piSessions = useMemo(() => derivePiSessions(homeThreads.threads), [homeThreads.threads]);
-	const [requestedActiveId, setRequestedActiveId] = useState<string>(DEFAULT_HOME_THREAD_ID);
+	const [requestedActiveId, setRequestedActiveId] = useState<string | null>(null);
 	const activeId = resolveActivePiSessionId(piSessions, requestedActiveId);
 	const activeSession = useMemo(
-		() => piSessions.find((session) => session.id === activeId) ?? piSessions[0] ?? null,
+		() => (activeId ? (piSessions.find((session) => session.id === activeId) ?? null) : null),
 		[piSessions, activeId],
 	);
 
@@ -56,6 +58,10 @@ export function PiTabPanel({
 		},
 		[closeThread],
 	);
+
+	if (!activeSession) {
+		return <PiSessionsEmptyState onCreate={() => void handleCreate()} />;
+	}
 
 	return (
 		<div className="flex min-h-0 flex-1 gap-2">
@@ -80,6 +86,18 @@ export function PiTabPanel({
 					onClearNextStep={clearNextStep}
 				/>
 			</div>
+		</div>
+	);
+}
+
+/** Shown when the Pi tab has no sessions yet — the user creates the first one. */
+function PiSessionsEmptyState({ onCreate }: { onCreate: () => void }): ReactElement {
+	return (
+		<div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-center">
+			<p className="text-sm text-text-secondary">No pi sessions yet.</p>
+			<Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={onCreate}>
+				New session
+			</Button>
 		</div>
 	);
 }

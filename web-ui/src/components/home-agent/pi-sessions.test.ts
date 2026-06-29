@@ -2,10 +2,8 @@ import { DEFAULT_HOME_THREAD_ID } from "@runtime-home-agent-session";
 import { describe, expect, it } from "vitest";
 
 import {
-	buildPiBaseSession,
 	derivePiSessions,
 	nextActivePiSessionAfterClose,
-	PI_AGENT_ID,
 	resolveActivePiSessionId,
 } from "@/components/home-agent/pi-sessions";
 import type { HomeThread } from "@/hooks/use-home-threads";
@@ -22,17 +20,8 @@ function makeThread(overrides: Partial<HomeThread> & { id: string; agentId: Runt
 	};
 }
 
-describe("buildPiBaseSession", () => {
-	it("pins the base session to pi on the legacy default thread id", () => {
-		const base = buildPiBaseSession();
-		expect(base.id).toBe(DEFAULT_HOME_THREAD_ID);
-		expect(base.agentId).toBe(PI_AGENT_ID);
-		expect(base.isDefault).toBe(true);
-	});
-});
-
 describe("derivePiSessions", () => {
-	it("returns the base session first, then only created pi threads", () => {
+	it("returns only created pi threads, excluding the synthetic default and non-pi threads", () => {
 		const threads: HomeThread[] = [
 			makeThread({ id: DEFAULT_HOME_THREAD_ID, agentId: "claude", isDefault: true }),
 			makeThread({ id: "pi-1", agentId: "pi" }),
@@ -40,23 +29,20 @@ describe("derivePiSessions", () => {
 			makeThread({ id: "pi-2", agentId: "pi" }),
 		];
 		const sessions = derivePiSessions(threads);
-		expect(sessions.map((s) => s.id)).toEqual([DEFAULT_HOME_THREAD_ID, "pi-1", "pi-2"]);
-		expect(sessions[0]?.isDefault).toBe(true);
+		expect(sessions.map((s) => s.id)).toEqual(["pi-1", "pi-2"]);
 		expect(sessions.every((s) => s.agentId === "pi")).toBe(true);
 	});
 
-	it("does not duplicate the base when the global default thread is itself pi", () => {
+	it("excludes a default thread even when it is itself pi (compat lives in the sidebar, not here)", () => {
 		const threads: HomeThread[] = [
 			makeThread({ id: DEFAULT_HOME_THREAD_ID, agentId: "pi", isDefault: true }),
 			makeThread({ id: "pi-1", agentId: "pi" }),
 		];
-		const sessions = derivePiSessions(threads);
-		expect(sessions.map((s) => s.id)).toEqual([DEFAULT_HOME_THREAD_ID, "pi-1"]);
+		expect(derivePiSessions(threads).map((s) => s.id)).toEqual(["pi-1"]);
 	});
 
-	it("yields just the base when there are no created pi threads", () => {
-		const sessions = derivePiSessions([makeThread({ id: "claude-1", agentId: "claude" })]);
-		expect(sessions.map((s) => s.id)).toEqual([DEFAULT_HOME_THREAD_ID]);
+	it("yields an empty list when there are no created pi threads", () => {
+		expect(derivePiSessions([makeThread({ id: "claude-1", agentId: "claude" })])).toEqual([]);
 	});
 });
 
@@ -67,21 +53,30 @@ describe("resolveActivePiSessionId", () => {
 		expect(resolveActivePiSessionId(sessions, "pi-1")).toBe("pi-1");
 	});
 
-	it("falls back to the first (base) session when the requested id is gone", () => {
-		expect(resolveActivePiSessionId(sessions, "pi-gone")).toBe(DEFAULT_HOME_THREAD_ID);
+	it("falls back to the first session when the requested id is gone", () => {
+		expect(resolveActivePiSessionId(sessions, "pi-gone")).toBe("pi-1");
 	});
 
-	it("falls back to the first (base) session when nothing is requested", () => {
-		expect(resolveActivePiSessionId(sessions, null)).toBe(DEFAULT_HOME_THREAD_ID);
+	it("falls back to the first session when nothing is requested", () => {
+		expect(resolveActivePiSessionId(sessions, null)).toBe("pi-1");
+	});
+
+	it("returns null when there are no sessions", () => {
+		expect(resolveActivePiSessionId([], null)).toBeNull();
+		expect(resolveActivePiSessionId([], "pi-anything")).toBeNull();
 	});
 });
 
 describe("nextActivePiSessionAfterClose", () => {
-	it("falls back to the base when the closed session was active", () => {
-		expect(nextActivePiSessionAfterClose("pi-1", "pi-1")).toBe(DEFAULT_HOME_THREAD_ID);
+	it("drops the selection (caller re-resolves) when the closed session was active", () => {
+		expect(nextActivePiSessionAfterClose("pi-1", "pi-1")).toBeNull();
 	});
 
 	it("keeps the current selection when a non-active session is closed", () => {
 		expect(nextActivePiSessionAfterClose("pi-2", "pi-1")).toBe("pi-1");
+	});
+
+	it("tolerates a null current selection", () => {
+		expect(nextActivePiSessionAfterClose("pi-1", null)).toBeNull();
 	});
 });
