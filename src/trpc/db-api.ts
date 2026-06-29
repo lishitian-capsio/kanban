@@ -126,8 +126,10 @@ function toTrpcError(error: unknown): TRPCError {
  * The `kanban db` surface, layered on the shared DB core. It owns no connection/query/
  * introspection logic of its own — every operation routes through {@link DatabaseService}
  * (the secret-resolution + policy chokepoint) and {@link QueryExecutor} (bounded, paginated
- * reads with the core's default read-only + row/byte caps). The CLI caller is `"cli"`, so
- * writes are permitted only when the connection record opts in (`allowWrites`).
+ * reads with the core's default read-only + row/byte caps). The CLI caller is `"cli"`, which
+ * the access policy caps to strictly read-only — writes/DDL are refused even on an
+ * `allowWrites` connection (those are reserved for the human Database UI's primary-key-gated
+ * row edits). So this surface is connection management + read-only data access only.
  */
 export function createDbApi(deps: CreateDbApiDependencies = {}): RuntimeTrpcContext["dbApi"] {
 	const poolManager = deps.poolManager ?? new PoolManager();

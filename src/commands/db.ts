@@ -476,7 +476,8 @@ export function registerDbCommand(program: Command): void {
 	db.command("query")
 		.argument("<sql>", "SQL statement to execute.")
 		.description(
-			"Run a SQL query. Reads are bounded by the core's default read-only policy, paging, and row/byte caps.",
+			"Run a read-only SQL query. The CLI is capped to reads — writes/DDL are refused even on an " +
+				"allow-writes connection (row edits go through the human Database UI). Bounded by paging and row/byte caps.",
 		)
 		.requiredOption("--connection <id>", "Connection id.")
 		.option("--page-size <n>", "Rows per page for reads (clamped by the core row cap).", parsePort)

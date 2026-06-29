@@ -245,4 +245,11 @@ describe("createDbApi", () => {
 		await expect(h.api.runQuery(SCOPE, { connId: "main", sql: "DELETE FROM users" })).rejects.toThrow(/read-only/);
 		expect(h.seen).toHaveLength(0);
 	});
+
+	it("blocks a write for the cli caller even on a write-enabled connection", async () => {
+		// allowWrites is for the human Database UI; the CLI (agent channel) stays strictly read-only.
+		const h = makeHarness([pgRecord({ connId: "main", allowWrites: true })]);
+		await expect(h.api.runQuery(SCOPE, { connId: "main", sql: "DELETE FROM users" })).rejects.toThrow(/read-only/);
+		expect(h.seen).toHaveLength(0);
+	});
 });

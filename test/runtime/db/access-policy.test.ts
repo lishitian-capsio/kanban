@@ -21,7 +21,7 @@ describe("assertOperationAllowed", () => {
 		expect(() => run("DELETE FROM users", "human", false)).toThrow(DbPolicyError);
 	});
 
-	it("allows writes for human/cli when the connection opts in", () => {
+	it("allows writes for the human caller when the connection opts in", () => {
 		const res = run("DELETE FROM users", "human", true);
 		expect(res.classification).toBe("write");
 		expect(res.readOnly).toBe(false);
@@ -29,6 +29,12 @@ describe("assertOperationAllowed", () => {
 
 	it("ALWAYS caps the agent caller to read-only even when the connection allows writes", () => {
 		expect(() => run("DELETE FROM users", "agent", true)).toThrow(DbPolicyError);
+	});
+
+	it("ALWAYS caps the cli caller to read-only even when the connection allows writes", () => {
+		// The `kanban db` CLI is the agent's channel: writes/DDL stay with the human Database UI.
+		expect(() => run("DELETE FROM users", "cli", true)).toThrow(DbPolicyError);
+		expect(() => run("CREATE TABLE x (id int)", "cli", true)).toThrow(DbPolicyError);
 	});
 
 	it("treats unknown (unparseable) SQL as a blocked write for a read-only connection", () => {

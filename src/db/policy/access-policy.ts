@@ -22,7 +22,9 @@ export interface ResolvedOperation {
  * Rules (defense-in-depth — the driver ALSO opens a read-only DB session for `readOnly`):
  *  - A `read` statement is always allowed and runs read-only.
  *  - A `write`/`ddl`/`unknown` statement requires the connection to allow writes AND the
- *    caller not to be `agent`. The agent caller is always capped read-only.
+ *    caller to be `human`. The `agent` and `cli` callers are always capped read-only —
+ *    writes on an `allowWrites` connection are reserved for the human Database UI (whose
+ *    structured, primary-key-gated row edits are the only sanctioned write path).
  *  - `unknown` (unparseable) fails closed: it is treated as a write.
  */
 export function assertOperationAllowed(input: AccessPolicyInput): ResolvedOperation {
@@ -31,9 +33,10 @@ export function assertOperationAllowed(input: AccessPolicyInput): ResolvedOperat
 		return { classification, readOnly: true };
 	}
 
-	// Non-read from here on. Agent is always restricted; otherwise the connection must opt in.
-	if (input.caller === "agent") {
-		throw new DbPolicyError("agent caller is restricted to read-only operations", {
+	// Non-read from here on. Only the human UI may write, and only on a write-enabled connection.
+	// `agent`/`cli` are always capped read-only regardless of the connection's `allowWrites`.
+	if (input.caller !== "human") {
+		throw new DbPolicyError(`${input.caller} caller is restricted to read-only operations`, {
 			caller: input.caller,
 			classification,
 		});
