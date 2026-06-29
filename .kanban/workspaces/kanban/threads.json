@@ -3,10 +3,11 @@
     {
       "id": "3434ae10-5e66-420a-8e03-7b70b3d73379",
       "agentId": "claude",
-      "name": "Failed to fetch models: Connection refused at token-plan.cn…",
+      "name": "Per-provider 代理直连",
       "titleSource": "auto",
       "createdAt": 1782639747391,
-      "updatedAt": 1782639747391
+      "updatedAt": 1782742739408,
+      "pendingNextStep": "启动任务 e7e57"
     },
     {
       "id": "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
