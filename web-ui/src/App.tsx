@@ -13,7 +13,6 @@ import { DatabaseView } from "@/components/database/database-view";
 import { DebugDialog } from "@/components/debug-dialog";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
 import { GitHistoryView } from "@/components/git-history-view";
-import { selectHomeChatLayout } from "@/components/home-agent/chat-dock-state";
 import { DockableChatPanel } from "@/components/home-agent/dockable-chat-panel";
 import { HomeChatWorkspace } from "@/components/home-agent/home-chat-workspace";
 import { HomeSidebarAgentPanel } from "@/components/home-agent/home-sidebar-agent-panel";
@@ -487,15 +486,16 @@ export default function App(): ReactElement {
 	// HomeSidebarAgentPanel renders null exactly when hasNoProjects || !currentProjectId,
 	// so mirror that gate here rather than instantiating the panel to test for null.
 	const isHomeChatAvailable = !selectedCard && !hasNoProjects && !!currentProjectId;
-	// When the home chat is in its fullscreen layout it covers the viewport with an
-	// opaque `fixed inset-0` overlay. The board sits behind that overlay, so on the
-	// enter-fullscreen frame the board reflows to full width and its
-	// `content-visibility: auto` cards repaint before the freshly-mounted overlay
-	// composites over them — a one-frame flash. Gate the board content off the same
-	// state so it is simply not rendered while fullscreen is active (atomic, no race),
-	// rather than rendered-then-covered. The live home terminal sibling stays mounted.
-	const isHomeChatFullscreen =
-		isHomeChatAvailable && chatDock.open && selectHomeChatLayout(chatDock.position) === "fullscreen";
+	// When the home chat is in its fullscreen state it covers the viewport with an
+	// opaque `fixed inset-0` overlay (the DockableChatPanel fullscreen layout, gated on
+	// this same `isFullscreen` URL axis). The board sits behind that overlay. We keep the
+	// board *mounted but hidden* (`visibility: hidden`, see the board container below)
+	// rather than unmounting it: unmounting made entering/exiting fullscreen tear down and
+	// rebuild the entire column/card tree on every toggle (slow in both directions), while
+	// hiding makes the toggle a cheap style flip. Hiding still kills the prior one-frame
+	// flash — the board reflows to full width behind the overlay but never paints — so the
+	// `content-visibility: auto` cards can't repaint before the overlay composites over them.
+	const isHomeChatFullscreen = isHomeChatAvailable && isFullscreen;
 	const handleToggleHomeChat = useCallback(() => {
 		if (chatDock.open) {
 			chatDock.hide();
@@ -1010,60 +1010,63 @@ export default function App(): ReactElement {
 								</div>
 							) : (
 								<div className="flex flex-1 flex-col min-h-0 min-w-0">
-									{isHomeChatFullscreen ? null : (
-										<div className="flex flex-1 min-h-0 min-w-0">
-											{isVaultOpen ? (
-												<VaultView workspaceId={currentProjectId} initialView="requirements" />
-											) : isDatabaseOpen ? (
-												<DatabaseView workspaceId={currentProjectId} />
-											) : isGitHistoryOpen ? (
-												<GitHistoryView
-													workspaceId={currentProjectId}
-													gitHistory={gitHistory}
-													onCheckoutBranch={(branch) => {
-														void switchHomeBranch(branch);
-													}}
-													onDiscardWorkingChanges={() => {
-														void discardHomeWorkingChanges();
-													}}
-													isDiscardWorkingChangesPending={isDiscardingHomeWorkingChanges}
-												/>
-											) : (
-												<KanbanBoard
-													data={board}
-													taskSessions={sessions}
-													workspacePath={workspacePath}
-													onCardSelect={handleCardSelect}
-													onCreateTask={handleOpenCreateTask}
-													onStartTask={handleStartTaskFromBoard}
-													onStartAllTasks={handleStartAllBacklogTasksFromBoard}
-													onClearTrash={handleOpenClearTrash}
-													editingTaskId={editingTaskId}
-													inlineTaskEditor={inlineTaskEditor}
-													onEditTask={handleOpenEditTask}
-													onSaveTaskTitle={handleSaveTaskTitle}
-													onCommitTask={handleCommitTask}
-													onOpenPrTask={handleOpenPrTask}
-													onCancelAutomaticTaskAction={handleCancelAutomaticTaskAction}
-													commitTaskLoadingById={commitTaskLoadingById}
-													openPrTaskLoadingById={openPrTaskLoadingById}
-													moveToTrashLoadingById={moveToTrashLoadingById}
-													onMoveToTrashTask={handleMoveReviewCardToTrash}
-													onRestoreFromTrashTask={handleRestoreTaskFromTrash}
-													dependencies={board.dependencies}
-													onCreateDependency={handleCreateDependency}
-													onDeleteDependency={handleDeleteDependency}
-													onRequestProgrammaticCardMoveReady={
-														selectedCard ? undefined : handleProgrammaticCardMoveReady
-													}
-													onDragEnd={handleDragEnd}
-													defaultKanbanModelId={
-														runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null
-													}
-												/>
-											)}
-										</div>
-									)}
+									{/* Mounted-but-hidden while fullscreen (see isHomeChatFullscreen above): the
+									    board stays in the tree so entering/exiting fullscreen is a cheap
+									    `visibility` flip instead of a full column/card unmount + remount. */}
+									<div
+										className="flex flex-1 min-h-0 min-w-0"
+										aria-hidden={isHomeChatFullscreen ? true : undefined}
+										style={isHomeChatFullscreen ? { visibility: "hidden" } : undefined}
+									>
+										{isVaultOpen ? (
+											<VaultView workspaceId={currentProjectId} initialView="requirements" />
+										) : isDatabaseOpen ? (
+											<DatabaseView workspaceId={currentProjectId} />
+										) : isGitHistoryOpen ? (
+											<GitHistoryView
+												workspaceId={currentProjectId}
+												gitHistory={gitHistory}
+												onCheckoutBranch={(branch) => {
+													void switchHomeBranch(branch);
+												}}
+												onDiscardWorkingChanges={() => {
+													void discardHomeWorkingChanges();
+												}}
+												isDiscardWorkingChangesPending={isDiscardingHomeWorkingChanges}
+											/>
+										) : (
+											<KanbanBoard
+												data={board}
+												taskSessions={sessions}
+												workspacePath={workspacePath}
+												onCardSelect={handleCardSelect}
+												onCreateTask={handleOpenCreateTask}
+												onStartTask={handleStartTaskFromBoard}
+												onStartAllTasks={handleStartAllBacklogTasksFromBoard}
+												onClearTrash={handleOpenClearTrash}
+												editingTaskId={editingTaskId}
+												inlineTaskEditor={inlineTaskEditor}
+												onEditTask={handleOpenEditTask}
+												onSaveTaskTitle={handleSaveTaskTitle}
+												onCommitTask={handleCommitTask}
+												onOpenPrTask={handleOpenPrTask}
+												onCancelAutomaticTaskAction={handleCancelAutomaticTaskAction}
+												commitTaskLoadingById={commitTaskLoadingById}
+												openPrTaskLoadingById={openPrTaskLoadingById}
+												moveToTrashLoadingById={moveToTrashLoadingById}
+												onMoveToTrashTask={handleMoveReviewCardToTrash}
+												onRestoreFromTrashTask={handleRestoreTaskFromTrash}
+												dependencies={board.dependencies}
+												onCreateDependency={handleCreateDependency}
+												onDeleteDependency={handleDeleteDependency}
+												onRequestProgrammaticCardMoveReady={
+													selectedCard ? undefined : handleProgrammaticCardMoveReady
+												}
+												onDragEnd={handleDragEnd}
+												defaultKanbanModelId={runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null}
+											/>
+										)}
+									</div>
 									{showHomeBottomTerminal ? (
 										<ResizableBottomPane
 											minHeight={200}
