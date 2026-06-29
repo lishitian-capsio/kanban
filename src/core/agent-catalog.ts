@@ -72,7 +72,7 @@ export const RUNTIME_AGENT_CATALOG: RuntimeAgentCatalogEntry[] = [
 		binary: "qodercli",
 		baseArgs: [],
 		autonomousArgs: ["--dangerously-skip-permissions"],
-		installUrl: "https://docs.qoder.com/cli/quick-start",
+		installUrl: "https://docs.qoder.com/en/cli/quick-start",
 	},
 ];
 
