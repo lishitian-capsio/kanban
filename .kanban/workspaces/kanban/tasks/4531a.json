@@ -1,0 +1,19 @@
+{
+  "id": "4531a",
+  "title": "CLI agent token 统计：Codex rollout usage 读取器（任务B，依赖A）",
+  "prompt": "目标：在任务A打通 Claude token 链路后，把同一套机制套用到 Codex，让 Codex 任务卡片也显示 token。本任务依赖任务A（A 落地了「读会话文件→累加 usage→在回合边界 updateSummary→广播」的整体链路与接口，B 基本是照搬+换解析）。\n\n关键事实：Codex 把会话写在 rollout JSONL：<CODEX_HOME>/sessions/<YYYY>/<MM>/<DD>/rollout-<ts>-<uuid>.jsonl，里面有 token 计数事件。Kanban 已经在 src/terminal/codex-session-capture.ts 里按 cwd 过滤定位「本任务对应的最新 rollout 文件」（capture-after-launch 用它拿 session id），直接复用这套定位逻辑找文件即可。注意 CODEX_HOME 可能是 codex-home-projector 投影出来的隔离目录，定位时要跟 capture 用同一个有效 sessions dir。\n\n要做：\n1. 复用任务A 落地的读取器接口，新增 Codex rollout 的解析：从 rollout JSONL 累加 token，映射到 RuntimeTaskSessionUsage（inputTokens/outputTokens/totalTokens）。先核对 Codex rollout 里 token 字段的实际形态（可能是 token_count 事件或 usage 块），按真实格式解析，缺失安全降级。\n2. 文件定位复用 codex-session-capture.ts 的 cwd 匹配逻辑，确保拿到的是本任务 worktree 对应的那个 rollout（共享 ~/.codex 默认登录时 cwd 是消歧关键）。\n3. 在 A 建立的同一回合边界（转 awaiting_review / 刷新 / 重启加载）调用，写入 summary.usage，走同一广播路径。幂等、不新增常驻 watcher。\n4. 验证 Codex 任务卡片转 review 后出现 token chip，口径与 pi/Claude 一致（真实 usage）。\n\n参考：src/terminal/codex-session-capture.ts（文件定位）、src/terminal/codex-home-projector.ts（CODEX_HOME 投影）、任务A 新增的读取器与写入点。\n\n合理处补单元测试（rollout 解析/累加/容错为纯逻辑，重点测）。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782703664272,
+  "updatedAt": 1782703664272,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
