@@ -1,3 +1,4 @@
+import { getProviderBypassProxyHosts } from "../agent-sdk/kanban/agent-provider-config";
 import { setRuntimeProxyStateFromConfig } from "../config/proxy-fetch";
 import { type RuntimeConfigState, toGlobalRuntimeConfigState } from "../config/runtime-config";
 import type {
@@ -120,12 +121,7 @@ function createEmptyProjectTaskCounts(): RuntimeProjectTaskCounts {
  * are unchanged, the all-projects payload rebuild can be skipped.
  */
 export function projectTaskCountsEqual(a: RuntimeProjectTaskCounts, b: RuntimeProjectTaskCounts): boolean {
-	return (
-		a.backlog === b.backlog &&
-		a.in_progress === b.in_progress &&
-		a.review === b.review &&
-		a.trash === b.trash
-	);
+	return a.backlog === b.backlog && a.in_progress === b.in_progress && a.review === b.review && a.trash === b.trash;
 }
 
 function countTasksByColumn(board: RuntimeBoardData): RuntimeProjectTaskCounts {
@@ -236,7 +232,7 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 		activeRuntimeConfig.proxyUsername,
 		activeRuntimeConfig.proxyPassword,
 		activeRuntimeConfig.noProxy,
-		getKanbanRuntimeNoProxyHosts(),
+		[...getKanbanRuntimeNoProxyHosts(), ...getProviderBypassProxyHosts()],
 	);
 	const workspacePathsById = new Map<string, string>(
 		activeWorkspaceId && activeWorkspacePath ? [[activeWorkspaceId, activeWorkspacePath]] : [],

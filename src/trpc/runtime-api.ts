@@ -14,6 +14,7 @@ import {
 	getAgentProviderConfig,
 	getAllAgentProviderConfigs,
 	getAllAgentProviderSets,
+	getProviderBypassProxyHosts,
 	redactAgentProviderSets,
 	saveAgentProvider,
 	setAgentExecutablePath,
@@ -180,6 +181,28 @@ async function loadSelectedCommittedProvider(
 
 const log = createLogger("runtime-api");
 
+/**
+ * (Re)seed the in-process proxy holder from the given runtime config, folding in
+ * both the runtime self-hosts and any provider endpoints flagged `bypassProxy`.
+ * Called on every proxy-config save AND after any provider mutation, so toggling
+ * a provider's "direct connection" recomputes the NO_PROXY set and hot-applies to
+ * both outbound paths (in-process fetch + CLI-agent network bridge) with no
+ * restart — even for an already-running CLI agent (the bridge re-reads the holder
+ * per request). We deliberately do NOT write proxy URLs into process.env: that
+ * latches Bun's in-process fetch and breaks live switching (see proxy-fetch.ts).
+ */
+function applyRuntimeProxyState(config: RuntimeConfigState): void {
+	setRuntimeProxyStateFromConfig(
+		config.proxyEnabled,
+		config.proxyHost,
+		config.proxyPort,
+		config.proxyUsername,
+		config.proxyPassword,
+		config.noProxy,
+		[...getKanbanRuntimeNoProxyHosts(), ...getProviderBypassProxyHosts()],
+	);
+}
+
 export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrpcContext["runtimeApi"] {
 	const agentProviderService = createAgentProviderService();
 	const kanbanMcpSettingsService = createKanbanMcpSettingsService();
@@ -196,6 +219,15 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			agentProviderService.getAgentProviderSummary("pi"),
 			getAgentExecutablePath,
 		);
+
+	// Recompute the proxy holder's NO_PROXY set after a provider mutation so a
+	// `bypassProxy` toggle takes effect live. The proxy URL itself comes from the
+	// active runtime config; the bypass hosts are recomputed from the (global)
+	// provider store inside applyRuntimeProxyState. No-op when no active config.
+	const refreshProviderProxyBypass = (): void => {
+		const activeConfig = deps.getActiveRuntimeConfig?.();
+		if (activeConfig) applyRuntimeProxyState(activeConfig);
+	};
 
 	const callTaskSessionService = async <T>(
 		workspaceScope: RuntimeTrpcWorkspaceScope,
@@ -246,19 +278,9 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			if (!workspaceScope) {
 				deps.setActiveRuntimeConfig(nextRuntimeConfig);
 			}
-			// Update the in-process proxy holder only. We deliberately do NOT write
-			// proxy URLs into process.env: that latches Bun's in-process fetch and
-			// breaks live switching/disable (see config/proxy-fetch.ts). Subprocess
-			// agents get proxy env at spawn time instead.
-			setRuntimeProxyStateFromConfig(
-				nextRuntimeConfig.proxyEnabled,
-				nextRuntimeConfig.proxyHost,
-				nextRuntimeConfig.proxyPort,
-				nextRuntimeConfig.proxyUsername,
-				nextRuntimeConfig.proxyPassword,
-				nextRuntimeConfig.noProxy,
-				getKanbanRuntimeNoProxyHosts(),
-			);
+			// Update the in-process proxy holder only (folds in per-provider
+			// bypass hosts). Subprocess agents get proxy env at spawn time instead.
+			applyRuntimeProxyState(nextRuntimeConfig);
 			return buildConfigResponse(nextRuntimeConfig);
 		},
 		startTaskSession: async (workspaceScope, input) => {
@@ -1059,6 +1081,8 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		): Promise<RuntimeAgentProviderMutationResponse> => {
 			// Add or update one provider for the agent, keyed by its provider name.
 			await saveAgentProvider(input.agentId, input.config as AgentProviderConfig);
+			// A changed bypassProxy flag (or endpoint host) must re-seed the holder.
+			refreshProviderProxyBypass();
 			return {
 				ok: true,
 				config: getAgentProviderConfig(input.agentId, input.config.provider) ?? undefined,
@@ -1075,6 +1099,8 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			input: RuntimeAgentProviderMutationRequest,
 		): Promise<RuntimeAgentProviderMutationResponse> => {
 			await deleteAgentProvider(input.agentId, input.providerId);
+			// Removing a bypassProxy provider may free its host back onto the proxy.
+			refreshProviderProxyBypass();
 			return { ok: true, config: getAgentProviderConfig(input.agentId) ?? undefined };
 		},
 		selectAgentProvider: async (

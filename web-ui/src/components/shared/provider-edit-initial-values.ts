@@ -33,5 +33,6 @@ export function buildProviderEditInitialValues(
 		apiKeyPreview: provider.apiKeyPreview,
 		headers: provider.headers,
 		timeoutMs: provider.timeout ?? null,
+		bypassProxy: provider.bypassProxy ?? false,
 	};
 }

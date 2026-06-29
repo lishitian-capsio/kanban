@@ -2053,6 +2053,12 @@ export const runtimeAgentProviderConfigSchema = z.object({
 	region: z.string().optional(),
 	aws: z.record(z.unknown()).optional(),
 	gcp: z.object({ projectId: z.string().optional(), region: z.string().optional() }).optional(),
+	/**
+	 * When true, requests to this provider's endpoint host bypass the outbound
+	 * proxy (direct connection). HOST-keyed: folded into the runtime NO_PROXY set,
+	 * so providers sharing a host go direct together. Defaults to off.
+	 */
+	bypassProxy: z.boolean().optional(),
 });
 export type RuntimeAgentProviderConfig = z.infer<typeof runtimeAgentProviderConfigSchema>;
 

@@ -1,3 +1,4 @@
+import * as RadixCheckbox from "@radix-ui/react-checkbox";
 import { maskApiKey } from "@runtime-api-key-mask";
 import {
 	AGENT_PROTOCOL_COMPATIBILITY,
@@ -8,7 +9,7 @@ import {
 	PROVIDER_PROTOCOLS,
 	type ProviderProtocol,
 } from "@runtime-provider-protocol";
-import { Eye, EyeOff, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { Check, Eye, EyeOff, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { type KeyboardEvent, type ReactElement, useEffect, useMemo, useState } from "react";
 import { MAX_TIMEOUT_MS, MIN_TIMEOUT_MS, validateProviderForm } from "@/components/shared/provider-form-validation";
 import { Button } from "@/components/ui/button";
@@ -129,6 +130,8 @@ interface FormState {
 	apiKeyField: ApiKeyField;
 	/** Anthropic-only: per-tier model overrides (ANTHROPIC_DEFAULT_*_MODEL). */
 	anthropicDefaultModels: AnthropicDefaultModelsForm;
+	/** Route this provider's host direct, bypassing the outbound proxy. */
+	bypassProxy: boolean;
 }
 
 interface SaveResult {
@@ -161,6 +164,8 @@ export interface KanbanProviderDialogInitialValues {
 		apiKeyField?: ApiKeyField;
 		defaultModels?: { haiku?: string; sonnet?: string; opus?: string };
 	};
+	/** Route this provider's host direct, bypassing the outbound proxy. */
+	bypassProxy?: boolean;
 }
 
 let nextHeaderEntryId = 0;
@@ -213,6 +218,7 @@ function createInitialFormState(
 			sonnet: initialValues?.anthropic?.defaultModels?.sonnet ?? "",
 			opus: initialValues?.anthropic?.defaultModels?.opus ?? "",
 		},
+		bypassProxy: initialValues?.bypassProxy ?? false,
 	};
 }
 
@@ -403,6 +409,7 @@ export function KanbanAddProviderDialog({
 			JSON.stringify(draftModels) !== JSON.stringify(initialForm.models) ||
 			JSON.stringify(normalizedHeaders) !== JSON.stringify(initialHeaders) ||
 			JSON.stringify(anthropicPayload) !== JSON.stringify(buildAnthropicPayload(initialForm)) ||
+			form.bypassProxy !== initialForm.bypassProxy ||
 			form.apiKey.trim().length > 0
 		);
 	}, [
@@ -410,6 +417,7 @@ export function KanbanAddProviderDialog({
 		draftModels,
 		form.apiKey,
 		form.baseUrl,
+		form.bypassProxy,
 		form.defaultModelId,
 		form.headers,
 		form.modelsSourceUrl,
@@ -598,6 +606,7 @@ export function KanbanAddProviderDialog({
 						...(JSON.stringify(anthropicPayload) !== JSON.stringify(buildAnthropicPayload(initialForm))
 							? { anthropic: anthropicPayload }
 							: {}),
+						...(form.bypassProxy !== initialForm.bypassProxy ? { bypassProxy: form.bypassProxy } : {}),
 					} satisfies UpdateKanbanProviderInput)
 				: ({
 						providerId: normalizedProviderId,
@@ -610,6 +619,7 @@ export function KanbanAddProviderDialog({
 						modelsSourceUrl: nextModelsSourceUrl,
 						protocols: customEndpoint ? protocolConfigsPayload : undefined,
 						anthropic: anthropicPayload,
+						bypassProxy: form.bypassProxy,
 					} satisfies AddKanbanProviderInput);
 		const result = await onSubmit(payload);
 		setIsSaving(false);
@@ -875,17 +885,17 @@ export function KanbanAddProviderDialog({
 								className="inline-flex items-center gap-1 rounded-md bg-surface-3 px-2 py-1 text-[12px] text-text-primary"
 							>
 								<span className="font-mono">{model}</span>
-								{MODEL_CAPABILITY_BADGES.filter(
-									(badge) => modelCapabilities[model]?.[badge.key],
-								).map((badge) => (
-									<span
-										key={badge.key}
-										className="rounded bg-surface-1 px-1 text-[10px] font-medium uppercase tracking-wide text-text-secondary"
-										title={`This model supports ${badge.label.toLowerCase()} (from model metadata)`}
-									>
-										{badge.label}
-									</span>
-								))}
+								{MODEL_CAPABILITY_BADGES.filter((badge) => modelCapabilities[model]?.[badge.key]).map(
+									(badge) => (
+										<span
+											key={badge.key}
+											className="rounded bg-surface-1 px-1 text-[10px] font-medium uppercase tracking-wide text-text-secondary"
+											title={`This model supports ${badge.label.toLowerCase()} (from model metadata)`}
+										>
+											{badge.label}
+										</span>
+									),
+								)}
 								<button
 									type="button"
 									className="text-text-secondary hover:text-text-primary"
@@ -911,9 +921,8 @@ export function KanbanAddProviderDialog({
 						/>
 					</div>
 					<p className="mt-1 text-[12px] text-text-tertiary">
-						Add at least one model or set a model source URL. Capabilities (vision, reasoning) are detected
-						per model from its metadata and shown as badges above — they are not configured at the provider
-						level.
+						Add at least one model or set a model source URL. Capabilities (vision, reasoning) are detected per
+						model from its metadata and shown as badges above — they are not configured at the provider level.
 					</p>
 				</section>
 
@@ -1042,6 +1051,33 @@ export function KanbanAddProviderDialog({
 						</div>
 					</div>
 				</section>
+
+				{customEndpoint ? (
+					<section className="rounded-lg border border-border bg-surface-1 p-3">
+						<label
+							htmlFor="provider-bypass-proxy"
+							className="flex cursor-pointer select-none items-center gap-2 text-[12px] text-text-primary"
+						>
+							<RadixCheckbox.Root
+								id="provider-bypass-proxy"
+								checked={form.bypassProxy}
+								onCheckedChange={(checked) =>
+									setForm((current) => ({ ...current, bypassProxy: checked === true }))
+								}
+								className="flex h-4 w-4 cursor-pointer items-center justify-center rounded border border-border bg-surface-2 data-[state=checked]:border-accent data-[state=checked]:bg-accent"
+							>
+								<RadixCheckbox.Indicator>
+									<Check size={12} className="text-white" />
+								</RadixCheckbox.Indicator>
+							</RadixCheckbox.Root>
+							<span>直连（不经过代理）</span>
+						</label>
+						<p className="mt-1 text-[12px] text-text-tertiary">
+							Send requests to this provider's host directly, bypassing the outbound proxy. Applied per host:
+							providers sharing the same host all go direct together.
+						</p>
+					</section>
+				) : null}
 
 				{error ? <p className="text-[12px] text-status-red">{error}</p> : null}
 			</DialogBody>

@@ -43,6 +43,7 @@ const agentProviderConfigMocks = vi.hoisted(() => ({
 	getAgentProviderConfig: vi.fn(),
 	getAllAgentProviderConfigs: vi.fn(() => ({})),
 	getAllAgentProviderSets: vi.fn(() => ({})),
+	getProviderBypassProxyHosts: vi.fn(() => [] as string[]),
 	saveAgentProvider: vi.fn(),
 	deleteAgentProvider: vi.fn(),
 	setDefaultAgentProvider: vi.fn(),
@@ -165,6 +166,7 @@ vi.mock("../../../src/agent-sdk/kanban/agent-provider-config.js", () => ({
 		agentProviderConfigMocks.getAgentProviderConfig(agentId, providerId) ?? null,
 	getAllAgentProviderConfigs: () => agentProviderConfigMocks.getAllAgentProviderConfigs(),
 	getAllAgentProviderSets: () => agentProviderConfigMocks.getAllAgentProviderSets(),
+	getProviderBypassProxyHosts: () => agentProviderConfigMocks.getProviderBypassProxyHosts(),
 	saveAgentProvider: (agentId: string, config: unknown) => agentProviderConfigMocks.saveAgentProvider(agentId, config),
 	deleteAgentProvider: (agentId: string, providerId?: string) =>
 		agentProviderConfigMocks.deleteAgentProvider(agentId, providerId),

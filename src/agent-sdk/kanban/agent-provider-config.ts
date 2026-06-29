@@ -32,6 +32,7 @@ import {
 	OFFICIAL_LOGIN_PROVIDER_ID,
 	type ProtocolConfig,
 } from "./provider-protocol";
+import { collectProviderBypassHosts } from "./provider-proxy-bypass";
 import type { AnthropicProviderSettings, ProviderSettingsReasoning } from "./provider-types";
 
 const log = createLogger("agent-provider-config");
@@ -87,6 +88,14 @@ export interface AgentProviderConfig {
 	aws?: Record<string, unknown>;
 	/** GCP-specific configuration (Vertex AI etc.). */
 	gcp?: { projectId?: string; region?: string };
+	/**
+	 * When true, requests to this provider's endpoint host bypass the outbound
+	 * proxy (direct connection), regardless of the global proxy setting. Realized
+	 * by folding the provider's host into the effective NO_PROXY set — so it is
+	 * HOST-keyed: two providers sharing a host can only go direct together, never
+	 * one-but-not-the-other (see provider-proxy-bypass.ts). Defaults to off.
+	 */
+	bypassProxy?: boolean;
 }
 
 /**
@@ -372,6 +381,9 @@ function cleanProviderConfig(agentId: string, config: AgentProviderConfig): Agen
 	if (cleaned.baseUrl !== undefined) {
 		cleaned.baseUrl = cleaned.baseUrl.trim() || undefined;
 	}
+	// Persist the bypass flag only when explicitly enabled — `false`/absent are
+	// the same "use the proxy" default, so we drop them to keep the store clean.
+	cleaned.bypassProxy = config.bypassProxy === true ? true : undefined;
 	// A per-agent provider speaks exactly one protocol. Collapse to that single
 	// protocol — the source of truth for the endpoint — folding in any legacy
 	// scalar baseUrl, and drop the scalar baseUrl from what we persist (it is
@@ -624,6 +636,16 @@ export function redactAgentProviderSets(sets: Record<string, AgentProviderSet>):
 		};
 	}
 	return out;
+}
+
+/**
+ * Endpoint hosts of every configured provider (across all agents) flagged
+ * `bypassProxy`. Folded into the runtime proxy holder's NO_PROXY set so those
+ * hosts go direct on BOTH outbound paths (in-process fetch + CLI-agent network
+ * bridge) without the user manually exporting NO_PROXY. See provider-proxy-bypass.ts.
+ */
+export function getProviderBypassProxyHosts(): string[] {
+	return collectProviderBypassHosts(loadState().agents);
 }
 
 /** Reset the in-memory cache (useful for tests). */

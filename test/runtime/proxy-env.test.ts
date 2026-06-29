@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildProxyEnvVars,
 	buildProxyEnvVarsFromUrl,
+	extractHostname,
 	mergeNoProxyEntries,
 	PROXY_URL_ENV_KEYS,
 	shouldBypassProxy,
@@ -120,6 +121,34 @@ describe("shouldBypassProxy", () => {
 			// A bare suffix that happens to start with the regex prefix is still parsed as regex.
 			expect(shouldBypassProxy("re.example.com", "re:example")).toBe(true);
 		});
+	});
+});
+
+describe("extractHostname", () => {
+	it("extracts the host from a full URL, dropping port and path", () => {
+		expect(extractHostname("https://api.openai.com/v1")).toBe("api.openai.com");
+		expect(extractHostname("http://proxy.local:7897/foo")).toBe("proxy.local");
+	});
+
+	it("lowercases nothing on its own but returns the URL hostname verbatim", () => {
+		// URL parsing already lowercases the host component.
+		expect(extractHostname("https://API.Example.COM/")).toBe("api.example.com");
+	});
+
+	it("tolerates a scheme-less host[:port] value", () => {
+		expect(extractHostname("api.example.com:8080")).toBe("api.example.com");
+		expect(extractHostname("api.example.com")).toBe("api.example.com");
+	});
+
+	it("returns null for empty or unrecoverable input", () => {
+		expect(extractHostname("")).toBeNull();
+		expect(extractHostname("   ")).toBeNull();
+		expect(extractHostname(null)).toBeNull();
+		expect(extractHostname(undefined)).toBeNull();
+	});
+
+	it("keeps IPv6 hosts in URL.hostname bracket form (shouldBypassProxy strips them)", () => {
+		expect(extractHostname("http://[2001:db8::1]:443/v1")).toBe("[2001:db8::1]");
 	});
 });
 

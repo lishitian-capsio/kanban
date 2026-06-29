@@ -39,6 +39,7 @@ import {
 	getAgentProviderSet,
 	getAllAgentProviderConfigs,
 	getAllAgentProviderSets,
+	getProviderBypassProxyHosts,
 	resetAgentProviderConfigCache,
 	saveAgentProvider,
 	setAgentExecutablePath,
@@ -138,6 +139,30 @@ describe("agent-provider-config", () => {
 		expect(loaded!.model).toBe("gpt-5");
 		expect(loaded!.apiKey).toBe("sk-test");
 		expect(loaded!.baseUrl).toBe("https://api.example.com");
+	});
+
+	it("persists bypassProxy=true and surfaces its host; drops the flag when false", async () => {
+		await saveAgentProvider("codex", {
+			agentId: "codex",
+			provider: "relay",
+			model: "gpt-5",
+			baseUrl: "https://relay.internal:8443/v1",
+			bypassProxy: true,
+		});
+		await saveAgentProvider("claude", {
+			agentId: "claude",
+			provider: "proxied",
+			model: "claude-4",
+			baseUrl: "https://api.proxied.com",
+			bypassProxy: false,
+		});
+		resetAgentProviderConfigCache();
+
+		expect(getAgentProviderConfig("codex")!.bypassProxy).toBe(true);
+		// false is the default; it is dropped rather than persisted as `false`.
+		expect(getAgentProviderConfig("claude")!.bypassProxy).toBeUndefined();
+		// Only the flagged provider's host is collected for the NO_PROXY set.
+		expect(getProviderBypassProxyHosts()).toEqual(["relay.internal"]);
 	});
 
 	it("overwrites a provider with the same name on save (and keeps the default)", async () => {

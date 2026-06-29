@@ -82,6 +82,8 @@ export interface AddKanbanProviderInput {
 	modelsSourceUrl?: string | null;
 	protocols?: ProtocolConfigInput[];
 	anthropic?: AnthropicProviderSettingsInput;
+	/** Route this provider's host direct, bypassing the outbound proxy. */
+	bypassProxy?: boolean;
 }
 
 export interface UpdateKanbanProviderInput {
@@ -96,6 +98,8 @@ export interface UpdateKanbanProviderInput {
 	modelsSourceUrl?: string | null;
 	protocols?: ProtocolConfigInput[];
 	anthropic?: AnthropicProviderSettingsInput;
+	/** Route this provider's host direct, bypassing the outbound proxy. */
+	bypassProxy?: boolean;
 }
 
 /**
@@ -696,6 +700,7 @@ export function useRuntimeSettingsKanbanController(
 					anthropic: input.anthropic,
 					headers: input.headers,
 					timeout: input.timeoutMs,
+					bypassProxy: input.bypassProxy || undefined,
 				};
 				const result = await saveAgentProviderConfig(workspaceId, agentId, agentConfig);
 				if (!result.ok) {
@@ -773,6 +778,7 @@ export function useRuntimeSettingsKanbanController(
 					...(input.anthropic !== undefined ? { anthropic: input.anthropic } : {}),
 					...(input.headers !== undefined ? { headers: input.headers ?? undefined } : {}),
 					...(input.timeoutMs !== undefined ? { timeout: input.timeoutMs ?? undefined } : {}),
+					...(input.bypassProxy !== undefined ? { bypassProxy: input.bypassProxy || undefined } : {}),
 				};
 				const result = await saveAgentProviderConfig(workspaceId, agentId, mergedConfig);
 				if (!result.ok) {

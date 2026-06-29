@@ -107,6 +107,27 @@ export function shouldBypassProxy(host: string, noProxyList: string | null | und
 	return false;
 }
 
+/**
+ * Extracts the bare hostname from a provider base URL (or similar endpoint
+ * string), suitable for use as a NO_PROXY entry. Returns `null` when the input
+ * is empty or has no recoverable host. The port and path are dropped — NO_PROXY
+ * matching in `shouldBypassProxy` is host-only. A scheme-less value (e.g.
+ * `api.example.com:8080` or `api.example.com`) is tolerated by retrying with a
+ * synthetic `http://` prefix, so a user who pastes just a host still bypasses.
+ */
+export function extractHostname(url: string | null | undefined): string | null {
+	const trimmed = (url ?? "").trim();
+	if (!trimmed) return null;
+	const hostnameOf = (candidate: string): string | null => {
+		try {
+			return new URL(candidate).hostname || null;
+		} catch {
+			return null;
+		}
+	};
+	return hostnameOf(trimmed) ?? hostnameOf(`http://${trimmed}`);
+}
+
 // The four proxy-URL environment variable keys (both cases). Deliberately
 // excludes NO_PROXY/no_proxy: only a proxy URL latches Bun's in-process fetch,
 // so the runtime strips exactly these at boot (see config/proxy-fetch.ts) while
