@@ -1,0 +1,20 @@
+{
+  "id": "fe645",
+  "title": "重新设计「新建对话线程」弹窗",
+  "prompt": "重新设计 web-ui 中「新建对话线程 / New chat thread」的弹窗（Dialog）。\n\n背景：这是侧边栏 home 多线程功能里点击新建线程时弹出的对话框（入口在 HomeThreadBar 附近，见 src/components/ 中的 home 线程相关组件）。先定位当前弹窗组件，理解它现在展示哪些字段、用什么 UI 原语。\n\n本次目标（按优先级）：\n1. 视觉精致化为主：当前弹窗视觉陈旧、不够精致。用项目设计系统重做样式——使用 src/components/ui 的 Dialog/DialogHeader/DialogBody/DialogFooter、Button 等原语，以及 globals.css @theme 里的设计 token（surface-0..4、text-primary/secondary、border、accent、rounded-* 等）。统一间距、字体层级、对齐、聚焦态，符合应用一贯的暗色主题，不要用 light-mode 默认或 dark: 前缀。\n2. 补上目前缺失但应有的选项：检查新建线程时用户可能想直接设置、但当前弹窗没有暴露的项（例如选择该线程使用的 agent、provider/模型等，参考新建任务弹窗 new-task dialog 的 per-agent provider 选择实现作为一致性参考）。只在确实合理、低风险的前提下补充，遵循 YAGNI，不要过度设计。\n\n范围约束：保持弹窗的核心用途和提交行为不变，不做大的流程重构；这是一次以视觉为主、顺带补齐选项的改版。\n\n要求：\n- 遵循 AGENTS.md 的 web-ui 规范（Tailwind v4 + Radix + lucide-react，className 优先于 inline style，复用 ui 原语）。\n- 改动后通过 web:typecheck。\n- 注意 LAN/HTTP + 安全上下文相关约束，避免引入 crypto.randomUUID 等仅安全上下文可用 API（用 safeRandomUUID）。\n\n先调研现有组件并简述当前结构，再实施。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e211cecb-0eda-4458-ba46-1fbc486d4e40",
+  "baseRef": "main",
+  "createdAt": 1782715937780,
+  "updatedAt": 1782715937780,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
