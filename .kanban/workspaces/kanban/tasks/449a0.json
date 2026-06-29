@@ -1,0 +1,20 @@
+{
+  "id": "449a0",
+  "title": "开发:文件功能迁出 Vault、落地一等公民 File surface",
+  "prompt": "按照设计任务产出的设计文档(.plan/docs/ 下的『文件功能从 Vault 迁出』设计文档),实现这次迁移 + 撤销:文件功能从 Vault 移出、Vault 撤掉 Files、File 成为与 Vault/Database 平级的一等公民 surface 并承载文件功能。\n\n开始前:完整读设计文档,严格按其中的迁移清单、File surface 架构、性能方案、数据流落实。设计与现状冲突时以实际代码为准,并在提交说明里指出。\n\n实现要点(以设计文档为准):\n- 【从 Vault 撤销 file】按迁移清单移除/改造 Vault 侧的 Files 入口、标签、VaultView 内 Files 分支及相关状态/tRPC/类型;把 Files 与 Requirements 在 VaultView 里解耦;确保 Vault(需求等)迁后仍正常、无死引用、无残留 Files UI。\n- 【File 一等公民】新增 File 顶层导航入口(对齐 Vault/Database 入口与 URL 路由约定),实现自包含的 File surface 视图模块,文件功能归属迁到 File。\n- 【不能慢】落实设计的性能方案:overlay/轻量挂载、board 不被 unmount、按需 mount/关闭即卸载、必要处懒加载/代码分割;不要做成又一个卸载 board 的重型整页视图。\n- 复用已有 quick dialog / file-dialog 作为轻量交互基础;wikilink/文件引用迁移后从 File surface / file-dialog 打开。\n- 文件读写走设计指定的(或清晰隔离的)tRPC 切片;markdown 编辑器复用既有(注意 md-editor ghosting 坑)。\n\n完成标准:\n- Vault 中不再有 Files;Requirements 等 Vault 功能正常。\n- File 有自己的顶层入口,文件浏览/单文件查看/编辑/保存、wikilink 触发等核心交互正常,且打开体感明显快于旧 Vault/Database 视图(board 不被卸载)。\n- 通过 typecheck 与相关测试。\n- 遵循 AGENTS.md 的 web-ui 约定(Tailwind v4 / 设计 token / Radix / @/components/ui)。\n- 提交说明写清:迁移了哪些、Vault 侧删改了哪些、File surface 模块路径与入口、解耦边界、性能处理。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782745346626,
+  "updatedAt": 1782745346626,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
