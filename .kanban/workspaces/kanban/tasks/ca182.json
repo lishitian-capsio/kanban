@@ -13,14 +13,8 @@
   "originThreadId": "be8da62b-73a2-48bf-99f8-7aa66272411b",
   "baseRef": "main",
   "createdAt": 1782742680528,
-  "updatedAt": 1782742680528,
-  "column": "backlog",
+  "updatedAt": 1782742967595,
+  "column": "in_progress",
   "rank": "a0",
-  "dependsOn": [
-    {
-      "id": "347fe3b2",
-      "toTaskId": "18a65",
-      "createdAt": 1782742692960
-    }
-  ]
+  "dependsOn": []
 }
