@@ -45,6 +45,7 @@ export interface RuntimeStateStreamStore {
 	kanbanSessionContextVersion: number;
 	boardSyncStatus: RuntimeBoardSyncStatus | null;
 	opsMetrics: RuntimeOpsMetrics | null;
+	opsMetricsHistory: RuntimeOpsMetrics[];
 	streamError: string | null;
 	isRuntimeDisconnected: boolean;
 	hasReceivedSnapshot: boolean;
@@ -72,6 +73,21 @@ export type RuntimeStateStreamAction =
 	| { type: "task_sessions_updated"; summaries: RuntimeTaskSessionSummary[] }
 	| { type: "stream_error"; message: string }
 	| { type: "stream_disconnected"; message: string };
+
+/**
+ * Cap on the rolling ops-metrics history retained for the status-bar sparklines.
+ * At the ~2.5s `runtime_metrics_updated` cadence, 60 samples ≈ 2.5 minutes of
+ * trend. Oldest samples are dropped when the buffer is full.
+ */
+export const OPS_METRICS_HISTORY_LIMIT = 60;
+
+function appendOpsMetricsSample(history: RuntimeOpsMetrics[], sample: RuntimeOpsMetrics): RuntimeOpsMetrics[] {
+	const next = [...history, sample];
+	if (next.length > OPS_METRICS_HISTORY_LIMIT) {
+		next.splice(0, next.length - OPS_METRICS_HISTORY_LIMIT);
+	}
+	return next;
+}
 
 function mergeTaskSessionSummaries(
 	currentSessions: Record<string, RuntimeTaskSessionSummary>,
@@ -103,6 +119,7 @@ export function createInitialRuntimeStateStreamStore(requestedWorkspaceId: strin
 		kanbanSessionContextVersion: 0,
 		boardSyncStatus: null,
 		opsMetrics: null,
+		opsMetricsHistory: [],
 		streamError: null,
 		isRuntimeDisconnected: false,
 		hasReceivedSnapshot: false,
@@ -162,6 +179,11 @@ export function runtimeStateStreamReducer(
 			latestMcpAuthStatuses: state.latestMcpAuthStatuses,
 			kanbanSessionContextVersion: state.kanbanSessionContextVersion,
 			boardSyncStatus: null,
+			// Drop the trend history on a workspace switch so the sparklines don't
+			// stitch one workspace's samples onto another's (instantaneous metrics
+			// are process-global and harmless to keep, but a continuous line across
+			// the switch would be misleading).
+			opsMetricsHistory: [],
 		};
 	}
 	if (action.type === "stream_connected") {
@@ -193,8 +215,12 @@ export function runtimeStateStreamReducer(
 			kanbanSessionContextVersion: action.payload.kanbanSessionContextVersion,
 			boardSyncStatus: null,
 			// Ops metrics are process-global, not workspace-scoped — keep the last
-			// sample across a re-snapshot so the status bar doesn't blank out.
+			// sample across a re-snapshot so the status bar doesn't blank out. The
+			// trend history, however, resets: a snapshot marks a fresh connection
+			// (e.g. after a disconnect/reconnect gap) and a continuous sparkline
+			// across that gap would be misleading.
 			opsMetrics: state.opsMetrics,
+			opsMetricsHistory: [],
 			streamError: null,
 			isRuntimeDisconnected: false,
 			hasReceivedSnapshot: true,
@@ -270,6 +296,7 @@ export function runtimeStateStreamReducer(
 		return {
 			...state,
 			opsMetrics: action.payload.metrics,
+			opsMetricsHistory: appendOpsMetricsSample(state.opsMetricsHistory, action.payload.metrics),
 		};
 	}
 	if (action.type === "workspace_state_updated") {
@@ -328,6 +355,7 @@ const FIELD_KEYS = [
 	"kanbanSessionContextVersion",
 	"boardSyncStatus",
 	"opsMetrics",
+	"opsMetricsHistory",
 	"streamError",
 	"isRuntimeDisconnected",
 	"hasReceivedSnapshot",
@@ -451,6 +479,7 @@ const selectHasReceivedSnapshot = (snapshot: RuntimeStateStreamStore) => snapsho
 const selectKanbanSessionContextVersion = (snapshot: RuntimeStateStreamStore) => snapshot.kanbanSessionContextVersion;
 const selectBoardSyncStatus = (snapshot: RuntimeStateStreamStore) => snapshot.boardSyncStatus;
 const selectOpsMetrics = (snapshot: RuntimeStateStreamStore) => snapshot.opsMetrics;
+const selectOpsMetricsHistory = (snapshot: RuntimeStateStreamStore) => snapshot.opsMetricsHistory;
 
 export function useRuntimeCurrentProjectId(): string | null {
 	return useField("currentProjectId", selectCurrentProjectId);
@@ -499,6 +528,16 @@ export function useRuntimeBoardSyncStatus(): RuntimeBoardSyncStatus | null {
  */
 export function useRuntimeOpsMetrics(): RuntimeOpsMetrics | null {
 	return useField("opsMetrics", selectOpsMetrics);
+}
+
+/**
+ * The rolling window of recent runtime ops-metrics samples (oldest → newest,
+ * capped at {@link OPS_METRICS_HISTORY_LIMIT}) for the status-bar sparklines.
+ * Like {@link useRuntimeOpsMetrics}, subscribe ONLY in the leaf status-bar
+ * component so the ~2.5s metrics broadcast re-renders just that bar.
+ */
+export function useRuntimeOpsMetricsHistory(): RuntimeOpsMetrics[] {
+	return useField("opsMetricsHistory", selectOpsMetricsHistory);
 }
 
 function subscribeTaskChat(taskId: string, listener: Listener): () => void {

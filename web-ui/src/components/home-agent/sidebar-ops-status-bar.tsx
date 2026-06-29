@@ -3,7 +3,8 @@ import type { ReactElement } from "react";
 
 import { cn } from "@/components/ui/cn";
 import { Tooltip } from "@/components/ui/tooltip";
-import { useRuntimeOpsMetrics } from "@/runtime/runtime-stream-store";
+import { OpsSparkline } from "@/components/home-agent/ops-sparkline";
+import { useRuntimeOpsMetrics, useRuntimeOpsMetricsHistory } from "@/runtime/runtime-stream-store";
 
 // Bottom status bar for the unified Kanban-agent sidebar — a thin, VSCode-style
 // readout of the runtime process's live ops metrics (resident memory, CPU%, and
@@ -35,27 +36,35 @@ function formatCpuPercent(percent: number): string {
 
 export function SidebarOpsStatusBar(): ReactElement | null {
 	const metrics = useRuntimeOpsMetrics();
+	const history = useRuntimeOpsMetricsHistory();
 	if (!metrics) {
 		return null;
 	}
 
 	const stalled = metrics.eventLoopStalled;
+	const rssSeries = history.map((sample) => sample.rssBytes);
+	const cpuSeries = history.map((sample) => sample.cpuPercent);
 
 	return (
 		<div
 			className="-mx-2 -mb-2 flex items-center gap-3 border-t border-border px-2 py-1 text-[11px] text-text-secondary tabular-nums select-none"
 			data-testid="sidebar-ops-status-bar"
 		>
-			<Tooltip side="top" content="Runtime process resident memory (RSS)">
+			<Tooltip side="top" content="Runtime process resident memory (RSS), trend over the last ~2.5 minutes">
 				<span className="inline-flex items-center gap-1">
 					<MemoryStick size={12} className="text-text-tertiary" />
 					{formatRss(metrics.rssBytes)}
+					<OpsSparkline values={rssSeries} className="text-status-blue" />
 				</span>
 			</Tooltip>
-			<Tooltip side="top" content="Runtime process CPU usage (sums across cores, so it can exceed 100%)">
+			<Tooltip
+				side="top"
+				content="Runtime process CPU usage (sums across cores, so it can exceed 100%), trend over the last ~2.5 minutes"
+			>
 				<span className="inline-flex items-center gap-1">
 					<Cpu size={12} className="text-text-tertiary" />
 					{formatCpuPercent(metrics.cpuPercent)}
+					<OpsSparkline values={cpuSeries} className="text-status-green" />
 				</span>
 			</Tooltip>
 			<Tooltip

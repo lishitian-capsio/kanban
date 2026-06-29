@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	dispatchRuntimeStreamAction,
 	getRuntimeStreamStore,
+	OPS_METRICS_HISTORY_LIMIT,
 	resetRuntimeStreamStoreForTest,
 	useRuntimeBoardSyncStatus,
 	useRuntimeOpsMetrics,
@@ -181,6 +182,64 @@ describe("runtime-stream-store granular subscriptions", () => {
 		dispatchRuntimeStreamAction({ type: "initialize", requestedWorkspaceId: "ws-1" });
 		expect(getRuntimeStreamStore().currentProjectId).toBe("ws-1");
 		expect(getRuntimeStreamStore().hasReceivedSnapshot).toBe(false);
+	});
+
+	it("accumulates ops-metrics samples and caps the history buffer", () => {
+		const sampleCount = OPS_METRICS_HISTORY_LIMIT + 5;
+		for (let i = 0; i < sampleCount; i += 1) {
+			dispatchRuntimeStreamAction({
+				type: "runtime_metrics_updated",
+				payload: {
+					type: "runtime_metrics_updated",
+					metrics: { ...opsMetrics, cpuPercent: i, sampledAtMs: i },
+				},
+			});
+		}
+
+		const history = getRuntimeStreamStore().opsMetricsHistory;
+		// Buffer is capped, the oldest samples are dropped, and the newest sample
+		// is retained at the tail (oldest → newest ordering).
+		expect(history).toHaveLength(OPS_METRICS_HISTORY_LIMIT);
+		expect(history[0]?.cpuPercent).toBe(sampleCount - OPS_METRICS_HISTORY_LIMIT);
+		expect(history[history.length - 1]?.cpuPercent).toBe(sampleCount - 1);
+		// The instantaneous slice tracks the latest sample too.
+		expect(getRuntimeStreamStore().opsMetrics?.cpuPercent).toBe(sampleCount - 1);
+	});
+
+	it("resets ops-metrics history on a workspace switch", () => {
+		dispatchRuntimeStreamAction({
+			type: "runtime_metrics_updated",
+			payload: { type: "runtime_metrics_updated", metrics: opsMetrics },
+		});
+		expect(getRuntimeStreamStore().opsMetricsHistory).toHaveLength(1);
+
+		dispatchRuntimeStreamAction({ type: "requested_workspace_changed" });
+		expect(getRuntimeStreamStore().opsMetricsHistory).toEqual([]);
+	});
+
+	it("resets ops-metrics history on a fresh snapshot but keeps the instantaneous value", () => {
+		dispatchRuntimeStreamAction({
+			type: "runtime_metrics_updated",
+			payload: { type: "runtime_metrics_updated", metrics: opsMetrics },
+		});
+		expect(getRuntimeStreamStore().opsMetricsHistory).toHaveLength(1);
+
+		dispatchRuntimeStreamAction({
+			type: "snapshot",
+			payload: {
+				type: "snapshot",
+				currentProjectId: "ws",
+				projects: [],
+				workspaceState: null,
+				workspaceMetadata: null,
+				kanbanSessionContextVersion: 0,
+			},
+		});
+
+		// History is cleared (fresh connection) but the last instantaneous sample
+		// is preserved so the status bar's numbers don't blank out.
+		expect(getRuntimeStreamStore().opsMetricsHistory).toEqual([]);
+		expect(getRuntimeStreamStore().opsMetrics).toEqual(opsMetrics);
 	});
 
 	it("coalesces duplicate chat-message broadcasts (no spurious re-render)", () => {
