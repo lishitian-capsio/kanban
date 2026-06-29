@@ -19,9 +19,9 @@ import {
 	KanbanAgentChatPanel,
 	type KanbanAgentChatPanelHandle,
 } from "@/components/detail-panels/kanban-agent-chat-panel";
+import { AgentIcon, resolveAgentLabel } from "@/components/home-agent/agent-icon";
 import { HomeNextStepSuggestion } from "@/components/home-agent/home-next-step-suggestion";
 import { TerminalAgentHints } from "@/components/home-agent/terminal-agent-hints";
-import { resolveAgentLabel } from "@/components/home-agent/thread-agent-badge";
 import { createIdleTaskSession } from "@/hooks/app-utils";
 import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
 import { type HomeAgentActiveThread, useHomeAgentSession } from "@/hooks/use-home-agent-session";
@@ -203,14 +203,24 @@ export function HomeAgentConversation({
 				runtimeConfig={runtimeProjectConfig}
 				suggestionSlot={nextStepSuggestionSlot}
 				modelControlSlot={
-					<SessionProviderControl
-						workspaceId={currentProjectId}
-						agentId={activeAgentId}
-						selectedProviderId={providerOverrideByTaskId[taskId] ?? null}
-						onSelectProvider={(providerId) =>
-							setProviderOverrideByTaskId((previous) => ({ ...previous, [taskId]: providerId }))
-						}
-					/>
+					// The active conversation is the one place the agent's full name appears in
+					// prose (the tabs/cards only show its icon). Agent + provider + model read as a
+					// single "who is answering" group, so the name sits inline before the provider
+					// switch rather than in a separate header layer.
+					<div className="flex min-w-0 items-center gap-2">
+						<span className="flex min-w-0 shrink items-center gap-1.5 text-[13px]">
+							{activeAgentId ? <AgentIcon agents={runtimeProjectConfig.agents} agentId={activeAgentId} /> : null}
+							<span className="min-w-0 truncate font-medium text-text-primary">{selectedAgentLabel}</span>
+						</span>
+						<SessionProviderControl
+							workspaceId={currentProjectId}
+							agentId={activeAgentId}
+							selectedProviderId={providerOverrideByTaskId[taskId] ?? null}
+							onSelectProvider={(providerId) =>
+								setProviderOverrideByTaskId((previous) => ({ ...previous, [taskId]: providerId }))
+							}
+						/>
+					</div>
 				}
 				onSendMessage={handleSendHomeKanbanChatMessage}
 				onCancelTurn={handleCancelHomeKanbanChatTurn}

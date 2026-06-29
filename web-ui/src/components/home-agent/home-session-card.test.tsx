@@ -135,12 +135,14 @@ describe("HomeSessionCard", () => {
 		});
 	}
 
-	it("keeps the MVP layout (name, preview, agent badge, status dot) when idle", () => {
+	it("keeps the MVP layout (name, preview, agent icon, status dot) when idle", () => {
 		// Idle: the body falls back to the last conversational line (no live activity).
 		renderCard({ summary: makeSummary("idle") });
 		expect(container.textContent).toContain("Refactor auth");
 		expect(container.textContent).toContain("hello from the agent");
-		expect(container.textContent).toContain("Claude");
+		// The agent identity is now a hover-named icon (no repeated text label); its
+		// accessible name surfaces the full agent name.
+		expect(byAriaLabel("Claude")).not.toBeNull();
 		expect(byAriaLabel("Idle")).not.toBeNull();
 	});
 

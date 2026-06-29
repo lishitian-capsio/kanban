@@ -8,11 +8,10 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Check, ChevronDown, Pencil, Plus, X } from "lucide-react";
 import { useState } from "react";
-
+import { AgentIcon } from "@/components/home-agent/agent-icon";
 import { HomeThreadCloseDialog } from "@/components/home-agent/home-thread-close-dialog";
 import { HomeThreadCreateDialog } from "@/components/home-agent/home-thread-create-dialog";
 import { HomeThreadRenameDialog } from "@/components/home-agent/home-thread-rename-dialog";
-import { ThreadAgentBadge } from "@/components/home-agent/thread-agent-badge";
 import { cn } from "@/components/ui/cn";
 import type { HomeThread } from "@/hooks/use-home-threads";
 import type { RuntimeAgentDefinition, RuntimeAgentId } from "@/runtime/types";
@@ -59,7 +58,7 @@ export function HomeThreadBar({
 					>
 						<ChevronDown size={14} className="shrink-0 text-text-secondary" />
 						<span className="min-w-0 flex-1 truncate text-[13px] font-medium">{activeThread.name}</span>
-						<ThreadAgentBadge agents={agents} agentId={activeThread.agentId} />
+						<AgentIcon agents={agents} agentId={activeThread.agentId} />
 					</button>
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Portal>
@@ -83,7 +82,7 @@ export function HomeThreadBar({
 								>
 									<Check size={14} className={cn("shrink-0", isActive ? "text-accent" : "opacity-0")} />
 									<span className="min-w-0 flex-1 truncate">{thread.name}</span>
-									<ThreadAgentBadge agents={agents} agentId={thread.agentId} />
+									<AgentIcon agents={agents} agentId={thread.agentId} />
 									{thread.isDefault ? null : (
 										<span className="flex shrink-0 items-center gap-0.5">
 											<button

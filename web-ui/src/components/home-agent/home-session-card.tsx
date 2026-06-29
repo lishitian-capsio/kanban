@@ -13,8 +13,9 @@
 // a `role="button"` div (not a `<button>` — an `<input>`/`<button>` nested inside a
 // real button is invalid DOM); each control stops propagation so acting on it never
 // also triggers `onOpenSession`.
-import { Bot, Pencil, RotateCcw, X } from "lucide-react";
+import { Pencil, RotateCcw, X } from "lucide-react";
 import { type KeyboardEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { AgentIcon } from "@/components/home-agent/agent-icon";
 import {
 	deriveHomeSessionCardStatus,
 	formatHomeSessionCardTimeAgo,
@@ -22,7 +23,6 @@ import {
 import { HomeSessionCardStatusMarker } from "@/components/home-agent/home-session-card-status-marker";
 import { HomeSessionTaskCountRow } from "@/components/home-agent/home-session-task-count-row";
 import { HomeThreadCloseDialog } from "@/components/home-agent/home-thread-close-dialog";
-import { ThreadAgentBadge } from "@/components/home-agent/thread-agent-badge";
 import { useHomeThreadTaskCounts } from "@/components/home-agent/thread-task-counts";
 import { SessionMetaBadges } from "@/components/session-meta-badges";
 import { cn } from "@/components/ui/cn";
@@ -190,8 +190,8 @@ export function HomeSessionCard({
 			)}
 		>
 			<div className="flex items-center gap-2">
-				<span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-surface-1 text-text-secondary">
-					<Bot size={16} aria-hidden="true" />
+				<span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-surface-1">
+					<AgentIcon agents={agents} agentId={thread.agentId} size={16} />
 				</span>
 				{isEditingName ? (
 					<input
@@ -303,8 +303,8 @@ export function HomeSessionCard({
 
 			<div className="flex items-center justify-between gap-2">
 				<div className="flex min-w-0 items-center gap-1.5">
-					<ThreadAgentBadge agents={agents} agentId={thread.agentId} />
-					{/* Stable session short id — low-key, monospace, mirrors the board task-id chip. */}
+					{/* Stable session short id — low-key, monospace, mirrors the board task-id chip.
+					    The agent identity lives in the top-left avatar icon, not here. */}
 					<span
 						className="shrink-0 rounded-sm bg-surface-3 px-1 py-0.5 font-mono text-[10px] leading-none text-text-tertiary"
 						title={`Session ID: #${shortId}`}

@@ -7,9 +7,9 @@
 // the thread (that stays an explicit action in the launcher / thread bar). Only the session-tab
 // region scrolls horizontally when the tabs overflow; the anchored tabs stay pinned and visible.
 import { Bot, LayoutGrid, X } from "lucide-react";
-import { useEffect, useRef, type ReactElement } from "react";
+import { type ReactElement, useEffect, useRef } from "react";
 
-import { ThreadAgentBadge } from "@/components/home-agent/thread-agent-badge";
+import { AgentIcon } from "@/components/home-agent/agent-icon";
 import { cn } from "@/components/ui/cn";
 import type { HomeThread } from "@/hooks/use-home-threads";
 import type { RuntimeAgentDefinition } from "@/runtime/types";
@@ -141,7 +141,7 @@ export function SessionTabStrip({
 								title={thread.name}
 							>
 								<span className={cn("min-w-0 truncate", isActive && "font-medium")}>{thread.name}</span>
-								<ThreadAgentBadge agents={agents} agentId={thread.agentId} />
+								<AgentIcon agents={agents} agentId={thread.agentId} />
 							</button>
 							<button
 								type="button"
