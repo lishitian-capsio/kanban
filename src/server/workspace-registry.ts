@@ -73,6 +73,15 @@ export interface WorkspaceRegistry {
 		workspacePath: string | null;
 	};
 	summarizeProjectTaskCounts: (workspaceId: string, repoPath: string) => Promise<RuntimeProjectTaskCounts>;
+	/**
+	 * Recompute a single workspace's task counts and report whether they changed
+	 * since the last cached value. Lets hot broadcast paths (e.g. the 150ms
+	 * task-session-summary flush) skip the all-projects {@link buildProjectsPayload}
+	 * fan-out when the coarse counts are unchanged — the common case, since most
+	 * summary flushes are token/internal-state churn that does not move a task
+	 * between columns.
+	 */
+	refreshProjectTaskCountsIfChanged: (workspaceId: string) => Promise<boolean>;
 	createProjectSummary: (input: {
 		workspaceId: string;
 		repoPath: string;
@@ -103,6 +112,20 @@ function createEmptyProjectTaskCounts(): RuntimeProjectTaskCounts {
 		review: 0,
 		trash: 0,
 	};
+}
+
+/**
+ * Structural equality for the coarse per-column task counts shown on project
+ * cards. Used to gate the projects-updated broadcast: if a workspace's counts
+ * are unchanged, the all-projects payload rebuild can be skipped.
+ */
+export function projectTaskCountsEqual(a: RuntimeProjectTaskCounts, b: RuntimeProjectTaskCounts): boolean {
+	return (
+		a.backlog === b.backlog &&
+		a.in_progress === b.in_progress &&
+		a.review === b.review &&
+		a.trash === b.trash
+	);
 }
 
 function countTasksByColumn(board: RuntimeBoardData): RuntimeProjectTaskCounts {
@@ -336,6 +359,15 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 		}
 	};
 
+	const refreshProjectTaskCountsIfChanged = async (workspaceId: string): Promise<boolean> => {
+		const previous = projectTaskCountsByWorkspaceId.get(workspaceId);
+		// summarizeProjectTaskCounts recomputes from disk and refreshes the cache;
+		// capture the prior value first so we can diff. On a read error it returns
+		// the cached value unchanged, which compares equal => no spurious broadcast.
+		const next = await summarizeProjectTaskCounts(workspaceId, "");
+		return previous === undefined || !projectTaskCountsEqual(previous, next);
+	};
+
 	const buildWorkspaceStateSnapshot = async (
 		workspaceId: string,
 		workspacePath: string,
@@ -485,6 +517,7 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 		clearActiveWorkspace,
 		disposeWorkspace,
 		summarizeProjectTaskCounts,
+		refreshProjectTaskCountsIfChanged,
 		createProjectSummary: toProjectSummary,
 		buildWorkspaceStateSnapshot,
 		buildProjectsPayload,

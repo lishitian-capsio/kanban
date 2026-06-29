@@ -1,4 +1,7 @@
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 interface DirectoryPickerCommandCandidate {
 	command: string;
@@ -10,7 +13,20 @@ type DirectoryPickerCommandResult =
 	| { kind: "cancelled" }
 	| { kind: "unavailable" };
 
-type RunCommand = (command: string, args: string[]) => ReturnType<typeof spawnSync>;
+/**
+ * Normalized child-process result the picker reasons over. Decoupled from
+ * `spawnSync`'s return shape so the underlying call can be async (`execFile`)
+ * without blocking the runtime's event loop while the native dialog is open.
+ */
+export interface DirectoryPickerCommandOutput {
+	status: number | null;
+	signal: NodeJS.Signals | null;
+	stdout: string;
+	stderr: string;
+	error?: NodeJS.ErrnoException;
+}
+
+export type RunCommand = (command: string, args: string[]) => Promise<DirectoryPickerCommandOutput>;
 
 interface PickDirectoryPathFromSystemDialogOptions {
 	platform?: NodeJS.Platform;
@@ -35,18 +51,37 @@ function parseChildProcessErrorCode(error: unknown): string | null {
 	return typeof code === "string" ? code : null;
 }
 
-function defaultRunCommand(command: string, args: string[]): ReturnType<typeof spawnSync> {
-	return spawnSync(command, args, {
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "pipe"],
-	});
+async function defaultRunCommand(command: string, args: string[]): Promise<DirectoryPickerCommandOutput> {
+	try {
+		const { stdout, stderr } = await execFileAsync(command, args, { encoding: "utf8" });
+		return { status: 0, signal: null, stdout, stderr };
+	} catch (rawError) {
+		const error = rawError as NodeJS.ErrnoException & {
+			stdout?: string;
+			stderr?: string;
+			signal?: NodeJS.Signals | null;
+		};
+		// A spawn failure (e.g. ENOENT — command not installed) surfaces a STRING
+		// errno on `code`; a process that ran but exited non-zero surfaces a NUMBER
+		// exit status. Distinguish them so the caller can fall back to the next
+		// candidate vs. treat the run as cancelled/errored.
+		if (typeof error.code === "string") {
+			return { status: null, signal: error.signal ?? null, stdout: "", stderr: "", error };
+		}
+		return {
+			status: typeof error.code === "number" ? error.code : 1,
+			signal: error.signal ?? null,
+			stdout: error.stdout ?? "",
+			stderr: error.stderr ?? "",
+		};
+	}
 }
 
-function runDirectoryPickerCommand(
+async function runDirectoryPickerCommand(
 	candidate: DirectoryPickerCommandCandidate,
 	runCommand: RunCommand,
-): DirectoryPickerCommandResult {
-	const result = runCommand(candidate.command, candidate.args);
+): Promise<DirectoryPickerCommandResult> {
+	const result = await runCommand(candidate.command, candidate.args);
 
 	const errorCode = parseChildProcessErrorCode(result.error);
 	if (errorCode === "ENOENT") {
@@ -82,15 +117,15 @@ function runDirectoryPickerCommand(
 	return { kind: "selected", path: selectedPath };
 }
 
-export function pickDirectoryPathFromSystemDialog(
+export async function pickDirectoryPathFromSystemDialog(
 	options: PickDirectoryPathFromSystemDialogOptions = {},
-): string | null {
+): Promise<string | null> {
 	const platform = options.platform ?? process.platform;
 	const cwd = options.cwd ?? process.cwd();
 	const runCommand = options.runCommand ?? defaultRunCommand;
 
 	if (platform === "darwin") {
-		const result = runDirectoryPickerCommand(
+		const result = await runDirectoryPickerCommand(
 			{
 				command: "osascript",
 				args: ["-e", 'POSIX path of (choose folder with prompt "Select a project folder")'],
@@ -119,7 +154,7 @@ export function pickDirectoryPathFromSystemDialog(
 		];
 
 		for (const candidate of candidates) {
-			const result = runDirectoryPickerCommand(candidate, runCommand);
+			const result = await runDirectoryPickerCommand(candidate, runCommand);
 			if (result.kind === "unavailable") {
 				continue;
 			}
@@ -145,7 +180,7 @@ export function pickDirectoryPathFromSystemDialog(
 		];
 
 		for (const candidate of candidates) {
-			const result = runDirectoryPickerCommand(candidate, runCommand);
+			const result = await runDirectoryPickerCommand(candidate, runCommand);
 			if (result.kind === "unavailable") {
 				continue;
 			}

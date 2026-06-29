@@ -286,7 +286,13 @@ function handleMessageUpdate(
 				activityText: truncate(text, 160) || "Agent active",
 				toolName: null,
 				toolInputSummary: null,
-				finalMessage: text,
+				// Don't ship the full accumulated reply on the summary channel each
+				// streaming tick — it duplicates the chat channel (which already carries
+				// the streaming text) and grows O(n) per emit. `finalMessage` is only
+				// read at review-ready time, where the message_end / to_review summary
+				// supplies the complete text; the truncated `activityText` above is what
+				// the card shows while running.
+				finalMessage: null,
 				hookEventName: "assistant_delta",
 				notificationType: null,
 				source: "pi-agent",

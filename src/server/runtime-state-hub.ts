@@ -27,10 +27,17 @@ import type {
 import type { SessionMessage } from "../session/session-message";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { markStall } from "./event-loop-stall-watchdog";
+import { createTaskChatMessageBatcher } from "./task-chat-message-batcher";
 import { createWorkspaceMetadataMonitor } from "./workspace-metadata-monitor";
 import type { ResolvedWorkspaceStreamTarget, WorkspaceRegistry } from "./workspace-registry";
 
 const TASK_SESSION_STREAM_BATCH_MS = 150;
+/**
+ * Debounce window for streaming `task_chat_message` broadcasts. Short enough to
+ * keep token rendering feeling live, long enough to collapse a per-token burst
+ * (which re-sends the whole accumulated message) into one send per window.
+ */
+const CHAT_MESSAGE_STREAM_BATCH_MS = 50;
 
 export interface DisposeRuntimeStateWorkspaceOptions {
 	disconnectClients?: boolean;
@@ -40,7 +47,10 @@ export interface DisposeRuntimeStateWorkspaceOptions {
 export interface CreateRuntimeStateHubDependencies {
 	workspaceRegistry: Pick<
 		WorkspaceRegistry,
-		"resolveWorkspaceForStream" | "buildProjectsPayload" | "buildWorkspaceStateSnapshot"
+		| "resolveWorkspaceForStream"
+		| "buildProjectsPayload"
+		| "buildWorkspaceStateSnapshot"
+		| "refreshProjectTaskCountsIfChanged"
 	>;
 }
 
@@ -184,7 +194,24 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 				sendRuntimeStateMessage(client, payload);
 			}
 		}
-		void broadcastRuntimeProjectsUpdated(workspaceId);
+		// The projects payload only carries coarse per-column task counts, which
+		// change far less often than summary flushes fire (most flushes are
+		// token/internal-state churn). Recompute just this workspace's counts (one
+		// board read) and only fan out the all-projects rebuild when they actually
+		// changed — otherwise a single active session triggered O(projects) full
+		// board scans every 150ms.
+		void (async () => {
+			try {
+				const changed = await deps.workspaceRegistry.refreshProjectTaskCountsIfChanged(workspaceId);
+				if (changed) {
+					await broadcastRuntimeProjectsUpdated(workspaceId);
+				}
+			} catch {
+				// Never let a count refresh failure drop the projects broadcast: fall
+				// back to the unconditional rebuild so the UI cannot get stuck stale.
+				void broadcastRuntimeProjectsUpdated(workspaceId);
+			}
+		})();
 	};
 
 	const queueTaskSessionSummaryBroadcast = (workspaceId: string, summary: RuntimeTaskSessionSummary) => {
@@ -203,20 +230,39 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 		taskSessionBroadcastTimersByWorkspaceId.set(workspaceId, timer);
 	};
 
+	// Streaming chat tokens re-emit the whole accumulated message on every token;
+	// the batcher coalesces them per (workspace, task, message id) so a long reply
+	// becomes ~one send per CHAT_MESSAGE_STREAM_BATCH_MS instead of O(tokens) full
+	// re-serializations on the event loop.
+	const chatMessageBatcher = createTaskChatMessageBatcher({
+		batchMs: CHAT_MESSAGE_STREAM_BATCH_MS,
+		flush: ({ workspaceId, taskId, messages }) => {
+			const runtimeClients = runtimeStateClientsByWorkspaceId.get(workspaceId);
+			if (!runtimeClients || runtimeClients.size === 0) {
+				return;
+			}
+			for (const message of messages) {
+				const payload: RuntimeStateStreamTaskChatMessage = {
+					type: "task_chat_message",
+					workspaceId,
+					taskId,
+					message,
+				};
+				for (const client of runtimeClients) {
+					sendRuntimeStateMessage(client, payload);
+				}
+			}
+		},
+	});
+
 	const broadcastTaskChatMessage = (workspaceId: string, taskId: string, message: SessionMessage) => {
 		const runtimeClients = runtimeStateClientsByWorkspaceId.get(workspaceId);
 		if (!runtimeClients || runtimeClients.size === 0) {
+			// No observers — skip entirely (the persisted journal is the source of
+			// truth that a late-connecting client reads back via getTaskChatMessages).
 			return;
 		}
-		const payload: RuntimeStateStreamTaskChatMessage = {
-			type: "task_chat_message",
-			workspaceId,
-			taskId,
-			message,
-		};
-		for (const client of runtimeClients) {
-			sendRuntimeStateMessage(client, payload);
-		}
+		chatMessageBatcher.enqueue(workspaceId, taskId, message);
 	};
 
 	const broadcastBoardSyncStatusUpdated = (workspaceId: string, status: RuntimeBoardSyncStatus) => {
@@ -269,6 +315,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 		}
 		taskSessionBroadcastTimersByWorkspaceId.delete(workspaceId);
 		pendingTaskSessionSummariesByWorkspaceId.delete(workspaceId);
+		chatMessageBatcher.disposeWorkspace(workspaceId);
 	};
 
 	const cleanupRuntimeStateClient = (client: WebSocket) => {
@@ -626,6 +673,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			}
 			taskSessionBroadcastTimersByWorkspaceId.clear();
 			pendingTaskSessionSummariesByWorkspaceId.clear();
+			chatMessageBatcher.dispose();
 			for (const unsubscribe of terminalSummaryUnsubscribeByWorkspaceId.values()) {
 				try {
 					unsubscribe();

@@ -1,10 +1,19 @@
 // Tool bridge for pi agent sessions.
 // Provides built-in coding tools (read/write/list/search files, execute command)
 // and integrates MCP tools as extra tools.
-import { execSync } from "node:child_process";
-import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { exec } from "node:child_process";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { promisify } from "node:util";
 import type { AgentTool, AgentToolResult, ToolTier } from "../types";
+
+// Async, shell-backed command runner. Replaces the previous `execSync` calls so
+// `execute_command`/`search_files` no longer block the entire runtime event
+// loop for the lifetime of the child (up to the 60s/30s tool timeouts). `exec`
+// (not `execFile`) is required because callers rely on shell semantics — the
+// search tool pipes `grep ... | head`, and `execute_command` runs arbitrary
+// user shell commands.
+const execAsync = promisify(exec);
 
 export type PiToolTier = ToolTier;
 
@@ -233,13 +242,13 @@ function createSearchFilesTool(cwd: string, z: any): AgentTool<any> {
 				// Use grep command for efficient searching
 				const globArg = params.fileGlob ? `--include='*${params.fileGlob}'` : "";
 				const cmd = `grep -rn ${globArg} -E '${params.pattern.replace(/'/g, "'\\''")}' '${searchPath}' | head -${maxResults}`;
-				const output = execSync(cmd, {
+				const { stdout } = await execAsync(cmd, {
 					cwd,
 					encoding: "utf8",
 					maxBuffer: 10 * 1024 * 1024,
 					timeout: 30000,
-				}).trim();
-				const text = output || "No matches found.";
+				});
+				const text = stdout.trim() || "No matches found.";
 				return { content: [{ type: "text", text }] };
 			} catch (error) {
 				// grep returns exit code 1 when no matches found
@@ -271,20 +280,22 @@ function createExecuteCommandTool(cwd: string, z: any): AgentTool<any> {
 		): Promise<AgentToolResult> {
 			try {
 				const timeout = params.timeout ?? 60000;
-				const output = execSync(params.command, {
+				const { stdout } = await execAsync(params.command, {
 					cwd,
 					encoding: "utf8",
 					maxBuffer: 10 * 1024 * 1024,
 					timeout,
 				});
-				return { content: [{ type: "text", text: output || "(no output)" }] };
+				return { content: [{ type: "text", text: stdout || "(no output)" }] };
 			} catch (error) {
 				if (error && typeof error === "object" && "stdout" in error && "stderr" in error) {
-					const execError = error as { stdout: string; stderr: string; status?: number };
+					// promisify(exec) attaches stdout/stderr to the rejection error and
+					// exposes the exit status as `code` (execSync used `status`).
+					const execError = error as { stdout: string; stderr: string; code?: number };
 					const parts: string[] = [];
 					if (execError.stdout) parts.push(`stdout:\n${execError.stdout}`);
 					if (execError.stderr) parts.push(`stderr:\n${execError.stderr}`);
-					if (typeof execError.status === "number") parts.push(`exit code: ${execError.status}`);
+					if (typeof execError.code === "number") parts.push(`exit code: ${execError.code}`);
 					return {
 						content: [{ type: "text", text: parts.join("\n") || "Command failed with no output" }],
 						isError: true,

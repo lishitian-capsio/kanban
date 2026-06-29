@@ -226,3 +226,19 @@ git 操作:
 ---
 
 *调研产出 by 5 路并行只读 agent,2026-06-29。所有 file:line 引用基于当前 worktree(`aee8b`)快照,实施前请复核行号。*
+
+---
+
+## 5. 实施记录 (2026-06-29, worktree `8c1f0`)
+
+按优先级落地,所有改动 wire contract 不变、前端零改动、补单元测试。`tsc` 基线有 ~123 个既存 vendored-omp 报错(`src/agent-sdk/ai/*`),本次改动净增 0;`test/runtime` 有 ~21 个既存环境依赖失败(proxy/network-bridge/agent-registry/runtime-config/endpoint),与本次无关(stash 对比确认)。
+
+- **✅ P1-A** — `pi-tools-bridge.ts`:`execute_command`/`search_files` 从 `execSync` 改为 `promisify(exec)`(保留 shell 语义:搜索的 `grep | head` 管道、任意用户命令)。错误字段 `status`→`code`(exec 约定)。**收益**:移除活动 agent 路径上唯一遗留的同步硬冻结(单次最长 60s/30s 主循环阻塞 → 0)。测试 `test/agent-sdk/pi-tools-bridge.test.ts`:非阻塞竞速(执行期间 50ms 定时器先于命令 resolve)+ stdout/stderr/exit-code/搜索正确性。
+- **✅ P1-B** — `flushTaskSessionSummaries` 不再每次 150ms flush 都重建所有项目载荷;改为 `registry.refreshProjectTaskCountsIfChanged(ws)`(只读**本** workspace 一次盘)→ 仅当本 workspace 的粗粒度计数(backlog/in_progress/review/trash)真正变化时才 `broadcastRuntimeProjectsUpdated`。**收益**:活动会话期间最热广播路径从 O(项目数 P × 每盘分片) 磁盘读降为「计数未变 ⇒ 1 次本盘读、0 扇出」(绝大多数 token/内部状态 flush 不移动 task 列)。纯函数 `projectTaskCountsEqual` 导出+测试。出错兜底回退无条件广播,UI 不会卡在陈旧态。
+- **✅ P1-C(git 部分)** — `detectGitRepositoryInfo` 加 5s TTL 缓存(按 `resolve(repoPath)`)+ `invalidateGitRepositoryInfoCache`;`checkoutGitBranch` 成功后失效。**收益**:每次 `workspace_state_updated` 广播从 ~5 个未缓存 git 子进程(rev-parse×2 + symbolic-ref + for-each-ref + origin/HEAD)降为缓存命中 0 spawn;分支信息陈旧上限 5s(纯展示,checkout 立即失效)。测试在 `workspace-state-git-detection.test.ts`(缓存命中不反映新分支 + 失效后反映)。
+- **✅ P2-A** — 抽出 `src/server/task-chat-message-batcher.ts`:按 `(ws, task, messageId)` 合并、保序、50ms 防抖(注入式定时器以便测试),接入 hub `broadcastTaskChatMessage`(保留无观看者 early-return 的零开销;dispose/close 清理)。**收益**:长回复流式广播从 O(tokens) 次「整条累积消息重序列化」降为 ~1 次/50ms 窗口(降 1-2 个数量级),distinct 消息全保序不丢。另:pi-event-adapter 每 token summary 的 `finalMessage: text`→`null`(与 chat 通道重复;前端仅在 review-ready 读 finalMessage,取 message_end 的最终值)。测试 `test/server/task-chat-message-batcher.test.ts`。
+- **✅ P2-B** — `directory-picker.ts` `spawnSync`→`promisify(execFile)`,`pickDirectoryPathFromSystemDialog` 返回 `Promise<string|null>`;dep 签名在 `runtime-server.ts`/`projects-api.ts` 更新(+`await`),`cli.ts` 直接传异步函数。归一化 `DirectoryPickerCommandOutput`(解耦 spawnSync 形状)。**收益**:对话框打开期间不再冻结整个运行时(无界 → 异步,其它客户端继续服务)。测试改异步 + 非阻塞竞速。
+- **⚠️ 延迟(按风险)— P1-C 的 board-读 部分 + P2-C(贯穿性 board-assembly 缓存)**:这是唯一触及**数据正确性**的一项(缓存陈旧 ⇒ UI 显示错误的卡片/列),不在长会话末尾仓促引入。**已落地的改动已吃掉最大的广播 churn(P1-B 的 ×P 扇出 + P1-C 的 git spawn)**;剩余的「每广播一次本盘分片读」是有界并行异步 I/O,非冻结。
+  - **后续安全设计**:按 `workspaceId` 缓存组装后的板,key 用 `meta.revision`;进程内写经 `mutateWorkspaceState`/`saveShardedBoard` 自增 revision ⇒ 自动失效。**外部写盘者必须显式 `invalidateBoardCache(ws)`**:仅两处 —— `board-sync.ts runManualPull`(merge 拉取)与 `board-worktree.ts adoptRemoteBoardIfPending`(`reset --hard`)。关键陷阱:`meta.json` 在 runtime-home(**非** board worktree,方案 C),拉取不会自增 revision,故显式失效是**强制**的;`merge --abort` 保留本地无需失效。注意导入环(board-sync → … → `git-utils` 是 leaf,缓存放 `task-shard-store`/`workspace-state` 并由 board-sync 反向调用需防环)。P2-C 顺带:用缓存的 `existingRanks` 免 `saveShardedBoard` 内重读。
+  - **不要动 P3-C**:`saveShardedBoard` 的第 2 次 `readdir`(`listTaskFileIds`)并非纯冗余 —— 它捕获 `readStoredTasks` 跳过的撕裂分片以便删除,"去重"会漏删坏文件。
+- **P3-A/B/D/E**:未做(仅在 git-spawn/stat 计数实测成瓶颈时再做;均有界、异步、非冻结)。
