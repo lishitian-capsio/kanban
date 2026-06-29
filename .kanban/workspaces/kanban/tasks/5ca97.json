@@ -1,0 +1,19 @@
+{
+  "id": "5ca97",
+  "title": "agent 会话卡片显示短稳定 ID",
+  "prompt": "需求：kanban agent 的会话卡片（全屏 Home tab 的 session-card 网格，以及相关会话条目/标签）目前没有面向用户的编号。任务卡片有短 ID（如 #99921），但会话卡片只显示状态点、活动行、provider·model + token 用量。希望给每个会话卡片也加上一个**短的、稳定的标识**（不随列表顺序变化），方便用户精确指代某个会话。\n\n要点（供参考，不限定）：\n- 标识要**稳定**：和会话本身绑定（例如从 home-agent-session id / threadId 派生出一个短码），而不是按列表顺序变化的序号；同一会话刷新/重排后标识不变。\n- 在会话卡片上以低调但可读的方式展示（参考任务短 ID 的样式/位置），不要喧宾夺主，和现有的 provider·model·token 信息排版协调。\n- 定位会话卡片组件与会话标识的来源（home 多线程 / home-agent-session id 方案；注意 legacy 三段式默认线程的兼容）。优先从已有的稳定 id 派生短码，避免新增持久化字段；如确需，保持最小改动。\n- 若多个会话需要避免短码碰撞，确保派生方式在同一工作区内唯一。\n- 不破坏现有会话卡片的状态/活动/provider/model/token 展示与交互。\n\n期望结果：每个 agent 会话卡片显示一个短而稳定的 ID，可用于指代该会话，且在刷新/重排后保持不变。涉及 web-ui 会话卡片组件与会话标识派生。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782697944872,
+  "updatedAt": 1782697944872,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
