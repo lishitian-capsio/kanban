@@ -41,6 +41,7 @@ import { createWorkspaceHomeThreadStore, type HomeThreadStore } from "../session
 import { FileSessionMessageJournal } from "../session/session-message-journal";
 import {
 	getWorkspaceSessionMessagesDirPath,
+	invalidateWorkspaceBoardCache,
 	loadWorkspaceBoardById,
 	loadWorkspaceContextById,
 } from "../state/workspace-state";
@@ -73,7 +74,7 @@ export interface CreateRuntimeServerDependencies {
 	runCommand: (command: string, cwd: string) => Promise<RuntimeCommandRunResponse>;
 	resolveProjectInputPath: (inputPath: string, basePath: string) => string;
 	assertPathIsDirectory: (targetPath: string) => Promise<void>;
-	hasGitRepository: (path: string) => boolean;
+	hasGitRepository: (path: string) => Promise<boolean>;
 	disposeWorkspace: (
 		workspaceId: string,
 		options?: {
@@ -231,7 +232,15 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 	// the hot path never touches the network. A no-op for repos that have not activated
 	// decoupling (no `.kanban/board-ref`).
 	const boardSyncService: BoardSyncService = createBoardSyncService({
-		broadcastWorkspaceState: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
+		broadcastWorkspaceState: (workspaceId, workspacePath) => {
+			// board-sync only broadcasts after a pull/adopt rewrote the board worktree's
+			// task shards — an out-of-process change that does NOT bump the machine-local
+			// `meta.revision`. Bust the revision-keyed board memo first so this very
+			// broadcast reflects the pulled state instead of the cached pre-pull board.
+			// (`workspacePath` is the repo root, i.e. the board cache's repoPath key.)
+			invalidateWorkspaceBoardCache(workspacePath, workspaceId);
+			return deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated(workspaceId, workspacePath);
+		},
 		// Push the recomputed status to the workspace's clients (the top-bar badge) on every
 		// transition, so the UI stays live without polling.
 		onStatusChanged: (target, status) => {

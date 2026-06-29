@@ -22,7 +22,7 @@ function createDefaultDeps(serverCwd: string): CreateProjectsApiDependencies {
 		clearActiveWorkspace: vi.fn(),
 		resolveProjectInputPath: vi.fn((inputPath: string, cwd: string) => resolve(cwd, inputPath)),
 		assertPathIsDirectory: vi.fn(async () => {}),
-		hasGitRepository: vi.fn(() => false),
+		hasGitRepository: vi.fn(async () => false),
 		summarizeProjectTaskCounts: vi.fn(
 			async (): Promise<RuntimeProjectTaskCounts> => ({
 				backlog: 0,
@@ -278,7 +278,7 @@ describe("addProject", () => {
 
 	it("backward compat: accepts a path-only request", async () => {
 		const deps = createDefaultDeps(testCwd);
-		(deps.hasGitRepository as ReturnType<typeof vi.fn>).mockReturnValue(true);
+		(deps.hasGitRepository as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 		const api = createProjectsApi(deps);
 		const result = await api.addProject(null, { path: testCwd });
 		// The existing flow runs; we're verifying it doesn't throw on path-only input.

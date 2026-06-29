@@ -35,7 +35,7 @@ export interface CreateProjectsApiDependencies {
 	clearActiveWorkspace: () => void;
 	resolveProjectInputPath: (inputPath: string, cwd: string) => string;
 	assertPathIsDirectory: (path: string) => Promise<void>;
-	hasGitRepository: (path: string) => boolean;
+	hasGitRepository: (path: string) => Promise<boolean>;
 	summarizeProjectTaskCounts: (workspaceId: string, repoPath: string) => Promise<RuntimeProjectTaskCounts>;
 	createProjectSummary: (project: {
 		workspaceId: string;
@@ -99,7 +99,7 @@ export function createProjectsApi(deps: CreateProjectsApiDependencies): RuntimeT
 					projectPath = deps.resolveProjectInputPath(body.path as string, resolveBasePath);
 				}
 				await deps.assertPathIsDirectory(projectPath);
-				if (!deps.hasGitRepository(projectPath)) {
+				if (!(await deps.hasGitRepository(projectPath))) {
 					if (!body.initializeGit) {
 						return {
 							ok: false,

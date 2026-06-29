@@ -655,12 +655,88 @@ async function readWorkspaceBoard(repoPath: string, workspaceId: string): Promis
 	return updateTaskDependencies(board);
 }
 
+/**
+ * Revision-keyed in-process memo for the assembled board, shared by every read
+ * path (`loadWorkspaceState`, `loadWorkspaceBoardById` → the projects fan-out).
+ *
+ * Two wins in one place:
+ *  - **#4 (concurrent dedup):** the first-connect snapshot builds the projects
+ *    payload and the active workspace state concurrently; both used to read +
+ *    re-parse the active board's shards independently. Caching the in-flight
+ *    *promise* (not just the value) collapses concurrent reads at the same
+ *    revision into a single shard fan-out.
+ *  - **#5 (broadcast memo):** most broadcasts (chat/session events) don't touch
+ *    the board, yet each re-read all N shards + re-ran Zod. The `meta.revision`
+ *    (a small file) gates reuse — unchanged revision ⇒ no shard read.
+ *
+ * Invalidation: in-process board writes bump `meta.revision` (see
+ * {@link saveWorkspaceState}/{@link mutateWorkspaceState}), so the key changes
+ * for free. The one out-of-process writer is a board-sync **pull**, which
+ * rewrites shards without bumping the (machine-local) meta — its post-pull
+ * broadcast wiring calls {@link invalidateWorkspaceBoardCache} as the bust.
+ */
+interface WorkspaceBoardCacheEntry {
+	revision: number;
+	board: Promise<RuntimeBoardData>;
+}
+
+const workspaceBoardCache = new Map<string, WorkspaceBoardCacheEntry>();
+let workspaceBoardReadCount = 0;
+
+function workspaceBoardCacheKey(repoPath: string, workspaceId: string): string {
+	return JSON.stringify([repoPath, workspaceId]);
+}
+
+function loadWorkspaceBoardMemoized(
+	repoPath: string,
+	workspaceId: string,
+	revision: number,
+): Promise<RuntimeBoardData> {
+	const key = workspaceBoardCacheKey(repoPath, workspaceId);
+	const cached = workspaceBoardCache.get(key);
+	if (cached && cached.revision === revision) {
+		return cached.board;
+	}
+
+	workspaceBoardReadCount += 1;
+	const board = readWorkspaceBoard(repoPath, workspaceId);
+	const entry: WorkspaceBoardCacheEntry = { revision, board };
+	workspaceBoardCache.set(key, entry);
+	// Never cache a rejected read — drop the entry so the next call retries.
+	board.catch(() => {
+		if (workspaceBoardCache.get(key) === entry) {
+			workspaceBoardCache.delete(key);
+		}
+	});
+	return board;
+}
+
+/**
+ * Drop the memoized board for a workspace. Called by the board-sync post-pull
+ * broadcast wiring (an out-of-process shard rewrite that doesn't bump
+ * `meta.revision`), so the next read reflects the pulled state.
+ */
+export function invalidateWorkspaceBoardCache(repoPath: string, workspaceId: string): void {
+	workspaceBoardCache.delete(workspaceBoardCacheKey(repoPath, workspaceId));
+}
+
+/** Test-only: clear the revision-keyed board memo. */
+export function resetWorkspaceBoardCacheForTests(): void {
+	workspaceBoardCache.clear();
+}
+
+/** Test-only: how many times the board shards were actually read (cache misses). */
+export function getWorkspaceBoardReadCountForTests(): number {
+	return workspaceBoardReadCount;
+}
+
 export async function loadWorkspaceBoardById(workspaceId: string): Promise<RuntimeBoardData> {
 	const repoPath = await resolveRepoPathForWorkspaceId(workspaceId);
 	if (!repoPath) {
 		throw new Error(`Unknown workspace "${workspaceId}"; cannot resolve its repository path.`);
 	}
-	return await readWorkspaceBoard(repoPath, workspaceId);
+	const meta = await readWorkspaceMeta(repoPath, workspaceId);
+	return await loadWorkspaceBoardMemoized(repoPath, workspaceId, meta.revision);
 }
 
 async function readWorkspaceSessions(
@@ -822,15 +898,72 @@ async function readWorkspaceMeta(repoPath: string, workspaceId: string): Promise
 	});
 }
 
+/**
+ * In-process cache for the parsed workspace index. `readWorkspaceIndex` runs on
+ * many hot paths — every `*ById` loader, `resolveRepoPathForWorkspaceId`, the
+ * projects fan-out (one per registered project), restart-connect — yet the file
+ * only changes when a project is added or removed. Re-reading + re-running the
+ * Zod `superRefine` validation on every call is pure waste.
+ *
+ * Correctness comes from a stat signature (mtime + size), keyed by the resolved
+ * index path. The path is part of the key so a different machine home (tests that
+ * swap `$HOME`) never reuses another home's index, and the signature self-heals if
+ * the file is rewritten out-of-band by a second kanban process on the same machine.
+ * A throwing parse (malformed file) is never cached.
+ */
+interface WorkspaceIndexCacheEntry {
+	path: string;
+	signature: string;
+	value: WorkspaceIndexFile;
+}
+
+let workspaceIndexCache: WorkspaceIndexCacheEntry | null = null;
+let workspaceIndexParseCount = 0;
+
+const WORKSPACE_INDEX_ABSENT_SIGNATURE = "absent";
+
+async function readWorkspaceIndexSignature(path: string): Promise<string> {
+	try {
+		const info = await stat(path);
+		return `${info.mtimeMs}:${info.size}`;
+	} catch {
+		return WORKSPACE_INDEX_ABSENT_SIGNATURE;
+	}
+}
+
 async function readWorkspaceIndex(): Promise<WorkspaceIndexFile> {
-	const raw = await readJsonFile(getWorkspaceIndexPath());
-	return parseWorkspaceIndex(raw);
+	const path = getWorkspaceIndexPath();
+	const signature = await readWorkspaceIndexSignature(path);
+	const cached = workspaceIndexCache;
+	if (cached && cached.path === path && cached.signature === signature) {
+		return cached.value;
+	}
+
+	const raw = await readJsonFile(path);
+	const value = parseWorkspaceIndex(raw);
+	workspaceIndexParseCount += 1;
+	workspaceIndexCache = { path, signature, value };
+	return value;
 }
 
 async function writeWorkspaceIndex(index: WorkspaceIndexFile): Promise<void> {
 	await lockedFileSystem.writeJsonFileAtomic(getWorkspaceIndexPath(), index, {
 		lock: null,
 	});
+	// Invalidate so the next read re-stats and re-parses the just-written file.
+	// (Clearing rather than write-through keeps callers from ever observing a
+	// cached object that a writer mutated in place before the atomic write landed.)
+	workspaceIndexCache = null;
+}
+
+/** Test-only: drop the in-process workspace-index cache. */
+export function resetWorkspaceIndexCacheForTests(): void {
+	workspaceIndexCache = null;
+}
+
+/** Test-only: how many times the index has actually been read + parsed (cache misses). */
+export function getWorkspaceIndexParseCountForTests(): number {
+	return workspaceIndexParseCount;
 }
 
 function toWorkspaceIdBase(repoPath: string): string {
@@ -1193,24 +1326,29 @@ interface GitRepositoryInfoCacheEntry {
  * path. `detectGitRepositoryInfo` runs on the `loadWorkspaceContext` hot path —
  * every `workspace_state_updated` broadcast — and each call spawns ~4 git
  * subprocesses. When N terminal-agent sessions hit a turn boundary together they
- * fan out ~4N concurrent gits on one repo, contending the index lock (finding T3,
- * same root cause as the metadata-monitor git poll). Caching the *promise* (not just
- * the resolved value) collapses a concurrent burst onto one detection, and the TTL
- * collapses sequential repeats. Branch lists change rarely, so a few seconds of
- * staleness is acceptable; explicit branch switches invalidate the entry eagerly via
- * {@link invalidateGitRepositoryInfoCache}.
+ * fan out ~4N concurrent gits on one repo, contending the index lock. Caching the
+ * *promise* (not just the resolved value) collapses a concurrent burst onto one
+ * detection, and the TTL collapses sequential repeats. Branch lists change rarely,
+ * so a few seconds of staleness is acceptable; explicit branch switches invalidate
+ * the entry eagerly via {@link invalidateGitRepositoryInfoCache}. A failed probe is
+ * never cached (evicted so the next call retries). The clock is injectable for
+ * deterministic TTL tests.
  */
 const gitRepositoryInfoCache = new Map<string, GitRepositoryInfoCacheEntry>();
 const GIT_REPOSITORY_INFO_CACHE_TTL_MS = 3_000;
+let gitRepositoryInfoReadCount = 0;
+let gitRepositoryInfoNow: () => number = () => Date.now();
 
 export async function detectGitRepositoryInfo(repoPath: string): Promise<RuntimeGitRepositoryInfo> {
+	const now = gitRepositoryInfoNow();
 	const cached = gitRepositoryInfoCache.get(repoPath);
-	if (cached && cached.expiresAt > Date.now()) {
+	if (cached && cached.expiresAt > now) {
 		// Clone so a caller mutating `branches` can't corrupt the shared cache entry.
 		return cloneGitRepositoryInfo(await cached.promise);
 	}
+	gitRepositoryInfoReadCount += 1;
 	const promise = detectGitRepositoryInfoUncached(repoPath);
-	gitRepositoryInfoCache.set(repoPath, { promise, expiresAt: Date.now() + GIT_REPOSITORY_INFO_CACHE_TTL_MS });
+	gitRepositoryInfoCache.set(repoPath, { promise, expiresAt: now + GIT_REPOSITORY_INFO_CACHE_TTL_MS });
 	try {
 		return cloneGitRepositoryInfo(await promise);
 	} catch (error) {
@@ -1224,10 +1362,10 @@ export async function detectGitRepositoryInfo(repoPath: string): Promise<Runtime
 }
 
 /**
- * Evict the cached git repository info for a repo (or all repos) so the next
- * {@link detectGitRepositoryInfo} re-probes. Called after an explicit branch
- * mutation (checkout) so the UI reflects the new branch immediately rather than
- * after the TTL.
+ * Evict the cached git repository info for a repo (or all repos when no path is
+ * given) so the next {@link detectGitRepositoryInfo} re-probes. Called after an
+ * explicit branch mutation (checkout) so the UI reflects the new branch immediately
+ * rather than after the TTL.
  */
 export function invalidateGitRepositoryInfoCache(repoPath?: string): void {
 	if (repoPath === undefined) {
@@ -1235,6 +1373,22 @@ export function invalidateGitRepositoryInfoCache(repoPath?: string): void {
 		return;
 	}
 	gitRepositoryInfoCache.delete(repoPath);
+}
+
+/** Test-only: clear the git-info cache and restore the real clock. */
+export function resetGitRepositoryInfoCacheForTests(): void {
+	gitRepositoryInfoCache.clear();
+	gitRepositoryInfoNow = () => Date.now();
+}
+
+/** Test-only: how many times git info was actually detected (cache misses). */
+export function getGitRepositoryInfoReadCountForTests(): number {
+	return gitRepositoryInfoReadCount;
+}
+
+/** Test-only: override the clock used for TTL expiry checks. */
+export function setGitRepositoryInfoClockForTests(now: () => number): void {
+	gitRepositoryInfoNow = now;
 }
 
 async function resolveWorkspacePath(cwd: string): Promise<string> {
@@ -1704,9 +1858,19 @@ export async function removeWorkspaceIndexEntry(workspaceId: string): Promise<bo
 		if (!entry) {
 			return false;
 		}
-		delete index.entries[workspaceId];
-		delete index.repoPathToId[entry.repoPath];
-		await writeWorkspaceIndex(index);
+		// Build a fresh object instead of mutating in place — `readWorkspaceIndex`
+		// may hand back the cached reference, and unlocked readers can interleave at
+		// the atomic-write await, so mutating the shared object would briefly expose a
+		// phantom "removed but still on disk" state.
+		const nextEntries = { ...index.entries };
+		delete nextEntries[workspaceId];
+		const nextRepoPathToId = { ...index.repoPathToId };
+		delete nextRepoPathToId[entry.repoPath];
+		await writeWorkspaceIndex({
+			version: index.version,
+			entries: nextEntries,
+			repoPathToId: nextRepoPathToId,
+		});
 		return true;
 	});
 }
@@ -1725,9 +1889,12 @@ export async function removeWorkspaceStateFiles(repoPath: string, workspaceId: s
 
 export async function loadWorkspaceState(cwd: string): Promise<RuntimeWorkspaceStateResponse> {
 	const context = await loadWorkspaceContext(cwd);
-	const board = await readWorkspaceBoard(context.repoPath, context.workspaceId);
-	const sessions = await readWorkspaceSessions(context.repoPath, context.workspaceId);
+	// Read the small meta first so its revision can gate the board memo: most
+	// broadcasts don't touch the board, so an unchanged revision skips the N-shard
+	// read + Zod re-parse entirely (see loadWorkspaceBoardMemoized).
 	const meta = await readWorkspaceMeta(context.repoPath, context.workspaceId);
+	const board = await loadWorkspaceBoardMemoized(context.repoPath, context.workspaceId, meta.revision);
+	const sessions = await readWorkspaceSessions(context.repoPath, context.workspaceId);
 	return toWorkspaceStateResponse(context, board, sessions, meta.revision);
 }
 
