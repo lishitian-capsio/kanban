@@ -1,0 +1,19 @@
+{
+  "id": "90622",
+  "title": "仓库代码支持多 remote push",
+  "prompt": "目标：让 Kanban 能把仓库代码 push 到多个 git remote（镜像推送），而不只是当前的单一 remote。典型场景：同一份代码同时推 GitHub + Gitee（或内网 + 公网镜像）。\n\n背景与澄清：\n- 「分支」不能区分推送到哪个仓库，决定目标仓库的是 git remote。所以这件事的本质是：支持配置多个 remote，并在 push 时推到全部（或选定的若干个）。\n- 当前 Kanban 在 settings 里只认一套仓库/remote 来源，缺的就是「配置额外 remote 地址 + push 时循环推多个」这一层。\n- 凭据层已经是 host-keyed 的（src/github-auth/、src/gitee-auth/ 通过 runGit 的 registerGitCredentialInjector 按 remote host 自动选对凭据，多 host 已支持），所以本任务不需要再碰凭据机制——多个 remote 指向不同 host 时认证会自动选对。重点是「多 remote 配置 + 推送」。\n\n要做：\n1. 先调研仓库代码当前实际在哪里、何时被 push 到 remote（任务 worktree 在 kanban/task/<id> 分支、Kanban-owned merge、auto-review 的 commit/pr 模式；查 src/workspace/git-sync.ts、board-worktree.ts、session/auto-review 相关路径），确认「代码 push」的真实触发点，避免和 board 数据同步（kanban/board 分支）混淆——本任务只针对仓库代码，不动 board-sync。\n2. 设计并实现「额外 remote」的配置：允许在 workspace/settings 层面配置一个或多个额外的 push remote（名称 + URL）。沿用现有 settings 存储约定，保持向后兼容（未配置额外 remote 时行为完全不变）。\n3. 在代码 push 流程里，push 完主 remote 后，对每个已配置的额外 remote 依次 push 同一分支。单个 remote 失败要安全降级（记录/上报错误，不影响其它 remote 和主流程），不要因为镜像推送失败而阻塞主流程。\n4. 配套最小的设置 UI 入口（在已有的 Settings 仓库/git 相关卡片附近增加「额外推送 remote」的增删列表即可，复用现有 UI 原语，别过度设计）。\n5. 合理处补单元测试（remote 配置的解析/合并、push 多 remote 的循环与失败降级是纯逻辑，重点测）。\n\n约束：保持精简、YAGNI，不要引入 push 策略引擎之类的过度抽象；多 remote 镜像推送是一个直接的循环 push + 配置项即可。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782703787686,
+  "updatedAt": 1782703787686,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}
