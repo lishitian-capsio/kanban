@@ -1,0 +1,20 @@
+{
+  "id": "3c06d",
+  "title": "把 file quick dialog 抽成独立模块(脱离 vault)",
+  "prompt": "把现有的单文件 quick dialog(overlay 查看/编辑 + wikilink 触发)从 vault 里抽出来,做成一个**自包含的独立 file 模块**,跟 vault / database 解耦。这是一次抽取/解耦重构——功能已经存在并已提交,不要从零重写,保持现有行为不变。\n\n现状(先读这些再动手):\n- 现有代码在 web-ui/src/components/vault/quick-dialog/:vault-file-dialog.tsx、use-vault-file-dialog.ts、vault-file-dialog-provider.tsx。\n- 被 web-ui/src/App.tsx 和 web-ui/src/components/detail-panels/kanban-chat-message-item.tsx(wikilink 触发)引用。\n- 设计背景见 .plan/docs/vault-file-quick-dialog-design.md。\n\n目标:\n- 把 quick-dialog 从 components/vault/ 下迁出到一个独立的、语义中立的模块目录(例如 web-ui/src/components/file-dialog/ 或 web-ui/src/features/file/,自行按项目约定选一个清晰命名),使其不再隶属于 vault。\n- 切断对 vault 专有代码的非必要依赖:如果它依赖 vault 的类型/工具/tRPC 切片,评估是抽到该模块自己的(或共享中立的)位置,还是保留对真正共享的底层的引用。目标是\"file 模块可独立维护,不寄生在 VaultView/vault 视图体系里\",而不是为解耦而复制大量后端读写路径。\n- 更新所有引用点(App.tsx、kanban-chat-message-item.tsx 及其它)。\n\n约束:\n- 行为零回归:弹窗仍叠在 board 之上、board 不卸载、按需 mount/关闭即 unmount,wikilink 仍能触发,查看/编辑/保存照常工作。\n- 通过 typecheck 与相关测试。\n- 遵循 AGENTS.md 的 web-ui 约定(Tailwind v4 / 设计 token / Radix / 已有 @/components/ui/dialog 与 markdown 编辑器,注意 md-editor ghosting 坑)。\n- 提交说明里写清新模块路径与解耦边界(哪些抽出、哪些仍共享)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782720966046,
+  "updatedAt": 1782720966046,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
