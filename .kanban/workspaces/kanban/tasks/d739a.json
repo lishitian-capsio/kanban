@@ -1,0 +1,20 @@
+{
+  "id": "d739a",
+  "title": "调研: Web UI 渲染性能瓶颈",
+  "prompt": "对 Kanban web-ui 做一次系统性渲染性能调研，产出一份书面瓶颈清单（写到 .plan/docs/perf-web-ui-findings.md），不要改业务代码。\n\n重点排查方向（自行核实，不要照搬）：\n- React 重渲染热点：用 React DevTools Profiler / why-did-you-render 思路定位高频重渲染的组件。已知架构：runtime/runtime-stream-store.ts 是 granular external store，高频 slice 必须在叶子组件 fiber 内用 useSyncExternalStore 订阅（见 perf10 既有实现）。核查是否还有在 App 级订阅高频 slice 的回归。\n- 大列表/看板：列尾大量卡片、聊天 transcript 长列表是否需要虚拟化；content-visibility 在卡片换列重挂载时的闪烁（既有 suppressCulling 修复）是否还有类似问题。\n- 首屏：home chat 首屏渲染、巨大 search_files 输出（既有 64KB per-msg cap）、token chip 解析等是否拖慢首屏。\n- 内存：长会话下 transcript / store 是否无界增长。\n\n产出：按「现象→定位证据→影响范围→建议修复→预估收益/风险」列出可执行条目，并标注优先级。这是后续实现任务的输入。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6a585585-b1b3-41e5-8785-009188294312",
+  "baseRef": "main",
+  "createdAt": 1782713820836,
+  "updatedAt": 1782713820836,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
