@@ -1,0 +1,20 @@
+{
+  "id": "87225",
+  "title": "修复全屏切换（进入/退出）特别慢",
+  "prompt": "Bug：点击进入全屏或退出全屏，home/sidebar「Kanban agent」聊天切换都特别慢/卡顿——两个方向都慢。\n\n已做只读排查，根因候选（请用 profiler 验证后再修，别只信第一个假设）：\n\n主嫌疑（能解释「进入和退出都慢」这种对称卡顿）：全屏状态在 App 顶层切换（App.tsx:485 的 isHomeChatFullscreen），board 用 {isHomeChatFullscreen ? null : <KanbanBoard/>}（App.tsx:1000 附近）——进入时整棵 board 树（所有列 + 全部任务卡）被 unmount、退出时重新 mount。这是同步重渲染，能同时解释两个方向的卡顿。注意：这个 null 卸载写法是之前为「进入全屏 board 闪现」做的修复引入的，用「卸载」换掉了「闪现」，副作用就是切换慢。\n  修复方向：board 改成「挂载但隐藏」（display:none / 不可见容器 / 移出视口）而非卸载，让全屏切换变成廉价样式切换而非 mount/unmount；同时仍要保证不再出现进入全屏时 board 闪现（hide 一样能消除闪现）。\n\n次要贡献（只解释进入慢）：进入全屏挂载 N 张 HomeSessionCard，每张在 mount 时各发一个 getTaskChatMessages 网络请求（use-home-session-card.ts:35-66；home-session-card.tsx:67）——N 个线程即 N 个并发请求。请求异步不阻塞主线程，但大量并发 + 卡片渲染会加重首帧。\n  修复方向：批量/延迟/懒加载这些 history 预览请求（只取可见/活跃的、错峰、或缓存），别在挂载瞬间一次性全打。\n\n验证手段：用 React DevTools Profiler 各录一次进入和退出，确认到底是 board 的 mount/unmount commit 耗时还是别的，按 profiler 结果决定主次，别照搬上面假设。\n\n排查起点文件（非穷举）：\n- web-ui/src/App.tsx:485（isHomeChatFullscreen）、:1000（board 条件渲染/卸载）、:862-905（DockableChatPanel / fullscreenContent 挂载）\n- web-ui/src/components/home-agent/dockable-chat-panel.tsx:150-155（全屏覆盖层）\n- web-ui/src/components/home-agent/home-chat-workspace.tsx:224-253（HomeSessionCard 网格）\n- web-ui/src/components/home-agent/home-session-card.tsx:67、use-home-session-card.ts:35-66（每卡片网络请求）\n\n协调：本任务依赖 79f1a（进入全屏 board 闪现）先落地——主修复（hide 不 unmount）很可能要接替它的 unmount 方案，两者应统一成「挂载但隐藏」。另注意 686f7（全屏状态 URL 化）也在改全屏切换/挂载路径，复用而非对抗其改动。\n\n期望：进入和退出全屏都顺滑无卡顿，且不再有 board 闪现；改动集中在 web-ui 全屏切换与 board 渲染时序，最后说明 profiler 确认的根因。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "be8da62b-73a2-48bf-99f8-7aa66272411b",
+  "baseRef": "main",
+  "createdAt": 1782714549324,
+  "updatedAt": 1782714549324,
+  "column": "backlog",
+  "rank": "Zr",
+  "dependsOn": []
+}
