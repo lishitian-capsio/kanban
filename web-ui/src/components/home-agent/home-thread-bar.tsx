@@ -6,21 +6,28 @@
 // button creates a new thread with its own agent.
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Check, ChevronDown, Pencil, Plus, X } from "lucide-react";
+import { createHomeAgentSessionId } from "@runtime-home-agent-session";
+import { ChevronDown, Pencil, Plus, X } from "lucide-react";
 import { useState } from "react";
-import { AgentIcon } from "@/components/home-agent/agent-icon";
+import { deriveHomeSessionCardStatus } from "@/components/home-agent/home-session-card-derive";
 import { HomeThreadCloseDialog } from "@/components/home-agent/home-thread-close-dialog";
 import { HomeThreadCreateDialog } from "@/components/home-agent/home-thread-create-dialog";
 import { HomeThreadRenameDialog } from "@/components/home-agent/home-thread-rename-dialog";
+import { getActiveHighlightClass } from "@/components/home-agent/session-active-highlight";
+import { SessionAgentIdentity } from "@/components/home-agent/session-agent-identity";
 import { cn } from "@/components/ui/cn";
 import type { HomeThread } from "@/hooks/use-home-threads";
-import type { RuntimeAgentDefinition, RuntimeAgentId } from "@/runtime/types";
+import type { RuntimeAgentDefinition, RuntimeAgentId, RuntimeTaskSessionSummary } from "@/runtime/types";
 
 interface HomeThreadBarProps {
 	threads: HomeThread[];
 	activeThreadId: string;
 	agents: RuntimeAgentDefinition[];
 	defaultAgentId: RuntimeAgentId;
+	/** Workspace id used to resolve each thread's session id for its status dot. */
+	currentProjectId: string;
+	/** Per-session summaries that drive each row's status badge (rule 1: the dropdown now shows status). */
+	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	onSelectThread: (threadId: string) => void;
 	onCreateThread: (input: { description: string; agentId: RuntimeAgentId }) => void | Promise<unknown>;
 	onRenameThread: (threadId: string, name: string) => void | Promise<void>;
@@ -32,6 +39,8 @@ export function HomeThreadBar({
 	activeThreadId,
 	agents,
 	defaultAgentId,
+	currentProjectId,
+	taskSessions,
 	onSelectThread,
 	onCreateThread,
 	onRenameThread,
@@ -47,18 +56,33 @@ export function HomeThreadBar({
 		return null;
 	}
 
+	const statusFor = (thread: HomeThread) =>
+		deriveHomeSessionCardStatus(
+			taskSessions[createHomeAgentSessionId(currentProjectId, thread.agentId, thread.id)] ?? null,
+		);
+
 	return (
 		<div className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-surface-2 p-1">
 			<DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
 				<DropdownMenu.Trigger asChild>
 					<button
 						type="button"
-						className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-1 text-left text-text-primary outline-none hover:bg-surface-3 data-[state=open]:bg-surface-3"
+						className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-1 text-left outline-none hover:bg-surface-3 data-[state=open]:bg-surface-3"
 						aria-label="Switch chat thread"
 					>
+						{/* The trigger shows the active thread with the same avatar + status + title
+						    atom as the menu rows, so the compact switcher reads its agent and health
+						    at a glance without opening (rule 1). */}
+						<SessionAgentIdentity
+							agents={agents}
+							agentId={activeThread.agentId}
+							status={statusFor(activeThread)}
+							title={activeThread.name}
+							isActive
+							variant="dropdown-item"
+							className="flex-1"
+						/>
 						<ChevronDown size={14} className="shrink-0 text-text-secondary" />
-						<span className="min-w-0 flex-1 truncate text-[13px] font-medium">{activeThread.name}</span>
-						<AgentIcon agents={agents} agentId={activeThread.agentId} />
 					</button>
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Portal>
@@ -75,14 +99,22 @@ export function HomeThreadBar({
 								<DropdownMenu.Item
 									key={thread.id}
 									className={cn(
-										"flex cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-1.5 text-[13px] outline-none data-[highlighted]:bg-surface-3",
-										isActive ? "text-text-primary" : "text-text-secondary",
+										"flex cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-1.5 outline-none data-[highlighted]:bg-surface-3",
+										// Active row uses the unified accent signal (left bar + surface-2),
+										// replacing the old checkmark (rule 2).
+										getActiveHighlightClass("dropdown-item", isActive),
 									)}
 									onSelect={() => onSelectThread(thread.id)}
 								>
-									<Check size={14} className={cn("shrink-0", isActive ? "text-accent" : "opacity-0")} />
-									<span className="min-w-0 flex-1 truncate">{thread.name}</span>
-									<AgentIcon agents={agents} agentId={thread.agentId} />
+									<SessionAgentIdentity
+										agents={agents}
+										agentId={thread.agentId}
+										status={statusFor(thread)}
+										title={thread.name}
+										isActive={isActive}
+										variant="dropdown-item"
+										className="flex-1"
+									/>
 									{thread.isDefault ? null : (
 										<span className="flex shrink-0 items-center gap-0.5">
 											<button

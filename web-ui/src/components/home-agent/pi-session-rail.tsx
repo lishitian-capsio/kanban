@@ -10,17 +10,20 @@ import { Plus, X } from "lucide-react";
 import { type ReactElement, useState } from "react";
 
 import { deriveHomeSessionCardStatus } from "@/components/home-agent/home-session-card-derive";
-import { HomeSessionCardStatusMarker } from "@/components/home-agent/home-session-card-status-marker";
 import { HomeThreadCloseDialog } from "@/components/home-agent/home-thread-close-dialog";
+import { getActiveHighlightClass } from "@/components/home-agent/session-active-highlight";
+import { SessionAgentIdentity } from "@/components/home-agent/session-agent-identity";
 import { cn } from "@/components/ui/cn";
 import type { HomeThread } from "@/hooks/use-home-threads";
-import type { RuntimeTaskSessionSummary } from "@/runtime/types";
+import type { RuntimeAgentDefinition, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { deriveSessionShortId } from "@/utils/session-short-id";
 
 interface PiSessionRailProps {
 	sessions: HomeThread[];
 	activeId: string | null;
 	currentProjectId: string;
+	/** Agent catalog — the rail now renders the agent avatar it previously omitted (rule 1). */
+	agents: RuntimeAgentDefinition[];
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	onSelect: (threadId: string) => void;
 	onCreate: () => void;
@@ -31,6 +34,7 @@ export function PiSessionRail({
 	sessions,
 	activeId,
 	currentProjectId,
+	agents,
 	taskSessions,
 	onSelect,
 	onCreate,
@@ -57,10 +61,8 @@ export function PiSessionRail({
 					<div
 						key={session.id}
 						className={cn(
-							"group flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] transition-colors",
-							isActive
-								? "bg-surface-2 text-text-primary"
-								: "text-text-secondary hover:bg-surface-2 hover:text-text-primary",
+							"group flex items-center gap-1.5 rounded-md px-2 py-1.5 transition-colors",
+							getActiveHighlightClass("rail-item", isActive),
 						)}
 					>
 						<button
@@ -69,15 +71,17 @@ export function PiSessionRail({
 							title={label}
 							className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left outline-none"
 						>
-							<span
-								className="flex size-4 shrink-0 items-center justify-center"
-								role="img"
-								aria-label={status.label}
-								title={status.label}
-							>
-								<HomeSessionCardStatusMarker status={status} />
-							</span>
-							<span className={cn("min-w-0 truncate", isActive && "font-medium")}>{label}</span>
+							{/* Unified identity atom: the rail now leads with the agent avatar it
+							    previously omitted, with the status badge riding its corner (rule 1). */}
+							<SessionAgentIdentity
+								agents={agents}
+								agentId={session.agentId}
+								status={status}
+								title={label}
+								isActive={isActive}
+								variant="rail-item"
+								className="min-w-0 flex-1"
+							/>
 							{/* Stable session short id — same code shown on the launcher card. */}
 							<span
 								className="shrink-0 font-mono text-[10px] leading-none text-text-tertiary"

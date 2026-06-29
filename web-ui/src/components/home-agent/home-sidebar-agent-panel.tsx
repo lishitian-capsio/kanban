@@ -62,6 +62,8 @@ export function HomeSidebarAgentPanel({
 						activeThreadId={homeThreads.activeThreadId}
 						agents={runtimeProjectConfig.agents}
 						defaultAgentId={runtimeProjectConfig.selectedAgentId}
+						currentProjectId={currentProjectId}
+						taskSessions={taskSessions}
 						onSelectThread={homeThreads.setActiveThread}
 						onCreateThread={homeThreads.createThread}
 						onRenameThread={homeThreads.renameThread}

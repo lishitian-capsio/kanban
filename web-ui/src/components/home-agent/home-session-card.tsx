@@ -15,14 +15,14 @@
 // also triggers `onOpenSession`.
 import { Pencil, RotateCcw, X } from "lucide-react";
 import { type KeyboardEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AgentIcon } from "@/components/home-agent/agent-icon";
 import {
 	deriveHomeSessionCardStatus,
 	formatHomeSessionCardTimeAgo,
 } from "@/components/home-agent/home-session-card-derive";
-import { HomeSessionCardStatusMarker } from "@/components/home-agent/home-session-card-status-marker";
 import { HomeSessionTaskCountRow } from "@/components/home-agent/home-session-task-count-row";
 import { HomeThreadCloseDialog } from "@/components/home-agent/home-thread-close-dialog";
+import { getActiveHighlightClass } from "@/components/home-agent/session-active-highlight";
+import { SessionAgentIdentity } from "@/components/home-agent/session-agent-identity";
 import { useHomeThreadTaskCounts } from "@/components/home-agent/thread-task-counts";
 import { SessionMetaBadges } from "@/components/session-meta-badges";
 import { cn } from "@/components/ui/cn";
@@ -183,32 +183,40 @@ export function HomeSessionCard({
 			}}
 			className={cn(
 				"group flex h-40 cursor-pointer flex-col gap-2 rounded-lg border bg-surface-2 p-3 text-left transition-colors hover:bg-surface-3 focus:outline-none focus-visible:border-border-focus",
-				// An "already open" thread gets the board task card's accent highlight so the
-				// launcher reads which conversations are live in a tab. The accent border wins
-				// over hover so the highlight is stable while pointing at the card.
-				isOpen ? "border-accent hover:border-accent" : "border-border hover:border-border-bright",
+				// An "already open" thread gets the unified accent highlight (rule 2): for a tile
+				// that is the card's own border, so the launcher reads which conversations are live.
+				getActiveHighlightClass("card", isOpen),
 			)}
 		>
 			<div className="flex items-center gap-2">
-				<span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-surface-1">
-					<AgentIcon agents={agents} agentId={thread.agentId} size={16} />
-				</span>
-				{isEditingName ? (
-					<input
-						ref={nameInputRef}
-						value={draftName}
-						onChange={(event) => setDraftName(event.currentTarget.value)}
-						onBlur={submitName}
-						onKeyDown={handleNameKeyDown}
-						onClick={stopEvent}
-						onMouseDown={(event) => event.stopPropagation()}
-						aria-label={`Rename ${thread.name} session`}
-						className="h-7 min-w-0 flex-1 rounded-md border border-border-focus bg-surface-2 px-2 text-[13px] font-medium text-text-primary focus:outline-none"
-					/>
-				) : (
-					<div className="flex min-w-0 flex-1 items-center gap-1">
-						<span className="min-w-0 truncate text-[13px] font-medium text-text-primary">{thread.name}</span>
-						{canManage ? (
+				{/* Unified identity atom: agent avatar + corner status badge + thread title.
+				    The title weight follows `isOpen` (rule 3) so the launcher grid stays calm
+				    until a thread is actually open in a tab. */}
+				<SessionAgentIdentity
+					agents={agents}
+					agentId={thread.agentId}
+					status={status}
+					title={thread.name}
+					isActive={isOpen}
+					variant="card"
+					className="flex-1"
+					titleSlot={
+						isEditingName ? (
+							<input
+								ref={nameInputRef}
+								value={draftName}
+								onChange={(event) => setDraftName(event.currentTarget.value)}
+								onBlur={submitName}
+								onKeyDown={handleNameKeyDown}
+								onClick={stopEvent}
+								onMouseDown={(event) => event.stopPropagation()}
+								aria-label={`Rename ${thread.name} session`}
+								className="h-7 min-w-0 flex-1 rounded-md border border-border-focus bg-surface-2 px-2 text-[13px] font-medium text-text-primary focus:outline-none"
+							/>
+						) : undefined
+					}
+					titleTrailing={
+						!isEditingName && canManage ? (
 							<button
 								type="button"
 								aria-label={`Rename ${thread.name} session`}
@@ -223,9 +231,9 @@ export function HomeSessionCard({
 							>
 								<Pencil size={12} />
 							</button>
-						) : null}
-					</div>
-				)}
+						) : undefined
+					}
+				/>
 				<span className="flex shrink-0 items-center gap-0.5">
 					{canRestart ? (
 						<button
@@ -257,14 +265,6 @@ export function HomeSessionCard({
 							<X size={12} />
 						</button>
 					) : null}
-					<span
-						className="flex size-4 shrink-0 items-center justify-center"
-						role="img"
-						aria-label={status.label}
-						title={status.label}
-					>
-						<HomeSessionCardStatusMarker status={status} />
-					</span>
 				</span>
 			</div>
 
@@ -292,17 +292,22 @@ export function HomeSessionCard({
 				)}
 			</div>
 
-			{/* Live session provider/model + cumulative token usage, sourced from the
-			    same summary that drives the status dot. Renders nothing until the
-			    session has run (and tokens only for agents with telemetry). */}
-			<SessionMetaBadges summary={summary} />
+			{/* Calm, grouped secondary metadata zone (rule 4): all four groups —
+			    provider·model / token / task counts / time·short-id — are kept but set
+			    apart beneath the identity + content line by a hairline divider and held
+			    at a consistent low weight, so the eye lands on identity first and the
+			    details recede instead of competing. No information is removed. */}
+			<div className="mt-auto flex flex-col gap-1.5 border-t border-border/60 pt-2">
+				{/* Live session provider/model + cumulative token usage, sourced from the
+				    same summary that drives the status dot. Renders nothing until the
+				    session has run (and tokens only for agents with telemetry). */}
+				<SessionMetaBadges summary={summary} />
 
-			{/* Compact per-thread task status counts (in progress / review / done); the
-			    whole row hides when this thread has launched no active tasks. */}
-			<HomeSessionTaskCountRow counts={taskCounts} />
+				{/* Compact per-thread task status counts (in progress / review / done); the
+				    whole row hides when this thread has launched no active tasks. */}
+				<HomeSessionTaskCountRow counts={taskCounts} />
 
-			<div className="flex items-center justify-between gap-2">
-				<div className="flex min-w-0 items-center gap-1.5">
+				<div className="flex items-center justify-between gap-2">
 					{/* Stable session short id — low-key, monospace, mirrors the board task-id chip.
 					    The agent identity lives in the top-left avatar icon, not here. */}
 					<span
@@ -311,8 +316,8 @@ export function HomeSessionCard({
 					>
 						#{shortId}
 					</span>
+					{timeAgo ? <span className="shrink-0 text-[11px] text-text-tertiary">{timeAgo}</span> : null}
 				</div>
-				{timeAgo ? <span className="shrink-0 text-[11px] text-text-tertiary">{timeAgo}</span> : null}
 			</div>
 
 			<HomeThreadCloseDialog

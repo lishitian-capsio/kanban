@@ -1,7 +1,7 @@
 import { Check, MessageSquarePlus } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 
-import { AgentIcon } from "@/components/home-agent/agent-icon";
+import { AgentAvatar } from "@/components/home-agent/agent-icon";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
@@ -121,7 +121,8 @@ export function HomeThreadCreateDialog({
 												: "border-border bg-surface-2 text-text-secondary hover:border-border-bright hover:bg-surface-3 hover:text-text-primary",
 										)}
 									>
-										<AgentIcon agents={agents} agentId={agent.id} size={14} />
+										{/* Agent-type identity (⑥): the same boxed avatar treatment, leading the label. */}
+										<AgentAvatar agents={agents} agentId={agent.id} size="sm" />
 										{agent.label}
 										{selected ? <Check size={13} className="text-accent" /> : null}
 									</button>

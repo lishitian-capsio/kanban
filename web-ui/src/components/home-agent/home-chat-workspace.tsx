@@ -217,6 +217,8 @@ export function HomeChatWorkspace({
 				activeThreadId={activeTabThread ? activeSessionThreadId : null}
 				piTabActive={piTabActive}
 				agents={runtimeProjectConfig.agents}
+				currentProjectId={currentProjectId}
+				taskSessions={taskSessions}
 				onActivateHome={handleActivateHome}
 				onActivatePi={handleActivatePi}
 				onActivateTab={handleActivateSessionTab}

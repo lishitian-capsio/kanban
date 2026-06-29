@@ -19,7 +19,7 @@ import {
 	KanbanAgentChatPanel,
 	type KanbanAgentChatPanelHandle,
 } from "@/components/detail-panels/kanban-agent-chat-panel";
-import { AgentIcon, resolveAgentLabel } from "@/components/home-agent/agent-icon";
+import { AgentAvatar, resolveAgentLabel } from "@/components/home-agent/agent-icon";
 import { HomeNextStepSuggestion } from "@/components/home-agent/home-next-step-suggestion";
 import { TerminalAgentHints } from "@/components/home-agent/terminal-agent-hints";
 import { createIdleTaskSession } from "@/hooks/app-utils";
@@ -209,7 +209,12 @@ export function HomeAgentConversation({
 					// switch rather than in a separate header layer.
 					<div className="flex min-w-0 items-center gap-2">
 						<span className="flex min-w-0 shrink items-center gap-1.5 text-[13px]">
-							{activeAgentId ? <AgentIcon agents={runtimeProjectConfig.agents} agentId={activeAgentId} /> : null}
+							{/* Agent-type identity (⑤): the same boxed avatar treatment as the thread
+							    surfaces, leading the agent's full name. No status badge — this header
+							    answers "who is answering", not a specific thread's health. */}
+							{activeAgentId ? (
+								<AgentAvatar agents={runtimeProjectConfig.agents} agentId={activeAgentId} size="sm" />
+							) : null}
 							<span className="min-w-0 truncate font-medium text-text-primary">{selectedAgentLabel}</span>
 						</span>
 						<SessionProviderControl

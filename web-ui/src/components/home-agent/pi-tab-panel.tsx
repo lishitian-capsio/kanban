@@ -66,6 +66,7 @@ export function PiTabPanel({
 				sessions={piSessions}
 				activeId={activeId}
 				currentProjectId={currentProjectId}
+				agents={runtimeProjectConfig.agents}
 				taskSessions={taskSessions}
 				onSelect={setRequestedActiveId}
 				onCreate={() => {
@@ -101,9 +102,7 @@ function PiSessionsEmptyState({ onCreate }: { onCreate: () => void }): ReactElem
 			<MessageSquarePlus size={28} className="text-text-tertiary" aria-hidden="true" />
 			<div className="flex flex-col gap-1">
 				<p className="text-sm font-medium text-text-primary">No pi sessions yet</p>
-				<p className="max-w-xs text-[13px] text-text-secondary">
-					Start a new session to chat with pi.
-				</p>
+				<p className="max-w-xs text-[13px] text-text-secondary">Start a new session to chat with pi.</p>
 			</div>
 			<Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={onCreate}>
 				New session

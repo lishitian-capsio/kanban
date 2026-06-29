@@ -6,13 +6,16 @@
 // horizontally. Closing a session tab is a UI-only collapse back to Home — it never hard-closes
 // the thread (that stays an explicit action in the launcher / thread bar). Only the session-tab
 // region scrolls horizontally when the tabs overflow; the anchored tabs stay pinned and visible.
+import { createHomeAgentSessionId } from "@runtime-home-agent-session";
 import { Bot, LayoutGrid, X } from "lucide-react";
 import { type ReactElement, useEffect, useRef } from "react";
 
-import { AgentIcon } from "@/components/home-agent/agent-icon";
+import { deriveHomeSessionCardStatus } from "@/components/home-agent/home-session-card-derive";
+import { getActiveHighlightClass } from "@/components/home-agent/session-active-highlight";
+import { SessionAgentIdentity } from "@/components/home-agent/session-agent-identity";
 import { cn } from "@/components/ui/cn";
 import type { HomeThread } from "@/hooks/use-home-threads";
-import type { RuntimeAgentDefinition } from "@/runtime/types";
+import type { RuntimeAgentDefinition, RuntimeTaskSessionSummary } from "@/runtime/types";
 
 interface SessionTabStripProps {
 	threads: HomeThread[];
@@ -22,6 +25,10 @@ interface SessionTabStripProps {
 	/** Whether the fixed Pi tab (native-agent multi-session workspace) is the active tab. */
 	piTabActive: boolean;
 	agents: RuntimeAgentDefinition[];
+	/** Workspace id used to resolve each thread's session id for its status dot. */
+	currentProjectId: string;
+	/** Per-session summaries that drive each tab's status badge (rule 1: tabs now show status). */
+	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	onActivateHome: () => void;
 	onActivatePi: () => void;
 	onActivateTab: (threadId: string) => void;
@@ -34,6 +41,8 @@ export function SessionTabStrip({
 	activeThreadId,
 	piTabActive,
 	agents,
+	currentProjectId,
+	taskSessions,
 	onActivateHome,
 	onActivatePi,
 	onActivateTab,
@@ -85,9 +94,8 @@ export function SessionTabStrip({
 					title="Home — all sessions"
 					className={cn(
 						"flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] outline-none transition-colors focus-visible:border-border-focus",
-						homeActive
-							? "bg-surface-2 font-medium text-text-primary"
-							: "text-text-secondary hover:bg-surface-2 hover:text-text-primary",
+						getActiveHighlightClass("tab", homeActive),
+						homeActive && "font-medium",
 					)}
 				>
 					<LayoutGrid size={14} className="shrink-0" aria-hidden="true" />
@@ -103,9 +111,8 @@ export function SessionTabStrip({
 					title="Pi — native agent sessions"
 					className={cn(
 						"flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] outline-none transition-colors focus-visible:border-border-focus",
-						piTabActive
-							? "bg-surface-2 font-medium text-text-primary"
-							: "text-text-secondary hover:bg-surface-2 hover:text-text-primary",
+						getActiveHighlightClass("tab", piTabActive),
+						piTabActive && "font-medium",
 					)}
 				>
 					<Bot size={14} className="shrink-0" aria-hidden="true" />
@@ -124,15 +131,15 @@ export function SessionTabStrip({
 						return null;
 					}
 					const isActive = threadId === activeThreadId && !piTabActive;
+					const sessionTaskId = createHomeAgentSessionId(currentProjectId, thread.agentId, thread.id);
+					const status = deriveHomeSessionCardStatus(taskSessions[sessionTaskId] ?? null);
 					return (
 						<div
 							key={threadId}
 							data-active-tab={isActive ? "true" : undefined}
 							className={cn(
-								"flex shrink-0 items-center gap-1.5 rounded-md pl-2.5 pr-1.5 py-1.5 text-[13px] transition-colors",
-								isActive
-									? "bg-surface-2 text-text-primary"
-									: "text-text-secondary hover:bg-surface-2 hover:text-text-primary",
+								"flex shrink-0 items-center gap-1.5 rounded-md pl-2.5 pr-1.5 py-1.5 transition-colors",
+								getActiveHighlightClass("tab", isActive),
 							)}
 						>
 							<button
@@ -140,11 +147,20 @@ export function SessionTabStrip({
 								role="tab"
 								aria-selected={isActive}
 								onClick={() => onActivateTab(threadId)}
-								className="flex min-w-0 max-w-[180px] cursor-pointer items-center gap-1.5 outline-none"
+								className="flex min-w-0 max-w-[180px] cursor-pointer items-center outline-none"
 								title={thread.name}
 							>
-								<span className={cn("min-w-0 truncate", isActive && "font-medium")}>{thread.name}</span>
-								<AgentIcon agents={agents} agentId={thread.agentId} />
+								{/* Unified identity atom: the avatar now leads (was a trailing bare icon)
+								    and carries the status badge the tab strip previously lacked (rule 1). */}
+								<SessionAgentIdentity
+									agents={agents}
+									agentId={thread.agentId}
+									status={status}
+									title={thread.name}
+									isActive={isActive}
+									variant="tab"
+									className="min-w-0"
+								/>
 							</button>
 							<button
 								type="button"
