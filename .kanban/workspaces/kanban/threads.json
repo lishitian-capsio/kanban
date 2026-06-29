@@ -113,7 +113,7 @@
       "titleSource": "auto",
       "createdAt": 1782717051577,
       "updatedAt": 1782717834150,
-      "pendingNextStep": "启动设计任务 5bc0c"
+      "pendingNextStep": "启动任务 3c06d"
     }
   ],
   "fullscreenTabs": {
@@ -127,6 +127,6 @@
       "72b6df6d-952c-4f47-a67e-fd9873fde479",
       "e211cecb-0eda-4458-ba46-1fbc486d4e40"
     ],
-    "activeThreadId": "6a585585-b1b3-41e5-8785-009188294312"
+    "activeThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c"
   }
 }
