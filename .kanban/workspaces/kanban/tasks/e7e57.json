@@ -1,0 +1,20 @@
+{
+  "id": "e7e57",
+  "title": "Provider 级代理直连 (bypassProxy)",
+  "prompt": "目标：给 provider 配置加一个\"直连/不走代理\"的开关，让某个 provider 默认绕过代理，而不依赖用户手动 export NO_PROXY 环境变量。\n\n背景（已在 sidebar 里和团队对齐过的设计）：\n- 运行时代理决策是按 host 而非按 provider 生效，因为出站 fetch 拦截层只拿得到 URL/host。所以 per-provider bypass 落地方式 = 把该 provider 的 host 并进有效 NO_PROXY 集合。\n- 已有先例：--host 修复就是把绑定 host 合并进 NO_PROXY。\n- 两条出站路径都已经统一读同一个 RuntimeProxyState holder：\n  1. 运行时自身 fetch（pi / fetch models / OAuth）走 config/proxy-fetch.ts 的 globalThis.fetch monkey-patch；\n  2. CLI agent 子进程走本地网络桥 src/unified-proxy/network-bridge.ts（HTTP(S)_PROXY 指向 127.0.0.1:<port>），桥每个请求调 getRuntimeProxyState() 读 holder，再用 buildNoProxyList(state) + shouldBypassProxy 判断。\n- 因此只要把 bypass host 写进 RuntimeProxyState.noProxy，两条路径都会热生效，且包括\"已经在运行的 CLI agent\"（无需重启会话）。\n\n实现要点：\n1. 数据模型：per-agent provider 配置新增布尔字段 bypassProxy（默认 false）。\n2. saveConfig（trpc/runtime-api.ts）以及启动（server/workspace-registry.ts）调用 setRuntimeProxyStateFromConfig 时，遍历所有 bypassProxy=true 的 provider，从其 baseUrl（以及不同域的 OAuth/token 端点，如有）提取 host，并入 RuntimeProxyState.noProxy。\n3. UI：provider 编辑对话框加一个勾选项\"直连（不经过代理）\"。\n4. 复用现有 shouldBypassProxy（src/config/proxy-env.ts），它已支持 host 等值、子域后缀、re:<正则> 匹配，不要重复造轮子。\n\n务必写明 / 测试的边界：\n- 因为按 host 生效，若两个 provider 共用同一 host，只能整 host 直连，无法只对其中一个生效——这是设计取舍，不是 bug，请在代码注释/说明里写清楚。\n- 验证：开关打开后，fetch models / provider 登录、以及一个正在运行的 CLI agent（claude/codex）发往该 provider host 的请求都应直连、不经过上游代理；其余出站仍走代理。\n- 关闭代理时行为不变；NO_PROXY 既有的 env 注入路径不要破坏。\n\n请遵循仓库 AGENTS.md 的 TypeScript / 代码质量规范，补充必要的单元测试（host 提取 + holder 合并逻辑做成纯函数便于测试）。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "3434ae10-5e66-420a-8e03-7b70b3d73379",
+  "baseRef": "main",
+  "createdAt": 1782742727787,
+  "updatedAt": 1782742727787,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
