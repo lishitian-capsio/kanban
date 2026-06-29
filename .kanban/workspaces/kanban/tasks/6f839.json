@@ -1,0 +1,20 @@
+{
+  "id": "6f839",
+  "title": "pi 默认 tab 内部的多会话管理",
+  "prompt": "目标：在 home 全屏里 pi（native agent）那个**默认 tab 内部**，提供 pi 自己的**多会话管理**——即在这一个 pi tab 之内，能列出 / 切换 / 新建 / 关闭 pi 自己的多个会话。注意：是**嵌在 pi 这个 tab 内部**的多会话管理，**不是**工作区级、横跨各 agent 的 home thread bar。\n\n## 关键取舍（用户已拍板）\n**去掉原来的默认 home 会话（DEFAULT_HOME_THREAD_ID='default' 那条始终存在的 home thread/会话）**——因为 pi 现在有了自己的 tab，并在 tab 内部管理多会话，default home 会话变得多余，由「pi tab 内部多会话」取代。\n- 但 default 会话的**三段式 id 是向后兼容载重**：大量旧 transcript / sessions.json / resume 依赖它。**不能直接砍**——必须先在方案里评估去掉/退役它的影响（旧 pi transcript 与 resume 如何迁移或保留、其它 agent 的 default 会话是否也受影响、HomeThreadBar 与之的关系），给出安全的退役/迁移路径，再动手。如果评估下来完全去掉风险过大，给出「保留 id 兼容但 UI 不再暴露 default」之类的折中并说明理由。\n\n## 背景 / 现有结构（先读，复用，别新造）\n- home 全屏当前有：Home tab（会话卡启动器）、若干 home 会话标签条（home session tab strip，提交 ac06e，已抽出 HomeAgentConversation 紧凑+全屏共用）、固定 Tasks tab（提交 e3134）。\n- 工作区级多 thread（HomeThreadBar，提交 672ff）已存在，但那是**横跨 agent 的会话条**；本任务不同——要的是在 pi 的那个 tab **内部**管理 pi 自己的多个会话。先确认两者关系，避免重复或冲突。\n- 合成 home session id：src/core/home-agent-session.ts 已支持四段式 __home_agent__:<workspaceId>:<agentId>:<threadId>，省略/为 'default' 时回落三段式（向后兼容载重）；parseHomeAgentSessionId 按位置解析。pi 会话服务是 InMemoryPiTaskSessionService，关闭走 closeTaskSession 硬关闭（停进程/丢内存条目/journal.clear），transcript 走 session journal。\n\n## 任务（先诊断/设计，后实现）\n1. 先搞清现状 + 给方案：home agent 为 pi 时 pi 默认 tab 当前是单会话还是已有多会话入口？工作区级 thread bar、default home 会话、pi tab 内部多会话三者如何取舍？**重点给出「退役 default home 会话」的安全路径与影响评估**（见上「关键取舍」）。建议最简实现，避免过度设计。\n2. 在 pi 默认 tab 内部实现多会话管理 UI 与交互：列出 pi 自己的多个会话；切换当前会话（各会话独立 transcript）；新建会话；关闭会话（硬关闭：停 pi 进程 / 丢内存条目 / journal.clear 删 transcript）。\n3. 后端打通：复用四段式 home session id（pi 作为 agentId，threadId 区分 pi tab 内的多个会话）、会话注册/持久化、清理路由（runtime-server.ts getScopedHomeThreadStore / onCloseSession 经 parseHomeAgentSessionId 落到 pi）。确认 InMemoryPiTaskSessionService 起会话/关闭/journal 对每个会话都生效。\n4. append-system-prompt.ts 的 agentId 查找用 parser（非 parts.at(-1)，四段式会取到 threadId）。\n\n## 约束 / 注意\n- 去掉 default home 会话前**必须先评估向后兼容影响**（三段式 id、旧 transcript/sessions.json/resume），给出迁移或折中方案，不可直接删。\n- per-agent 独立 transcript（按 agentId 区分，不做跨 agent 会话共享）。\n- pi service 在 vitest 下无法 import（agent-sdk 在 import 期触碰 Bun.env），pi 持久化用 Bun round-trip 覆盖，不要硬塞 vitest。\n- 复用全屏会话标签条 / 会话卡 / HomeAgentConversation 既有模式，不重建看板逻辑；避免过度设计，先出最简可用方案。\n- 完成后确认相关 typecheck（含 web:typecheck）与测试通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
+  "baseRef": "main",
+  "createdAt": 1782714172019,
+  "updatedAt": 1782714172019,
+  "column": "backlog",
+  "rank": "Zs",
+  "dependsOn": []
+}
