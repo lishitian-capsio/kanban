@@ -1,0 +1,20 @@
+{
+  "id": "7ab37",
+  "title": "全屏聊天时隐藏 dock/浮窗按钮，只留 Exit fullscreen",
+  "prompt": "问题：kanban agent 首页聊天(home chat)进入全屏(fullscreen)后，右上角工具栏仍显示「Dock to left / Dock to right / Detach as floating(浮窗)」三个视图模式按钮。它们在全屏下语义矛盾——点「浮窗」会把全屏面板甩成小弹窗。当前这三个按钮是无条件渲染的，只是被设成 active=false 变灰，但仍然存在且可点击。\n\n定位：web-ui/src/components/home-agent/chat-dock-header.tsx 的 ChatDockControls 组件（约 84-160 行）。视图模式按钮在 129-146 行附近：\n- Dock to left (PanelLeft, active={!fullscreen && position===\"left\"})\n- Dock to right (PanelRight, active={!fullscreen && position===\"right\"})\n- Detach as floating (PictureInPicture2, active={!fullscreen && floating})\n- Exit fullscreen (Maximize2, 全屏时 active)\n组件已能拿到 fullscreen 状态（active 判断里就在用 fullscreen）。\n\n要做：\n1. 全屏(fullscreen 为 true)时，隐藏 Dock-left / Dock-right / Detach-floating 这三个按钮（整体条件渲染，不是变灰），只保留 Exit fullscreen 按钮。\n2. 非全屏时维持现状（三个 dock 位置按钮 + 当前的折叠/关闭/隐藏等 window action 按钮逻辑不变）。\n3. 注意不要误伤 147-157 行的 window action 按钮（Collapse to edge / Close floating / Hide panel），那些有各自的 docked/floating 条件，按原样保留。\n4. 暗色主题、沿用现有 DockButton 与 Tailwind 设计 token，不要新增自定义 CSS。\n\n合理处补一个渲染条件的单元测试：断言 fullscreen 时三个 dock/浮窗按钮不在 DOM、Exit fullscreen 仍在；非全屏时三个按钮都在。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "0dc23e3d-665b-4b31-b72f-edd3c9614521",
+  "baseRef": "main",
+  "createdAt": 1782716170645,
+  "updatedAt": 1782716170645,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
