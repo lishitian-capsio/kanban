@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { selectActiveTasks } from "@/components/home-agent/active-task-list-derive";
+import { selectActiveTasks, selectBacklogTasks } from "@/components/home-agent/active-task-list-derive";
 import type {
 	RuntimeBoardCard,
 	RuntimeBoardColumnId,
@@ -87,5 +87,43 @@ describe("selectActiveTasks", () => {
 		const board = makeBoard([{ id: "in_progress", cards: [makeCard("p1", "Implement the thing")] }]);
 		const entries = selectActiveTasks(board, {});
 		expect(entries[0]?.title).toBe("Implement the thing");
+	});
+});
+
+describe("selectBacklogTasks", () => {
+	it("returns only backlog tasks, hiding active and done/trash", () => {
+		const board = makeBoard([
+			{ id: "backlog", cards: [makeCard("b1", "Backlog one")] },
+			{ id: "in_progress", cards: [makeCard("p1", "Running one")] },
+			{ id: "review", cards: [makeCard("r1", "Review one")] },
+			{ id: "trash", cards: [makeCard("d1", "Done one")] },
+		]);
+		const entries = selectBacklogTasks(board, {});
+		expect(entries.map((entry) => entry.taskId)).toEqual(["b1"]);
+		expect(entries.map((entry) => entry.columnId)).toEqual(["backlog"]);
+	});
+
+	it("preserves the board's rank order within the backlog column", () => {
+		const board = makeBoard([
+			{ id: "backlog", cards: [makeCard("b1", "Backlog one"), makeCard("b2", "Backlog two")] },
+		]);
+		const entries = selectBacklogTasks(board, {});
+		expect(entries.map((entry) => entry.taskId)).toEqual(["b1", "b2"]);
+	});
+
+	it("attaches the matching session summary, or null when none exists", () => {
+		const board = makeBoard([
+			{ id: "backlog", cards: [makeCard("b1", "Backlog one"), makeCard("b2", "Backlog two")] },
+		]);
+		const entries = selectBacklogTasks(board, { b1: makeSummary("idle", "b1") });
+		expect(entries[0]?.summary?.state).toBe("idle");
+		expect(entries[1]?.summary).toBeNull();
+	});
+
+	it("returns an empty list for a null board or no backlog tasks", () => {
+		expect(selectBacklogTasks(null, {})).toEqual([]);
+		expect(
+			selectBacklogTasks(makeBoard([{ id: "in_progress", cards: [makeCard("p1", "Running")] }]), {}),
+		).toEqual([]);
 	});
 });
