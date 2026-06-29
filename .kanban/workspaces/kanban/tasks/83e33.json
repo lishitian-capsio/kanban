@@ -1,0 +1,19 @@
+{
+  "id": "83e33",
+  "title": "Pi tab 不自动预置 default 会话",
+  "prompt": "需求：全屏模式下 Pi tab 的会话列表（session rail）目前默认会带一个 \"default\" 会话。用户不需要这个默认会话——希望打开 Pi tab 时不自动创建/不预置默认会话，列表初始为空，由用户主动新建第一个会话。\n\n背景：\n- Pi tab 是 pi-scoped 的多会话列表（list/switch/new/close），底层基于 home 多线程（home-thread）机制；其中 DEFAULT_HOME_THREAD_ID = \"default\" 这个默认线程在 home-agent-session id 方案里有**向后兼容作用**（legacy 三段式 id 就是默认线程），不能简单删除底层数据/线程。\n- 因此本任务是 **UI/交互层** 的调整：Pi tab 不要在打开时自动预置或自动创建那个默认会话条目；不要把它当成必然存在的初始项。底层的默认线程兼容逻辑保持不变。\n\n实现要点（供参考，不限定）：\n- 定位全屏 Pi tab 的 session rail 组件及其会话列表数据来源。\n- 让列表在没有用户显式创建会话时呈现为空状态（提供一个清晰的空态 + 新建会话入口），而不是默认塞入 \"default\" 会话。\n- 确认不破坏底层 home-thread 的向后兼容（legacy 3-seg 默认线程、已有 transcript/resume 不受影响）。\n- 确认其它复用同一会话机制的地方（如侧边栏 home chat 多线程）行为不被误伤——本次只改 Pi tab 的预置/展示行为。\n\n期望结果：打开 Pi tab，默认不出现 \"default\" 会话；列表为空态，用户新建后才出现会话。底层兼容逻辑不变。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782697381002,
+  "updatedAt": 1782697381002,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
