@@ -1,0 +1,19 @@
+{
+  "id": "def6f",
+  "title": "全屏模式去掉 Tasks tab",
+  "prompt": "需求：移除 kanban agent 全屏模式下的 Tasks tab。决策背景：全屏 Tasks tab 与普通（非全屏）布局里的看板主视图内容重复，会变成同一块看板的两个模式。用户决定不在全屏里再做一个任务视图——需要看板时退出全屏使用主看板即可。\n\n实现要点（供参考，不限定）：\n- 定位全屏模式的 tab 结构（Home tab / Pi tab / Tasks tab），移除 Tasks tab 及其专属组件/路由/状态。\n- 删除/清理只服务于 Tasks tab 的代码：之前的只读活跃任务列表组件、onOpenTask（exitFullscreen + setSelectedTaskId）等仅为该 tab 存在的逻辑；避免留下死代码。\n- 确认移除后全屏模式其余部分（Home tab 会话网格、Pi tab、会话卡片等）不受影响、切换正常、没有指向已删 tab 的悬空引用或默认选中。\n- 普通布局的看板主视图保持不变。\n\n期望结果：全屏模式不再有 Tasks tab；用户需要看板时退出全屏查看主看板。涉及 web-ui 全屏 tab 结构与相关清理。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782698292063,
+  "updatedAt": 1782698292063,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
