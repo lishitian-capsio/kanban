@@ -21,7 +21,7 @@ function makeThread(overrides: Partial<HomeThread> & { id: string; agentId: Runt
 }
 
 describe("derivePiSessions", () => {
-	it("returns only created pi threads, excluding the synthetic default and non-pi threads", () => {
+	it("returns only created pi threads, in registry order", () => {
 		const threads: HomeThread[] = [
 			makeThread({ id: DEFAULT_HOME_THREAD_ID, agentId: "claude", isDefault: true }),
 			makeThread({ id: "pi-1", agentId: "pi" }),
@@ -33,16 +33,21 @@ describe("derivePiSessions", () => {
 		expect(sessions.every((s) => s.agentId === "pi")).toBe(true);
 	});
 
-	it("excludes a default thread even when it is itself pi (compat lives in the sidebar, not here)", () => {
+	it("excludes the synthetic cross-agent default thread even when it is pi", () => {
 		const threads: HomeThread[] = [
 			makeThread({ id: DEFAULT_HOME_THREAD_ID, agentId: "pi", isDefault: true }),
 			makeThread({ id: "pi-1", agentId: "pi" }),
 		];
-		expect(derivePiSessions(threads).map((s) => s.id)).toEqual(["pi-1"]);
+		const sessions = derivePiSessions(threads);
+		expect(sessions.map((s) => s.id)).toEqual(["pi-1"]);
 	});
 
-	it("yields an empty list when there are no created pi threads", () => {
+	it("is empty until the user creates a pi session (no default/base presented)", () => {
+		expect(derivePiSessions([])).toEqual([]);
 		expect(derivePiSessions([makeThread({ id: "claude-1", agentId: "claude" })])).toEqual([]);
+		expect(
+			derivePiSessions([makeThread({ id: DEFAULT_HOME_THREAD_ID, agentId: "pi", isDefault: true })]),
+		).toEqual([]);
 	});
 });
 
@@ -62,13 +67,13 @@ describe("resolveActivePiSessionId", () => {
 	});
 
 	it("returns null when there are no sessions", () => {
+		expect(resolveActivePiSessionId([], "pi-1")).toBeNull();
 		expect(resolveActivePiSessionId([], null)).toBeNull();
-		expect(resolveActivePiSessionId([], "pi-anything")).toBeNull();
 	});
 });
 
 describe("nextActivePiSessionAfterClose", () => {
-	it("drops the selection (caller re-resolves) when the closed session was active", () => {
+	it("drops the active selection when the closed session was active", () => {
 		expect(nextActivePiSessionAfterClose("pi-1", "pi-1")).toBeNull();
 	});
 
@@ -76,7 +81,7 @@ describe("nextActivePiSessionAfterClose", () => {
 		expect(nextActivePiSessionAfterClose("pi-2", "pi-1")).toBe("pi-1");
 	});
 
-	it("tolerates a null current selection", () => {
+	it("tolerates a null active selection", () => {
 		expect(nextActivePiSessionAfterClose("pi-1", null)).toBeNull();
 	});
 });

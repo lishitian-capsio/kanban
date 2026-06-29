@@ -3,10 +3,11 @@
 // A pi-scoped session manager — the left rail lists/switches/creates/closes pi sessions
 // while the right side renders the active session's conversation. It reuses the shared
 // HomeAgentConversation (only one mounts at a time, so no double chat subscription) and the
-// existing thread backend (create/close route to the pi session service). The active-session
-// selection is local transient state; the session list itself is persisted via the registry.
-// The Pi tab starts empty (no pinned default session) — the user creates the first session.
-import { Plus } from "lucide-react";
+// existing thread backend (create/close route to the pi session service). The list starts
+// empty (no preset default session); until the user creates one, the right side shows an
+// empty state. The active-session selection is local transient state; the session list
+// itself is persisted via the registry.
+import { MessageSquarePlus, Plus } from "lucide-react";
 import { type ReactElement, useCallback, useMemo, useState } from "react";
 
 import { HomeAgentConversation } from "@/components/home-agent/home-agent-conversation";
@@ -40,7 +41,7 @@ export function PiTabPanel({
 	const [requestedActiveId, setRequestedActiveId] = useState<string | null>(null);
 	const activeId = resolveActivePiSessionId(piSessions, requestedActiveId);
 	const activeSession = useMemo(
-		() => (activeId ? (piSessions.find((session) => session.id === activeId) ?? null) : null),
+		() => piSessions.find((session) => session.id === activeId) ?? null,
 		[piSessions, activeId],
 	);
 
@@ -59,10 +60,6 @@ export function PiTabPanel({
 		[closeThread],
 	);
 
-	if (!activeSession) {
-		return <PiSessionsEmptyState onCreate={() => void handleCreate()} />;
-	}
-
 	return (
 		<div className="flex min-h-0 flex-1 gap-2">
 			<PiSessionRail
@@ -77,24 +74,37 @@ export function PiTabPanel({
 				onClose={handleClose}
 			/>
 			<div className="flex min-h-0 flex-1 [&>*]:w-full [&>*]:self-stretch">
-				<HomeAgentConversation
-					activeThread={activeSession}
-					currentProjectId={currentProjectId}
-					runtimeProjectConfig={runtimeProjectConfig}
-					taskSessions={taskSessions}
-					workspaceGit={workspaceGit}
-					onClearNextStep={clearNextStep}
-				/>
+				{activeSession ? (
+					<HomeAgentConversation
+						activeThread={activeSession}
+						currentProjectId={currentProjectId}
+						runtimeProjectConfig={runtimeProjectConfig}
+						taskSessions={taskSessions}
+						workspaceGit={workspaceGit}
+						onClearNextStep={clearNextStep}
+					/>
+				) : (
+					<PiSessionsEmptyState
+						onCreate={() => {
+							void handleCreate();
+						}}
+					/>
+				)}
 			</div>
 		</div>
 	);
 }
 
-/** Shown when the Pi tab has no sessions yet — the user creates the first one. */
 function PiSessionsEmptyState({ onCreate }: { onCreate: () => void }): ReactElement {
 	return (
-		<div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-center">
-			<p className="text-sm text-text-secondary">No pi sessions yet.</p>
+		<div className="flex w-full flex-col items-center justify-center gap-3 rounded-md border border-border bg-surface-2 px-4 text-center">
+			<MessageSquarePlus size={28} className="text-text-tertiary" aria-hidden="true" />
+			<div className="flex flex-col gap-1">
+				<p className="text-sm font-medium text-text-primary">No pi sessions yet</p>
+				<p className="max-w-xs text-[13px] text-text-secondary">
+					Start a new session to chat with pi.
+				</p>
+			</div>
 			<Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={onCreate}>
 				New session
 			</Button>
