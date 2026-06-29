@@ -1,0 +1,19 @@
+{
+  "id": "79f1a",
+  "title": "修复全屏模式下 board 任务卡片闪现",
+  "prompt": "Bug：kanban agent 进入全屏模式时，board 的任务卡片会先闪现一下（短暂可见），然后才消失。期望是进入全屏后 board 卡片完全不出现、不闪烁，全屏视图直接干净呈现。\n\n复现：在 kanban agent 侧栏/主区进入全屏模式（fullscreen），观察底层 board 的任务卡片会闪一帧再消失。\n\n排查方向（供参考，不限定）：\n- 这是典型的\"进入全屏的那一帧里，board 仍被渲染/可见，下一帧才被全屏覆盖层接管或卸载\"导致的闪现。定位全屏切换逻辑（参考 home chat fullscreen + layout selector：selectHomeChatLayout compact|fullscreen；以及全屏 Home/Pi tab 渲染入口）。\n- 检查全屏覆盖层的挂载时机与 board 的卸载/隐藏时机是否同步：是否存在全屏状态已置位、但 board 组件这一帧还没被条件卸载/隐藏的窗口；或全屏覆盖层是异步/延迟挂载，导致中间帧露出 board。\n- 优先用\"同一帧内原子切换\"的方式消除中间态：例如让全屏与 board 的显隐由同一个状态源同步驱动、在全屏为真时即条件不渲染 board（而非先渲染再隐藏），避免出现可见的过渡帧。\n- 注意不要引入额外的布局抖动或与现有过渡动画冲突；保持暗色主题与现有视觉。\n- 可参考已知的 flicker 处理经验（board card column-move flicker：content-visibility 在重挂载元素上导致闪烁，曾用 suppressCulling 一帧修复）判断是否同源问题，但本 bug 更可能是全屏切换的渲染时序，而非 culling。\n\n协调提示：任务 #686f7 正在把全屏状态 URL 化，可能改动全屏切换/挂载路径；本任务聚焦消除\"进入全屏时 board 卡片闪现\"这一帧级视觉 bug，注意与其改动协调、避免冲突。\n\n期望结果：进入全屏模式时 board 任务卡片不再出现任何可见的闪现/闪烁，全屏视图干净直接呈现；改动集中在 web-ui 全屏切换与 board 渲染时序，必要时补充说明根因。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782700351318,
+  "updatedAt": 1782700351318,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
