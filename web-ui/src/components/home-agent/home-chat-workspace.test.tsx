@@ -82,11 +82,37 @@ const RUNTIME_CONFIG = {
 	],
 } as unknown as RuntimeConfigResponse;
 
+interface RenderOptions {
+	currentProjectId?: string | null;
+	homeThreads: UseHomeThreadsResult;
+	taskSessions?: Record<string, RuntimeTaskSessionSummary>;
+	fullscreenChatTab?: string | null;
+	onNavigateFullscreenTab?: (tab: string) => void;
+	onReplaceFullscreenTab?: (tab: string) => void;
+}
+
 describe("HomeChatWorkspace", () => {
 	let container: HTMLDivElement;
 	let root: Root;
 	let previousActEnvironment: boolean | undefined;
 	let previousScrollIntoView: typeof Element.prototype.scrollIntoView | undefined;
+
+	function render(options: RenderOptions): void {
+		act(() => {
+			root.render(
+				<HomeChatWorkspace
+					currentProjectId={options.currentProjectId === undefined ? WORKSPACE_ID : options.currentProjectId}
+					runtimeProjectConfig={RUNTIME_CONFIG}
+					homeThreads={options.homeThreads}
+					taskSessions={options.taskSessions ?? {}}
+					workspaceGit={null}
+					fullscreenChatTab={options.fullscreenChatTab ?? "home"}
+					onNavigateFullscreenTab={options.onNavigateFullscreenTab ?? vi.fn()}
+					onReplaceFullscreenTab={options.onReplaceFullscreenTab ?? vi.fn()}
+				/>,
+			);
+		});
+	}
 
 	beforeEach(() => {
 		previousActEnvironment = (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
@@ -111,7 +137,7 @@ describe("HomeChatWorkspace", () => {
 			previousActEnvironment;
 	});
 
-	it("shows the Home tab launcher (cards + add card) when no session tab is active", () => {
+	it("shows the Home tab launcher (cards + add card) when the active tab is Home", () => {
 		const threads = [
 			makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true),
 			makeThread("thread-2", "Refactor auth", "claude", false),
@@ -119,21 +145,15 @@ describe("HomeChatWorkspace", () => {
 		const defaultTaskId = createHomeAgentSessionId(WORKSPACE_ID, "pi", DEFAULT_HOME_THREAD_ID);
 		const secondTaskId = createHomeAgentSessionId(WORKSPACE_ID, "claude", "thread-2");
 
-		act(() => {
-			root.render(
-				<HomeChatWorkspace
-					currentProjectId={WORKSPACE_ID}
-					runtimeProjectConfig={RUNTIME_CONFIG}
-					homeThreads={makeHomeThreads(threads)}
-					taskSessions={{
-						// Idle so the card shows its message preview (for non-idle sessions the
-						// live-activity line takes precedence over the preview).
-						[defaultTaskId]: makeSummary(defaultTaskId, "idle"),
-						[secondTaskId]: makeSummary(secondTaskId, "awaiting_review"),
-					}}
-					workspaceGit={null}
-				/>,
-			);
+		render({
+			homeThreads: makeHomeThreads(threads),
+			taskSessions: {
+				// Idle so the card shows its message preview (for non-idle sessions the
+				// live-activity line takes precedence over the preview).
+				[defaultTaskId]: makeSummary(defaultTaskId, "idle"),
+				[secondTaskId]: makeSummary(secondTaskId, "awaiting_review"),
+			},
+			fullscreenChatTab: "home",
 		});
 
 		expect(container.textContent).toContain("Refactor auth");
@@ -146,25 +166,20 @@ describe("HomeChatWorkspace", () => {
 		expect(container.querySelector('[data-testid="conversation"]')).toBeNull();
 	});
 
-	it("opens the clicked card as a session tab (onOpenSession → openSessionTab)", () => {
+	it("opens the clicked card as a session tab (registry openSessionTab + URL navigate)", () => {
 		const openSessionTab = vi.fn();
+		const onNavigateFullscreenTab = vi.fn();
 		const threads = [makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)];
-		act(() => {
-			root.render(
-				<HomeChatWorkspace
-					currentProjectId={WORKSPACE_ID}
-					runtimeProjectConfig={RUNTIME_CONFIG}
-					homeThreads={makeHomeThreads(threads, { openSessionTab })}
-					taskSessions={{}}
-					workspaceGit={null}
-				/>,
-			);
+		render({
+			homeThreads: makeHomeThreads(threads, { openSessionTab }),
+			onNavigateFullscreenTab,
 		});
 		const card = container.querySelector('[aria-label="Open Default session"]') as HTMLButtonElement;
 		act(() => {
 			card.click();
 		});
 		expect(openSessionTab).toHaveBeenCalledWith(DEFAULT_HOME_THREAD_ID);
+		expect(onNavigateFullscreenTab).toHaveBeenCalledWith(DEFAULT_HOME_THREAD_ID);
 	});
 
 	it("hard-deletes a non-default session from its launcher card (same closeThread path as compact)", () => {
@@ -173,17 +188,7 @@ describe("HomeChatWorkspace", () => {
 			makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true),
 			makeThread("thread-2", "Refactor auth", "claude", false),
 		];
-		act(() => {
-			root.render(
-				<HomeChatWorkspace
-					currentProjectId={WORKSPACE_ID}
-					runtimeProjectConfig={RUNTIME_CONFIG}
-					homeThreads={makeHomeThreads(threads, { closeThread })}
-					taskSessions={{}}
-					workspaceGit={null}
-				/>,
-			);
-		});
+		render({ homeThreads: makeHomeThreads(threads, { closeThread }) });
 		const deleteButton = container.querySelector(
 			'[aria-label="Close Refactor auth session"]',
 		) as HTMLButtonElement | null;
@@ -204,55 +209,30 @@ describe("HomeChatWorkspace", () => {
 
 	it("does not render a delete affordance on the default session card", () => {
 		const threads = [makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)];
-		act(() => {
-			root.render(
-				<HomeChatWorkspace
-					currentProjectId={WORKSPACE_ID}
-					runtimeProjectConfig={RUNTIME_CONFIG}
-					homeThreads={makeHomeThreads(threads)}
-					taskSessions={{}}
-					workspaceGit={null}
-				/>,
-			);
-		});
+		render({ homeThreads: makeHomeThreads(threads) });
 		expect(container.querySelector('[aria-label="Close Default session"]')).toBeNull();
 	});
 
 	it("reconciles the persisted tab set once on mount (entering fullscreen)", () => {
 		const reconcileFullscreenTabsOnEnter = vi.fn();
-		act(() => {
-			root.render(
-				<HomeChatWorkspace
-					currentProjectId={WORKSPACE_ID}
-					runtimeProjectConfig={RUNTIME_CONFIG}
-					homeThreads={makeHomeThreads([makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)], {
-						reconcileFullscreenTabsOnEnter,
-					})}
-					taskSessions={{}}
-					workspaceGit={null}
-				/>,
-			);
+		render({
+			homeThreads: makeHomeThreads([makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)], {
+				reconcileFullscreenTabsOnEnter,
+			}),
 		});
 		expect(reconcileFullscreenTabsOnEnter).toHaveBeenCalledTimes(1);
 	});
 
-	it("renders the active session tab's conversation instead of the launcher", () => {
+	it("renders the active session tab's conversation named by the URL tab", () => {
 		const threads = [
 			makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true),
 			makeThread("thread-2", "Refactor auth", "claude", false),
 		];
-		act(() => {
-			root.render(
-				<HomeChatWorkspace
-					currentProjectId={WORKSPACE_ID}
-					runtimeProjectConfig={RUNTIME_CONFIG}
-					homeThreads={makeHomeThreads(threads, {
-						fullscreenTabs: { openThreadIds: ["thread-2"], activeThreadId: "thread-2" },
-					})}
-					taskSessions={{}}
-					workspaceGit={null}
-				/>,
-			);
+		render({
+			homeThreads: makeHomeThreads(threads, {
+				fullscreenTabs: { openThreadIds: ["thread-2"], activeThreadId: "thread-2" },
+			}),
+			fullscreenChatTab: "thread-2",
 		});
 		// Conversation for the active tab shows; the launcher add-card is gone.
 		expect(container.querySelector('[data-testid="conversation"]')?.textContent).toBe("conversation:thread-2");
@@ -262,6 +242,26 @@ describe("HomeChatWorkspace", () => {
 		expect(activeTab?.textContent).toContain("Refactor auth");
 	});
 
+	it("activating a tab routes through the URL (onNavigateFullscreenTab)", () => {
+		const onNavigateFullscreenTab = vi.fn();
+		const threads = [makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)];
+		render({ homeThreads: makeHomeThreads(threads), fullscreenChatTab: "home", onNavigateFullscreenTab });
+		const piTab = [...container.querySelectorAll('[role="tab"]')].find(
+			(tab) => tab.textContent === "Pi",
+		) as HTMLButtonElement;
+		act(() => {
+			piTab.click();
+		});
+		expect(onNavigateFullscreenTab).toHaveBeenCalledWith("pi");
+	});
+
+	it("falls back to Home in place when the URL names a session that no longer exists", () => {
+		const onReplaceFullscreenTab = vi.fn();
+		const threads = [makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)];
+		render({ homeThreads: makeHomeThreads(threads), fullscreenChatTab: "thread-gone", onReplaceFullscreenTab });
+		expect(onReplaceFullscreenTab).toHaveBeenCalledWith("home");
+	});
+
 	it("opens the Pi tab as a pi-scoped session workspace (base active, non-pi threads excluded)", () => {
 		const threads = [
 			// The workspace-global default is claude here; the Pi tab still pins its own pi base.
@@ -269,23 +269,10 @@ describe("HomeChatWorkspace", () => {
 			makeThread("pi-1", "Fix tests", "pi", false),
 			makeThread("claude-1", "Other agent", "claude", false),
 		];
-		act(() => {
-			root.render(
-				<HomeChatWorkspace
-					currentProjectId={WORKSPACE_ID}
-					runtimeProjectConfig={RUNTIME_CONFIG}
-					homeThreads={makeHomeThreads(threads)}
-					taskSessions={{}}
-					workspaceGit={null}
-				/>,
-			);
-		});
+		render({ homeThreads: makeHomeThreads(threads), fullscreenChatTab: "pi" });
 		const piTab = [...container.querySelectorAll('[role="tab"]')].find(
 			(tab) => tab.textContent === "Pi",
 		) as HTMLButtonElement;
-		act(() => {
-			piTab.click();
-		});
 		expect(piTab.getAttribute("aria-selected")).toBe("true");
 		// The base pi session is active in the conversation (legacy default thread id).
 		expect(container.querySelector('[data-testid="conversation"]')?.textContent).toBe(
@@ -301,23 +288,7 @@ describe("HomeChatWorkspace", () => {
 	it("creates a blank pi session from the Pi tab rail (name-only, no kickoff prompt)", async () => {
 		const createThread = vi.fn().mockResolvedValue(null);
 		const threads = [makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)];
-		act(() => {
-			root.render(
-				<HomeChatWorkspace
-					currentProjectId={WORKSPACE_ID}
-					runtimeProjectConfig={RUNTIME_CONFIG}
-					homeThreads={makeHomeThreads(threads, { createThread })}
-					taskSessions={{}}
-					workspaceGit={null}
-				/>,
-			);
-		});
-		const piTab = [...container.querySelectorAll('[role="tab"]')].find(
-			(tab) => tab.textContent === "Pi",
-		) as HTMLButtonElement;
-		act(() => {
-			piTab.click();
-		});
+		render({ homeThreads: makeHomeThreads(threads, { createThread }), fullscreenChatTab: "pi" });
 		const newButton = [...container.querySelectorAll("button")].find(
 			(button) => button.textContent === "New session",
 		) as HTMLButtonElement;
@@ -328,17 +299,7 @@ describe("HomeChatWorkspace", () => {
 	});
 
 	it("renders nothing without a project or config", () => {
-		act(() => {
-			root.render(
-				<HomeChatWorkspace
-					currentProjectId={null}
-					runtimeProjectConfig={RUNTIME_CONFIG}
-					homeThreads={makeHomeThreads([])}
-					taskSessions={{}}
-					workspaceGit={null}
-				/>,
-			);
-		});
+		render({ currentProjectId: null, homeThreads: makeHomeThreads([]) });
 		expect(container.textContent).toBe("");
 	});
 });

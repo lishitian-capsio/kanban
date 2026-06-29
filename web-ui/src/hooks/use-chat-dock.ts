@@ -38,8 +38,6 @@ export interface UseChatDockResult {
 	dockLeft: () => void;
 	dockRight: () => void;
 	floatPanel: () => void;
-	enterFullscreen: () => void;
-	exitFullscreen: () => void;
 	closeFloat: () => void;
 	collapse: () => void;
 	expand: () => void;
@@ -94,8 +92,6 @@ export function useChatDock(): UseChatDockResult {
 	const dockLeft = useCallback(() => applyTransition({ type: "dock", side: "left" }), [applyTransition]);
 	const dockRight = useCallback(() => applyTransition({ type: "dock", side: "right" }), [applyTransition]);
 	const floatPanel = useCallback(() => applyTransition({ type: "float" }), [applyTransition]);
-	const enterFullscreen = useCallback(() => applyTransition({ type: "fullscreen" }), [applyTransition]);
-	const exitFullscreen = useCallback(() => applyTransition({ type: "exitFullscreen" }), [applyTransition]);
 	const closeFloat = useCallback(() => applyTransition({ type: "close" }), [applyTransition]);
 	const collapse = useCallback(() => applyTransition({ type: "collapse" }), [applyTransition]);
 	const expand = useCallback(() => applyTransition({ type: "expand" }), [applyTransition]);
@@ -119,8 +115,6 @@ export function useChatDock(): UseChatDockResult {
 			dockLeft,
 			dockRight,
 			floatPanel,
-			enterFullscreen,
-			exitFullscreen,
 			closeFloat,
 			collapse,
 			expand,
@@ -139,8 +133,6 @@ export function useChatDock(): UseChatDockResult {
 			dockLeft,
 			dockRight,
 			floatPanel,
-			enterFullscreen,
-			exitFullscreen,
 			closeFloat,
 			collapse,
 			expand,

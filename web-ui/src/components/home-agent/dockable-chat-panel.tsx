@@ -1,9 +1,10 @@
 // The dockable shell around the home chat surface.
 //
-// A pure size/state → layout selector (`selectHomeChatLayout`) chooses what to
-// mount: the compact surface (`children`) for docked/float, or the fullscreen
-// workspace (`fullscreenContent`) for the fullscreen state. The shell then
-// places that content according to the persisted dock position:
+// The `isFullscreen` prop (an orthogonal URL-routed axis, see
+// use-fullscreen-chat-navigation) chooses what to mount: the compact surface
+// (`children`) for docked/float, or the fullscreen workspace (`fullscreenContent`)
+// when fullscreen. The shell then places that content according to the persisted
+// dock position:
 //   - left / right: a resizable flex column. Left↔right only flips the CSS
 //     `order`, so the chat session is not remounted when swapping sides.
 //   - float: a free-floating, draggable, resizable window (react-rnd) inside a
@@ -37,23 +38,30 @@ import {
 	MIN_CHAT_DOCK_WIDTH,
 	MIN_CHAT_FLOAT_HEIGHT,
 	MIN_CHAT_FLOAT_WIDTH,
-	selectHomeChatLayout,
 } from "./chat-dock-state";
 import { SidebarOpsStatusBar } from "./sidebar-ops-status-bar";
 
 interface DockableChatPanelProps {
 	dock: UseChatDockResult;
+	// Fullscreen is an orthogonal URL-routed axis (see use-fullscreen-chat-navigation):
+	// when true, the workspace overlays everything regardless of the docked `position`.
+	isFullscreen: boolean;
+	onEnterFullscreen: () => void;
+	onExitFullscreen: () => void;
 	// Project navigation, folded into the sidebar header (the old standalone
 	// `ProjectNavigationPanel` column). Rendered just below the dock controls.
 	projectSwitcher?: React.ReactNode;
 	// The fullscreen-state presentation (Home tab + session tabs). Mounted only
-	// when the dock is in its fullscreen layout; `children` is the compact surface.
+	// when fullscreen; `children` is the compact surface for docked/float.
 	fullscreenContent?: React.ReactNode;
 	children: React.ReactNode;
 }
 
 function DockHeaderWithChildren({
 	dock,
+	isFullscreen,
+	onEnterFullscreen,
+	onExitFullscreen,
 	projectSwitcher,
 	children,
 }: Omit<DockableChatPanelProps, "fullscreenContent">): React.ReactElement {
@@ -76,11 +84,12 @@ function DockHeaderWithChildren({
 				{projectSwitcher}
 				<ChatDockControls
 					position={dock.position}
+					isFullscreen={isFullscreen}
 					onDockLeft={dock.dockLeft}
 					onDockRight={dock.dockRight}
 					onFloat={dock.floatPanel}
-					onEnterFullscreen={dock.enterFullscreen}
-					onExitFullscreen={dock.exitFullscreen}
+					onEnterFullscreen={onEnterFullscreen}
+					onExitFullscreen={onExitFullscreen}
 					onClose={dock.closeFloat}
 					onCollapse={dock.collapse}
 					onHide={dock.hide}
@@ -120,6 +129,9 @@ function CollapsedChatStrip({ dock }: { dock: UseChatDockResult }): React.ReactE
 
 export function DockableChatPanel({
 	dock,
+	isFullscreen,
+	onEnterFullscreen,
+	onExitFullscreen,
 	projectSwitcher,
 	fullscreenContent,
 	children,
@@ -130,16 +142,15 @@ export function DockableChatPanel({
 		edge: isLeft ? "right" : "left",
 		onWidthChange: dock.setWidth,
 	});
+	const headerProps = { dock, isFullscreen, onEnterFullscreen, onExitFullscreen, projectSwitcher };
 
 	// Fullscreen owns the whole viewport: a solid overlay carrying the same header
 	// (so the dock/exit controls stay reachable) with the workspace presentation
 	// in place of the compact surface.
-	if (selectHomeChatLayout(dock.position) === "fullscreen") {
+	if (isFullscreen) {
 		return (
 			<div className="fixed inset-0 z-40 flex flex-col bg-surface-0">
-				<DockHeaderWithChildren dock={dock} projectSwitcher={projectSwitcher}>
-					{fullscreenContent}
-				</DockHeaderWithChildren>
+				<DockHeaderWithChildren {...headerProps}>{fullscreenContent}</DockHeaderWithChildren>
 			</div>
 		);
 	}
@@ -169,9 +180,7 @@ export function DockableChatPanel({
 					}}
 				>
 					<div className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-border bg-surface-1 shadow-2xl">
-						<DockHeaderWithChildren dock={dock} projectSwitcher={projectSwitcher}>
-							{children}
-						</DockHeaderWithChildren>
+						<DockHeaderWithChildren {...headerProps}>{children}</DockHeaderWithChildren>
 					</div>
 				</Rnd>
 			</div>
@@ -203,9 +212,7 @@ export function DockableChatPanel({
 					isResizing ? "bg-border-focus/40" : "hover:bg-border-bright/40",
 				)}
 			/>
-			<DockHeaderWithChildren dock={dock} projectSwitcher={projectSwitcher}>
-				{children}
-			</DockHeaderWithChildren>
+			<DockHeaderWithChildren {...headerProps}>{children}</DockHeaderWithChildren>
 		</aside>
 	);
 }

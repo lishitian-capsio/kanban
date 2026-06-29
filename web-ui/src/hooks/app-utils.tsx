@@ -6,6 +6,10 @@ export const TASK_START_IN_PLAN_MODE_STORAGE_KEY = LocalStorageKey.TaskStartInPl
 export const TASK_AUTO_REVIEW_ENABLED_STORAGE_KEY = LocalStorageKey.TaskAutoReviewEnabled;
 export const TASK_AUTO_REVIEW_MODE_STORAGE_KEY = LocalStorageKey.TaskAutoReviewMode;
 const DETAIL_TASK_QUERY_PARAM = "task";
+// The active fullscreen home-chat tab. Its presence in the URL means the home-chat
+// fullscreen workspace is open; the value is the active tab: the reserved "home"
+// (launcher) / "pi" (native-agent workspace) anchors, or a session thread id.
+const FULLSCREEN_CHAT_QUERY_PARAM = "chat";
 
 export function normalizeStoredTaskAutoReviewMode(value: string): TaskAutoReviewMode | null {
 	if (value === "commit" || value === "pr") {
@@ -89,6 +93,28 @@ export function buildDetailTaskUrl(input: {
 		params.set(DETAIL_TASK_QUERY_PARAM, input.taskId);
 	} else {
 		params.delete(DETAIL_TASK_QUERY_PARAM);
+	}
+	const nextSearch = params.toString();
+	return `${input.pathname}${nextSearch ? `?${nextSearch}` : ""}${input.hash}`;
+}
+
+export function parseFullscreenChatTabFromSearch(search: string): string | null {
+	const params = new URLSearchParams(search);
+	const chatTab = params.get(FULLSCREEN_CHAT_QUERY_PARAM)?.trim();
+	return chatTab ? chatTab : null;
+}
+
+export function buildFullscreenChatUrl(input: {
+	pathname: string;
+	search: string;
+	hash: string;
+	chatTab: string | null;
+}): string {
+	const params = new URLSearchParams(input.search);
+	if (input.chatTab) {
+		params.set(FULLSCREEN_CHAT_QUERY_PARAM, input.chatTab);
+	} else {
+		params.delete(FULLSCREEN_CHAT_QUERY_PARAM);
 	}
 	const nextSearch = params.toString();
 	return `${input.pathname}${nextSearch ? `?${nextSearch}` : ""}${input.hash}`;

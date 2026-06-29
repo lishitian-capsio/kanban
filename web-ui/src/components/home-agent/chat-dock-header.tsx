@@ -37,6 +37,9 @@ export const CHAT_DOCK_DRAG_HANDLE_CLASS = "kb-chat-dock-drag-handle";
 
 interface ChatDockControlsProps {
 	position: ChatDockPosition;
+	// Fullscreen is an orthogonal URL-routed axis (not a dock position): when true the
+	// workspace overlays everything regardless of `position` (the restored docked side).
+	isFullscreen: boolean;
 	onDockLeft: () => void;
 	onDockRight: () => void;
 	onFloat: () => void;
@@ -80,6 +83,7 @@ function DockButton({
 
 export function ChatDockControls({
 	position,
+	isFullscreen,
 	onDockLeft,
 	onDockRight,
 	onFloat,
@@ -90,7 +94,7 @@ export function ChatDockControls({
 	onHide,
 }: ChatDockControlsProps): React.ReactElement {
 	const floating = position === "float";
-	const fullscreen = position === "fullscreen";
+	const fullscreen = isFullscreen;
 	// Collapse and hide are docked-only affordances (the edge strip is a docked
 	// concept; the float window and the fullscreen workspace own their own chrome).
 	const docked = !floating && !fullscreen;
@@ -123,13 +127,13 @@ export function ChatDockControls({
 		<div className="flex shrink-0 items-center gap-1">
 			{/* View-mode selector: mutually-exclusive dock targets, active one highlighted. */}
 			<div className="flex items-center gap-0.5">
-				<DockButton active={position === "left"} label="Dock to left" onClick={onDockLeft}>
+				<DockButton active={!fullscreen && position === "left"} label="Dock to left" onClick={onDockLeft}>
 					<PanelLeft size={14} />
 				</DockButton>
-				<DockButton active={position === "right"} label="Dock to right" onClick={onDockRight}>
+				<DockButton active={!fullscreen && position === "right"} label="Dock to right" onClick={onDockRight}>
 					<PanelRight size={14} />
 				</DockButton>
-				<DockButton active={floating} label="Detach as floating window" onClick={onFloat}>
+				<DockButton active={!fullscreen && floating} label="Detach as floating window" onClick={onFloat}>
 					<PictureInPicture2 size={14} />
 				</DockButton>
 				<DockButton

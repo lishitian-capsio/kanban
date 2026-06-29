@@ -45,6 +45,7 @@ import { useChatDock } from "@/hooks/use-chat-dock";
 import { useDebugTools } from "@/hooks/use-debug-tools";
 import { useDetailTaskNavigation } from "@/hooks/use-detail-task-navigation";
 import { useDocumentVisibility } from "@/hooks/use-document-visibility";
+import { useFullscreenChatNavigation } from "@/hooks/use-fullscreen-chat-navigation";
 import { useGitActions } from "@/hooks/use-git-actions";
 import { useGitUserIdentity } from "@/hooks/use-git-user-identity";
 import { useHomeThreads } from "@/hooks/use-home-threads";
@@ -86,6 +87,9 @@ export default function App(): ReactElement {
 	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 	const [settingsInitialSection, setSettingsInitialSection] = useState<RuntimeSettingsSection | null>(null);
 	const chatDock = useChatDock();
+	// Whether the home-chat fullscreen workspace is open (and which tab) is routed through the
+	// URL, so it survives refresh, supports deep links, and restores on browser back/forward.
+	const fullscreenChat = useFullscreenChatNavigation();
 	const [isClearTrashDialogOpen, setIsClearTrashDialogOpen] = useState(false);
 	const [isGitHistoryOpen, setIsGitHistoryOpen] = useState(false);
 	const [isVaultOpen, setIsVaultOpen] = useState(false);
@@ -437,25 +441,38 @@ export default function App(): ReactElement {
 		currentProjectId,
 		runtimeProjectConfig,
 	});
-	// Continuity rule, fullscreen → docked (decision 1902b): when the dock leaves the
-	// fullscreen layout, the active session tab becomes the docked conversation, so collapsing
-	// never loses the user's place. The Home tab being active leaves the docked thread as-is.
-	// Reading the active tab through a ref keeps this effect firing only on the layout transition
-	// (not on every tab switch while fullscreen).
-	const { setActiveThread: setActiveHomeThread, fullscreenTabs: homeFullscreenTabs } = homeThreads;
-	const fullscreenActiveTabRef = useRef(homeFullscreenTabs.activeThreadId);
-	fullscreenActiveTabRef.current = homeFullscreenTabs.activeThreadId;
-	const previousChatDockPositionRef = useRef(chatDock.position);
+	// Entering fullscreen seeds the active tab from the docked conversation (continuity,
+	// docked → fullscreen) so the maximize button lands on what the user was reading; exiting
+	// clears the URL chat param. Both push history, so back/forward toggles fullscreen.
+	const { setActiveThread: setActiveHomeThread, activeThreadId: dockedActiveThreadId } = homeThreads;
+	const { navigateFullscreenTab, replaceFullscreenTab, fullscreenChatTab, isFullscreen } = fullscreenChat;
+	const dockedActiveThreadIdRef = useRef(dockedActiveThreadId);
+	dockedActiveThreadIdRef.current = dockedActiveThreadId;
+	const handleEnterFullscreen = useCallback(() => {
+		navigateFullscreenTab(dockedActiveThreadIdRef.current);
+	}, [navigateFullscreenTab]);
+	const handleExitFullscreen = useCallback(() => {
+		navigateFullscreenTab(null);
+	}, [navigateFullscreenTab]);
+	// Continuity rule, fullscreen → docked: when fullscreen closes, the active session tab
+	// becomes the docked conversation, so collapsing never loses the user's place. Home/Pi (not a
+	// thread) leaves the docked thread as-is. Track the last non-null tab in a ref because by the
+	// time the effect sees the transition the URL chat param is already cleared.
+	const lastFullscreenTabRef = useRef<string | null>(fullscreenChatTab);
+	if (fullscreenChatTab) {
+		lastFullscreenTabRef.current = fullscreenChatTab;
+	}
+	const previousIsFullscreenRef = useRef(isFullscreen);
 	useEffect(() => {
-		const previousPosition = previousChatDockPositionRef.current;
-		previousChatDockPositionRef.current = chatDock.position;
-		if (previousPosition === "fullscreen" && chatDock.position !== "fullscreen") {
-			const activeTabThreadId = fullscreenActiveTabRef.current;
-			if (activeTabThreadId) {
-				setActiveHomeThread(activeTabThreadId);
+		const wasFullscreen = previousIsFullscreenRef.current;
+		previousIsFullscreenRef.current = isFullscreen;
+		if (wasFullscreen && !isFullscreen) {
+			const lastTab = lastFullscreenTabRef.current;
+			if (lastTab && lastTab !== "home" && lastTab !== "pi") {
+				setActiveHomeThread(lastTab);
 			}
 		}
-	}, [chatDock.position, setActiveHomeThread]);
+	}, [isFullscreen, setActiveHomeThread]);
 	// HomeSidebarAgentPanel renders null exactly when hasNoProjects || !currentProjectId,
 	// so mirror that gate here rather than instantiating the panel to test for null.
 	const isHomeChatAvailable = !selectedCard && !hasNoProjects && !!currentProjectId;
@@ -844,9 +861,12 @@ export default function App(): ReactElement {
 	return (
 		<LayoutCustomizationsProvider onResetBottomTerminalLayoutCustomizations={resetBottomTerminalLayoutCustomizations}>
 			<div className="flex h-[100svh] min-w-0 overflow-hidden">
-				{isHomeChatAvailable && chatDock.open ? (
+				{isHomeChatAvailable && (chatDock.open || isFullscreen) ? (
 					<DockableChatPanel
 						dock={chatDock}
+						isFullscreen={isFullscreen}
+						onEnterFullscreen={handleEnterFullscreen}
+						onExitFullscreen={handleExitFullscreen}
 						projectSwitcher={
 							<SidebarProjectSwitcher
 								projects={displayedProjects}
@@ -869,6 +889,9 @@ export default function App(): ReactElement {
 								homeThreads={homeThreads}
 								taskSessions={sessions}
 								workspaceGit={workspaceGit}
+								fullscreenChatTab={fullscreenChatTab}
+								onNavigateFullscreenTab={navigateFullscreenTab}
+								onReplaceFullscreenTab={replaceFullscreenTab}
 							/>
 						}
 					>

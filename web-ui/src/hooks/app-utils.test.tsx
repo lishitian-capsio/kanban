@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildDetailTaskUrl, parseDetailTaskIdFromSearch } from "@/hooks/app-utils";
+import {
+	buildDetailTaskUrl,
+	buildFullscreenChatUrl,
+	parseDetailTaskIdFromSearch,
+	parseFullscreenChatTabFromSearch,
+} from "@/hooks/app-utils";
 
 describe("parseDetailTaskIdFromSearch", () => {
 	it("returns the selected task id when present", () => {
@@ -35,5 +40,44 @@ describe("buildDetailTaskUrl", () => {
 				taskId: null,
 			}),
 		).toBe("/project-1?view=board");
+	});
+});
+
+describe("parseFullscreenChatTabFromSearch", () => {
+	it("returns the active fullscreen chat tab when present", () => {
+		expect(parseFullscreenChatTabFromSearch("?chat=home")).toBe("home");
+		expect(parseFullscreenChatTabFromSearch("?chat=pi")).toBe("pi");
+		expect(parseFullscreenChatTabFromSearch("?chat=thread-abc")).toBe("thread-abc");
+	});
+
+	it("returns null when the chat tab is missing or blank", () => {
+		expect(parseFullscreenChatTabFromSearch("")).toBeNull();
+		expect(parseFullscreenChatTabFromSearch("?task=task-1")).toBeNull();
+		expect(parseFullscreenChatTabFromSearch("?chat=")).toBeNull();
+		expect(parseFullscreenChatTabFromSearch("?chat=%20%20")).toBeNull();
+	});
+});
+
+describe("buildFullscreenChatUrl", () => {
+	it("adds the chat tab while preserving other query params and hash", () => {
+		expect(
+			buildFullscreenChatUrl({
+				pathname: "/project-1",
+				search: "?view=board",
+				hash: "#panel",
+				chatTab: "pi",
+			}),
+		).toBe("/project-1?view=board&chat=pi#panel");
+	});
+
+	it("removes the chat tab while preserving other query params", () => {
+		expect(
+			buildFullscreenChatUrl({
+				pathname: "/project-1",
+				search: "?chat=thread-abc&task=task-1",
+				hash: "",
+				chatTab: null,
+			}),
+		).toBe("/project-1?task=task-1");
 	});
 });

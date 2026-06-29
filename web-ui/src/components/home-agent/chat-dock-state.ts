@@ -1,27 +1,22 @@
 // Pure dock-state model for the home chat panel.
 //
-// `dock` is one of left | right | float | fullscreen. The reducer keeps
-// `lastDockedSide` around while floating or fullscreen so closing the float
-// window / exiting fullscreen can restore the side the user last docked to.
-// `fullscreen` is the size-driven layout switch (see `selectHomeChatLayout`):
-// docked/float render the compact thread-bar surface, fullscreen renders the
-// Home-tab + session-tab workspace. Two further axes are orthogonal to
+// `dock` is the docked presentation: left | right | float. The reducer keeps
+// `lastDockedSide` around while floating so closing the float window can restore
+// the side the user last docked to. Fullscreen is NOT a dock position — it is an
+// orthogonal axis routed through the URL (see `use-fullscreen-chat-navigation`):
+// when fullscreen, the workspace overlays everything regardless of this dock
+// state, which is restored unchanged on exit. Two further axes are orthogonal to
 // `position`:
 //   - `collapsed`: a docked panel shrunk to a thin edge strip (still present,
-//     one click to expand). Only meaningful while docked, so `float` /
-//     `fullscreen` clear it and `collapse` is a no-op for them.
+//     one click to expand). Only meaningful while docked, so `float` clears it
+//     and `collapse` is a no-op for it.
 //   - `open`: whether the panel is shown at all. Closing hides it entirely; the
 //     top-bar toggle reopens it (always expanded, never lost).
 // Everything here is side-effect free and unit-tested; persistence and DOM live
 // in use-chat-dock / dockable-chat-panel.
 
-export type ChatDockPosition = "left" | "right" | "float" | "fullscreen";
+export type ChatDockPosition = "left" | "right" | "float";
 export type ChatDockSide = "left" | "right";
-
-// The home chat renders one of two presentations chosen purely by dock state:
-// the compact thread-bar surface, or the fullscreen Home-tab/session-tab
-// workspace. Same thread data, two layouts (see the panel-size layout decision).
-export type HomeChatLayoutKind = "compact" | "fullscreen";
 
 export interface ChatFloatRect {
 	x: number;
@@ -52,17 +47,10 @@ export const DEFAULT_CHAT_FLOAT_RECT: ChatFloatRect = {
 };
 
 export function normalizeChatDockPosition(value: unknown): ChatDockPosition | null {
-	if (value === "left" || value === "right" || value === "float" || value === "fullscreen") {
+	if (value === "left" || value === "right" || value === "float") {
 		return value;
 	}
 	return null;
-}
-
-// The single size/state → layout selector. The dockable panel reads this to pick
-// which surface to mount; keeping it pure makes the mapping testable and the one
-// place that decides "compact vs fullscreen workspace".
-export function selectHomeChatLayout(position: ChatDockPosition): HomeChatLayoutKind {
-	return position === "fullscreen" ? "fullscreen" : "compact";
 }
 
 export function normalizeChatDockSide(value: unknown): ChatDockSide | null {
@@ -128,8 +116,6 @@ export interface ChatDockState {
 export type ChatDockAction =
 	| { type: "dock"; side: ChatDockSide }
 	| { type: "float" }
-	| { type: "fullscreen" }
-	| { type: "exitFullscreen" }
 	| { type: "close" }
 	| { type: "collapse" }
 	| { type: "expand" }
@@ -144,23 +130,12 @@ export function chatDockReducer(state: ChatDockState, action: ChatDockAction): C
 		case "float":
 			// Floating has its own window chrome; there is no collapsed float.
 			return { ...state, position: "float", collapsed: false, open: true };
-		// Fullscreen is the size-driven workspace layout; it owns the viewport, so
-		// (like float) there is no collapsed fullscreen. lastDockedSide is left
-		// untouched so exiting returns to the side the user last docked against.
-		case "fullscreen":
-			return { ...state, position: "fullscreen", collapsed: false, open: true };
-		// Exiting fullscreen collapses back to the last docked side (continuity rule:
-		// fullscreen → docked). Same shape as float's "close".
-		case "exitFullscreen":
-			return { ...state, position: state.lastDockedSide, open: true };
 		// Existing float "close" (X) returns to the last docked side, never hides.
 		case "close":
 			return { ...state, position: state.lastDockedSide, open: true };
-		// Collapse is a docked-only edge strip; ignore it while floating or fullscreen.
+		// Collapse is a docked-only edge strip; ignore it while floating.
 		case "collapse":
-			return state.position === "float" || state.position === "fullscreen"
-				? state
-				: { ...state, collapsed: true };
+			return state.position === "float" ? state : { ...state, collapsed: true };
 		case "expand":
 			return { ...state, collapsed: false };
 		// Hide removes the panel entirely; reopen always brings it back expanded
