@@ -122,19 +122,20 @@
       "titleSource": "auto",
       "createdAt": 1782721339135,
       "updatedAt": 1782721365233
+    },
+    {
+      "id": "4b992915-9515-4f2e-a671-d2f473d40ddb",
+      "agentId": "pi",
+      "name": "New session",
+      "titleSource": "manual",
+      "createdAt": 1782741343276,
+      "updatedAt": 1782741343276
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "e211cecb-0eda-4458-ba46-1fbc486d4e40",
-      "64e7235d-6c2b-4575-90f6-e6f766c1de20",
-      "7f175fd0-b7e1-40c0-bf02-638bb0a5e55a",
-      "3434ae10-5e66-420a-8e03-7b70b3d73379",
-      "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
-      "be8da62b-73a2-48bf-99f8-7aa66272411b",
-      "1219a752-a9d8-49b6-99aa-3405d222faea",
-      "6588c4a9-28df-4a75-9774-172e2bb7832c"
+      "3434ae10-5e66-420a-8e03-7b70b3d73379"
     ],
-    "activeThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c"
+    "activeThreadId": "3434ae10-5e66-420a-8e03-7b70b3d73379"
   }
 }
