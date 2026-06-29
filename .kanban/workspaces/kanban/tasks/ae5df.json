@@ -1,0 +1,20 @@
+{
+  "id": "ae5df",
+  "title": "实现: 启动/连接性能优化",
+  "prompt": "前置：先读 .plan/docs/perf-startup-findings.md（由「调研: 启动/连接性能瓶颈」任务产出）。按优先级落地启动与首次连接性能修复。\n\n约束：\n- 保持「打开项目绝不阻塞在远端可达性上」的 local-first 原则，不得为提速引入新的远端阻塞。\n- 不破坏大 workspace 的 EMFILE/hang 既有修复（有界并发读取）。\n- 会话恢复/board worktree 优化要保证正确性优先（别为提速丢用户在途改动 / 破坏 resume）。\n- 遵守 AGENTS.md 规范，补/更新测试。\n- 每个优化点给出可测量收益（打开/首帧/恢复时延）并在 PR 描述对比。\n\n范围仅限调研文档确认的问题；超范围发现记录另开任务。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6a585585-b1b3-41e5-8785-009188294312",
+  "baseRef": "main",
+  "createdAt": 1782713872877,
+  "updatedAt": 1782713872877,
+  "column": "backlog",
+  "rank": "Zu",
+  "dependsOn": []
+}

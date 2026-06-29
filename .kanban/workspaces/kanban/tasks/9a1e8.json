@@ -1,0 +1,20 @@
+{
+  "id": "9a1e8",
+  "title": "实现: Agent 会话/终端性能优化",
+  "prompt": "前置：先读 .plan/docs/perf-terminal-findings.md（由「调研: Agent 会话/终端性能瓶颈」任务产出）。按优先级落地终端 agent 会话链路的性能修复。\n\n约束：\n- 不破坏既有 PTY busy-wait 冻结修复（micro-batch + scrollback 上限）与 transcript 折叠/journal coalescing 正确性。\n- token 统计优化要避免卡片刷新时重复全量读 JSONL（缓存/增量读取），但保证数值准确。\n- 多会话并发优化遵守「热路径别起交互式 shell」「不要 spawnSync」原则。\n- 遵守 AGENTS.md 规范，补/更新单元测试（纯逻辑部分重点测）。\n- 每个优化点给出可测量收益（CPU/内存/延迟）并在 PR 描述对比。\n\n范围仅限调研文档确认的问题；超范围发现记录另开任务。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6a585585-b1b3-41e5-8785-009188294312",
+  "baseRef": "main",
+  "createdAt": 1782713877615,
+  "updatedAt": 1782713877615,
+  "column": "backlog",
+  "rank": "Zt",
+  "dependsOn": []
+}

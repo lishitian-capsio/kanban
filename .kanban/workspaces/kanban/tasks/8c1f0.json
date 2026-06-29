@@ -1,0 +1,20 @@
+{
+  "id": "8c1f0",
+  "title": "实现: 运行时/后端性能优化",
+  "prompt": "前置：先读 .plan/docs/perf-runtime-findings.md（由「调研: 运行时/后端性能瓶颈」任务产出）。按优先级落地后端性能修复。\n\n约束：\n- 绝不在异步热路径引入同步子进程或同步 CPU 阻塞（event-loop-stall-watchdog 思路验证）。\n- 广播/快照优化要保证 wire contract 不变（runtimeBoardDataSchema 等），前端零改动优先。\n- 分片读写优化注意 board/requirements 分片的 git 合并友好性不被破坏。\n- 遵守 AGENTS.md TypeScript 规范，补/更新单元测试（纯逻辑部分重点测）。\n- 每个优化点给出可测量收益（CPU/延迟/吞吐）并在 PR 描述对比。\n\n范围仅限调研文档确认的后端问题；超范围发现记录另开任务。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6a585585-b1b3-41e5-8785-009188294312",
+  "baseRef": "main",
+  "createdAt": 1782713867955,
+  "updatedAt": 1782713867955,
+  "column": "backlog",
+  "rank": "Zv",
+  "dependsOn": []
+}
