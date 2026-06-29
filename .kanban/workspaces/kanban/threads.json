@@ -42,7 +42,7 @@
       "titleSource": "auto",
       "createdAt": 1782649969582,
       "updatedAt": 1782650033873,
-      "pendingNextStep": "开始执行任务 ca58f（新增 qoder CLI agent）"
+      "pendingNextStep": "开始执行任务 a8072(修正 qoder agent installUrl 与二进制名)"
     },
     {
       "id": "be8da62b-73a2-48bf-99f8-7aa66272411b",
@@ -73,6 +73,6 @@
       "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
       "09cbba03-af49-47b6-9e38-85e50946643b"
     ],
-    "activeThreadId": "be8da62b-73a2-48bf-99f8-7aa66272411b"
+    "activeThreadId": "7f175fd0-b7e1-40c0-bf02-638bb0a5e55a"
   }
 }
