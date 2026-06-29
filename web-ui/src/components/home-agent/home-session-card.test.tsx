@@ -196,11 +196,15 @@ describe("HomeSessionCard", () => {
 		expect(container.textContent).not.toContain("Using Read");
 	});
 
-	it("shows 'Waiting for review' as live activity when awaiting review", () => {
+	it("reads awaiting_review as idle: shows the message preview, never a 'Waiting for review' live row", () => {
+		// Home chat has no review concept. A finished turn (awaiting_review) means
+		// "your turn" — the card must stay calm: no live-activity row, no spinner, no
+		// "Waiting for review"; just the quiet status dot + the last message preview.
 		renderCard({ summary: makeSummary("awaiting_review") });
-		expect(byAriaLabel("Agent activity")).not.toBeNull();
-		expect(container.textContent).toContain("Waiting for review");
-		expect(container.textContent).not.toContain("hello from the agent");
+		expect(byAriaLabel("Agent activity")).toBeNull();
+		expect(container.textContent).not.toContain("Waiting for review");
+		expect(container.textContent).not.toContain("Thinking...");
+		expect(container.textContent).toContain("hello from the agent");
 	});
 
 	it("opens the session when the card body is clicked", () => {

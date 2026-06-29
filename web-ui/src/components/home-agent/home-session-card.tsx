@@ -73,14 +73,15 @@ export function HomeSessionCard({
 	// session id (not list position), so it never changes on refresh/reorder.
 	const shortId = useMemo(() => deriveSessionShortId(taskId), [taskId]);
 
-	// While the session is live (running / awaiting review / errored) show the
-	// same one-line agent-activity row the board task card surfaces — a colored
-	// dot + truncated monospace text derived from the session summary. When the
-	// session is settled/idle we fall back to the last conversational line so the
-	// card still reads like "the last thing said". This complements the top-right
-	// status dot rather than replacing the message preview.
+	// Only while the agent is genuinely working (`running`) or errored (`error`)
+	// do we show the one-line agent-activity row the board task card surfaces — a
+	// colored dot + truncated monospace text derived from the session summary.
+	// Everything else (idle, and `awaiting_review` which home reads as idle/"your
+	// turn" — home has no review) falls back to the last conversational line, so a
+	// finished session reads calmly as "the last thing said", never as Thinking… /
+	// Waiting for review. This complements the top-right status dot.
 	const liveActivity = useMemo(() => getCardSessionActivity(summary), [summary]);
-	const showLiveActivity = status.status !== "idle" && liveActivity != null;
+	const showLiveActivity = (status.status === "running" || status.status === "error") && liveActivity != null;
 
 	// Last activity prefers the latest message; fall back to the session's own
 	// updatedAt so a started-but-silent thread still reads as recently touched.

@@ -10,12 +10,12 @@ import type { RuntimeTaskChatMessage, RuntimeTaskSessionState, RuntimeTaskSessio
 import { isCardCreditLimitError } from "@/utils/session-activity";
 
 /**
- * The status vocabulary surfaced on a session card. Collapses the richer runtime
- * session states into the three dashboard semantics the decision calls out
- * (running / awaiting-review / idle) plus an explicit error bucket so a
- * failed/interrupted session is never silently shown as idle.
+ * The status vocabulary surfaced on a session card. A home chat has no review
+ * concept, so the runtime `awaiting_review` state (a finished turn) collapses into
+ * `idle` ("your turn") — leaving just running / idle plus an explicit error bucket
+ * so a failed/interrupted session is never silently shown as idle.
  */
-export type HomeSessionCardStatus = "running" | "awaiting-review" | "idle" | "error";
+export type HomeSessionCardStatus = "running" | "idle" | "error";
 
 /**
  * Which visual marker the card renders in its status slot, mirroring the board
@@ -46,7 +46,9 @@ export interface HomeSessionCardStatusDescriptor {
  * Semantics (recorded here as the source of truth for the card; the marker
  * kinds/tokens mirror the board task card so the two read identically):
  *   - `running`              → the agent is actively working — a spinner.
- *   - `awaiting_review`      → finished a turn, wants attention — orange dot.
+ *   - `awaiting_review`      → a home chat has NO review concept, so a finished turn
+ *                              just means "your turn" — read as a calm idle dot, not
+ *                              an attention state (unlike the board task card).
  *   - `failed`/`interrupted` → something went wrong / was cut off — red alert-circle.
  *   - credit-limit error     → provider out of credits — orange alert-triangle (takes
  *                              priority over the underlying failed/awaiting state, like the board card).
@@ -76,11 +78,15 @@ function deriveBaseStatus(state: RuntimeTaskSessionState | null): HomeSessionCar
 		case "running":
 			return { status: "running", label: "Running", marker: "spinner", markerClassName: "", pulse: false };
 		case "awaiting_review":
+			// Home chat has no review: a finished turn is "your turn", rendered as the
+			// same quiet idle dot as a never-started thread (only the label differs so
+			// the badge tooltip still reads "your turn"). Critically NOT the orange
+			// attention dot the board card uses — see this function's doc comment.
 			return {
-				status: "awaiting-review",
-				label: "Awaiting review",
+				status: "idle",
+				label: "Your turn",
 				marker: "dot",
-				markerClassName: "bg-status-orange",
+				markerClassName: "bg-text-tertiary",
 				pulse: false,
 			};
 		case "failed":

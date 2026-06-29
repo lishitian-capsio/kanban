@@ -59,12 +59,16 @@ describe("deriveHomeSessionCardStatus", () => {
 		expect(descriptor.marker).toBe("spinner");
 	});
 
-	it("maps awaiting_review to an orange dot, no pulse", () => {
+	it("treats awaiting_review as a calm idle 'your turn' state (home has no review)", () => {
+		// A home chat has no review concept: a finished turn means the agent is done
+		// and waiting for the user, not that anything needs reviewing. So it reads as a
+		// quiet idle dot — never the attention-demanding orange "Awaiting review".
 		const descriptor = deriveHomeSessionCardStatus(makeSummary("awaiting_review"));
-		expect(descriptor.status).toBe("awaiting-review");
+		expect(descriptor.status).toBe("idle");
 		expect(descriptor.pulse).toBe(false);
 		expect(descriptor.marker).toBe("dot");
-		expect(descriptor.markerClassName).toContain("status-orange");
+		expect(descriptor.markerClassName).not.toContain("status-orange");
+		expect(descriptor.markerClassName).toContain("text-tertiary");
 	});
 
 	it("maps failed and interrupted to a red alert-circle marker", () => {
@@ -77,7 +81,9 @@ describe("deriveHomeSessionCardStatus", () => {
 	});
 
 	it("maps a credit-limit error to an orange alert-triangle 'Out of credits' marker", () => {
-		const descriptor = deriveHomeSessionCardStatus(makeSummary("failed", { latestHookActivity: creditLimitActivity() }));
+		const descriptor = deriveHomeSessionCardStatus(
+			makeSummary("failed", { latestHookActivity: creditLimitActivity() }),
+		);
 		expect(descriptor.marker).toBe("alert-triangle");
 		expect(descriptor.markerClassName).toContain("status-orange");
 		expect(descriptor.label).toBe("Out of credits");
