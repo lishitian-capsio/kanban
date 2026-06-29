@@ -264,6 +264,25 @@ describe("per-task agent/model/provider overrides", () => {
 
 		expect(created.task.agentId).toBeUndefined();
 		expect(created.task.agentSettings).toBeUndefined();
+		expect(created.task.originThreadId).toBeUndefined();
+	});
+
+	it("persists originThreadId on the card, trimmed, and omits it when blank", () => {
+		const withOrigin = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{ prompt: "From a thread", baseRef: "main", originThreadId: "  thread-42  " },
+			() => "aaaaa111",
+		);
+		expect(withOrigin.task.originThreadId).toBe("thread-42");
+
+		const blankOrigin = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{ prompt: "No origin", baseRef: "main", originThreadId: "   " },
+			() => "bbbbb111",
+		);
+		expect(blankOrigin.task.originThreadId).toBeUndefined();
 	});
 
 	it("updates agentId from undefined to a value", () => {

@@ -20,8 +20,10 @@ import {
 	formatHomeSessionCardTimeAgo,
 } from "@/components/home-agent/home-session-card-derive";
 import { HomeSessionCardStatusMarker } from "@/components/home-agent/home-session-card-status-marker";
+import { HomeSessionTaskCountRow } from "@/components/home-agent/home-session-task-count-row";
 import { HomeThreadCloseDialog } from "@/components/home-agent/home-thread-close-dialog";
 import { ThreadAgentBadge } from "@/components/home-agent/thread-agent-badge";
+import { useHomeThreadTaskCounts } from "@/components/home-agent/thread-task-counts";
 import { SessionMetaBadges } from "@/components/session-meta-badges";
 import { cn } from "@/components/ui/cn";
 import { useHomeSessionCard } from "@/hooks/use-home-session-card";
@@ -64,6 +66,9 @@ export function HomeSessionCard({
 }: HomeSessionCardProps): React.ReactElement {
 	const { preview, isLoadingHistory } = useHomeSessionCard(currentProjectId, taskId);
 	const status = useMemo(() => deriveHomeSessionCardStatus(summary), [summary]);
+	// Per-thread board task counts (in progress / review / done). Subscribed here in
+	// the leaf card so a board change re-renders just the launcher cards.
+	const taskCounts = useHomeThreadTaskCounts(thread.id);
 	// A short, stable code for referring to this exact session. Derived from the
 	// session id (not list position), so it never changes on refresh/reorder.
 	const shortId = useMemo(() => deriveSessionShortId(taskId), [taskId]);
@@ -291,6 +296,10 @@ export function HomeSessionCard({
 			    same summary that drives the status dot. Renders nothing until the
 			    session has run (and tokens only for agents with telemetry). */}
 			<SessionMetaBadges summary={summary} />
+
+			{/* Compact per-thread task status counts (in progress / review / done); the
+			    whole row hides when this thread has launched no active tasks. */}
+			<HomeSessionTaskCountRow counts={taskCounts} />
 
 			<div className="flex items-center justify-between gap-2">
 				<div className="flex min-w-0 items-center gap-1.5">

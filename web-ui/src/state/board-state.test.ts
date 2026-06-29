@@ -666,6 +666,36 @@ describe("board dependency state", () => {
 		expect(cards?.find((card) => card.id === "blank-owner")?.owner).toBeUndefined();
 	});
 
+	it("preserves originThreadId through normalization so a board save never erases it", () => {
+		const rawBoard = {
+			columns: [
+				{
+					id: "in_progress",
+					title: "In Progress",
+					cards: [
+						{
+							id: "from-thread",
+							prompt: "From a home thread",
+							baseRef: "main",
+							startInPlanMode: false,
+							originThreadId: "thread-42",
+						},
+						{ id: "no-origin", prompt: "Created on the board", baseRef: "main", startInPlanMode: false },
+					],
+				},
+				{ id: "backlog", title: "Backlog", cards: [] },
+				{ id: "review", title: "Review", cards: [] },
+				{ id: "trash", title: "Done", cards: [] },
+			],
+			dependencies: [],
+		};
+
+		const normalized = normalizeBoardData(rawBoard);
+		const cards = normalized?.columns.find((column) => column.id === "in_progress")?.cards;
+		expect(cards?.find((card) => card.id === "from-thread")?.originThreadId).toBe("thread-42");
+		expect(cards?.find((card) => card.id === "no-origin")?.originThreadId).toBeUndefined();
+	});
+
 	it("disables auto-review settings for a task", () => {
 		let board = createInitialBoardData();
 		board = addTaskToColumn(board, "review", {
