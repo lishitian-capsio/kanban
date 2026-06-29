@@ -69,6 +69,14 @@
       "titleSource": "auto",
       "createdAt": 1782702981036,
       "updatedAt": 1782702981036
+    },
+    {
+      "id": "3e599da8-ac7b-4c0a-b7bb-48bd0e7c10aa",
+      "agentId": "claude",
+      "name": "git push，怎么实现多仓库push？目前我们好像只能在settings下设置单个仓库",
+      "titleSource": "auto",
+      "createdAt": 1782703239868,
+      "updatedAt": 1782703239868
     }
   ],
   "fullscreenTabs": {
@@ -82,6 +90,6 @@
       "09cbba03-af49-47b6-9e38-85e50946643b",
       "0dc23e3d-665b-4b31-b72f-edd3c9614521"
     ],
-    "activeThreadId": null
+    "activeThreadId": "0dc23e3d-665b-4b31-b72f-edd3c9614521"
   }
 }
