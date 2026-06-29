@@ -91,18 +91,19 @@
     {
       "id": "72b6df6d-952c-4f47-a67e-fd9873fde479",
       "agentId": "claude",
-      "name": "vault和kanban agent的开关能不能就设计到header那个vault按钮上，不是已经有一些示例了吗？比如…",
+      "name": "Vault toggles into header button",
       "titleSource": "auto",
       "createdAt": 1782715700672,
-      "updatedAt": 1782715700672
+      "updatedAt": 1782715759892,
+      "pendingNextStep": "开始任务 4be98"
     },
     {
       "id": "e211cecb-0eda-4458-ba46-1fbc486d4e40",
       "agentId": "claude",
-      "name": "New chat thread，这个弹窗需要重新设计下",
+      "name": "Redesign new chat thread dialog",
       "titleSource": "auto",
       "createdAt": 1782715725360,
-      "updatedAt": 1782715725360
+      "updatedAt": 1782715753733
     }
   ],
   "fullscreenTabs": {
@@ -116,6 +117,6 @@
       "72b6df6d-952c-4f47-a67e-fd9873fde479",
       "e211cecb-0eda-4458-ba46-1fbc486d4e40"
     ],
-    "activeThreadId": "e211cecb-0eda-4458-ba46-1fbc486d4e40"
+    "activeThreadId": "72b6df6d-952c-4f47-a67e-fd9873fde479"
   }
 }
