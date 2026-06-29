@@ -61,6 +61,14 @@
       "createdAt": 1782698449665,
       "updatedAt": 1782699411767,
       "pendingNextStep": "启动任务 b6c80"
+    },
+    {
+      "id": "0dc23e3d-665b-4b31-b72f-edd3c9614521",
+      "agentId": "claude",
+      "name": "如何在任务卡片统计agent、provider、token",
+      "titleSource": "auto",
+      "createdAt": 1782702981036,
+      "updatedAt": 1782702981036
     }
   ],
   "fullscreenTabs": {
@@ -73,6 +81,6 @@
       "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
       "09cbba03-af49-47b6-9e38-85e50946643b"
     ],
-    "activeThreadId": "09cbba03-af49-47b6-9e38-85e50946643b"
+    "activeThreadId": "64e7235d-6c2b-4575-90f6-e6f766c1de20"
   }
 }
