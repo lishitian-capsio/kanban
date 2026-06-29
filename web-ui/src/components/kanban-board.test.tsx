@@ -199,7 +199,6 @@ describe("KanbanBoard", () => {
 			root.render(
 				<KanbanBoard
 					data={board}
-					taskSessions={{}}
 					onCardSelect={() => {}}
 					onCreateTask={() => {}}
 					dependencies={[]}

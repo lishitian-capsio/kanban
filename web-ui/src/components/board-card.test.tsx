@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BoardCard } from "@/components/board-card";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { applyLocalTaskSessionSummary, resetRuntimeStreamStoreForTest } from "@/runtime/runtime-stream-store";
 import type { RuntimeTaskSessionSummary } from "@/runtime/types";
 import type { ReviewTaskWorkspaceSnapshot } from "@/types";
 
@@ -153,6 +154,7 @@ describe("BoardCard", () => {
 	let previousActEnvironment: boolean | undefined;
 
 	beforeEach(() => {
+		resetRuntimeStreamStoreForTest();
 		mockWorkspaceSnapshot = undefined;
 		mockMeasureWidths = [240, 240, 240];
 		mockMeasureCallCount = 0;
@@ -276,14 +278,10 @@ describe("BoardCard", () => {
 
 	it("labels the trash action as restore when no agent session id is recorded", async () => {
 		await act(async () => {
+			applyLocalTaskSessionSummary(createSummary("interrupted", { agentSessionId: null }));
 			root.render(
 				<TooltipProvider>
-					<BoardCard
-						card={createCard()}
-						index={0}
-						columnId="trash"
-						sessionSummary={createSummary("interrupted", { agentSessionId: null })}
-					/>
+					<BoardCard card={createCard()} index={0} columnId="trash" />
 				</TooltipProvider>,
 			);
 		});
@@ -295,18 +293,15 @@ describe("BoardCard", () => {
 	it("offers continue session on a trash card that has a recorded agent session id", async () => {
 		const onRestoreFromTrash = vi.fn();
 		await act(async () => {
+			applyLocalTaskSessionSummary(
+				createSummary("interrupted", {
+					agentId: "claude",
+					agentSessionId: "550e8400-e29b-41d4-a716-446655440000",
+				}),
+			);
 			root.render(
 				<TooltipProvider>
-					<BoardCard
-						card={createCard()}
-						index={0}
-						columnId="trash"
-						sessionSummary={createSummary("interrupted", {
-							agentId: "claude",
-							agentSessionId: "550e8400-e29b-41d4-a716-446655440000",
-						})}
-						onRestoreFromTrash={onRestoreFromTrash}
-					/>
+					<BoardCard card={createCard()} index={0} columnId="trash" onRestoreFromTrash={onRestoreFromTrash} />
 				</TooltipProvider>,
 			);
 		});
@@ -506,37 +501,31 @@ describe("BoardCard", () => {
 
 	it("shows tool input details in the session preview text", async () => {
 		await act(async () => {
-			root.render(
-				<BoardCard
-					card={createCard()}
-					index={0}
-					columnId="in_progress"
-					sessionSummary={{
-						taskId: "task-1",
-						state: "running",
-						agentId: "pi",
-						workspacePath: "/tmp/worktree",
-						pid: null,
-						startedAt: Date.now(),
-						updatedAt: Date.now(),
-						lastOutputAt: Date.now(),
-						reviewReason: null,
-						exitCode: null,
-						lastHookAt: Date.now(),
-						latestHookActivity: {
-							activityText: "Using Read",
-							toolName: "Read",
-							toolInputSummary: "src/index.ts",
-							finalMessage: null,
-							hookEventName: "tool_call",
-							notificationType: null,
-							source: "pi",
-						},
-						latestTurnCheckpoint: null,
-						previousTurnCheckpoint: null,
-					}}
-				/>,
-			);
+			applyLocalTaskSessionSummary({
+				taskId: "task-1",
+				state: "running",
+				agentId: "pi",
+				workspacePath: "/tmp/worktree",
+				pid: null,
+				startedAt: Date.now(),
+				updatedAt: Date.now(),
+				lastOutputAt: Date.now(),
+				reviewReason: null,
+				exitCode: null,
+				lastHookAt: Date.now(),
+				latestHookActivity: {
+					activityText: "Using Read",
+					toolName: "Read",
+					toolInputSummary: "src/index.ts",
+					finalMessage: null,
+					hookEventName: "tool_call",
+					notificationType: null,
+					source: "pi",
+				},
+				latestTurnCheckpoint: null,
+				previousTurnCheckpoint: null,
+			});
+			root.render(<BoardCard card={createCard()} index={0} columnId="in_progress" />);
 		});
 
 		expect(container.textContent).toContain("Read(src/index.ts)");
@@ -545,25 +534,21 @@ describe("BoardCard", () => {
 
 	it("shows non-cline tool activity in the compact tool label format", async () => {
 		await act(async () => {
-			root.render(
-				<BoardCard
-					card={createCard()}
-					index={0}
-					columnId="in_progress"
-					sessionSummary={createSummary("running", {
-						agentId: "claude",
-						latestHookActivity: {
-							activityText: "Completed Read: src/index.ts",
-							toolName: "Read",
-							toolInputSummary: null,
-							finalMessage: null,
-							hookEventName: "tool_result",
-							notificationType: null,
-							source: "claude",
-						},
-					})}
-				/>,
+			applyLocalTaskSessionSummary(
+				createSummary("running", {
+					agentId: "claude",
+					latestHookActivity: {
+						activityText: "Completed Read: src/index.ts",
+						toolName: "Read",
+						toolInputSummary: null,
+						finalMessage: null,
+						hookEventName: "tool_result",
+						notificationType: null,
+						source: "claude",
+					},
+				}),
 			);
+			root.render(<BoardCard card={createCard()} index={0} columnId="in_progress" />);
 		});
 
 		expect(container.textContent).toContain("Read(src/index.ts)");
@@ -572,25 +557,21 @@ describe("BoardCard", () => {
 
 	it("keeps canonical tool names in the session preview label", async () => {
 		await act(async () => {
-			root.render(
-				<BoardCard
-					card={createCard()}
-					index={0}
-					columnId="in_progress"
-					sessionSummary={createSummary("running", {
-						agentId: "kiro",
-						latestHookActivity: {
-							activityText: "Using fs_write: src/index.ts",
-							toolName: "fs_write",
-							toolInputSummary: null,
-							finalMessage: null,
-							hookEventName: "preToolUse",
-							notificationType: null,
-							source: "kiro",
-						},
-					})}
-				/>,
+			applyLocalTaskSessionSummary(
+				createSummary("running", {
+					agentId: "kiro",
+					latestHookActivity: {
+						activityText: "Using fs_write: src/index.ts",
+						toolName: "fs_write",
+						toolInputSummary: null,
+						finalMessage: null,
+						hookEventName: "preToolUse",
+						notificationType: null,
+						source: "kiro",
+					},
+				}),
 			);
+			root.render(<BoardCard card={createCard()} index={0} columnId="in_progress" />);
 		});
 
 		expect(container.textContent).toContain("fs_write(src/index.ts)");
@@ -598,25 +579,21 @@ describe("BoardCard", () => {
 
 	it("parses codex tool activity into the compact tool label format", async () => {
 		await act(async () => {
-			root.render(
-				<BoardCard
-					card={createCard()}
-					index={0}
-					columnId="in_progress"
-					sessionSummary={createSummary("running", {
-						agentId: "codex",
-						latestHookActivity: {
-							activityText: "Calling Read: src/index.ts",
-							toolName: null,
-							toolInputSummary: null,
-							finalMessage: null,
-							hookEventName: "raw_response_item",
-							notificationType: null,
-							source: "codex",
-						},
-					})}
-				/>,
+			applyLocalTaskSessionSummary(
+				createSummary("running", {
+					agentId: "codex",
+					latestHookActivity: {
+						activityText: "Calling Read: src/index.ts",
+						toolName: null,
+						toolInputSummary: null,
+						finalMessage: null,
+						hookEventName: "raw_response_item",
+						notificationType: null,
+						source: "codex",
+					},
+				}),
 			);
+			root.render(<BoardCard card={createCard()} index={0} columnId="in_progress" />);
 		});
 
 		expect(container.textContent).toContain("Read(src/index.ts)");
@@ -625,25 +602,21 @@ describe("BoardCard", () => {
 
 	it("does not show a stale bare tool name for non-tool review updates", async () => {
 		await act(async () => {
-			root.render(
-				<BoardCard
-					card={createCard()}
-					index={0}
-					columnId="review"
-					sessionSummary={createSummary("awaiting_review", {
-						agentId: "kiro",
-						latestHookActivity: {
-							activityText: "Waiting for review",
-							toolName: "fs_write",
-							toolInputSummary: null,
-							finalMessage: null,
-							hookEventName: "stop",
-							notificationType: null,
-							source: "kiro",
-						},
-					})}
-				/>,
+			applyLocalTaskSessionSummary(
+				createSummary("awaiting_review", {
+					agentId: "kiro",
+					latestHookActivity: {
+						activityText: "Waiting for review",
+						toolName: "fs_write",
+						toolInputSummary: null,
+						finalMessage: null,
+						hookEventName: "stop",
+						notificationType: null,
+						source: "kiro",
+					},
+				}),
 			);
+			root.render(<BoardCard card={createCard()} index={0} columnId="review" />);
 		});
 
 		expect(container.textContent).toContain("Waiting for review");
@@ -652,37 +625,31 @@ describe("BoardCard", () => {
 
 	it("keeps showing the last cline tool label during assistant streaming", async () => {
 		await act(async () => {
-			root.render(
-				<BoardCard
-					card={createCard()}
-					index={0}
-					columnId="in_progress"
-					sessionSummary={{
-						taskId: "task-1",
-						state: "running",
-						agentId: "pi",
-						workspacePath: "/tmp/worktree",
-						pid: null,
-						startedAt: Date.now(),
-						updatedAt: Date.now(),
-						lastOutputAt: Date.now(),
-						reviewReason: null,
-						exitCode: null,
-						lastHookAt: Date.now(),
-						latestHookActivity: {
-							activityText: "Agent active",
-							toolName: "Read",
-							toolInputSummary: "src/index.ts",
-							finalMessage: "Looking at the file now",
-							hookEventName: "assistant_delta",
-							notificationType: null,
-							source: "pi",
-						},
-						latestTurnCheckpoint: null,
-						previousTurnCheckpoint: null,
-					}}
-				/>,
-			);
+			applyLocalTaskSessionSummary({
+				taskId: "task-1",
+				state: "running",
+				agentId: "pi",
+				workspacePath: "/tmp/worktree",
+				pid: null,
+				startedAt: Date.now(),
+				updatedAt: Date.now(),
+				lastOutputAt: Date.now(),
+				reviewReason: null,
+				exitCode: null,
+				lastHookAt: Date.now(),
+				latestHookActivity: {
+					activityText: "Agent active",
+					toolName: "Read",
+					toolInputSummary: "src/index.ts",
+					finalMessage: "Looking at the file now",
+					hookEventName: "assistant_delta",
+					notificationType: null,
+					source: "pi",
+				},
+				latestTurnCheckpoint: null,
+				previousTurnCheckpoint: null,
+			});
+			root.render(<BoardCard card={createCard()} index={0} columnId="in_progress" />);
 		});
 
 		expect(container.textContent).toContain("Read(src/index.ts)");
@@ -710,24 +677,22 @@ describe("BoardCard", () => {
 			"Reviewing the archived implementation details and collecting the final notes for the handoff before cleanup hidden tail";
 
 		await act(async () => {
+			applyLocalTaskSessionSummary(
+				createSummary("awaiting_review", {
+					latestHookActivity: {
+						activityText: null,
+						toolName: null,
+						toolInputSummary: null,
+						finalMessage: preview,
+						hookEventName: "assistant_delta",
+						notificationType: null,
+						source: "pi",
+					},
+				}),
+			);
 			root.render(
 				<TooltipProvider>
-					<BoardCard
-						card={createCard()}
-						index={0}
-						columnId="trash"
-						sessionSummary={createSummary("awaiting_review", {
-							latestHookActivity: {
-								activityText: null,
-								toolName: null,
-								toolInputSummary: null,
-								finalMessage: preview,
-								hookEventName: "assistant_delta",
-								notificationType: null,
-								source: "pi",
-							},
-						})}
-					/>
+					<BoardCard card={createCard()} index={0} columnId="trash" />
 				</TooltipProvider>,
 			);
 		});
@@ -748,24 +713,20 @@ describe("BoardCard", () => {
 			"Reviewing the archived implementation details and collecting the final notes for the handoff before cleanup hidden tail";
 
 		await act(async () => {
-			root.render(
-				<BoardCard
-					card={createCard()}
-					index={0}
-					columnId="in_progress"
-					sessionSummary={createSummary("running", {
-						latestHookActivity: {
-							activityText: null,
-							toolName: null,
-							toolInputSummary: null,
-							finalMessage: preview,
-							hookEventName: "assistant_delta",
-							notificationType: null,
-							source: "pi",
-						},
-					})}
-				/>,
+			applyLocalTaskSessionSummary(
+				createSummary("running", {
+					latestHookActivity: {
+						activityText: null,
+						toolName: null,
+						toolInputSummary: null,
+						finalMessage: preview,
+						hookEventName: "assistant_delta",
+						notificationType: null,
+						source: "pi",
+					},
+				}),
 			);
+			root.render(<BoardCard card={createCard()} index={0} columnId="in_progress" />);
 		});
 
 		const findButton = (label: string) =>
@@ -781,24 +742,20 @@ describe("BoardCard", () => {
 
 	it("shows the latest assistant preview on active task cards", async () => {
 		await act(async () => {
-			root.render(
-				<BoardCard
-					card={createCard()}
-					index={0}
-					columnId="in_progress"
-					sessionSummary={createSummary("running", {
-						latestHookActivity: {
-							activityText: "Reviewing the final diff",
-							toolName: null,
-							toolInputSummary: null,
-							finalMessage: "Reviewing the final diff",
-							hookEventName: "assistant_delta",
-							notificationType: null,
-							source: "pi",
-						},
-					})}
-				/>,
+			applyLocalTaskSessionSummary(
+				createSummary("running", {
+					latestHookActivity: {
+						activityText: "Reviewing the final diff",
+						toolName: null,
+						toolInputSummary: null,
+						finalMessage: "Reviewing the final diff",
+						hookEventName: "assistant_delta",
+						notificationType: null,
+						source: "pi",
+					},
+				}),
 			);
+			root.render(<BoardCard card={createCard()} index={0} columnId="in_progress" />);
 		});
 
 		expect(container.textContent).toContain("Reviewing the final diff");
@@ -807,25 +764,21 @@ describe("BoardCard", () => {
 
 	it("shows normal agent messages without the agent prefix", async () => {
 		await act(async () => {
-			root.render(
-				<BoardCard
-					card={createCard()}
-					index={0}
-					columnId="in_progress"
-					sessionSummary={createSummary("running", {
-						agentId: "codex",
-						latestHookActivity: {
-							activityText: "Agent: checking the next file",
-							toolName: null,
-							toolInputSummary: null,
-							finalMessage: null,
-							hookEventName: "agent_message",
-							notificationType: null,
-							source: "codex",
-						},
-					})}
-				/>,
+			applyLocalTaskSessionSummary(
+				createSummary("running", {
+					agentId: "codex",
+					latestHookActivity: {
+						activityText: "Agent: checking the next file",
+						toolName: null,
+						toolInputSummary: null,
+						finalMessage: null,
+						hookEventName: "agent_message",
+						notificationType: null,
+						source: "codex",
+					},
+				}),
 			);
+			root.render(<BoardCard card={createCard()} index={0} columnId="in_progress" />);
 		});
 
 		expect(container.textContent).toContain("checking the next file");

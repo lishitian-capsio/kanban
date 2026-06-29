@@ -1,7 +1,7 @@
 import type { DropResult } from "@hello-pangea/dnd";
 import { Files, GitCompareArrows, Maximize2, MessageSquare, Minimize2, X } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
 import { ArtifactsPanel } from "@/components/detail-panels/artifacts-panel";
@@ -14,6 +14,7 @@ import {
 } from "@/components/detail-panels/kanban-agent-chat-panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
+import { createIdleTaskSession } from "@/hooks/app-utils";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import type { KanbanChatActionResult } from "@/hooks/use-kanban-chat-runtime-actions";
 import type { KanbanChatMessage } from "@/hooks/use-kanban-chat-session";
@@ -22,7 +23,11 @@ import { ResizeHandle } from "@/resize/resize-handle";
 import { useCardDetailLayout } from "@/resize/use-card-detail-layout";
 import { useResizeDrag } from "@/resize/use-resize-drag";
 import { isNativeAgentSelected, resolveEffectiveTaskAgentId } from "@/runtime/native-agent";
-import { useLatestTaskChatMessageForTask, useTaskChatMessages } from "@/runtime/runtime-stream-store";
+import {
+	useLatestTaskChatMessageForTask,
+	useTaskChatMessages,
+	useTaskSessionSummary,
+} from "@/runtime/runtime-stream-store";
 import type {
 	RuntimeAgentId,
 	RuntimeConfigResponse,
@@ -324,14 +329,12 @@ function DiffToolbar({
 	);
 }
 
-export function CardDetailView({
+function CardDetailViewComponent({
 	selection,
 	currentProjectId,
 	workspacePath,
 	selectedAgentId = null,
 	runtimeConfig = null,
-	sessionSummary,
-	taskSessions,
 	onSessionSummary,
 	onCardSelect,
 	onTaskDragEnd,
@@ -386,8 +389,6 @@ export function CardDetailView({
 	workspacePath?: string | null;
 	selectedAgentId?: RuntimeAgentId | null;
 	runtimeConfig?: RuntimeConfigResponse | null;
-	sessionSummary: RuntimeTaskSessionSummary | null;
-	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	onSessionSummary: (summary: RuntimeTaskSessionSummary) => void;
 	onCardSelect: (taskId: string) => void;
 	onTaskDragEnd: (result: DropResult) => void;
@@ -445,6 +446,15 @@ export function CardDetailView({
 		reasoningEffort: RuntimeReasoningEffort | "";
 	}) => void;
 }): React.ReactElement {
+	// Subscribe to this task's session summary at the leaf so a ~150ms session
+	// tick re-renders the detail view's session-derived UI without going through
+	// App's `workspaceState` slice. Falls back to a stable idle summary when no
+	// session exists yet (matching the prior App-supplied `detailSession`).
+	const liveSessionSummary = useTaskSessionSummary(selection.card.id);
+	const sessionSummary = useMemo(
+		() => liveSessionSummary ?? createIdleTaskSession(selection.card.id),
+		[liveSessionSummary, selection.card.id],
+	);
 	const isMobile = useIsMobile();
 	const [mobileTab, setMobileTab] = useState<MobileTab>("chat");
 	const terminalThemeColors = useTerminalThemeColors();
@@ -853,7 +863,6 @@ export function CardDetailView({
 							selection={selection}
 							workspacePath={workspacePath}
 							onCardSelect={onCardSelect}
-							taskSessions={taskSessions}
 							onTaskDragEnd={onTaskDragEnd}
 							onCreateTask={onCreateTask}
 							onStartTask={onStartTask}
@@ -1004,3 +1013,9 @@ export function CardDetailView({
 		</div>
 	);
 }
+
+// Memoized so an App re-render from a high-frequency session tick doesn't
+// reconcile the whole detail view. The view reads its own session summary and
+// chat transcript at the leaf via `useTaskSessionSummary` / `useTaskChatMessages`,
+// so those update without a prop change.
+export const CardDetailView = memo(CardDetailViewComponent);

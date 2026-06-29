@@ -113,7 +113,6 @@ describe("ColumnContextPanel", () => {
 				<ColumnContextPanel
 					selection={createSelection(columns, "task-2")}
 					onCardSelect={() => {}}
-					taskSessions={{}}
 					onTaskDragEnd={() => {}}
 				/>,
 			);
@@ -130,7 +129,6 @@ describe("ColumnContextPanel", () => {
 				<ColumnContextPanel
 					selection={createSelection(columns, "task-3")}
 					onCardSelect={() => {}}
-					taskSessions={{}}
 					onTaskDragEnd={() => {}}
 				/>,
 			);

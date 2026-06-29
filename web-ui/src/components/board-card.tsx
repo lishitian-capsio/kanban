@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import type { RuntimeTaskSessionSummary } from "@/runtime/types";
+import { useTaskSessionSummary } from "@/runtime/runtime-stream-store";
 import { useTaskWorkspaceSnapshotValue } from "@/stores/workspace-metadata-store";
 import type { BoardCard as BoardCardModel, BoardColumnId } from "@/types";
 import { getTaskAutoReviewCancelButtonLabel } from "@/types";
@@ -72,7 +72,6 @@ function BoardCardComponent({
 	index,
 	columnId,
 	suppressCulling = false,
-	sessionSummary,
 	selected = false,
 	onActivate,
 	onStart,
@@ -98,7 +97,6 @@ function BoardCardComponent({
 	index: number;
 	columnId: BoardColumnId;
 	suppressCulling?: boolean;
-	sessionSummary?: RuntimeTaskSessionSummary;
 	selected?: boolean;
 	onActivate?: (card: BoardCardModel) => void;
 	onStart?: (taskId: string) => void;
@@ -133,6 +131,11 @@ function BoardCardComponent({
 	const [descriptionFont, setDescriptionFont] = useState(DEFAULT_TEXT_MEASURE_FONT);
 	const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
 	const reviewWorkspaceSnapshot = useTaskWorkspaceSnapshotValue(card.id);
+	// Subscribe to this card's own session summary at the leaf. The ~150ms
+	// `task_sessions_updated` broadcast then re-renders only the card whose
+	// summary changed, instead of waking App's `workspaceState` slice and
+	// reconciling the whole board subtree.
+	const sessionSummary = useTaskSessionSummary(card.id) ?? undefined;
 	const isTrashCard = columnId === "trash";
 	const isCardInteractive = !isTrashCard;
 	const descriptionWidth = descriptionRect.width > 0 ? descriptionRect.width : descriptionWidthFallback;

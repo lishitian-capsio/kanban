@@ -17,6 +17,7 @@ import { showAppToast } from "@/components/app-toaster";
 import { type ClipboardWriteFailureReason, createSafeClipboardProvider } from "@/terminal/safe-clipboard-provider";
 import { clearTerminalGeometry, reportTerminalGeometry } from "@/terminal/terminal-geometry-registry";
 import { createKanbanTerminalOptions } from "@/terminal/terminal-options";
+import { MAX_PERSISTENT_TERMINALS, planLruTerminalEvictions } from "@/terminal/persistent-terminal-lru";
 import {
 	appendTerminalHeuristicText,
 	hasInterruptAcknowledgement,
@@ -603,6 +604,11 @@ class PersistentTerminal {
 		this.parkingRoot.appendChild(this.hostElement);
 	}
 
+	/** Whether this terminal is currently mounted into a visible container. */
+	get isMounted(): boolean {
+		return this.visibleContainer !== null;
+	}
+
 	focus(): void {
 		this.terminal.focus();
 	}
@@ -723,7 +729,26 @@ class PersistentTerminal {
 	}
 }
 
+// `Map` insertion order doubles as the LRU order: a terminal is re-inserted at
+// the tail whenever it is ensured (mounted/accessed), so the head is the
+// least-recently-used. Each retained terminal holds a live xterm buffer (10k
+// scrollback), a WebGL context, addons, and two open WebSockets — so an
+// unbounded map of "every task whose terminal was ever opened" leaks real
+// memory + sockets + scarce WebGL contexts (browsers cap ~16). We keep only the
+// most recent few; older DOCKED terminals are disposed and transparently
+// rebuilt from the server `restore` snapshot when revisited.
 const terminals = new Map<string, PersistentTerminal>();
+
+function evictLeastRecentlyUsedDockedTerminals(keepKey: string): void {
+	if (terminals.size <= MAX_PERSISTENT_TERMINALS) {
+		return;
+	}
+	const entries = Array.from(terminals, ([key, terminal]) => ({ key, isMounted: terminal.isMounted }));
+	for (const key of planLruTerminalEvictions(entries, keepKey, MAX_PERSISTENT_TERMINALS)) {
+		terminals.get(key)?.dispose();
+		terminals.delete(key);
+	}
+}
 
 export function ensurePersistentTerminal(input: EnsurePersistentTerminalInput): PersistentTerminal {
 	const key = buildKey(input.workspaceId, input.taskId);
@@ -735,13 +760,18 @@ export function ensurePersistentTerminal(input: EnsurePersistentTerminalInput): 
 			themeColors: input.themeColors,
 		});
 		terminals.set(key, terminal);
+		evictLeastRecentlyUsedDockedTerminals(key);
 		return terminal;
 	}
+	// Re-insert at the tail to mark this terminal most-recently-used.
+	terminals.delete(key);
+	terminals.set(key, terminal);
 	terminal.setAppearance({
 		cursorColor: input.cursorColor,
 		terminalBackgroundColor: input.terminalBackgroundColor,
 		themeColors: input.themeColors,
 	});
+	evictLeastRecentlyUsedDockedTerminals(key);
 	return terminal;
 }
 

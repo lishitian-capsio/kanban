@@ -2,11 +2,25 @@ import { act, type ComponentType, createRef, type ReactElement, type ReactNode }
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { KanbanAgentChatPanel, type KanbanAgentChatPanelHandle } from "@/components/detail-panels/kanban-agent-chat-panel";
+import {
+	KanbanAgentChatPanel,
+	type KanbanAgentChatPanelHandle,
+} from "@/components/detail-panels/kanban-agent-chat-panel";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { KanbanChatMessage } from "@/hooks/use-kanban-chat-session";
 import type { RuntimeTaskHookActivity, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { resetWorkspaceMetadataStore, setTaskWorkspaceSnapshot } from "@/stores/workspace-metadata-store";
+
+// The chat message item renders markdown through `LazyKanbanMarkdownContent`
+// (React.lazy, to keep prismjs/react-markdown off the first-paint bundle). These
+// tests assert on the rendered markdown DOM, not the lazy boundary itself, so
+// render the real renderer synchronously to avoid flaky async-import timing.
+vi.mock("@/components/detail-panels/kanban-markdown-content-lazy", async () => {
+	const actual = await vi.importActual<typeof import("@/components/detail-panels/kanban-markdown-content")>(
+		"@/components/detail-panels/kanban-markdown-content",
+	);
+	return { LazyKanbanMarkdownContent: actual.KanbanMarkdownContent };
+});
 
 // Virtuoso measures real layout and renders nothing in jsdom, so stub it with a
 // passthrough that eagerly renders the header, every item, and the footer. This

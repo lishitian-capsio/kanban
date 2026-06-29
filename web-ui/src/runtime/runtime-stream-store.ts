@@ -13,6 +13,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 
 import { parseProjectIdFromPathname } from "@/hooks/app-utils";
+import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
 import type {
 	RuntimeBoardSyncStatus,
 	RuntimeKanbanMcpServerAuthStatus,
@@ -40,6 +41,14 @@ export interface RuntimeStateStreamStore {
 	workspaceMetadata: RuntimeWorkspaceMetadata | null;
 	latestTaskChatMessage: RuntimeStateStreamTaskChatMessage | null;
 	taskChatMessagesByTaskId: Record<string, RuntimeTaskChatMessage[]>;
+	// Per-task session summaries, subscribed at the leaf (BoardCard / CardDetailView)
+	// via `useTaskSessionSummary`. This mirrors the per-task chat channel: the
+	// high-frequency `task_sessions_updated` broadcast (~150ms) wakes only the one
+	// card whose summary changed, instead of the App-level `workspaceState` slice
+	// re-rendering the whole board subtree. `workspaceState.sessions` is still
+	// maintained in parallel (it drives App's auto-column-move effect and
+	// persistence); this slice is the read-optimized display channel.
+	sessionSummaryByTaskId: Record<string, RuntimeTaskSessionSummary>;
 	latestTaskReadyForReview: RuntimeStateStreamTaskReadyForReviewMessage | null;
 	latestMcpAuthStatuses: RuntimeKanbanMcpServerAuthStatus[] | null;
 	kanbanSessionContextVersion: number;
@@ -81,6 +90,17 @@ export type RuntimeStateStreamAction =
  */
 export const OPS_METRICS_HISTORY_LIMIT = 60;
 
+/**
+ * Cap on the live in-memory transcript retained per task. The streaming buffer
+ * only needs the recent tail for display (Virtuoso virtualizes it, and the
+ * backend journal persists the full history, re-fetched on panel open). Without
+ * a cap the array grew unbounded by message count across a long session and was
+ * fully cloned + `JSON.stringify`-compared on every token, which is real GC
+ * churn. When the cap is exceeded the oldest messages are dropped from the live
+ * buffer (no synthetic marker — the panel's history fetch backfills older ones).
+ */
+export const TASK_CHAT_MESSAGE_LIMIT = 1_000;
+
 function appendOpsMetricsSample(history: RuntimeOpsMetrics[], sample: RuntimeOpsMetrics): RuntimeOpsMetrics[] {
 	const next = [...history, sample];
 	if (next.length > OPS_METRICS_HISTORY_LIMIT) {
@@ -106,6 +126,33 @@ function mergeTaskSessionSummaries(
 	return nextSessions;
 }
 
+// Merge incoming summaries into the per-task display slice, preferring the
+// newest by `updatedAt` (the same monotonic rule App's local session state uses
+// — see the "terminal randomly clears out" guard in `use-task-sessions.ts`).
+// Returns the same reference when nothing changed so the store dispatch skips
+// the per-task listener wake.
+function mergeSessionSummaryByTaskId(
+	current: Record<string, RuntimeTaskSessionSummary>,
+	summaries: RuntimeTaskSessionSummary[],
+): Record<string, RuntimeTaskSessionSummary> {
+	if (summaries.length === 0) {
+		return current;
+	}
+	let next: Record<string, RuntimeTaskSessionSummary> | null = null;
+	for (const summary of summaries) {
+		const existing = current[summary.taskId] ?? null;
+		const newest = selectNewestTaskSessionSummary(existing, summary);
+		if (newest === existing) {
+			continue;
+		}
+		if (!next) {
+			next = { ...current };
+		}
+		next[summary.taskId] = summary;
+	}
+	return next ?? current;
+}
+
 export function createInitialRuntimeStateStreamStore(requestedWorkspaceId: string | null): RuntimeStateStreamStore {
 	return {
 		currentProjectId: requestedWorkspaceId,
@@ -114,6 +161,7 @@ export function createInitialRuntimeStateStreamStore(requestedWorkspaceId: strin
 		workspaceMetadata: null,
 		latestTaskChatMessage: null,
 		taskChatMessagesByTaskId: {},
+		sessionSummaryByTaskId: {},
 		latestTaskReadyForReview: null,
 		latestMcpAuthStatuses: null,
 		kanbanSessionContextVersion: 0,
@@ -132,7 +180,11 @@ function upsertTaskChatMessage(
 ): RuntimeTaskChatMessage[] {
 	const existingIndex = currentMessages.findIndex((message) => message.id === nextMessage.id);
 	if (existingIndex < 0) {
-		return [...currentMessages, nextMessage];
+		const appended = [...currentMessages, nextMessage];
+		if (appended.length > TASK_CHAT_MESSAGE_LIMIT) {
+			appended.splice(0, appended.length - TASK_CHAT_MESSAGE_LIMIT);
+		}
+		return appended;
 	}
 	const existingMessage = currentMessages[existingIndex];
 	if (
@@ -173,6 +225,7 @@ export function runtimeStateStreamReducer(
 			workspaceMetadata: null,
 			latestTaskChatMessage: null,
 			taskChatMessagesByTaskId: {},
+			sessionSummaryByTaskId: {},
 			streamError: null,
 			isRuntimeDisconnected: false,
 			hasReceivedSnapshot: false,
@@ -210,6 +263,7 @@ export function runtimeStateStreamReducer(
 			workspaceMetadata: action.payload.workspaceMetadata,
 			latestTaskChatMessage: null,
 			taskChatMessagesByTaskId: {},
+			sessionSummaryByTaskId: mergeSessionSummaryByTaskId({}, Object.values(nextWorkspaceState?.sessions ?? {})),
 			latestTaskReadyForReview: state.latestTaskReadyForReview,
 			latestMcpAuthStatuses: state.latestMcpAuthStatuses,
 			kanbanSessionContextVersion: action.payload.kanbanSessionContextVersion,
@@ -236,6 +290,7 @@ export function runtimeStateStreamReducer(
 			workspaceMetadata: didProjectChange ? null : state.workspaceMetadata,
 			latestTaskChatMessage: didProjectChange ? null : state.latestTaskChatMessage,
 			taskChatMessagesByTaskId: didProjectChange ? {} : state.taskChatMessagesByTaskId,
+			sessionSummaryByTaskId: didProjectChange ? {} : state.sessionSummaryByTaskId,
 			latestTaskReadyForReview: didProjectChange ? null : state.latestTaskReadyForReview,
 			boardSyncStatus: didProjectChange ? null : state.boardSyncStatus,
 			hasReceivedSnapshot: true,
@@ -310,11 +365,23 @@ export function runtimeStateStreamReducer(
 		return {
 			...state,
 			workspaceState: mergedWorkspaceState,
+			sessionSummaryByTaskId: mergeSessionSummaryByTaskId(
+				state.sessionSummaryByTaskId,
+				Object.values(action.workspaceState.sessions ?? {}),
+			),
 		};
 	}
 	if (action.type === "task_sessions_updated") {
+		// The per-task display slice updates regardless of whether a workspace
+		// snapshot has landed yet — leaf cards read it directly. `workspaceState`
+		// keeps its existing merge (gated on having a snapshot) so App's
+		// auto-column-move effect and persistence are unchanged.
+		const nextSessionSummaryByTaskId = mergeSessionSummaryByTaskId(state.sessionSummaryByTaskId, action.summaries);
 		if (!state.workspaceState) {
-			return state;
+			if (nextSessionSummaryByTaskId === state.sessionSummaryByTaskId) {
+				return state;
+			}
+			return { ...state, sessionSummaryByTaskId: nextSessionSummaryByTaskId };
 		}
 		return {
 			...state,
@@ -322,6 +389,7 @@ export function runtimeStateStreamReducer(
 				...state.workspaceState,
 				sessions: mergeTaskSessionSummaries(state.workspaceState.sessions, action.summaries),
 			},
+			sessionSummaryByTaskId: nextSessionSummaryByTaskId,
 		};
 	}
 	if (action.type === "stream_error") {
@@ -396,6 +464,10 @@ const fieldSubscribers = Object.fromEntries(
 // Chat is subscribed per-task so a token for task A never wakes task B's panel.
 const taskChatListenersByTaskId = new Map<string, Set<Listener>>();
 
+// Session summaries are likewise subscribed per-task so the high-frequency
+// `task_sessions_updated` broadcast only wakes the card whose summary changed.
+const taskSessionListenersByTaskId = new Map<string, Set<Listener>>();
+
 function emit(listeners: Set<Listener> | undefined): void {
 	if (!listeners) {
 		return;
@@ -427,6 +499,15 @@ function emitAffectedChatTasks(prev: RuntimeStateStreamStore, next: RuntimeState
 	}
 }
 
+function emitAffectedSessionTasks(prev: RuntimeStateStreamStore, next: RuntimeStateStreamStore): void {
+	const taskIds = new Set([...Object.keys(prev.sessionSummaryByTaskId), ...Object.keys(next.sessionSummaryByTaskId)]);
+	for (const taskId of taskIds) {
+		if (prev.sessionSummaryByTaskId[taskId] !== next.sessionSummaryByTaskId[taskId]) {
+			emit(taskSessionListenersByTaskId.get(taskId));
+		}
+	}
+}
+
 export function dispatchRuntimeStreamAction(action: RuntimeStateStreamAction): void {
 	const prev = store;
 	const next = runtimeStateStreamReducer(prev, action);
@@ -445,11 +526,32 @@ export function dispatchRuntimeStreamAction(action: RuntimeStateStreamAction): v
 	) {
 		emitAffectedChatTasks(prev, next);
 	}
+	if (prev.sessionSummaryByTaskId !== next.sessionSummaryByTaskId) {
+		emitAffectedSessionTasks(prev, next);
+	}
 }
 
 /** Non-reactive snapshot read — for tests and imperative call sites. */
 export function getRuntimeStreamStore(): RuntimeStateStreamStore {
 	return store;
+}
+
+/**
+ * Push a locally-produced session summary (from `startTaskSession`, terminal
+ * `onSummary`, chat `onSessionSummary`, …) into the per-task display slice so the
+ * card reflects it immediately, without waiting for the ~150ms websocket
+ * `task_sessions_updated` echo. The merge is monotonic (newest `updatedAt`
+ * wins), so a stale replay can't clobber a newer running session. App's local
+ * `sessions` state is still updated in parallel for the auto-column-move effect.
+ */
+export function applyLocalTaskSessionSummary(summary: RuntimeTaskSessionSummary): void {
+	const prev = store;
+	const nextSessionSummaryByTaskId = mergeSessionSummaryByTaskId(prev.sessionSummaryByTaskId, [summary]);
+	if (nextSessionSummaryByTaskId === prev.sessionSummaryByTaskId) {
+		return;
+	}
+	store = { ...prev, sessionSummaryByTaskId: nextSessionSummaryByTaskId };
+	emitAffectedSessionTasks(prev, store);
 }
 
 /** Test-only: reset the singleton and drop all listeners. */
@@ -459,6 +561,7 @@ export function resetRuntimeStreamStoreForTest(): void {
 		fieldListeners[key].clear();
 	}
 	taskChatListenersByTaskId.clear();
+	taskSessionListenersByTaskId.clear();
 }
 
 function useField<Value>(key: FieldKey, select: (snapshot: RuntimeStateStreamStore) => Value): Value {
@@ -591,5 +694,43 @@ export function useLatestTaskChatMessageForTask(taskId: string | null | undefine
 		const latest = store.latestTaskChatMessage;
 		return latest && normalizedTaskId && latest.taskId === normalizedTaskId ? latest.message : null;
 	}, [normalizedTaskId]);
+	return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+function subscribeTaskSession(taskId: string, listener: Listener): () => void {
+	let listeners = taskSessionListenersByTaskId.get(taskId);
+	if (!listeners) {
+		listeners = new Set<Listener>();
+		taskSessionListenersByTaskId.set(taskId, listeners);
+	}
+	listeners.add(listener);
+	return () => {
+		const current = taskSessionListenersByTaskId.get(taskId);
+		if (!current) {
+			return;
+		}
+		current.delete(listener);
+		if (current.size === 0) {
+			taskSessionListenersByTaskId.delete(taskId);
+		}
+	};
+}
+
+/**
+ * The live session summary for a single task. Subscribes only to that task's
+ * session channel — a `task_sessions_updated` tick for another task never
+ * re-renders this consumer. Subscribe in the LEAF that displays it (BoardCard /
+ * CardDetailView) so the board subtree is not re-rendered every ~150ms.
+ */
+export function useTaskSessionSummary(taskId: string | null | undefined): RuntimeTaskSessionSummary | null {
+	const normalizedTaskId = taskId?.trim() ?? "";
+	const subscribe = useCallback(
+		(listener: Listener) => (normalizedTaskId ? subscribeTaskSession(normalizedTaskId, listener) : () => {}),
+		[normalizedTaskId],
+	);
+	const getSnapshot = useCallback(
+		() => (normalizedTaskId ? (store.sessionSummaryByTaskId[normalizedTaskId] ?? null) : null),
+		[normalizedTaskId],
+	);
 	return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

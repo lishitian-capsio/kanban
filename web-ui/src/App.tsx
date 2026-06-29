@@ -3,21 +3,18 @@
 // push runtime-specific orchestration down into hooks and service modules.
 import { FolderOpen } from "lucide-react";
 import type { ReactElement } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AddProjectDialog } from "@/components/add-project-dialog";
 import { notifyError, showAppToast } from "@/components/app-toaster";
-import { CardDetailView } from "@/components/card-detail-view";
 import { ClearTrashDialog } from "@/components/clear-trash-dialog";
-import { DatabaseView } from "@/components/database/database-view";
 import { DebugDialog } from "@/components/debug-dialog";
-import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
-import { GitHistoryView } from "@/components/git-history-view";
 import { DockableChatPanel } from "@/components/home-agent/dockable-chat-panel";
 import { HomeChatWorkspace } from "@/components/home-agent/home-chat-workspace";
 import { HomeSidebarAgentPanel } from "@/components/home-agent/home-sidebar-agent-panel";
 import { SidebarProjectSwitcher } from "@/components/home-agent/project-switcher";
 import { KanbanBoard } from "@/components/kanban-board";
+import { LazyViewFallback } from "@/components/lazy-fallback";
 import { RuntimeSettingsDialog, type RuntimeSettingsSection } from "@/components/runtime-settings-dialog";
 import { StartupOnboardingDialog } from "@/components/startup-onboarding-dialog";
 import { TaskCreateDialog } from "@/components/task-create-dialog";
@@ -35,9 +32,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { UpdateNotificationController } from "@/components/update-notification-controller";
 import { useVaultSettings } from "@/components/vault/data/use-vault-settings";
-import { VaultView } from "@/components/vault/vault-view";
 import { createInitialBoardData } from "@/data/board-data";
-import { createIdleTaskSession } from "@/hooks/app-utils";
 import { RuntimeDisconnectedFallback } from "@/hooks/runtime-disconnected-fallback";
 import { useAppHotkeys } from "@/hooks/use-app-hotkeys";
 import { useBoardInteractions } from "@/hooks/use-board-interactions";
@@ -79,6 +74,26 @@ import {
 } from "@/stores/workspace-metadata-store";
 import { useTerminalThemeColors } from "@/terminal/theme-colors";
 import type { BoardData } from "@/types";
+
+// Code-split the heavy, gated full-surface views out of the entry bundle. Each
+// is rendered only behind boolean state (database/vault/git) or card selection
+// (detail) / terminal toggle, so its chunk — and the heavy deps it pulls
+// (db grid, @uiw/react-md-editor, the diff renderer + prismjs, @xterm) — only
+// downloads when the user first opens that surface. The default board/home
+// first paint no longer pays for any of them.
+const DatabaseView = lazy(() =>
+	import("@/components/database/database-view").then((module) => ({ default: module.DatabaseView })),
+);
+const VaultView = lazy(() => import("@/components/vault/vault-view").then((module) => ({ default: module.VaultView })));
+const GitHistoryView = lazy(() =>
+	import("@/components/git-history-view").then((module) => ({ default: module.GitHistoryView })),
+);
+const CardDetailView = lazy(() =>
+	import("@/components/card-detail-view").then((module) => ({ default: module.CardDetailView })),
+);
+const AgentTerminalPanel = lazy(() =>
+	import("@/components/detail-panels/agent-terminal-panel").then((module) => ({ default: module.AgentTerminalPanel })),
+);
 
 export default function App(): ReactElement {
 	const terminalThemeColors = useTerminalThemeColors();
@@ -729,9 +744,6 @@ export default function App(): ReactElement {
 		setPendingTaskStartAfterEditId(null);
 	}, [board, handleStartTaskFromBoard, pendingTaskStartAfterEditId]);
 
-	const detailSession = selectedCard
-		? (sessions[selectedCard.card.id] ?? createIdleTaskSession(selectedCard.card.id))
-		: null;
 	const detailTerminalSummary = detailTerminalTaskId ? (sessions[detailTerminalTaskId] ?? null) : null;
 	const detailTerminalSubtitle = useMemo(() => {
 		if (!selectedCard) {
@@ -1025,54 +1037,55 @@ export default function App(): ReactElement {
 										aria-hidden={isHomeChatFullscreen ? true : undefined}
 										style={isHomeChatFullscreen ? { visibility: "hidden" } : undefined}
 									>
-										{isVaultOpen ? (
-											<VaultView workspaceId={currentProjectId} initialView="requirements" />
-										) : isDatabaseOpen ? (
-											<DatabaseView workspaceId={currentProjectId} />
-										) : isGitHistoryOpen ? (
-											<GitHistoryView
-												workspaceId={currentProjectId}
-												gitHistory={gitHistory}
-												onCheckoutBranch={(branch) => {
-													void switchHomeBranch(branch);
-												}}
-												onDiscardWorkingChanges={() => {
-													void discardHomeWorkingChanges();
-												}}
-												isDiscardWorkingChangesPending={isDiscardingHomeWorkingChanges}
-											/>
-										) : (
-											<KanbanBoard
-												data={board}
-												taskSessions={sessions}
-												workspacePath={workspacePath}
-												onCardSelect={handleCardSelect}
-												onCreateTask={handleOpenCreateTask}
-												onStartTask={handleStartTaskFromBoard}
-												onStartAllTasks={handleStartAllBacklogTasksFromBoard}
-												onClearTrash={handleOpenClearTrash}
-												editingTaskId={editingTaskId}
-												inlineTaskEditor={inlineTaskEditor}
-												onEditTask={handleOpenEditTask}
-												onSaveTaskTitle={handleSaveTaskTitle}
-												onCommitTask={handleCommitTask}
-												onOpenPrTask={handleOpenPrTask}
-												onCancelAutomaticTaskAction={handleCancelAutomaticTaskAction}
-												commitTaskLoadingById={commitTaskLoadingById}
-												openPrTaskLoadingById={openPrTaskLoadingById}
-												moveToTrashLoadingById={moveToTrashLoadingById}
-												onMoveToTrashTask={handleMoveReviewCardToTrash}
-												onRestoreFromTrashTask={handleRestoreTaskFromTrash}
-												dependencies={board.dependencies}
-												onCreateDependency={handleCreateDependency}
-												onDeleteDependency={handleDeleteDependency}
-												onRequestProgrammaticCardMoveReady={
-													selectedCard ? undefined : handleProgrammaticCardMoveReady
-												}
-												onDragEnd={handleDragEnd}
-												defaultKanbanModelId={runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null}
-											/>
-										)}
+										<Suspense fallback={<LazyViewFallback />}>
+											{isVaultOpen ? (
+												<VaultView workspaceId={currentProjectId} initialView="requirements" />
+											) : isDatabaseOpen ? (
+												<DatabaseView workspaceId={currentProjectId} />
+											) : isGitHistoryOpen ? (
+												<GitHistoryView
+													workspaceId={currentProjectId}
+													gitHistory={gitHistory}
+													onCheckoutBranch={(branch) => {
+														void switchHomeBranch(branch);
+													}}
+													onDiscardWorkingChanges={() => {
+														void discardHomeWorkingChanges();
+													}}
+													isDiscardWorkingChangesPending={isDiscardingHomeWorkingChanges}
+												/>
+											) : (
+												<KanbanBoard
+													data={board}
+													workspacePath={workspacePath}
+													onCardSelect={handleCardSelect}
+													onCreateTask={handleOpenCreateTask}
+													onStartTask={handleStartTaskFromBoard}
+													onStartAllTasks={handleStartAllBacklogTasksFromBoard}
+													onClearTrash={handleOpenClearTrash}
+													editingTaskId={editingTaskId}
+													inlineTaskEditor={inlineTaskEditor}
+													onEditTask={handleOpenEditTask}
+													onSaveTaskTitle={handleSaveTaskTitle}
+													onCommitTask={handleCommitTask}
+													onOpenPrTask={handleOpenPrTask}
+													onCancelAutomaticTaskAction={handleCancelAutomaticTaskAction}
+													commitTaskLoadingById={commitTaskLoadingById}
+													openPrTaskLoadingById={openPrTaskLoadingById}
+													moveToTrashLoadingById={moveToTrashLoadingById}
+													onMoveToTrashTask={handleMoveReviewCardToTrash}
+													onRestoreFromTrashTask={handleRestoreTaskFromTrash}
+													dependencies={board.dependencies}
+													onCreateDependency={handleCreateDependency}
+													onDeleteDependency={handleDeleteDependency}
+													onRequestProgrammaticCardMoveReady={
+														selectedCard ? undefined : handleProgrammaticCardMoveReady
+													}
+													onDragEnd={handleDragEnd}
+													defaultKanbanModelId={runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null}
+												/>
+											)}
+										</Suspense>
 									</div>
 									{showHomeBottomTerminal ? (
 										<ResizableBottomPane
@@ -1091,101 +1104,103 @@ export default function App(): ReactElement {
 													paddingRight: 12,
 												}}
 											>
-												<AgentTerminalPanel
-													key={`home-shell-${homeTerminalTaskId}`}
-													taskId={homeTerminalTaskId}
-													workspaceId={currentProjectId}
-													summary={homeTerminalSummary}
-													onSummary={upsertSession}
-													showSessionToolbar={false}
-													autoFocus
-													onClose={closeHomeTerminal}
-													minimalHeaderTitle="Terminal"
-													minimalHeaderSubtitle={homeTerminalSubtitle}
-													panelBackgroundColor="var(--color-surface-1)"
-													terminalBackgroundColor={terminalThemeColors.surfaceRaised}
-													cursorColor={terminalThemeColors.textPrimary}
-													onConnectionReady={markTerminalConnectionReady}
-													agentCommand={agentCommand}
-													onSendAgentCommand={handleSendAgentCommandToHomeTerminal}
-													isExpanded={isHomeTerminalExpanded}
-													onToggleExpand={handleToggleExpandHomeTerminal}
-												/>
+												<Suspense fallback={<LazyViewFallback />}>
+													<AgentTerminalPanel
+														key={`home-shell-${homeTerminalTaskId}`}
+														taskId={homeTerminalTaskId}
+														workspaceId={currentProjectId}
+														summary={homeTerminalSummary}
+														onSummary={upsertSession}
+														showSessionToolbar={false}
+														autoFocus
+														onClose={closeHomeTerminal}
+														minimalHeaderTitle="Terminal"
+														minimalHeaderSubtitle={homeTerminalSubtitle}
+														panelBackgroundColor="var(--color-surface-1)"
+														terminalBackgroundColor={terminalThemeColors.surfaceRaised}
+														cursorColor={terminalThemeColors.textPrimary}
+														onConnectionReady={markTerminalConnectionReady}
+														agentCommand={agentCommand}
+														onSendAgentCommand={handleSendAgentCommandToHomeTerminal}
+														isExpanded={isHomeTerminalExpanded}
+														onToggleExpand={handleToggleExpandHomeTerminal}
+													/>
+												</Suspense>
 											</div>
 										</ResizableBottomPane>
 									) : null}
 								</div>
 							)}
 						</div>
-						{selectedCard && detailSession ? (
+						{selectedCard ? (
 							<div className="absolute inset-0 flex min-h-0 min-w-0">
-								<CardDetailView
-									selection={selectedCard}
-									currentProjectId={currentProjectId}
-									workspacePath={workspacePath}
-									selectedAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
-									runtimeConfig={runtimeProjectConfig ?? null}
-									sessionSummary={detailSession}
-									taskSessions={sessions}
-									onSessionSummary={upsertSession}
-									onCardSelect={handleCardSelect}
-									onTaskDragEnd={handleDetailTaskDragEnd}
-									onCreateTask={handleOpenCreateTask}
-									onStartTask={handleStartTaskFromBoard}
-									onStartAllTasks={handleStartAllBacklogTasksFromBoard}
-									onClearTrash={handleOpenClearTrash}
-									editingTaskId={editingTaskId}
-									inlineTaskEditor={inlineTaskEditor}
-									onEditTask={(task) => {
-										handleOpenEditTask(task, { preserveDetailSelection: true });
-									}}
-									onSaveTaskTitle={handleSaveTaskTitle}
-									onCommitTask={handleCommitTask}
-									onOpenPrTask={handleOpenPrTask}
-									onAgentCommitTask={handleAgentCommitTask}
-									onAgentOpenPrTask={handleAgentOpenPrTask}
-									commitTaskLoadingById={commitTaskLoadingById}
-									openPrTaskLoadingById={openPrTaskLoadingById}
-									agentCommitTaskLoadingById={agentCommitTaskLoadingById}
-									agentOpenPrTaskLoadingById={agentOpenPrTaskLoadingById}
-									moveToTrashLoadingById={moveToTrashLoadingById}
-									onMoveReviewCardToTrash={handleMoveReviewCardToTrash}
-									onRestoreTaskFromTrash={handleRestoreTaskFromTrash}
-									onCancelAutomaticTaskAction={handleCancelAutomaticTaskAction}
-									onAddReviewComments={(taskId: string, text: string) => {
-										void handleAddReviewComments(taskId, text);
-									}}
-									onSendReviewComments={(taskId: string, text: string) => {
-										void handleSendReviewComments(taskId, text);
-									}}
-									onSendKanbanChatMessage={sendTaskChatMessage}
-									onCancelKanbanChatTurn={cancelTaskChatTurn}
-									onLoadKanbanChatMessages={fetchTaskChatMessages}
-									onMoveToTrash={handleMoveToTrash}
-									isMoveToTrashLoading={moveToTrashLoadingById[selectedCard.card.id] ?? false}
-									gitHistoryPanel={
-										isGitHistoryOpen ? (
-											<GitHistoryView workspaceId={currentProjectId} gitHistory={gitHistory} />
-										) : undefined
-									}
-									onCloseGitHistory={handleCloseGitHistory}
-									bottomTerminalOpen={isDetailTerminalOpen}
-									bottomTerminalTaskId={detailTerminalTaskId}
-									bottomTerminalSummary={detailTerminalSummary}
-									bottomTerminalSubtitle={detailTerminalSubtitle}
-									onBottomTerminalClose={closeDetailTerminal}
-									onBottomTerminalCollapse={collapseDetailTerminal}
-									bottomTerminalPaneHeight={detailTerminalPaneHeight}
-									onBottomTerminalPaneHeightChange={setDetailTerminalPaneHeight}
-									onBottomTerminalConnectionReady={markTerminalConnectionReady}
-									bottomTerminalAgentCommand={agentCommand}
-									onBottomTerminalSendAgentCommand={handleSendAgentCommandToDetailTerminal}
-									isBottomTerminalExpanded={isDetailTerminalExpanded}
-									onBottomTerminalToggleExpand={handleToggleExpandDetailTerminal}
-									isDocumentVisible={isDocumentVisible}
-									onKanbanSettingsSaved={refreshRuntimeProjectConfig}
-									onTaskKanbanSettingsChanged={handleKanbanTaskSettingsChangedForTask}
-								/>
+								<Suspense fallback={<LazyViewFallback />}>
+									<CardDetailView
+										selection={selectedCard}
+										currentProjectId={currentProjectId}
+										workspacePath={workspacePath}
+										selectedAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
+										runtimeConfig={runtimeProjectConfig ?? null}
+										onSessionSummary={upsertSession}
+										onCardSelect={handleCardSelect}
+										onTaskDragEnd={handleDetailTaskDragEnd}
+										onCreateTask={handleOpenCreateTask}
+										onStartTask={handleStartTaskFromBoard}
+										onStartAllTasks={handleStartAllBacklogTasksFromBoard}
+										onClearTrash={handleOpenClearTrash}
+										editingTaskId={editingTaskId}
+										inlineTaskEditor={inlineTaskEditor}
+										onEditTask={(task) => {
+											handleOpenEditTask(task, { preserveDetailSelection: true });
+										}}
+										onSaveTaskTitle={handleSaveTaskTitle}
+										onCommitTask={handleCommitTask}
+										onOpenPrTask={handleOpenPrTask}
+										onAgentCommitTask={handleAgentCommitTask}
+										onAgentOpenPrTask={handleAgentOpenPrTask}
+										commitTaskLoadingById={commitTaskLoadingById}
+										openPrTaskLoadingById={openPrTaskLoadingById}
+										agentCommitTaskLoadingById={agentCommitTaskLoadingById}
+										agentOpenPrTaskLoadingById={agentOpenPrTaskLoadingById}
+										moveToTrashLoadingById={moveToTrashLoadingById}
+										onMoveReviewCardToTrash={handleMoveReviewCardToTrash}
+										onRestoreTaskFromTrash={handleRestoreTaskFromTrash}
+										onCancelAutomaticTaskAction={handleCancelAutomaticTaskAction}
+										onAddReviewComments={(taskId: string, text: string) => {
+											void handleAddReviewComments(taskId, text);
+										}}
+										onSendReviewComments={(taskId: string, text: string) => {
+											void handleSendReviewComments(taskId, text);
+										}}
+										onSendKanbanChatMessage={sendTaskChatMessage}
+										onCancelKanbanChatTurn={cancelTaskChatTurn}
+										onLoadKanbanChatMessages={fetchTaskChatMessages}
+										onMoveToTrash={handleMoveToTrash}
+										isMoveToTrashLoading={moveToTrashLoadingById[selectedCard.card.id] ?? false}
+										gitHistoryPanel={
+											isGitHistoryOpen ? (
+												<GitHistoryView workspaceId={currentProjectId} gitHistory={gitHistory} />
+											) : undefined
+										}
+										onCloseGitHistory={handleCloseGitHistory}
+										bottomTerminalOpen={isDetailTerminalOpen}
+										bottomTerminalTaskId={detailTerminalTaskId}
+										bottomTerminalSummary={detailTerminalSummary}
+										bottomTerminalSubtitle={detailTerminalSubtitle}
+										onBottomTerminalClose={closeDetailTerminal}
+										onBottomTerminalCollapse={collapseDetailTerminal}
+										bottomTerminalPaneHeight={detailTerminalPaneHeight}
+										onBottomTerminalPaneHeightChange={setDetailTerminalPaneHeight}
+										onBottomTerminalConnectionReady={markTerminalConnectionReady}
+										bottomTerminalAgentCommand={agentCommand}
+										onBottomTerminalSendAgentCommand={handleSendAgentCommandToDetailTerminal}
+										isBottomTerminalExpanded={isDetailTerminalExpanded}
+										onBottomTerminalToggleExpand={handleToggleExpandDetailTerminal}
+										isDocumentVisible={isDocumentVisible}
+										onKanbanSettingsSaved={refreshRuntimeProjectConfig}
+										onTaskKanbanSettingsChanged={handleKanbanTaskSettingsChangedForTask}
+									/>
+								</Suspense>
 							</div>
 						) : null}
 					</div>

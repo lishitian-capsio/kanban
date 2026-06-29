@@ -6,7 +6,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BoardCard } from "@/components/board-card";
 import { Button } from "@/components/ui/button";
 import { ColumnIndicator } from "@/components/ui/column-indicator";
-import type { RuntimeTaskSessionSummary } from "@/runtime/types";
 import { findCardColumnId, isCardDropDisabled } from "@/state/drag-rules";
 import type { BoardCard as BoardCardModel, BoardColumn, BoardColumnId, CardSelection } from "@/types";
 
@@ -15,7 +14,6 @@ function ColumnSection({
 	selectedCardId,
 	defaultOpen,
 	onCardClick,
-	taskSessions,
 	onCreateTask,
 	onStartTask,
 	onStartAllTasks,
@@ -39,7 +37,6 @@ function ColumnSection({
 	selectedCardId: string;
 	defaultOpen: boolean;
 	onCardClick: (card: BoardCardModel) => void;
-	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	onCreateTask?: () => void;
 	onStartTask?: (taskId: string) => void;
 	onStartAllTasks?: () => void;
@@ -200,7 +197,6 @@ function ColumnSection({
 												card={card}
 												index={draggableIndex}
 												columnId={column.id}
-												sessionSummary={taskSessions[card.id]}
 												selected={card.id === selectedCardId}
 												onStart={onStartTask}
 												onMoveToTrash={onMoveToTrashTask}
@@ -238,7 +234,6 @@ export function ColumnContextPanel({
 	workspacePath,
 	defaultKanbanModelId,
 	onCardSelect,
-	taskSessions,
 	onTaskDragEnd,
 	onCreateTask,
 	onStartTask,
@@ -260,7 +255,6 @@ export function ColumnContextPanel({
 	selection: CardSelection;
 	workspacePath?: string | null;
 	onCardSelect: (taskId: string) => void;
-	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	onTaskDragEnd: (result: DropResult) => void;
 	onCreateTask?: () => void;
 	onStartTask?: (taskId: string) => void;
@@ -352,7 +346,6 @@ export function ColumnContextPanel({
 							selectedCardId={selection.card.id}
 							defaultOpen={column.id !== "trash"}
 							onCardClick={handleCardSelect}
-							taskSessions={taskSessions}
 							onCreateTask={column.id === "backlog" ? onCreateTask : undefined}
 							onStartTask={column.id === "backlog" ? onStartTask : undefined}
 							onStartAllTasks={column.id === "backlog" ? onStartAllTasks : undefined}

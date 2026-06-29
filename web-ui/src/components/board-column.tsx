@@ -1,21 +1,19 @@
 import { Droppable } from "@hello-pangea/dnd";
 import { Play, Plus, Trash2 } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { useCallback } from "react";
+import { memo, useCallback } from "react";
 
 import { BoardCard } from "@/components/board-card";
 import { BoardColumnFilterControls } from "@/components/board-column-filter-controls";
 import { Button } from "@/components/ui/button";
 import { ColumnIndicator } from "@/components/ui/column-indicator";
 import { useColumnView } from "@/hooks/use-column-view";
-import type { RuntimeTaskSessionSummary } from "@/runtime/types";
 import { resolveColumnEmptyState } from "@/state/board-column-view";
 import { isCardDropDisabled, type ProgrammaticCardMoveInFlight } from "@/state/drag-rules";
 import type { BoardCard as BoardCardModel, BoardColumnId, BoardColumn as BoardColumnModel } from "@/types";
 
-export function BoardColumn({
+function BoardColumnComponent({
 	column,
-	taskSessions,
 	recentlyMovedCardIds,
 	onCreateTask,
 	onStartTask,
@@ -46,7 +44,6 @@ export function BoardColumn({
 	defaultKanbanModelId,
 }: {
 	column: BoardColumnModel;
-	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	recentlyMovedCardIds: ReadonlySet<string>;
 	onCreateTask?: () => void;
 	onStartTask?: (taskId: string) => void;
@@ -207,7 +204,6 @@ export function BoardColumn({
 											index={draggableIndex}
 											columnId={column.id}
 											suppressCulling={recentlyMovedCardIds.has(card.id)}
-											sessionSummary={taskSessions[card.id]}
 											onStart={onStartTask}
 											onMoveToTrash={onMoveToTrashTask}
 											onRestoreFromTrash={onRestoreFromTrashTask}
@@ -259,3 +255,9 @@ export function BoardColumn({
 		</section>
 	);
 }
+
+// Memoized so a high-frequency App re-render (e.g. a per-task session tick that
+// updates App's `sessions` for the auto-column-move effect) does not reconcile
+// every column. Props are stable during ticks now that each card's session
+// summary is read at the leaf (BoardCard) rather than threaded through here.
+export const BoardColumn = memo(BoardColumnComponent);

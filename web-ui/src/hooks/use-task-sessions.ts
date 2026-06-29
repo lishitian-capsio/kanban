@@ -7,6 +7,7 @@ import { useCallback } from "react";
 import { notifyError } from "@/components/app-toaster";
 import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
 import { type KanbanChatActionResult, useKanbanChatRuntimeActions } from "@/hooks/use-kanban-chat-runtime-actions";
+import { applyLocalTaskSessionSummary } from "@/runtime/runtime-stream-store";
 import { estimateTaskSessionGeometry } from "@/runtime/task-session-geometry";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type {
@@ -116,6 +117,12 @@ export function useTaskSessions({ currentProjectId, setSessions }: UseTaskSessio
 					[summary.taskId]: newestSummary,
 				};
 			});
+			// Also push into the runtime store's per-task display slice so the
+			// board card / detail view (which subscribe at the leaf via
+			// `useTaskSessionSummary`) reflect this immediately, instead of waiting
+			// for the websocket `task_sessions_updated` echo. Both writes use the
+			// same monotonic newest-wins merge, so they stay consistent.
+			applyLocalTaskSessionSummary(summary);
 		},
 		[setSessions],
 	);

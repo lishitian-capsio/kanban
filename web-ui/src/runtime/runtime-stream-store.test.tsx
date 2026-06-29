@@ -6,15 +6,45 @@ import {
 	getRuntimeStreamStore,
 	OPS_METRICS_HISTORY_LIMIT,
 	resetRuntimeStreamStoreForTest,
+	TASK_CHAT_MESSAGE_LIMIT,
 	useRuntimeBoardSyncStatus,
 	useRuntimeOpsMetrics,
 	useRuntimeProjects,
+	useRuntimeWorkspaceState,
 	useTaskChatMessages,
+	useTaskSessionSummary,
 } from "@/runtime/runtime-stream-store";
-import type { RuntimeBoardSyncStatus, RuntimeOpsMetrics, RuntimeTaskChatMessage } from "@/runtime/types";
+import type {
+	RuntimeBoardSyncStatus,
+	RuntimeOpsMetrics,
+	RuntimeTaskChatMessage,
+	RuntimeTaskSessionSummary,
+} from "@/runtime/types";
 
 function makeMessage(id: string, content: string): RuntimeTaskChatMessage {
 	return { id, role: "assistant", content, createdAt: 1 };
+}
+
+function makeSessionSummary(
+	taskId: string,
+	updatedAt: number,
+	state: RuntimeTaskSessionSummary["state"],
+): RuntimeTaskSessionSummary {
+	return {
+		taskId,
+		state,
+		agentId: null,
+		workspacePath: null,
+		pid: null,
+		startedAt: null,
+		updatedAt,
+		lastOutputAt: null,
+		reviewReason: null,
+		exitCode: null,
+		lastHookAt: null,
+		latestHookActivity: null,
+		warningMessage: null,
+	};
 }
 
 const boardSyncStatus: RuntimeBoardSyncStatus = {
@@ -157,6 +187,67 @@ describe("runtime-stream-store granular subscriptions", () => {
 		expect(renders.projects).toBe(afterBoardSync.projects);
 	});
 
+	it("task_sessions_updated wakes only the affected card's session subscriber, not the workspaceState slice", () => {
+		const renders = { sessionA: 0, sessionB: 0, workspaceState: 0 };
+
+		function HarnessSessionA(): null {
+			useTaskSessionSummary("task-a");
+			renders.sessionA += 1;
+			return null;
+		}
+		function HarnessSessionB(): null {
+			useTaskSessionSummary("task-b");
+			renders.sessionB += 1;
+			return null;
+		}
+		function HarnessWorkspaceState(): null {
+			useRuntimeWorkspaceState();
+			renders.workspaceState += 1;
+			return null;
+		}
+
+		act(() => {
+			root.render(
+				<>
+					<HarnessSessionA />
+					<HarnessSessionB />
+					<HarnessWorkspaceState />
+				</>,
+			);
+		});
+		const baseline = { ...renders };
+
+		// A session tick for task-a wakes only task-a's leaf subscriber. The
+		// App-level workspaceState slice must NOT re-render (this is the whole
+		// point of the per-task slice — the board subtree stays put).
+		act(() => {
+			dispatchRuntimeStreamAction({
+				type: "task_sessions_updated",
+				summaries: [makeSessionSummary("task-a", 10, "running")],
+			});
+		});
+
+		expect(renders.sessionA).toBe(baseline.sessionA + 1);
+		expect(renders.sessionB).toBe(baseline.sessionB);
+		expect(renders.workspaceState).toBe(baseline.workspaceState);
+		expect(getRuntimeStreamStore().sessionSummaryByTaskId["task-a"]?.state).toBe("running");
+	});
+
+	it("ignores a stale (older updatedAt) session summary — monotonic merge", () => {
+		dispatchRuntimeStreamAction({
+			type: "task_sessions_updated",
+			summaries: [makeSessionSummary("task-a", 20, "running")],
+		});
+		// An older summary for the same task must not overwrite the newer one
+		// (guards the documented "terminal randomly clears out" regression).
+		dispatchRuntimeStreamAction({
+			type: "task_sessions_updated",
+			summaries: [makeSessionSummary("task-a", 10, "idle")],
+		});
+		expect(getRuntimeStreamStore().sessionSummaryByTaskId["task-a"]?.state).toBe("running");
+		expect(getRuntimeStreamStore().sessionSummaryByTaskId["task-a"]?.updatedAt).toBe(20);
+	});
+
 	it("does not re-emit when a dispatch leaves a field unchanged", () => {
 		let projectsRenders = 0;
 		function HarnessProjects(): null {
@@ -276,5 +367,26 @@ describe("runtime-stream-store granular subscriptions", () => {
 		});
 		expect(chatRenders).toBe(afterFirst);
 		expect(getRuntimeStreamStore().taskChatMessagesByTaskId["task-a"]).toHaveLength(1);
+	});
+
+	it("caps the per-task live transcript and keeps the newest messages", () => {
+		const total = TASK_CHAT_MESSAGE_LIMIT + 50;
+		for (let i = 0; i < total; i += 1) {
+			dispatchRuntimeStreamAction({
+				type: "task_chat_message",
+				payload: {
+					type: "task_chat_message",
+					workspaceId: "ws",
+					taskId: "task-a",
+					message: makeMessage(`m${i}`, `content-${i}`),
+				},
+			});
+		}
+
+		const messages = getRuntimeStreamStore().taskChatMessagesByTaskId["task-a"] ?? [];
+		expect(messages).toHaveLength(TASK_CHAT_MESSAGE_LIMIT);
+		// Oldest dropped, newest retained at the tail.
+		expect(messages[0]?.id).toBe(`m${total - TASK_CHAT_MESSAGE_LIMIT}`);
+		expect(messages[messages.length - 1]?.id).toBe(`m${total - 1}`);
 	});
 });

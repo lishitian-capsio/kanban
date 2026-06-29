@@ -7,7 +7,7 @@ import {
 	parseToolMessageContent,
 	parseToolOutput,
 } from "@/components/detail-panels/kanban-chat-message-utils";
-import { KanbanMarkdownContent } from "@/components/detail-panels/kanban-markdown-content";
+import { LazyKanbanMarkdownContent } from "@/components/detail-panels/kanban-markdown-content-lazy";
 import { TaskImageStrip } from "@/components/task-image-strip";
 import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
@@ -206,7 +206,7 @@ export const KanbanChatMessageItem = memo(function KanbanChatMessageItem({
 		const normalizedAssistantContent = message.content.replace(/^\n+/, "");
 		return (
 			<div className="min-w-0 w-full px-1.5 text-sm text-text-primary">
-				<KanbanMarkdownContent content={normalizedAssistantContent} />
+				<LazyKanbanMarkdownContent content={normalizedAssistantContent} />
 			</div>
 		);
 	}

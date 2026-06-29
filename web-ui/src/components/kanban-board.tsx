@@ -9,12 +9,11 @@ import {
 	type SnapDragActions,
 } from "@hello-pangea/dnd";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { BoardColumn } from "@/components/board-column";
 import { DependencyOverlay } from "@/components/dependencies/dependency-overlay";
 import { useDependencyLinking } from "@/components/dependencies/use-dependency-linking";
-import type { RuntimeTaskSessionSummary } from "@/runtime/types";
 import { findColumnChangedCardIds } from "@/state/board-card-moves";
 import { canCreateTaskDependency } from "@/state/board-state";
 import { findCardColumnId, type ProgrammaticCardMoveInFlight } from "@/state/drag-rules";
@@ -29,9 +28,8 @@ function isRectVerticallyVisibleWithinContainer(rect: DOMRect, containerRect: DO
 	return rect.top >= containerRect.top && rect.bottom <= containerRect.bottom;
 }
 
-export function KanbanBoard({
+function KanbanBoardComponent({
 	data,
-	taskSessions,
 	onCardSelect,
 	onCreateTask,
 	onStartTask,
@@ -58,7 +56,6 @@ export function KanbanBoard({
 	defaultKanbanModelId,
 }: {
 	data: BoardData;
-	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	onCardSelect: (taskId: string) => void;
 	onCreateTask: () => void;
 	onStartTask?: (taskId: string) => void;
@@ -409,7 +406,6 @@ export function KanbanBoard({
 						<BoardColumn
 							key={column.id}
 							column={column}
-							taskSessions={taskSessions}
 							recentlyMovedCardIds={recentlyMovedCardIds}
 							onCreateTask={column.id === "backlog" ? onCreateTask : undefined}
 							onStartTask={column.id === "backlog" ? onStartTask : undefined}
@@ -454,3 +450,10 @@ export function KanbanBoard({
 		</div>
 	);
 }
+
+// Memoized so an App re-render driven by a high-frequency session tick (App
+// keeps `sessions` state for its auto-column-move effect) does not reconcile the
+// whole board. Each card now reads its own session summary at the leaf via
+// `useTaskSessionSummary`, so KanbanBoard's props are stable between genuine
+// board mutations and this bails out.
+export const KanbanBoard = memo(KanbanBoardComponent);

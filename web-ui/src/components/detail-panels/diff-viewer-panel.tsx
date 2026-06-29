@@ -8,7 +8,6 @@ import {
 	buildUnifiedDiffRows,
 	CollapsedBlockControls,
 	DiffRowText,
-	getHighlightedLineHtml,
 	resolvePrismGrammar,
 	resolvePrismLanguage,
 	truncatePathMiddle,
@@ -343,6 +342,18 @@ function SplitDiff({
 	const { expandedBlocks, expandTop, expandBottom, expandAll } = useIncrementalExpand();
 	const prismLanguage = useMemo(() => resolvePrismLanguage(path), [path]);
 	const prismGrammar = useMemo(() => resolvePrismGrammar(prismLanguage), [prismLanguage]);
+	// Precompute the per-line highlight maps once (keyed by old/new line number),
+	// the same way the unified view does — previously split mode re-ran
+	// `Prism.highlight` for every visible row on every render (inline-comment
+	// edits, expand/collapse), which made large multi-file reviews stutter.
+	const highlightedOldByLine = useMemo(
+		() => buildHighlightedLineMap(oldText, prismGrammar, prismLanguage),
+		[oldText, prismGrammar, prismLanguage],
+	);
+	const highlightedNewByLine = useMemo(
+		() => buildHighlightedLineMap(newText, prismGrammar, prismLanguage),
+		[newText, prismGrammar, prismLanguage],
+	);
 	const rows = useMemo(() => buildUnifiedDiffRows(oldText, newText), [oldText, newText]);
 	const displayItems = useMemo(() => buildDisplayItems(rows, expandedBlocks), [expandedBlocks, rows]);
 
@@ -368,7 +379,10 @@ function SplitDiff({
 				? baseClass
 				: `${baseClass} kb-diff-row-noncommentable`;
 		const canClickRow = canCommentOnSide && !hasComment;
-		const highlightedLineHtml = getHighlightedLineHtml(row.text, prismGrammar, prismLanguage);
+		const highlightedLineHtml =
+			side === "left"
+				? (highlightedOldByLine.get(rowLineNumber) ?? null)
+				: (highlightedNewByLine.get(rowLineNumber) ?? null);
 
 		return (
 			<div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>

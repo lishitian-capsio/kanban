@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CardDetailView } from "@/components/card-detail-view";
+import { applyLocalTaskSessionSummary, resetRuntimeStreamStoreForTest } from "@/runtime/runtime-stream-store";
 import { LocalStorageKey } from "@/storage/local-storage-store";
 import { TERMINAL_THEME_COLORS } from "@/terminal/theme-colors";
 import type { BoardCard, BoardColumn, CardSelection } from "@/types";
@@ -186,6 +187,7 @@ describe("CardDetailView", () => {
 	let previousActEnvironment: boolean | undefined;
 
 	beforeEach(() => {
+		resetRuntimeStreamStoreForTest();
 		window.localStorage.clear();
 		previousActEnvironment = (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
 			.IS_REACT_ACT_ENVIRONMENT;
@@ -250,8 +252,6 @@ describe("CardDetailView", () => {
 				<CardDetailView
 					selection={createSelection()}
 					currentProjectId="workspace-1"
-					sessionSummary={null}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
@@ -295,8 +295,6 @@ describe("CardDetailView", () => {
 				<CardDetailView
 					selection={createSelection()}
 					currentProjectId="workspace-1"
-					sessionSummary={null}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
@@ -333,8 +331,6 @@ describe("CardDetailView", () => {
 				<CardDetailView
 					selection={createSelection()}
 					currentProjectId="workspace-1"
-					sessionSummary={null}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
@@ -386,8 +382,6 @@ describe("CardDetailView", () => {
 				<CardDetailView
 					selection={createSelection()}
 					currentProjectId="workspace-1"
-					sessionSummary={null}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
@@ -440,8 +434,6 @@ describe("CardDetailView", () => {
 				<CardDetailView
 					selection={createSelection()}
 					currentProjectId="workspace-1"
-					sessionSummary={null}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
@@ -474,8 +466,6 @@ describe("CardDetailView", () => {
 					selection={createSelection()}
 					currentProjectId="workspace-1"
 					selectedAgentId="pi"
-					sessionSummary={null}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
@@ -502,8 +492,6 @@ describe("CardDetailView", () => {
 					selection={selection}
 					currentProjectId="workspace-1"
 					selectedAgentId="pi"
-					sessionSummary={null}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
@@ -521,27 +509,26 @@ describe("CardDetailView", () => {
 
 	it("shows cline chat panel when task session agentId is cline even if global agent is claude", async () => {
 		await act(async () => {
+			applyLocalTaskSessionSummary({
+				taskId: "task-1",
+				state: "running",
+				agentId: "pi",
+				workspacePath: null,
+				pid: null,
+				startedAt: null,
+				updatedAt: Date.now(),
+				lastOutputAt: null,
+				reviewReason: null,
+				exitCode: null,
+				lastHookAt: null,
+				latestHookActivity: null,
+				warningMessage: null,
+			});
 			root.render(
 				<CardDetailView
 					selection={createSelection()}
 					currentProjectId="workspace-1"
 					selectedAgentId="claude"
-					sessionSummary={{
-						taskId: "task-1",
-						state: "running",
-						agentId: "pi",
-						workspacePath: null,
-						pid: null,
-						startedAt: null,
-						updatedAt: Date.now(),
-						lastOutputAt: null,
-						reviewReason: null,
-						exitCode: null,
-						lastHookAt: null,
-						latestHookActivity: null,
-						warningMessage: null,
-					}}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
@@ -559,27 +546,26 @@ describe("CardDetailView", () => {
 
 	it("shows terminal panel when task session agentId is claude even if global agent is cline", async () => {
 		await act(async () => {
+			applyLocalTaskSessionSummary({
+				taskId: "task-1",
+				state: "running",
+				agentId: "claude",
+				workspacePath: null,
+				pid: null,
+				startedAt: null,
+				updatedAt: Date.now(),
+				lastOutputAt: null,
+				reviewReason: null,
+				exitCode: null,
+				lastHookAt: null,
+				latestHookActivity: null,
+				warningMessage: null,
+			});
 			root.render(
 				<CardDetailView
 					selection={createSelection()}
 					currentProjectId="workspace-1"
 					selectedAgentId="pi"
-					sessionSummary={{
-						taskId: "task-1",
-						state: "running",
-						agentId: "claude",
-						workspacePath: null,
-						pid: null,
-						startedAt: null,
-						updatedAt: Date.now(),
-						lastOutputAt: null,
-						reviewReason: null,
-						exitCode: null,
-						lastHookAt: null,
-						latestHookActivity: null,
-						warningMessage: null,
-					}}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
@@ -603,8 +589,6 @@ describe("CardDetailView", () => {
 					selection={createSelection()}
 					currentProjectId="workspace-1"
 					selectedAgentId="claude"
-					sessionSummary={null}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
@@ -633,8 +617,6 @@ describe("CardDetailView", () => {
 					selection={createSelection()}
 					currentProjectId="workspace-1"
 					selectedAgentId="pi"
-					sessionSummary={null}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
@@ -668,8 +650,6 @@ describe("CardDetailView", () => {
 					selection={createSelection()}
 					currentProjectId="workspace-1"
 					selectedAgentId="pi"
-					sessionSummary={null}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
@@ -703,8 +683,6 @@ describe("CardDetailView", () => {
 				<CardDetailView
 					selection={createSelection()}
 					currentProjectId="workspace-1"
-					sessionSummary={null}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
@@ -726,8 +704,6 @@ describe("CardDetailView", () => {
 				<CardDetailView
 					selection={createSelection()}
 					currentProjectId="workspace-1"
-					sessionSummary={null}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
@@ -770,8 +746,6 @@ describe("CardDetailView", () => {
 					<CardDetailView
 						selection={createSelection()}
 						currentProjectId="workspace-1"
-						sessionSummary={null}
-						taskSessions={{}}
 						onSessionSummary={() => {}}
 						onCardSelect={() => {}}
 						onTaskDragEnd={() => {}}
@@ -823,8 +797,6 @@ describe("CardDetailView", () => {
 				<CardDetailView
 					selection={createSelection()}
 					currentProjectId="workspace-1"
-					sessionSummary={null}
-					taskSessions={{}}
 					onSessionSummary={() => {}}
 					onCardSelect={() => {}}
 					onTaskDragEnd={() => {}}
