@@ -122,20 +122,10 @@
       "titleSource": "auto",
       "createdAt": 1782721339135,
       "updatedAt": 1782721365233
-    },
-    {
-      "id": "4b992915-9515-4f2e-a671-d2f473d40ddb",
-      "agentId": "pi",
-      "name": "New session",
-      "titleSource": "manual",
-      "createdAt": 1782741343276,
-      "updatedAt": 1782741343276
     }
   ],
   "fullscreenTabs": {
-    "openThreadIds": [
-      "3434ae10-5e66-420a-8e03-7b70b3d73379"
-    ],
-    "activeThreadId": "3434ae10-5e66-420a-8e03-7b70b3d73379"
+    "openThreadIds": [],
+    "activeThreadId": null
   }
 }
