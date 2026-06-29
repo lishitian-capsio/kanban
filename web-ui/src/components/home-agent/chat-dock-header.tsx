@@ -125,17 +125,24 @@ export function ChatDockControls({
 
 	return (
 		<div className="flex shrink-0 items-center gap-1">
-			{/* View-mode selector: mutually-exclusive dock targets, active one highlighted. */}
+			{/* View-mode selector: mutually-exclusive dock targets, active one highlighted.
+			   The dock-position targets (left/right/float) are meaningless in fullscreen —
+			   the workspace overlays everything — so they collapse away there, leaving only
+			   the fullscreen toggle (which becomes "Exit fullscreen"). */}
 			<div className="flex items-center gap-0.5">
-				<DockButton active={!fullscreen && position === "left"} label="Dock to left" onClick={onDockLeft}>
-					<PanelLeft size={14} />
-				</DockButton>
-				<DockButton active={!fullscreen && position === "right"} label="Dock to right" onClick={onDockRight}>
-					<PanelRight size={14} />
-				</DockButton>
-				<DockButton active={!fullscreen && floating} label="Detach as floating window" onClick={onFloat}>
-					<PictureInPicture2 size={14} />
-				</DockButton>
+				{!fullscreen ? (
+					<>
+						<DockButton active={position === "left"} label="Dock to left" onClick={onDockLeft}>
+							<PanelLeft size={14} />
+						</DockButton>
+						<DockButton active={position === "right"} label="Dock to right" onClick={onDockRight}>
+							<PanelRight size={14} />
+						</DockButton>
+						<DockButton active={floating} label="Detach as floating window" onClick={onFloat}>
+							<PictureInPicture2 size={14} />
+						</DockButton>
+					</>
+				) : null}
 				<DockButton
 					active={fullscreen}
 					label={fullscreen ? "Exit fullscreen" : "Expand to fullscreen workspace"}
