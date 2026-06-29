@@ -1,0 +1,20 @@
+{
+  "id": "5873c",
+  "title": "调研: 启动/连接性能瓶颈",
+  "prompt": "对 Kanban 启动、项目打开与首次连接链路做性能调研，产出书面瓶颈清单（写到 .plan/docs/perf-startup-findings.md），不要改业务代码。\n\n重点排查方向（自行核实）：\n- 项目打开：打开/添加 workspace 的耗时；既有原则「打开项目绝不能阻塞在远端可达性上」（local-first，remote best-effort，board-adopt-pending），核查是否还有阻塞点。大 workspace 既有 EMFILE/hang 修复，确认无回归。\n- workspace 加载：loadWorkspaceContext / loadWorkspaceContextById 在每次状态广播与重启连接时的开销；board 分片组装、需求分片读取的冷启动成本。\n- websocket 首次连接：前端首帧到可交互的耗时，runtime state stream 初始 snapshot 大小。\n- 会话恢复：重启后 transcript 持久化回读（session-message-journal merge）、claude --resume / codex capture-after-launch 的恢复时延。\n- board worktree：setupBoardWorktree / ensureBoardWorktree 在启动时的 git 开销与串行化。\n\n产出：「现象→定位证据→影响范围→建议修复→预估收益/风险」+ 优先级。作为实现任务输入。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6a585585-b1b3-41e5-8785-009188294312",
+  "baseRef": "main",
+  "createdAt": 1782713837623,
+  "updatedAt": 1782713837623,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}
