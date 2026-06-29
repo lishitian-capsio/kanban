@@ -1,3 +1,4 @@
 {
-  "vaultMode": "off"
+  "vaultMode": "managed",
+  "extraPushRemotes": []
 }
