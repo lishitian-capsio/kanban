@@ -1,0 +1,19 @@
+{
+  "id": "7b4b3",
+  "title": "会话(thread)有未完成任务时禁止硬删除/关闭",
+  "prompt": "目标：当某个 home-chat 会话(thread)还有「它发起的、未进入 done 的任务」时，禁止对该会话执行硬删除/硬关闭(hard close)。\n\n背景：硬关闭会停进程、丢内存态、删 transcript(journal.clear)——见 home-thread store 的 closeThread，以及 InMemoryPiTaskSessionService / TerminalSessionManager 的 closeTaskSession。全屏启动器卡片上的 ✕ 走 closeThread(硬关)，tab-strip 的 X 是 soft-collapse(不是删除，不受此限)。\n\n依赖：任务已带 originThreadId(由链接的后端任务提供)，用它找出某 thread 发起的任务。\n\n要做：\n1. 在硬关闭/删除某 thread 的路径上，先检查该 thread 是否还有 originThreadId 指向它、且 column 不是 done 的任务(backlog / in_progress / review 都算阻塞)。若有，阻止删除，返回清晰的错误/原因(说明还有 N 个未完成任务)。\n2. soft-collapse(tab 收起)不受影响；done 列的任务不阻塞。注意 done 与 trash 是同一终态桶别名，都算「不阻塞」。\n3. 前端：launcher 卡片 ✕ 被阻止时给出友好提示(toast 或确认框说明原因)，不要静默失败。\n4. 判定口径：column 不属于终态桶(done/trash)即视为未完成。\n\n合理处补测试。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782700818231,
+  "updatedAt": 1782700818231,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}
