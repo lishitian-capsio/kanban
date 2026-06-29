@@ -59,6 +59,41 @@ export class VaultSettingsStore {
 
 	/** Read the persisted vault settings, defaulting to unmanaged when absent. */
 	async get(): Promise<RuntimeVaultSettings> {
+		return await this.readSettings();
+	}
+
+	/** Persist the given vault settings, returning the normalized value. */
+	async set(settings: RuntimeVaultSettings): Promise<RuntimeVaultSettings> {
+		const next = runtimeVaultSettingsSchema.parse(settings);
+		await mkdir(this.filesDir, { recursive: true });
+		return await lockedFileSystem.withLock({ type: "directory", path: this.filesDir }, async () => {
+			await lockedFileSystem.writeJsonFileAtomic(this.settingsPath, next, { lock: null });
+			return next;
+		});
+	}
+
+	/**
+	 * Apply a partial update: only the provided fields are changed, omitted fields
+	 * keep their current persisted value. The read-modify-write runs under the same
+	 * directory lock as {@link set} so two independent settings cards (vault mode and
+	 * extra push remotes) can save concurrently without clobbering each other.
+	 */
+	async update(patch: Partial<RuntimeVaultSettings>): Promise<RuntimeVaultSettings> {
+		await mkdir(this.filesDir, { recursive: true });
+		return await lockedFileSystem.withLock({ type: "directory", path: this.filesDir }, async () => {
+			const current = await this.readSettings();
+			const next = runtimeVaultSettingsSchema.parse({
+				...current,
+				...(patch.vaultMode !== undefined ? { vaultMode: patch.vaultMode } : {}),
+				...(patch.extraPushRemotes !== undefined ? { extraPushRemotes: patch.extraPushRemotes } : {}),
+			});
+			await lockedFileSystem.writeJsonFileAtomic(this.settingsPath, next, { lock: null });
+			return next;
+		});
+	}
+
+	/** Read + migrate + default the persisted settings (no lock — callers hold it). */
+	private async readSettings(): Promise<RuntimeVaultSettings> {
 		const raw = await this.readRaw();
 		if (raw === null) {
 			return runtimeVaultSettingsSchema.parse({});
@@ -71,16 +106,6 @@ export class VaultSettingsStore {
 			);
 		}
 		return parsed.data;
-	}
-
-	/** Persist the given vault settings, returning the normalized value. */
-	async set(settings: RuntimeVaultSettings): Promise<RuntimeVaultSettings> {
-		const next = runtimeVaultSettingsSchema.parse(settings);
-		await mkdir(this.filesDir, { recursive: true });
-		return await lockedFileSystem.withLock({ type: "directory", path: this.filesDir }, async () => {
-			await lockedFileSystem.writeJsonFileAtomic(this.settingsPath, next, { lock: null });
-			return next;
-		});
 	}
 
 	private async readRaw(): Promise<unknown | null> {

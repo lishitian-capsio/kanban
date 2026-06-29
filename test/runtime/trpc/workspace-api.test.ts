@@ -595,21 +595,38 @@ describe("createWorkspaceApi vault settings", () => {
 	it("defaults to vaultMode off, then round-trips an update and broadcasts", async () => {
 		const api = createApi();
 
-		expect((await api.getVaultSettings(scope())).settings).toEqual({ vaultMode: "off" });
+		expect((await api.getVaultSettings(scope())).settings).toEqual({ vaultMode: "off", extraPushRemotes: [] });
 
 		const updated = await api.updateVaultSettings(scope(), { vaultMode: "managed" });
-		expect(updated.settings).toEqual({ vaultMode: "managed" });
+		expect(updated.settings).toEqual({ vaultMode: "managed", extraPushRemotes: [] });
 		expect(broadcastRuntimeWorkspaceStateUpdated).toHaveBeenCalledWith("workspace-1", repoPath);
 
-		expect((await api.getVaultSettings(scope())).settings).toEqual({ vaultMode: "managed" });
+		expect((await api.getVaultSettings(scope())).settings).toEqual({ vaultMode: "managed", extraPushRemotes: [] });
 
 		const stepped = await api.updateVaultSettings(scope(), { vaultMode: "cli-only" });
-		expect(stepped.settings).toEqual({ vaultMode: "cli-only" });
-		expect((await api.getVaultSettings(scope())).settings).toEqual({ vaultMode: "cli-only" });
+		expect(stepped.settings).toEqual({ vaultMode: "cli-only", extraPushRemotes: [] });
+		expect((await api.getVaultSettings(scope())).settings).toEqual({ vaultMode: "cli-only", extraPushRemotes: [] });
 
 		const reverted = await api.updateVaultSettings(scope(), { vaultMode: "off" });
-		expect(reverted.settings).toEqual({ vaultMode: "off" });
-		expect((await api.getVaultSettings(scope())).settings).toEqual({ vaultMode: "off" });
+		expect(reverted.settings).toEqual({ vaultMode: "off", extraPushRemotes: [] });
+		expect((await api.getVaultSettings(scope())).settings).toEqual({ vaultMode: "off", extraPushRemotes: [] });
+	});
+
+	it("updates extra push remotes without clobbering vaultMode, and vice versa", async () => {
+		const api = createApi();
+
+		await api.updateVaultSettings(scope(), { vaultMode: "managed" });
+		const withRemotes = await api.updateVaultSettings(scope(), {
+			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
+		});
+		expect(withRemotes.settings).toEqual({
+			vaultMode: "managed",
+			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
+		});
+
+		// Changing vaultMode alone preserves the configured remotes.
+		const modeOnly = await api.updateVaultSettings(scope(), { vaultMode: "off" });
+		expect(modeOnly.settings.extraPushRemotes).toEqual([{ name: "gitee", url: "https://gitee.com/o/r.git" }]);
 	});
 });
 

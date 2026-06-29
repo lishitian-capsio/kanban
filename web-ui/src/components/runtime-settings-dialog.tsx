@@ -34,6 +34,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentExecutablePathSetting } from "@/components/agent-executable-path-setting";
 import { BoardBranchSetting } from "@/components/board-branch-setting";
 import { GitIdentitySetting } from "@/components/git-identity-setting";
+import { ExtraPushRemotesSetting } from "@/components/extra-push-remotes-setting";
 import { GitRemoteSetting } from "@/components/git-remote-setting";
 import { GiteeAuthSetting } from "@/components/gitee-auth-setting";
 import { GithubAuthSetting } from "@/components/github-auth-setting";
@@ -1403,6 +1404,7 @@ export function RuntimeSettingsDialog({
 					<BoardBranchSetting workspaceId={workspaceId} />
 					<GitIdentitySetting workspaceId={workspaceId} />
 					<GitRemoteSetting workspaceId={workspaceId} />
+					<ExtraPushRemotesSetting workspaceId={workspaceId} />
 					<GithubAuthSetting workspaceId={workspaceId} />
 					<GiteeAuthSetting workspaceId={workspaceId} />
 					<SttConfigSetting workspaceId={workspaceId} />

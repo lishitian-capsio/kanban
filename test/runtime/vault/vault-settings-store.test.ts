@@ -50,40 +50,82 @@ describe("migrateRawVaultSettings", () => {
 });
 
 describe("VaultSettingsStore.get", () => {
-	it("defaults to vaultMode 'off' when no settings file exists", async () => {
+	it("defaults to vaultMode 'off' and no extra push remotes when no settings file exists", async () => {
 		const settings = await store.get();
-		expect(settings).toEqual({ vaultMode: "off" });
+		expect(settings).toEqual({ vaultMode: "off", extraPushRemotes: [] });
 	});
 
 	it("migrates a legacy managed=true file to vaultMode 'managed' on read", async () => {
 		await writeRawSettings({ managed: true });
-		expect(await store.get()).toEqual({ vaultMode: "managed" });
+		expect(await store.get()).toEqual({ vaultMode: "managed", extraPushRemotes: [] });
 	});
 
 	it("migrates a legacy managed=false file to vaultMode 'off' on read", async () => {
 		await writeRawSettings({ managed: false });
-		expect(await store.get()).toEqual({ vaultMode: "off" });
+		expect(await store.get()).toEqual({ vaultMode: "off", extraPushRemotes: [] });
+	});
+
+	it("reads back persisted extra push remotes", async () => {
+		await writeRawSettings({
+			vaultMode: "off",
+			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
+		});
+		expect(await store.get()).toEqual({
+			vaultMode: "off",
+			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
+		});
 	});
 });
 
 describe("VaultSettingsStore.set", () => {
 	it("persists each vaultMode tier and reads it back", async () => {
 		for (const vaultMode of ["off", "cli-only", "on-demand", "managed"] as const) {
-			const written = await store.set({ vaultMode });
-			expect(written).toEqual({ vaultMode });
+			const written = await store.set({ vaultMode, extraPushRemotes: [] });
+			expect(written).toEqual({ vaultMode, extraPushRemotes: [] });
 
 			const onDisk = JSON.parse(await readFile(settingsPath(), "utf8"));
-			expect(onDisk).toEqual({ vaultMode });
+			expect(onDisk).toEqual({ vaultMode, extraPushRemotes: [] });
 
 			const reread = await new VaultSettingsStore(repoPath).get();
-			expect(reread).toEqual({ vaultMode });
+			expect(reread).toEqual({ vaultMode, extraPushRemotes: [] });
 		}
 	});
 
 	it("can move the mode back down to 'off'", async () => {
-		await store.set({ vaultMode: "managed" });
-		const written = await store.set({ vaultMode: "off" });
-		expect(written).toEqual({ vaultMode: "off" });
-		expect(await store.get()).toEqual({ vaultMode: "off" });
+		await store.set({ vaultMode: "managed", extraPushRemotes: [] });
+		const written = await store.set({ vaultMode: "off", extraPushRemotes: [] });
+		expect(written).toEqual({ vaultMode: "off", extraPushRemotes: [] });
+		expect(await store.get()).toEqual({ vaultMode: "off", extraPushRemotes: [] });
+	});
+});
+
+describe("VaultSettingsStore.update", () => {
+	it("changes only vaultMode and preserves the existing extraPushRemotes", async () => {
+		await store.set({
+			vaultMode: "off",
+			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
+		});
+		const updated = await store.update({ vaultMode: "managed" });
+		expect(updated).toEqual({
+			vaultMode: "managed",
+			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
+		});
+		expect(await new VaultSettingsStore(repoPath).get()).toEqual(updated);
+	});
+
+	it("changes only extraPushRemotes and preserves the existing vaultMode", async () => {
+		await store.set({ vaultMode: "on-demand", extraPushRemotes: [] });
+		const updated = await store.update({
+			extraPushRemotes: [{ name: "mirror", url: "https://github.com/o/r.git" }],
+		});
+		expect(updated).toEqual({
+			vaultMode: "on-demand",
+			extraPushRemotes: [{ name: "mirror", url: "https://github.com/o/r.git" }],
+		});
+	});
+
+	it("is a no-op that returns the current settings when given an empty patch", async () => {
+		await store.set({ vaultMode: "cli-only", extraPushRemotes: [] });
+		expect(await store.update({})).toEqual({ vaultMode: "cli-only", extraPushRemotes: [] });
 	});
 });

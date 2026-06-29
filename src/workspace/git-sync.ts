@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import type {
+	RuntimeExtraPushRemote,
 	RuntimeGitCheckoutResponse,
 	RuntimeGitDiscardResponse,
 	RuntimeGitSyncAction,
@@ -9,6 +10,7 @@ import type {
 	RuntimeGitSyncSummary,
 } from "../core/api-contract";
 import { runGit } from "./git-utils";
+import { formatMirrorPushOutput, pushToMirrorRemotes } from "./mirror-push";
 
 interface GitPathFingerprint {
 	path: string;
@@ -261,6 +263,12 @@ export async function getGitSyncSummary(
 export async function runGitSyncAction(options: {
 	cwd: string;
 	action: RuntimeGitSyncAction;
+	/**
+	 * Extra "mirror" remotes to push the same branch to after a successful primary
+	 * push (action `"push"` only). Failures are reported in `output` but never flip
+	 * `ok` to false or block the other mirrors. Omit/empty ⇒ behavior unchanged.
+	 */
+	mirrorRemotes?: ReadonlyArray<RuntimeExtraPushRemote>;
 }): Promise<RuntimeGitSyncResponse> {
 	const initialSummary = await getGitSyncSummary(options.cwd);
 
@@ -292,11 +300,24 @@ export async function runGitSyncAction(options: {
 		};
 	}
 
+	let output = commandResult.output;
+	const branch = nextSummary.currentBranch ?? initialSummary.currentBranch;
+	if (options.action === "push" && branch && options.mirrorRemotes && options.mirrorRemotes.length > 0) {
+		const mirrorResults = await pushToMirrorRemotes(options.mirrorRemotes, branch, async (remote, ref) => {
+			const push = await runGit(options.cwd, ["push", remote.url, `${ref}:${ref}`]);
+			return { ok: push.ok, error: push.ok ? undefined : (push.error ?? "Push failed.") };
+		});
+		const mirrorOutput = formatMirrorPushOutput(mirrorResults);
+		if (mirrorOutput) {
+			output = output ? `${output}\n${mirrorOutput}` : mirrorOutput;
+		}
+	}
+
 	return {
 		ok: true,
 		action: options.action,
 		summary: nextSummary,
-		output: commandResult.output,
+		output,
 	};
 }
 

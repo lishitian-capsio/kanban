@@ -40,6 +40,7 @@ import {
 import { getCommitDiff, getGitLog, getGitRefs } from "../workspace/git-history";
 import { discardGitChanges, getGitSyncSummary, runGitCheckoutAction, runGitSyncAction } from "../workspace/git-sync";
 import { readGitRemoteUrl, readGitUserIdentity, writeGitRemoteUrl, writeGitUserIdentity } from "../workspace/git-utils";
+import { normalizeExtraPushRemotes } from "../workspace/mirror-push";
 import { searchWorkspaceFiles } from "../workspace/search-workspace-files";
 import {
 	deleteTaskWorktree,
@@ -252,9 +253,14 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 		},
 		runGitSyncAction: async (workspaceScope, input) => {
 			try {
+				const mirrorRemotes =
+					input.action === "push"
+						? (await new VaultSettingsStore(workspaceScope.workspacePath).get()).extraPushRemotes
+						: undefined;
 				return await runGitSyncAction({
 					cwd: workspaceScope.workspacePath,
 					action: input.action,
+					mirrorRemotes,
 				});
 			} catch (error) {
 				return createEmptyGitSyncErrorResponse(input.action, error);
@@ -575,8 +581,10 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 			return { url };
 		},
 		updateVaultSettings: async (workspaceScope, input) => {
-			const settings = await new VaultSettingsStore(workspaceScope.workspacePath).set({
+			const settings = await new VaultSettingsStore(workspaceScope.workspacePath).update({
 				vaultMode: input.vaultMode,
+				extraPushRemotes:
+					input.extraPushRemotes === undefined ? undefined : normalizeExtraPushRemotes(input.extraPushRemotes),
 			});
 			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
 			return { settings };

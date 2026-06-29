@@ -997,8 +997,26 @@ export type RuntimeVaultSearchResponse = z.infer<typeof runtimeVaultSearchRespon
 export const runtimeVaultModeSchema = z.enum(["off", "cli-only", "on-demand", "managed"]);
 export type RuntimeVaultMode = z.infer<typeof runtimeVaultModeSchema>;
 
+// An extra git push remote ("mirror" target). After a successful `git push` of the repo
+// code, Kanban also pushes the same branch to each configured remote by URL, so one
+// project can mirror to multiple hosts (e.g. GitHub + Gitee, or an internal + public
+// mirror). A failed mirror push is reported but never blocks the primary push. The URL
+// must look like a git remote (same shape check as `runtimeSetGitRemoteRequestSchema`);
+// authentication is never stored here — credentials are resolved per-host by the git
+// credential helpers, exactly like `origin`.
+export const runtimeExtraPushRemoteSchema = z.object({
+	name: z.string().trim().min(1),
+	url: z
+		.string()
+		.refine((value) => /^(?:[a-zA-Z][a-zA-Z0-9+.-]*:\/\/\S+|[^@\s]+@[^:\s]+:\S+|[./~]\S*)$/.test(value.trim()), {
+			message: "Enter a valid git remote URL.",
+		}),
+});
+export type RuntimeExtraPushRemote = z.infer<typeof runtimeExtraPushRemoteSchema>;
+
 export const runtimeVaultSettingsSchema = z.object({
 	vaultMode: runtimeVaultModeSchema.default("off"),
+	extraPushRemotes: z.array(runtimeExtraPushRemoteSchema).default([]),
 });
 export type RuntimeVaultSettings = z.infer<typeof runtimeVaultSettingsSchema>;
 
@@ -1007,8 +1025,13 @@ export const runtimeVaultSettingsGetResponseSchema = z.object({
 });
 export type RuntimeVaultSettingsGetResponse = z.infer<typeof runtimeVaultSettingsGetResponseSchema>;
 
+// Partial update — only the provided fields are changed; omitted fields keep their
+// current persisted value (the store does a locked read-modify-write). This lets the
+// vault-mode toggle and the extra-push-remotes list save independently without one
+// clobbering the other.
 export const runtimeVaultSettingsUpdateRequestSchema = z.object({
-	vaultMode: runtimeVaultModeSchema,
+	vaultMode: runtimeVaultModeSchema.optional(),
+	extraPushRemotes: z.array(runtimeExtraPushRemoteSchema).optional(),
 });
 export type RuntimeVaultSettingsUpdateRequest = z.infer<typeof runtimeVaultSettingsUpdateRequestSchema>;
 
