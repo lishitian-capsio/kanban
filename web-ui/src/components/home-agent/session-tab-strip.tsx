@@ -113,8 +113,11 @@ export function SessionTabStrip({
 				</button>
 			</div>
 
-			{/* Session tabs scroll horizontally; the overlay scrollbar is hidden until hover. */}
-			<div className="scrollbar-overlay flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto">
+			{/* Session tabs scroll horizontally. The scrollbar is fully hidden (no reserved/consumed
+			    space) so a bottom horizontal bar can't shrink this region's content box and ride the
+			    session tabs up relative to the no-scrollbar anchored region; the active tab is kept
+			    in view via scrollIntoView, and wheel/trackpad still scroll the overflow. */}
+			<div className="scrollbar-hidden flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto">
 				{openThreadIds.map((threadId) => {
 					const thread = threads.find((candidate) => candidate.id === threadId);
 					if (!thread) {

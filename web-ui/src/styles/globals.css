@@ -386,6 +386,23 @@ body,
 	background: var(--color-text-tertiary);
 }
 
+/*
+ * Fully hidden scrollbar that still scrolls (wheel / trackpad / scrollIntoView) and
+ * reserves NO layout space. Unlike `scrollbar-overlay`, this is for HORIZONTAL strips
+ * (e.g. the fullscreen session-tab row) where the bar lives on the block-end (bottom):
+ * `scrollbar-gutter` can only reserve inline gutters, so on classic-scrollbar platforms
+ * a bottom bar would shrink the content box and vertically misalign the strip's contents
+ * against a sibling region that has no scrollbar. Hiding it keeps every sibling the same
+ * height. Use only where the content stays reachable without a visible bar.
+ */
+.scrollbar-hidden {
+	scrollbar-width: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+	display: none;
+}
+
 /* -- Card shell -- */
 
 .kb-board-card-shell {
