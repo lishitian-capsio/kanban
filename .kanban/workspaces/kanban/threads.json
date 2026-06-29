@@ -50,7 +50,8 @@
       "name": "会话 agent 与任务 agent 的关系",
       "titleSource": "auto",
       "createdAt": 1782698377856,
-      "updatedAt": 1782698412557
+      "updatedAt": 1782698412557,
+      "pendingNextStep": "聊聊任务知识回流 vault 这条路怎么落地"
     },
     {
       "id": "09cbba03-af49-47b6-9e38-85e50946643b",
@@ -67,8 +68,10 @@
       "64e7235d-6c2b-4575-90f6-e6f766c1de20",
       "3434ae10-5e66-420a-8e03-7b70b3d73379",
       "be8da62b-73a2-48bf-99f8-7aa66272411b",
-      "4f4258a4-d3cb-48b6-99ed-3448706dc93e"
+      "4f4258a4-d3cb-48b6-99ed-3448706dc93e",
+      "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
+      "09cbba03-af49-47b6-9e38-85e50946643b"
     ],
-    "activeThreadId": "4f4258a4-d3cb-48b6-99ed-3448706dc93e"
+    "activeThreadId": "09cbba03-af49-47b6-9e38-85e50946643b"
   }
 }
