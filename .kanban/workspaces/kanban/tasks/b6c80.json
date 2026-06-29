@@ -1,0 +1,19 @@
+{
+  "id": "b6c80",
+  "title": "侧栏 ops 状态栏增加 CPU/内存 sparkline 趋势图",
+  "prompt": "需求：让 kanban agent 侧栏底部的 ops 状态栏（web-ui/src/components/home-agent/sidebar-ops-status-bar.tsx）除了显示瞬时数值外，还能展示近期趋势（mini sparkline 折线图）。\n\n现状：\n- 该状态栏目前只显示瞬时值：RSS 常驻内存、CPU 占用百分比、事件循环健康/卡顿状态点。\n- 数据来自 runtime 的 runtime_metrics_updated 广播（约每 2.5s 一次），通过 useRuntimeOpsMetrics() 订阅；每次广播直接替换当前值，不保留历史，所以看不到趋势。\n\n目标行为：\n- 在 RSS 和 CPU% 旁（或下方）各增加一个小型内联 sparkline，展示最近一段时间（例如最近 60 个采样点 ≈ 约 2.5 分钟）的走势。\n- 悬停时仍能看到当前精确数值（保留现有 Tooltip）。\n- 事件循环健康状态点维持现状即可，不强制做趋势。\n- 保持极简、VSCode 风格的薄状态栏视觉，不要喧宾夺主。\n\n实现要点（供参考，不限定）：\n- 历史窗口建议维护在前端 runtime store（web-ui/src/runtime/runtime-stream-store.ts）里：在接收 runtime_metrics_updated 时把样本推入一个有上限的环形/滚动缓冲（固定上限，丢弃最旧的），并暴露一个 selector（如 useRuntimeOpsMetricsHistory）。\n- 后端广播频率已足够，通常无需改动后端；如确需更细粒度采样再评估，但优先不动后端。\n- 关键性能约束（务必遵守）：必须遵循 runtime-store 的 leaf-subscription 规则——历史 slice 只能在 SidebarOpsStatusBar 这个叶子组件内订阅，绝不能在 App 级 hook 里订阅，否则高频指标会触发全树重渲染。参考现有 useRuntimeOpsMetrics 的订阅位置与 perf10 granular store 模式。\n- sparkline 优先用轻量内联 SVG 自绘（几十个点的折线，无需引入重型图表库）；若评估后确有必要再考虑成熟的小型第三方 sparkline 组件，遵循 AGENTS.md 关于第三方库的取舍原则。\n- 用设计 token 上色（如 CPU/内存用 text-secondary / status 色），暗色主题，禁止 dark: 前缀。\n- 注意 store 历史缓冲在断连/重连、切换 workspace 时的重置行为，避免出现跨 workspace 的脏历史。\n\n期望结果：状态栏在保留瞬时数值与 Tooltip 的同时，能直观看到 CPU 与内存的近期趋势 sparkline；改动集中在 web-ui（runtime store 历史 slice + SidebarOpsStatusBar 渲染），不引入全树重渲染，必要的单测覆盖 store 历史缓冲的上限与重置逻辑。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782699398436,
+  "updatedAt": 1782699398436,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}
