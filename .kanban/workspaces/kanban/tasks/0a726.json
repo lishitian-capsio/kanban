@@ -1,0 +1,20 @@
+{
+  "id": "0a726",
+  "title": "修复: home 会话卡片状态不准（常驻 Think…）",
+  "prompt": "Bug：Kanban 侧边栏/Home 的 agent 会话卡片(launcher session cards)状态显示不准确——经常停在「Think…」(思考中/运行中)，但实际上该会话并没有任务在跑、agent 是空闲的。期望卡片状态如实反映会话是否真的在运行/思考，空闲时不应显示 Think…。\n\n复现：\n1. 打开 Home 的会话卡片网格(fullscreen Home Tab / launcher)。\n2. 与某个 home 会话交互后停下，agent 已空闲、无任务运行。\n3. 卡片仍长期显示「Think…」状态，与实际不符。\n\n排查方向(自行核实，不要照搬)：\n- 卡片状态来源：home 会话卡片的运行/思考态从哪里推导？大概率是 session 的 state(running/thinking/idle/awaiting_review 等)经 runtime state stream 下发。定位卡片渲染处(web-ui 中 home launcher / session card 组件，参考既有 home-session-card / 卡片 affordances 实现)与其消费的 store slice。\n- home 会话是合成 taskId(__home_agent__:<workspaceId>:<agentId>:<threadId>)，确认其 session 状态机的状态转换：是否在一轮回答结束后没有正确回落到 idle，导致状态卡在 thinking/running。终端 agent 的 turn 边界是 awaiting_review(Stop hook → transitionToReview)；home chat 没有 review 列，确认 home 会话的 turn 结束如何回落、是否漏了状态复位。\n- 是否是前端 store 没收到「结束」事件 / 没清除上一次的 thinking 标志(stale 标志位)，还是后端 session 状态本身就没更新。区分「后端状态错」还是「前端展示错」。\n- 检查是否有 lastOutputAt / 心跳 之类的判定被误用为「仍在思考」。\n- 多线程(multi-thread)下，是否某个线程的状态污染了卡片显示(parseHomeAgentSessionId 按位解析，注意 4 段 id 的 threadId 不要被当成 agentId)。\n\n请先稳定复现、定位根因(明确是后端状态机还是前端展示问题)，再给最小修复，并在合理处补单元测试(状态转换/回落 idle 的纯逻辑重点测)。不要顺手做无关重构。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6a585585-b1b3-41e5-8785-009188294312",
+  "baseRef": "main",
+  "createdAt": 1782714347172,
+  "updatedAt": 1782714347172,
+  "column": "backlog",
+  "rank": "Zr",
+  "dependsOn": []
+}
