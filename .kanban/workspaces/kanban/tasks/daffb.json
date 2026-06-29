@@ -1,0 +1,20 @@
+{
+  "id": "daffb",
+  "title": "设计:文件功能从 Vault 迁出到一等公民 File surface",
+  "prompt": "设计一次**迁移 + 撤销**:把\"文件(Files)\"功能从 Vault 里整体移出,落到一个与 Vault、Database 平级的一等公民 File surface;Vault 不再承载文件功能。产出设计文档,本任务不写实现代码。\n\n背景(先核实再下笔):\n- 现状是 Files 和 Requirements 共用同一个 VaultView(见 \"vault frontend\" / VaultView)。也就是说\"文件\"现在是寄生在 Vault 视图里的一块。\n- 用户的明确意图:**Vault 撤销 file 这块**,把文件功能整体搬到独立的一等公民 File。迁完之后 Vault 只保留它该留的(需求 Requirements、文档类型 vault types 等),不再有 Files 入口/标签/视图。\n\n要设计清楚的事:\n1. 【从 Vault 撤销 file】Vault 当前在哪些地方暴露/承载了 Files——顶层入口、标签切换、VaultView 内的 Files 分支、相关 tRPC/状态/类型。逐一列出迁出后 Vault 要删/改的点,并确保 Vault(需求等)迁后仍正常、无死引用。\n2. 【File 成为一等公民】File 拿到自己的顶层导航入口(对齐现有 Vault/Database 入口与 URL 路由约定),拥有自包含的 File surface 视图模块,文件功能的归属从此在 File 这里,而不是 Vault。\n3. 【不能慢】不要做成又一个会卸载 board 的重型整页视图。Vault/Database 慢的根因是切视图时 board 被 unmount/remount、大量组件与 board 抢渲染(见 \"fullscreen toggle slow board unmount fix\")。File surface 要从架构规避:overlay/轻量挂载、board 保持挂载、按需 mount、关闭即卸载、必要处懒加载/代码分割。已存在的单文件 quick dialog(web-ui/src/components/vault/quick-dialog/ → 已抽到中立 file-dialog/ 的思路,设计文档 .plan/docs/vault-file-quick-dialog-design.md)是这套轻量交互的基础。\n\n设计文档需覆盖:\n- 迁移清单:从 Vault 移出的具体模块/组件/状态/tRPC/类型,以及对应的 Vault 侧删改点(含 Files↔Requirements 解耦 VaultView 的方案)。\n- File surface 架构:顶层入口与路由接线、自包含模块目录结构、对外接口;哪些底层(文件读写 tRPC、wikilink 解析、markdown 编辑器)是真正共享、哪些归 File 自有。\n- 性能方案:逐条说明如何规避 vault/database 的挂载/卸载坑。\n- 数据流与类型归属:文件读写走哪条(或清晰隔离的)tRPC 切片。\n- 兼容与触发:wikilink/文件引用迁移后从哪里打开(走 File surface / file-dialog)。\n- 分期与回滚风险:第一版交付范围、迁移过程中的回归风险点。\n\n先调研现有实现(TopBar 导航、VaultView、Files/Requirements 共用结构、database UI 入口、quick-dialog/file-dialog、vault tRPC、files-panel)。产出:.plan/docs/ 下一份设计文档(markdown)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782745337192,
+  "updatedAt": 1782745337192,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
