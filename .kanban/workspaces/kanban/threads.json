@@ -47,10 +47,18 @@
     {
       "id": "be8da62b-73a2-48bf-99f8-7aa66272411b",
       "agentId": "claude",
-      "name": "我们需要来讨论下，kanban agent的会话agent与任务agent的关系",
+      "name": "会话 agent 与任务 agent 的关系",
       "titleSource": "auto",
       "createdAt": 1782698377856,
-      "updatedAt": 1782698377856
+      "updatedAt": 1782698412557
+    },
+    {
+      "id": "09cbba03-af49-47b6-9e38-85e50946643b",
+      "agentId": "claude",
+      "name": "kanban agent的底部的cpu、内存等，是否可以看到趋势图？",
+      "titleSource": "auto",
+      "createdAt": 1782698449665,
+      "updatedAt": 1782698449665
     }
   ],
   "fullscreenTabs": {
@@ -58,8 +66,9 @@
       "7f175fd0-b7e1-40c0-bf02-638bb0a5e55a",
       "64e7235d-6c2b-4575-90f6-e6f766c1de20",
       "3434ae10-5e66-420a-8e03-7b70b3d73379",
-      "be8da62b-73a2-48bf-99f8-7aa66272411b"
+      "be8da62b-73a2-48bf-99f8-7aa66272411b",
+      "4f4258a4-d3cb-48b6-99ed-3448706dc93e"
     ],
-    "activeThreadId": "be8da62b-73a2-48bf-99f8-7aa66272411b"
+    "activeThreadId": "7f175fd0-b7e1-40c0-bf02-638bb0a5e55a"
   }
 }
