@@ -78,6 +78,14 @@
       "createdAt": 1782703239868,
       "updatedAt": 1782703803131,
       "pendingNextStep": "开始任务 90622（仓库代码多 remote push）"
+    },
+    {
+      "id": "6a585585-b1b3-41e5-8785-009188294312",
+      "agentId": "claude",
+      "name": "全面的性能优化",
+      "titleSource": "auto",
+      "createdAt": 1782713705085,
+      "updatedAt": 1782713705085
     }
   ],
   "fullscreenTabs": {
@@ -87,8 +95,9 @@
       "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
       "09cbba03-af49-47b6-9e38-85e50946643b",
       "0dc23e3d-665b-4b31-b72f-edd3c9614521",
-      "3e599da8-ac7b-4c0a-b7bb-48bd0e7c10aa"
+      "3e599da8-ac7b-4c0a-b7bb-48bd0e7c10aa",
+      "6a585585-b1b3-41e5-8785-009188294312"
     ],
-    "activeThreadId": "3e599da8-ac7b-4c0a-b7bb-48bd0e7c10aa"
+    "activeThreadId": "0dc23e3d-665b-4b31-b72f-edd3c9614521"
   }
 }
