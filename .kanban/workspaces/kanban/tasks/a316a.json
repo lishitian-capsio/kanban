@@ -1,0 +1,20 @@
+{
+  "id": "a316a",
+  "title": "会话/线程 agent 标识：大写文字标签换成小图标，全名收敛到会话头部",
+  "prompt": "需求：会话/线程的 agent 标识目前在多处用一个大写文字小标签（ThreadAgentBadge，显示 CLAUDE/CODEX/PI 等 label）重复渲染，视觉噪音大、眼花缭乱。改成「小图标 + 全名收敛」的方案。\n\n现状（agent 文字标签出现在三处，均来自 web-ui/src/components/home-agent/thread-agent-badge.tsx 的 ThreadAgentBadge）：\n1. 全屏会话 tab 条 session-tab-strip.tsx —— 每个会话 tab = 线程名 + agent 文字标签。\n2. 侧栏线程切换条 home-thread-bar.tsx —— 触发按钮 + 下拉里每一行都有 agent 文字标签。\n3. Home 启动器卡片 home-session-card.tsx —— 每张卡片一个 agent 文字标签。\n\n目标方案（已与用户确认：小图标 + 三处统一）：\n\nA) 把这三处的「大写文字标签」统一替换为一个 agent 小图标（约 14px），不再显示大写文字块。\n   - 为每个 agent 建立一个 id→图标 的映射（lucide-react 图标，或一个品牌色圆点/字母 avatar，择优）。Pi 在 session-tab-strip 的锚定 tab 里已经用 Bot 图标，可作为风格参考并保持一致。给映射一个合理的默认 fallback 图标，避免新 agent 无图标时崩。\n   - 鼠标悬停时通过 tooltip/title 显示 agent 全名（保留可读性，信息不丢）。\n   - 建议把这个图标做成一个小组件（例如 AgentIcon / 改造 ThreadAgentBadge 为 icon 模式），三处复用，DRY。resolveAgentLabel 仍用于 tooltip 文案。\n\nB) agent 全名收敛到「当前会话」的头部出现一次：\n   - 同一时刻用户只在跟一个会话对话，所以全名只需在当前活动会话里出现一次，不必在每个 tab 上重复。\n   - home-agent-conversation.tsx 已经算出 selectedAgentLabel（resolveAgentLabel(runtimeProjectConfig.agents, activeAgentId)），并且聊天面板已有 modelControlSlot=SessionProviderControl（显示 provider·model）。把 agent 名称就近并入这一行（agent + provider + model 天然是一组「谁在回答」），不要新造一个独立 header 层。优先用现有插槽/已有的头部区域，避免过度设计。\n\nC) 三处全部按新方案统一处理（tab 条、侧栏线程条的触发按钮与下拉行、Home 启动器卡片），视觉一致。\n\n约束与风格：\n- 暗色主题，使用设计 token（图标用 text-secondary/text-tertiary，品牌色用 status-* 系列），禁止 dark: 前缀。\n- 小图标尺寸沿用 14px 约定；保持极简，不要喧宾夺主。\n- 不改后端、不改 agent 契约；纯 web-ui 改动。\n- 注意现有测试：home-session-card.test.tsx 等可能断言了 agent 文字标签的可见文本，按新方案相应更新断言（图标用 aria-label/title 暴露 agent 名以便可测）。\n\n期望结果：tab 条与线程条只剩「名称 + agent 小图标（悬停出全名）」，Home 卡片同样用小图标，agent 全名在当前会话头部 provider·model 一行出现一次；整体更清爽且信息不丢，相关单测更新通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "09cbba03-af49-47b6-9e38-85e50946643b",
+  "baseRef": "main",
+  "createdAt": 1782713969278,
+  "updatedAt": 1782713969278,
+  "column": "backlog",
+  "rank": "Zs",
+  "dependsOn": []
+}
