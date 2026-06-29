@@ -15,6 +15,7 @@ import { HomeThreadCloseDialog } from "@/components/home-agent/home-thread-close
 import { cn } from "@/components/ui/cn";
 import type { HomeThread } from "@/hooks/use-home-threads";
 import type { RuntimeTaskSessionSummary } from "@/runtime/types";
+import { deriveSessionShortId } from "@/utils/session-short-id";
 
 interface PiSessionRailProps {
 	sessions: HomeThread[];
@@ -51,6 +52,7 @@ export function PiSessionRail({
 				const status = deriveHomeSessionCardStatus(taskSessions[taskId] ?? null);
 				const isActive = session.id === activeId;
 				const label = session.name || "Untitled";
+				const shortId = deriveSessionShortId(taskId);
 				return (
 					<div
 						key={session.id}
@@ -76,6 +78,13 @@ export function PiSessionRail({
 								<HomeSessionCardStatusMarker status={status} />
 							</span>
 							<span className={cn("min-w-0 truncate", isActive && "font-medium")}>{label}</span>
+							{/* Stable session short id — same code shown on the launcher card. */}
+							<span
+								className="shrink-0 font-mono text-[10px] leading-none text-text-tertiary"
+								title={`Session ID: #${shortId}`}
+							>
+								#{shortId}
+							</span>
 						</button>
 						{!session.isDefault ? (
 							<button

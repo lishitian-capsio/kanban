@@ -28,6 +28,7 @@ import { useHomeSessionCard } from "@/hooks/use-home-session-card";
 import type { HomeThread } from "@/hooks/use-home-threads";
 import type { RuntimeAgentDefinition, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { getCardSessionActivity } from "@/utils/session-activity";
+import { deriveSessionShortId } from "@/utils/session-short-id";
 
 interface HomeSessionCardProps {
 	thread: HomeThread;
@@ -63,6 +64,9 @@ export function HomeSessionCard({
 }: HomeSessionCardProps): React.ReactElement {
 	const { preview, isLoadingHistory } = useHomeSessionCard(currentProjectId, taskId);
 	const status = useMemo(() => deriveHomeSessionCardStatus(summary), [summary]);
+	// A short, stable code for referring to this exact session. Derived from the
+	// session id (not list position), so it never changes on refresh/reorder.
+	const shortId = useMemo(() => deriveSessionShortId(taskId), [taskId]);
 
 	// While the session is live (running / awaiting review / errored) show the
 	// same one-line agent-activity row the board task card surfaces — a colored
@@ -289,7 +293,16 @@ export function HomeSessionCard({
 			<SessionMetaBadges summary={summary} />
 
 			<div className="flex items-center justify-between gap-2">
-				<ThreadAgentBadge agents={agents} agentId={thread.agentId} />
+				<div className="flex min-w-0 items-center gap-1.5">
+					<ThreadAgentBadge agents={agents} agentId={thread.agentId} />
+					{/* Stable session short id — low-key, monospace, mirrors the board task-id chip. */}
+					<span
+						className="shrink-0 rounded-sm bg-surface-3 px-1 py-0.5 font-mono text-[10px] leading-none text-text-tertiary"
+						title={`Session ID: #${shortId}`}
+					>
+						#{shortId}
+					</span>
+				</div>
 				{timeAgo ? <span className="shrink-0 text-[11px] text-text-tertiary">{timeAgo}</span> : null}
 			</div>
 
