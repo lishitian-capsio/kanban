@@ -1,7 +1,7 @@
 {
   "id": "5bc0c",
   "title": "设计:File 轻量查看/编辑弹窗(overlay)",
-  "prompt": "设计一个用于 vault \"file\" 的轻量单文件查看/编辑弹窗(dialog/overlay),并产出设计文档。\n\n背景与动机:\n- 现有的 vault 视图和 database 视图都是\"整页 tab 视图\"型重型方案,打开/切换慢。根因是切视图时 board 会被 unmount/remount,大量组件挂载与 board 抢渲染(参见之前的 \"fullscreen toggle slow board unmount fix\")。\n- 本任务要走完全不同的形态:弹窗(overlay)叠在当前界面之上,board 不卸载、不重排,弹窗内容按需挂载、关掉即卸载,开关接近零成本。\n\n第一版范围(刻意收窄,保持轻):\n- 只处理\"单个文件\"的查看 + 简单编辑 + 保存 + 关闭。\n- 弹窗内不做文件列表浏览(那会让弹窗重新变重型)。\n- 通过 file id / path 打开。\n- 触发入口默认:从 vault wikilink / 文件引用处点开(预留后续从 board 卡片等处触发的扩展点)。\n\n设计文档需覆盖:\n- 组件架构(弹窗组件放在哪、如何在 board 之上 overlay 而不卸载 board、用哪个 Dialog 原语)。\n- 数据流:复用现有 vault 的 tRPC CRUD(读取/保存文件内容),不要新建后端读写路径。先调研现有 Files panel / vault 实现(VaultView、vault tRPC、files-panel-web-ui)。\n- 状态管理:打开/关闭、当前 file、编辑态、保存。明确按需 mount / 关闭即 unmount。\n- 编辑器选型:复用项目里已有的 markdown 编辑器(注意 md-editor ghosting 的已知坑)。\n- 明确说明该方案如何规避 vault/database 的性能坑(对比说明)。\n- 触发入口的接线方式与扩展点。\n\n产出:在 .plan/docs/ 下写一份设计文档(markdown),不要在本任务里写实现代码。",
+  "prompt": "设计一个**独立的 file 模块**,UI 形态为轻量单文件查看/编辑弹窗(dialog/overlay),并产出设计文档。\n\n核心方向(两条同时满足):\n1. 【独立出来】file 能力要作为一个自包含的独立模块/包拆出来,跟 vault 视图、database 视图的共享重型代码解耦——独立目录、独立(或清晰隔离的)tRPC 切片、独立类型、独立 UI。不要再寄生在 VaultView 这类共享整页视图里。\n2. 【弹窗形态】UI 用弹窗(overlay)承载,叠在当前界面之上,board 不卸载、不重排,弹窗按需 mount、关闭即 unmount。\n\n背景与动机:\n- 现有 vault 视图和 database 视图都是\"整页 tab 视图\"型重型方案,打开/切换慢。根因是切视图时 board 被 unmount/remount,大量组件与 board 抢渲染(参见 \"fullscreen toggle slow board unmount fix\")。\n- 因此 file 要走完全不同的形态(弹窗)+ 完全独立的代码边界(自成模块),避免重蹈覆辙。\n\n第一版范围(刻意收窄,保持轻):\n- 只处理\"单个文件\"的查看 + 简单编辑 + 保存 + 关闭。\n- 弹窗内不做文件列表浏览。\n- 通过 file id / path 打开。\n- 触发入口默认:从 vault wikilink / 文件引用处点开(预留后续从 board 卡片等处触发的扩展点)。\n\n设计文档需覆盖:\n- 模块边界:新模块放在哪(目录结构)、对外暴露什么接口、如何与现有 vault/database 解耦;明确哪些现有代码会被抽出/复用、哪些保持不动。先调研现有 Files panel / vault 实现(VaultView、vault tRPC、files-panel-web-ui)再定边界。\n- 组件架构:弹窗组件如何在 board 之上 overlay 而不卸载 board、用哪个 Dialog 原语(@/components/ui/dialog)。\n- 数据流:file 内容的读取/保存走该模块自己的(或清晰隔离的)tRPC 切片;不要在多处重复后端读写路径。\n- 状态管理:打开/关闭、当前 file、编辑态、保存;按需 mount / 关闭即 unmount。\n- 编辑器选型:复用项目已有 markdown 编辑器(注意 md-editor ghosting 已知坑)。\n- 明确说明该方案如何同时规避 vault/database 的性能坑与代码耦合(对比说明)。\n- 触发入口接线方式与扩展点。\n\n产出:在 .plan/docs/ 下写一份设计文档(markdown),不要在本任务里写实现代码。",
   "startInPlanMode": false,
   "autoReviewEnabled": true,
   "autoReviewMode": "commit",
@@ -13,7 +13,7 @@
   "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
   "baseRef": "main",
   "createdAt": 1782717855425,
-  "updatedAt": 1782718642937,
+  "updatedAt": 1782720752328,
   "column": "trash",
   "rank": "b0B0G",
   "dependsOn": []
