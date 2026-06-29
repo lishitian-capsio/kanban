@@ -19,27 +19,37 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 
-import { DocEditor } from "../editor/doc-editor";
-import { useVaultFileDoc } from "./use-vault-file-doc";
+import { DocEditor } from "../vault/editor/doc-editor";
+import type { FileRecent } from "./use-file-recents";
+import { useFileDoc } from "./use-file-doc";
 
-interface VaultFileDialogProps {
+interface FileOverlayProps {
 	open: boolean;
 	fileId: string | null;
 	workspaceId: string | null;
 	onClose: () => void;
+	/** Called once the open file's real title is known, to record it in recents. */
+	onFileOpened?: (recent: FileRecent) => void;
 }
 
 /**
- * The single mounted quick-dialog. The board never unmounts behind it — Radix
- * portals the content as a sibling layered above. The editable body
- * (`VaultFileDialogBody`) is only mounted while `open`, so the markdown editor +
- * drafts are created on open and released on close (no `forceMount`).
+ * The single File surface editor overlay. The board never unmounts behind it —
+ * Radix portals the content as a sibling layered above (file-surface-design §2,
+ * §8). The editable body (`FileOverlayBody`) is only mounted while `open`, so the
+ * markdown editor + drafts are created on open and released on close (no
+ * `forceMount`), keeping first paint and memory unaffected.
  *
  * Close routes through a dirty-guard: the body reports its dirty state into
  * `dirtyRef`, and any close gesture (Esc / overlay / ✕ / Close button) is
  * intercepted to confirm via an `AlertDialog` before discarding unsaved edits.
  */
-export function VaultFileDialog({ open, fileId, workspaceId, onClose }: VaultFileDialogProps): React.ReactElement {
+export function FileOverlay({
+	open,
+	fileId,
+	workspaceId,
+	onClose,
+	onFileOpened,
+}: FileOverlayProps): React.ReactElement {
 	const dirtyRef = useRef(false);
 	const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -79,12 +89,13 @@ export function VaultFileDialog({ open, fileId, workspaceId, onClose }: VaultFil
 				contentClassName="max-w-3xl w-[90vw] h-[80vh] p-0"
 			>
 				{fileId ? (
-					<VaultFileDialogBody
+					<FileOverlayBody
 						key={fileId}
 						fileId={fileId}
 						workspaceId={workspaceId}
 						onDirtyChange={setDirty}
 						onRequestClose={requestClose}
+						onFileOpened={onFileOpened}
 					/>
 				) : null}
 			</Dialog>
@@ -115,27 +126,29 @@ export function VaultFileDialog({ open, fileId, workspaceId, onClose }: VaultFil
 	);
 }
 
-interface VaultFileDialogBodyProps {
+interface FileOverlayBodyProps {
 	fileId: string;
 	workspaceId: string | null;
 	onDirtyChange: (dirty: boolean) => void;
 	onRequestClose: () => void;
+	onFileOpened?: (recent: FileRecent) => void;
 }
 
 /**
- * Dialog body: title (commit-on-blur) + markdown editor (commit-on-blur) +
+ * Overlay body: title (commit-on-blur) + markdown editor (commit-on-blur) +
  * footer (explicit Save + Close). Local-buffer pattern — same as
  * `VaultDocDetail` — so a patch never round-trips per keystroke. Mounted only
- * while the dialog is open, so this state is created on open / discarded on
+ * while the overlay is open, so this state is created on open / discarded on
  * close.
  */
-function VaultFileDialogBody({
+function FileOverlayBody({
 	fileId,
 	workspaceId,
 	onDirtyChange,
 	onRequestClose,
-}: VaultFileDialogBodyProps): React.ReactElement {
-	const { loadState, doc, loadErrorMessage, saveState, save } = useVaultFileDoc(workspaceId, fileId);
+	onFileOpened,
+}: FileOverlayBodyProps): React.ReactElement {
+	const { loadState, doc, loadErrorMessage, saveState, save } = useFileDoc(workspaceId, fileId);
 
 	const [draftTitle, setDraftTitle] = useState("");
 	const [draftBody, setDraftBody] = useState("");
@@ -147,6 +160,15 @@ function VaultFileDialogBody({
 			setDraftBody(doc.body);
 		}
 	}, [doc]);
+
+	// Record the file in recents once its authoritative title is known. Done here
+	// (not at openFile time) so every entry path — wikilink, URL, palette — gets a
+	// real label, and so the opener seam stays a bare `(id) => void`.
+	useEffect(() => {
+		if (loadState === "ready" && doc) {
+			onFileOpened?.({ id: doc.id, title: doc.title });
+		}
+	}, [loadState, doc, onFileOpened]);
 
 	const dirty = doc !== null && (draftTitle.trim() !== doc.title || draftBody !== doc.body);
 	useEffect(() => {

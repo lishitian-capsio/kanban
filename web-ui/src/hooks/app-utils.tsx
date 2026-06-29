@@ -10,6 +10,10 @@ const DETAIL_TASK_QUERY_PARAM = "task";
 // fullscreen workspace is open; the value is the active tab: the reserved "home"
 // (launcher) / "pi" (native-agent workspace) anchors, or a session thread id.
 const FULLSCREEN_CHAT_QUERY_PARAM = "chat";
+// The single file open in the File surface overlay. Its presence means the
+// overlay is open; the value is the vault document `id`. Independent of
+// `?task=`/`?chat=` — the overlay layers above whatever is behind it.
+const FILE_QUERY_PARAM = "file";
 
 export function normalizeStoredTaskAutoReviewMode(value: string): TaskAutoReviewMode | null {
 	if (value === "commit" || value === "pr") {
@@ -115,6 +119,28 @@ export function buildFullscreenChatUrl(input: {
 		params.set(FULLSCREEN_CHAT_QUERY_PARAM, input.chatTab);
 	} else {
 		params.delete(FULLSCREEN_CHAT_QUERY_PARAM);
+	}
+	const nextSearch = params.toString();
+	return `${input.pathname}${nextSearch ? `?${nextSearch}` : ""}${input.hash}`;
+}
+
+export function parseFileIdFromSearch(search: string): string | null {
+	const params = new URLSearchParams(search);
+	const fileId = params.get(FILE_QUERY_PARAM)?.trim();
+	return fileId ? fileId : null;
+}
+
+export function buildFileUrl(input: {
+	pathname: string;
+	search: string;
+	hash: string;
+	fileId: string | null;
+}): string {
+	const params = new URLSearchParams(input.search);
+	if (input.fileId) {
+		params.set(FILE_QUERY_PARAM, input.fileId);
+	} else {
+		params.delete(FILE_QUERY_PARAM);
 	}
 	const nextSearch = params.toString();
 	return `${input.pathname}${nextSearch ? `?${nextSearch}` : ""}${input.hash}`;

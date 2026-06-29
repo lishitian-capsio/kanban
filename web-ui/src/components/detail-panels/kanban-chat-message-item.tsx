@@ -11,7 +11,7 @@ import { LazyKanbanMarkdownContent } from "@/components/detail-panels/kanban-mar
 import { TaskImageStrip } from "@/components/task-image-strip";
 import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
-import { useChatWikilinks } from "@/components/vault/quick-dialog/chat-wikilink-context";
+import { useChatWikilinks } from "@/components/vault/links/chat-wikilink-context";
 import type { KanbanChatMessage } from "@/hooks/use-kanban-chat-session";
 
 function ToolMessageBlock({ message }: { message: KanbanChatMessage }): ReactElement {

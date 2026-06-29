@@ -1,0 +1,164 @@
+import { buildFileUrl, parseFileIdFromSearch } from "@/hooks/app-utils";
+
+/**
+ * The File surface's open state, held in a module-level external store rather
+ * than React state.
+ *
+ * Why a store (not provider `useState`): the perf thesis (file-surface-design
+ * §5.4) is that opening a file must NEVER re-render the board. The board is the
+ * provider's `children` (stable element reference), so the provider re-rendering
+ * on open is already safe. But the top-bar's "active" ring also needs to reflect
+ * open-state WITHOUT threading a boolean down from `App` (which would re-render
+ * the whole tree). The project's established answer is a granular external store
+ * read via `useSyncExternalStore` in the leaf fiber that shows it (see
+ * `perf10-runtime-store-selectors`): the provider subscribes to render the
+ * overlay, and `TopBar` subscribes — independently — for the ring. Neither path
+ * touches `App`.
+ *
+ * The store also owns `?file=<id>` URL routing (mirroring the `?task=`/`?chat=`
+ * hooks) so the surface is shareable, refresh-survivable, and back/forward
+ * navigable — persistence the older Vault/Database toggles lack.
+ */
+export interface FileSurfaceState {
+	/** The vault document id currently open in the editor overlay, or null. */
+	fileId: string | null;
+	/** Workspace the open file lives in. Resolved at open time. */
+	workspaceId: string | null;
+	/** Whether the quick-open palette ("pick a file") is showing. Not URL-routed. */
+	paletteOpen: boolean;
+}
+
+export interface OpenFileOptions {
+	/** Workspace the file lives in. Defaults to the provider's current workspace. */
+	workspaceId?: string;
+}
+
+function readFileIdFromLocation(): string | null {
+	if (typeof window === "undefined") {
+		return null;
+	}
+	return parseFileIdFromSearch(window.location.search);
+}
+
+// Seed synchronously from the URL so a deep link / refresh to `?file=<id>` opens
+// the overlay on first paint with no flash. `workspaceId` is back-filled by the
+// provider (the workspace isn't encoded in the URL — it comes from the route).
+let state: FileSurfaceState = {
+	fileId: readFileIdFromLocation(),
+	workspaceId: null,
+	paletteOpen: false,
+};
+
+// The provider's current workspace, used as the default when a file is opened
+// without an explicit workspace and to back-fill a URL-seeded / popstate file.
+let defaultWorkspaceId: string | null = null;
+
+const listeners = new Set<() => void>();
+let popstateBound = false;
+
+function emit(): void {
+	for (const listener of listeners) {
+		listener();
+	}
+}
+
+function setState(next: FileSurfaceState): void {
+	if (
+		next.fileId === state.fileId &&
+		next.workspaceId === state.workspaceId &&
+		next.paletteOpen === state.paletteOpen
+	) {
+		return;
+	}
+	state = next;
+	emit();
+}
+
+function writeUrl(fileId: string | null, mode: "push" | "replace"): void {
+	if (typeof window === "undefined") {
+		return;
+	}
+	const currentUrl = new URL(window.location.href);
+	if (parseFileIdFromSearch(currentUrl.search) === fileId) {
+		// Already at the target — never add a duplicate history entry.
+		return;
+	}
+	const nextUrl = buildFileUrl({
+		pathname: currentUrl.pathname,
+		search: currentUrl.search,
+		hash: currentUrl.hash,
+		fileId,
+	});
+	if (mode === "push") {
+		window.history.pushState(window.history.state, "", nextUrl);
+	} else {
+		window.history.replaceState(window.history.state, "", nextUrl);
+	}
+}
+
+function handlePopState(): void {
+	const fileId = readFileIdFromLocation();
+	setState({
+		fileId,
+		workspaceId: fileId ? (state.workspaceId ?? defaultWorkspaceId) : null,
+		paletteOpen: false,
+	});
+}
+
+export const fileSurfaceStore = {
+	getSnapshot(): FileSurfaceState {
+		return state;
+	},
+
+	subscribe(listener: () => void): () => void {
+		listeners.add(listener);
+		if (!popstateBound && typeof window !== "undefined") {
+			window.addEventListener("popstate", handlePopState);
+			popstateBound = true;
+		}
+		return () => {
+			listeners.delete(listener);
+		};
+	},
+
+	/**
+	 * Register the active workspace (the open project). Back-fills the workspace
+	 * for a file that was seeded from the URL before the provider mounted.
+	 */
+	setDefaultWorkspace(workspaceId: string | null): void {
+		defaultWorkspaceId = workspaceId;
+		if (state.fileId && !state.workspaceId && workspaceId) {
+			setState({ ...state, workspaceId });
+		}
+	},
+
+	openFile(fileId: string, options?: OpenFileOptions): void {
+		writeUrl(fileId, "push");
+		setState({
+			fileId,
+			workspaceId: options?.workspaceId ?? defaultWorkspaceId,
+			paletteOpen: false,
+		});
+	},
+
+	closeFile(): void {
+		writeUrl(null, "push");
+		setState({ ...state, fileId: null, paletteOpen: false });
+	},
+
+	openPalette(): void {
+		setState({ ...state, paletteOpen: true });
+	},
+
+	closePalette(): void {
+		if (!state.paletteOpen) {
+			return;
+		}
+		setState({ ...state, paletteOpen: false });
+	},
+};
+
+/** True when any File surface UI is showing (editor overlay or quick-open palette). */
+export function isFileSurfaceActive(snapshot: FileSurfaceState): boolean {
+	return snapshot.fileId !== null || snapshot.paletteOpen;
+}

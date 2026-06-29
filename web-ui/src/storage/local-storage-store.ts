@@ -26,6 +26,9 @@ export enum LocalStorageKey {
 	NotificationBadgeClearEvent = "kanban.notification-badge-clear.v1",
 	TabVisibilityPresence = "kanban.tab-visibility-presence.v1",
 	Theme = "kanban.theme",
+	// Per-workspace recent File-surface document ids. The workspace id is appended
+	// as a suffix (`<prefix>.<workspaceId>`) by `use-file-recents`.
+	FileSurfaceRecentsPrefix = "kanban.file-surface.recents",
 }
 
 export const LAYOUT_CUSTOMIZATION_LOCAL_STORAGE_KEYS = [

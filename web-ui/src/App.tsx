@@ -9,6 +9,7 @@ import { AddProjectDialog } from "@/components/add-project-dialog";
 import { notifyError, showAppToast } from "@/components/app-toaster";
 import { ClearTrashDialog } from "@/components/clear-trash-dialog";
 import { DebugDialog } from "@/components/debug-dialog";
+import { FileSurfaceProvider, fileSurfaceStore } from "@/components/file-surface";
 import { DockableChatPanel } from "@/components/home-agent/dockable-chat-panel";
 import { HomeChatWorkspace } from "@/components/home-agent/home-chat-workspace";
 import { HomeSidebarAgentPanel } from "@/components/home-agent/home-sidebar-agent-panel";
@@ -32,8 +33,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { UpdateNotificationController } from "@/components/update-notification-controller";
 import { useVaultSettings } from "@/components/vault/data/use-vault-settings";
-import { ChatWikilinkProvider } from "@/components/vault/quick-dialog/chat-wikilink-provider";
-import { VaultFileDialogProvider } from "@/components/vault/quick-dialog/vault-file-dialog-provider";
+import { ChatWikilinkProvider } from "@/components/vault/links/chat-wikilink-provider";
 import { createInitialBoardData } from "@/data/board-data";
 import { RuntimeDisconnectedFallback } from "@/hooks/runtime-disconnected-fallback";
 import { useAppHotkeys } from "@/hooks/use-app-hotkeys";
@@ -889,7 +889,7 @@ export default function App(): ReactElement {
 
 	return (
 		<LayoutCustomizationsProvider onResetBottomTerminalLayoutCustomizations={resetBottomTerminalLayoutCustomizations}>
-			<VaultFileDialogProvider workspaceId={currentProjectId}>
+			<FileSurfaceProvider workspaceId={currentProjectId}>
 				<ChatWikilinkProvider workspaceId={currentProjectId} enabled={vaultSettings.vaultMode !== "off"}>
 					<div className="flex h-[100svh] min-w-0 overflow-hidden">
 						{isHomeChatAvailable && (chatDock.open || isFullscreen) ? (
@@ -1003,6 +1003,9 @@ export default function App(): ReactElement {
 								vaultModeDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
 								onToggleDatabase={hasNoProjects || selectedCard ? undefined : handleToggleDatabase}
 								isDatabaseOpen={isDatabaseOpen}
+								onOpenFile={
+									hasNoProjects || selectedCard ? undefined : () => fileSurfaceStore.openPalette()
+								}
 								onToggleHomeChat={isHomeChatAvailable ? handleToggleHomeChat : undefined}
 								isHomeChatOpen={chatDock.open}
 								hideProjectDependentActions={shouldHideProjectDependentTopBarActions}
@@ -1326,7 +1329,7 @@ export default function App(): ReactElement {
 						</AlertDialog>
 					</div>
 				</ChatWikilinkProvider>
-			</VaultFileDialogProvider>
+			</FileSurfaceProvider>
 		</LayoutCustomizationsProvider>
 	);
 }

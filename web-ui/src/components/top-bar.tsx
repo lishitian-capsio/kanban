@@ -10,6 +10,7 @@ import {
 	CircleArrowDown,
 	Command,
 	Database,
+	FileText,
 	GitBranch,
 	Menu,
 	Play,
@@ -32,6 +33,7 @@ import { cn } from "@/components/ui/cn";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
+import { useFileSurfaceActive } from "@/components/file-surface";
 import { VaultControlButton } from "@/components/vault-control-button";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import type { RuntimeGitSyncAction, RuntimeProjectShortcut, RuntimeVaultMode } from "@/runtime/types";
@@ -326,6 +328,7 @@ export function TopBar({
 	vaultModeDisabled,
 	onToggleDatabase,
 	isDatabaseOpen,
+	onOpenFile,
 	onToggleHomeChat,
 	isHomeChatOpen,
 	onOpenSettings,
@@ -377,6 +380,8 @@ export function TopBar({
 	vaultModeDisabled?: boolean;
 	onToggleDatabase?: () => void;
 	isDatabaseOpen?: boolean;
+	/** Open the File surface quick-open palette (single-file open/view/edit). */
+	onOpenFile?: () => void;
 	onToggleHomeChat?: () => void;
 	isHomeChatOpen?: boolean;
 	onOpenSettings?: (section?: SettingsSection) => void;
@@ -397,6 +402,9 @@ export function TopBar({
 	hideProjectDependentActions?: boolean;
 }): React.ReactElement {
 	const isMobile = useIsMobile();
+	// Leaf subscription (file-surface-design §5.4): reading File-surface open-state
+	// here re-renders ONLY the top bar on open/close, never `App` or the board.
+	const isFileSurfaceActive = useFileSurfaceActive();
 	const displayWorkspacePath = workspacePath ? formatPathForDisplay(workspacePath) : null;
 	const workspaceSegments = displayWorkspacePath ? getWorkspacePathSegments(displayWorkspacePath) : [];
 	const hasAbsoluteLeadingSlash = Boolean(displayWorkspacePath?.startsWith("/"));
@@ -583,6 +591,21 @@ export function TopBar({
 									title="Database"
 								>
 									Database
+								</Button>
+							) : null}
+							{!hideProjectDependentActions && onOpenFile ? (
+								<Button
+									variant={isFileSurfaceActive ? "primary" : "default"}
+									size="sm"
+									icon={<FileText size={14} />}
+									onClick={onOpenFile}
+									className={cn(
+										"shrink-0",
+										isFileSurfaceActive ? "ring-1 ring-accent" : "kb-navbar-btn",
+									)}
+									title="Open a file"
+								>
+									File
 								</Button>
 							) : null}
 						</>

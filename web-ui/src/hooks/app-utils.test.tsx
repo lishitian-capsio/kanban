@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
 	buildDetailTaskUrl,
+	buildFileUrl,
 	buildFullscreenChatUrl,
 	parseDetailTaskIdFromSearch,
+	parseFileIdFromSearch,
 	parseFullscreenChatTabFromSearch,
 } from "@/hooks/app-utils";
 
@@ -77,6 +79,43 @@ describe("buildFullscreenChatUrl", () => {
 				search: "?chat=thread-abc&task=task-1",
 				hash: "",
 				chatTab: null,
+			}),
+		).toBe("/project-1?task=task-1");
+	});
+});
+
+describe("parseFileIdFromSearch", () => {
+	it("returns the open file id when present", () => {
+		expect(parseFileIdFromSearch("?file=doc-123")).toBe("doc-123");
+	});
+
+	it("returns null when the file id is missing or blank", () => {
+		expect(parseFileIdFromSearch("")).toBeNull();
+		expect(parseFileIdFromSearch("?task=task-1")).toBeNull();
+		expect(parseFileIdFromSearch("?file=")).toBeNull();
+		expect(parseFileIdFromSearch("?file=%20%20")).toBeNull();
+	});
+});
+
+describe("buildFileUrl", () => {
+	it("adds the file id while preserving other query params and hash", () => {
+		expect(
+			buildFileUrl({
+				pathname: "/project-1",
+				search: "?task=task-1",
+				hash: "#panel",
+				fileId: "doc-123",
+			}),
+		).toBe("/project-1?task=task-1&file=doc-123#panel");
+	});
+
+	it("removes the file id while preserving other query params", () => {
+		expect(
+			buildFileUrl({
+				pathname: "/project-1",
+				search: "?file=doc-123&task=task-1",
+				hash: "",
+				fileId: null,
 			}),
 		).toBe("/project-1?task=task-1");
 	});
