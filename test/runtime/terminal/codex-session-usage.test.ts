@@ -165,7 +165,7 @@ describe("readCodexSessionUsage", () => {
 	});
 
 	it("returns null when no rollout matches the cwd", async () => {
-		const usage = await readCodexSessionUsage({ sessionsDir: sessionsDir ?? "", cwd: "/home/dev/proj" });
+		const { usage } = await readCodexSessionUsage({ sessionsDir: sessionsDir ?? "", cwd: "/home/dev/proj" });
 		expect(usage).toBeNull();
 	});
 
@@ -181,8 +181,9 @@ describe("readCodexSessionUsage", () => {
 		].join("\n");
 		writeFileSync(file, content, "utf8");
 
-		const usage = await readCodexSessionUsage({ sessionsDir: sessionsDir ?? "", cwd });
+		const { usage, cache } = await readCodexSessionUsage({ sessionsDir: sessionsDir ?? "", cwd });
 		expect(usage).toEqual({ inputTokens: 79049, outputTokens: 265, totalTokens: 79314 });
+		expect(cache?.filePath).toBe(file);
 	});
 
 	it("ignores a rollout whose cwd does not match the task worktree", async () => {
@@ -198,7 +199,61 @@ describe("readCodexSessionUsage", () => {
 		].join("\n");
 		writeFileSync(file, content, "utf8");
 
-		const usage = await readCodexSessionUsage({ sessionsDir: sessionsDir ?? "", cwd: "/home/dev/proj" });
+		const { usage } = await readCodexSessionUsage({ sessionsDir: sessionsDir ?? "", cwd: "/home/dev/proj" });
 		expect(usage).toBeNull();
+	});
+
+	it("reuses the cached rollout path + parse without re-walking when unchanged", async () => {
+		const cwd = "/home/dev/proj";
+		const dir = join(sessionsDir ?? "", "2026", "06", "25");
+		mkdirSync(dir, { recursive: true });
+		const file = join(dir, "rollout-2026-06-25T14-09-07-019efd65-7d9b-7803-be21-5bb48edab5e4.jsonl");
+		writeFileSync(
+			file,
+			[
+				JSON.stringify({ type: "session_meta", payload: { id: "019efd65-7d9b-7803-be21-5bb48edab5e4", cwd } }),
+				tokenCountLine({ input: 100, output: 20 }),
+			].join("\n"),
+			"utf8",
+		);
+
+		const first = await readCodexSessionUsage({ sessionsDir: sessionsDir ?? "", cwd }, null);
+		expect(first.usage).toEqual({ inputTokens: 100, outputTokens: 20, totalTokens: 120 });
+		expect(first.cache?.filePath).toBe(file);
+
+		// Pass a sessionsDir that has NO rollouts: a fresh locate would find nothing,
+		// so a non-null result proves the cached path was reused (locator skipped).
+		const emptyDir = mkdtempSync(join(tmpdir(), "kanban-codex-usage-empty-"));
+		try {
+			const second = await readCodexSessionUsage({ sessionsDir: emptyDir, cwd }, first.cache);
+			expect(second.cache).toBe(first.cache);
+			expect(second.usage).toEqual(first.usage);
+		} finally {
+			rmSync(emptyDir, { recursive: true, force: true });
+		}
+	});
+
+	it("re-reads when the cached rollout grows", async () => {
+		const cwd = "/home/dev/proj";
+		const dir = join(sessionsDir ?? "", "2026", "06", "25");
+		mkdirSync(dir, { recursive: true });
+		const file = join(dir, "rollout-2026-06-25T14-09-07-019efd65-7d9b-7803-be21-5bb48edab5e4.jsonl");
+		const header = JSON.stringify({
+			type: "session_meta",
+			payload: { id: "019efd65-7d9b-7803-be21-5bb48edab5e4", cwd },
+		});
+		writeFileSync(file, [header, tokenCountLine({ input: 100, output: 20 })].join("\n"), "utf8");
+
+		const first = await readCodexSessionUsage({ sessionsDir: sessionsDir ?? "", cwd }, null);
+		expect(first.usage).toEqual({ inputTokens: 100, outputTokens: 20, totalTokens: 120 });
+
+		writeFileSync(
+			file,
+			[header, tokenCountLine({ input: 100, output: 20 }), tokenCountLine({ input: 250, output: 40 })].join("\n"),
+			"utf8",
+		);
+		const second = await readCodexSessionUsage({ sessionsDir: sessionsDir ?? "", cwd }, first.cache);
+		expect(second.cache).not.toBe(first.cache);
+		expect(second.usage).toEqual({ inputTokens: 250, outputTokens: 40, totalTokens: 290 });
 	});
 });

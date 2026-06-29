@@ -1148,10 +1148,12 @@ async function detectGitDefaultBranch(repoPath: string, branches: string[]): Pro
 	return branches[0] ?? null;
 }
 
-export async function detectGitRepositoryInfo(repoPath: string): Promise<RuntimeGitRepositoryInfo> {
+async function detectGitRepositoryInfoUncached(repoPath: string): Promise<RuntimeGitRepositoryInfo> {
 	// Breadcrumb so a future slow git read on this hot path is attributed precisely
 	// (the reads are async now, so a slow git no longer hard-freezes the loop, but a
-	// stall report still wants the workspace + step that lagged).
+	// stall report still wants the workspace + step that lagged). Marked here, inside
+	// the uncached body, so it only fires when we actually spawn git — a cache hit is
+	// free and should not pollute the breadcrumb.
 	markStall("git:detect", repoPath);
 	const gitRoot = await detectGitRoot(repoPath);
 	if (!gitRoot) {
@@ -1169,6 +1171,70 @@ export async function detectGitRepositoryInfo(repoPath: string): Promise<Runtime
 		defaultBranch,
 		branches: orderedBranches,
 	};
+}
+
+function cloneGitRepositoryInfo(info: RuntimeGitRepositoryInfo): RuntimeGitRepositoryInfo {
+	return {
+		currentBranch: info.currentBranch,
+		defaultBranch: info.defaultBranch,
+		branches: [...info.branches],
+	};
+}
+
+interface GitRepositoryInfoCacheEntry {
+	/** The in-flight or settled detection promise, shared by concurrent callers. */
+	promise: Promise<RuntimeGitRepositoryInfo>;
+	/** Epoch-ms after which this entry is considered stale. */
+	expiresAt: number;
+}
+
+/**
+ * Short-lived, single-flight memo of {@link detectGitRepositoryInfo} keyed by repo
+ * path. `detectGitRepositoryInfo` runs on the `loadWorkspaceContext` hot path —
+ * every `workspace_state_updated` broadcast — and each call spawns ~4 git
+ * subprocesses. When N terminal-agent sessions hit a turn boundary together they
+ * fan out ~4N concurrent gits on one repo, contending the index lock (finding T3,
+ * same root cause as the metadata-monitor git poll). Caching the *promise* (not just
+ * the resolved value) collapses a concurrent burst onto one detection, and the TTL
+ * collapses sequential repeats. Branch lists change rarely, so a few seconds of
+ * staleness is acceptable; explicit branch switches invalidate the entry eagerly via
+ * {@link invalidateGitRepositoryInfoCache}.
+ */
+const gitRepositoryInfoCache = new Map<string, GitRepositoryInfoCacheEntry>();
+const GIT_REPOSITORY_INFO_CACHE_TTL_MS = 3_000;
+
+export async function detectGitRepositoryInfo(repoPath: string): Promise<RuntimeGitRepositoryInfo> {
+	const cached = gitRepositoryInfoCache.get(repoPath);
+	if (cached && cached.expiresAt > Date.now()) {
+		// Clone so a caller mutating `branches` can't corrupt the shared cache entry.
+		return cloneGitRepositoryInfo(await cached.promise);
+	}
+	const promise = detectGitRepositoryInfoUncached(repoPath);
+	gitRepositoryInfoCache.set(repoPath, { promise, expiresAt: Date.now() + GIT_REPOSITORY_INFO_CACHE_TTL_MS });
+	try {
+		return cloneGitRepositoryInfo(await promise);
+	} catch (error) {
+		// A failed probe (e.g. no git repo) must not be cached — evict so the next
+		// call retries instead of replaying the rejection for the whole TTL window.
+		if (gitRepositoryInfoCache.get(repoPath)?.promise === promise) {
+			gitRepositoryInfoCache.delete(repoPath);
+		}
+		throw error;
+	}
+}
+
+/**
+ * Evict the cached git repository info for a repo (or all repos) so the next
+ * {@link detectGitRepositoryInfo} re-probes. Called after an explicit branch
+ * mutation (checkout) so the UI reflects the new branch immediately rather than
+ * after the TTL.
+ */
+export function invalidateGitRepositoryInfoCache(repoPath?: string): void {
+	if (repoPath === undefined) {
+		gitRepositoryInfoCache.clear();
+		return;
+	}
+	gitRepositoryInfoCache.delete(repoPath);
 }
 
 async function resolveWorkspacePath(cwd: string): Promise<string> {

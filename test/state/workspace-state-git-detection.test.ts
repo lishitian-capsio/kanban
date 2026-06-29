@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { detectGitRepositoryInfo } from "../../src/state/workspace-state";
+import { detectGitRepositoryInfo, invalidateGitRepositoryInfoCache } from "../../src/state/workspace-state";
 import { createGitTestEnv } from "../utilities/git-env";
 import { createTempDir } from "../utilities/temp-dir";
 
@@ -63,6 +63,53 @@ describe("detectGitRepositoryInfo", () => {
 			await detection;
 			expect(order[0]).toBe("microtask");
 		} finally {
+			cleanup();
+		}
+	});
+
+	// Finding T3: detectGitRepositoryInfo runs on every workspace_state_updated
+	// broadcast and spawns ~4 git subprocesses. A short-TTL, single-flight memo
+	// collapses the N-sessions-finish-together burst onto one detection.
+	it("memoizes within the TTL and re-probes after explicit invalidation", async () => {
+		const { path: repoPath, cleanup } = createTempDir("kanban-git-detect-cache-");
+		try {
+			invalidateGitRepositoryInfoCache(repoPath);
+			initRepository(repoPath);
+
+			const first = await detectGitRepositoryInfo(repoPath);
+			expect(first.branches).toContain("feature/x");
+			expect(first.branches).not.toContain("feature/y");
+
+			// Create a branch the cached entry can't know about.
+			runGit(repoPath, ["branch", "feature/y"]);
+
+			// Within the TTL the memo is reused, so the new branch is not yet visible.
+			const cached = await detectGitRepositoryInfo(repoPath);
+			expect(cached.branches).not.toContain("feature/y");
+
+			// Eager invalidation (what a checkout triggers) forces a fresh probe.
+			invalidateGitRepositoryInfoCache(repoPath);
+			const refreshed = await detectGitRepositoryInfo(repoPath);
+			expect(refreshed.branches).toContain("feature/y");
+		} finally {
+			invalidateGitRepositoryInfoCache(repoPath);
+			cleanup();
+		}
+	});
+
+	it("returns a defensive copy so callers cannot corrupt the shared cache entry", async () => {
+		const { path: repoPath, cleanup } = createTempDir("kanban-git-detect-clone-");
+		try {
+			invalidateGitRepositoryInfoCache(repoPath);
+			initRepository(repoPath);
+
+			const first = await detectGitRepositoryInfo(repoPath);
+			first.branches.push("mutant/branch");
+
+			const second = await detectGitRepositoryInfo(repoPath);
+			expect(second.branches).not.toContain("mutant/branch");
+		} finally {
+			invalidateGitRepositoryInfoCache(repoPath);
 			cleanup();
 		}
 	});

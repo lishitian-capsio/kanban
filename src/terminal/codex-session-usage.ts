@@ -27,6 +27,7 @@ import { readFile } from "node:fs/promises";
 
 import type { RuntimeTaskSessionUsage } from "../core/api-contract";
 import { findLatestCodexRollout } from "./codex-session-capture";
+import { isUsageCacheFresh, type SessionUsageReadCache, statUsageFile } from "./session-usage-cache";
 
 /** Coerce an unknown JSON value to a non-negative finite number, else 0. */
 function toNonNegativeNumber(value: unknown): number {
@@ -95,30 +96,68 @@ export interface CodexSessionUsageInput {
 	cwd: string;
 }
 
+/** Result of a cached rollout read: the usage plus the memo to feed back next time. */
+export interface CodexSessionUsageResult {
+	usage: RuntimeTaskSessionUsage | null;
+	cache: SessionUsageReadCache | null;
+}
+
 /**
  * Read and accumulate cumulative token usage from the Codex rollout matching this
- * task's worktree cwd. Returns `null` (never throws) when no rollout matches, the
- * file is unreadable, or it carries no usage — every failure degrades silently.
+ * task's worktree cwd. Returns `{ usage: null }` (never throws) when no rollout
+ * matches, the file is unreadable, or it carries no usage — every failure degrades
+ * silently.
+ *
+ * Two caching layers (findings T1 + T2), both keyed off the threaded `cache`:
+ *  - **Resolved-path reuse:** when the memo's rollout file still exists, its path is
+ *    reused directly, skipping the `~/.codex/sessions` tree walk that located it.
+ *    The path is stable within a launch; the session manager drops the memo on
+ *    relaunch, so a resumed conversation re-resolves via the locator.
+ *  - **Read skip:** when that file is also unchanged `(mtime, size)`, the prior
+ *    parse is reused without re-reading or re-parsing the (growing) rollout.
  */
-export async function readCodexSessionUsage(input: CodexSessionUsageInput): Promise<RuntimeTaskSessionUsage | null> {
+export async function readCodexSessionUsage(
+	input: CodexSessionUsageInput,
+	cache?: SessionUsageReadCache | null,
+): Promise<CodexSessionUsageResult> {
 	if (!input.sessionsDir || !input.cwd) {
-		return null;
+		return { usage: null, cache: null };
 	}
-	// No mtime floor: at a turn boundary the current session's rollout is the
-	// newest one matching this cwd, so the locator returns it.
-	const located = await findLatestCodexRollout({
-		sessionsDir: input.sessionsDir,
-		cwd: input.cwd,
-		sinceMs: Number.NEGATIVE_INFINITY,
-	});
-	if (!located) {
-		return null;
+
+	// Reuse the previously-resolved rollout path when it still exists — this skips
+	// the directory walk entirely on every turn after the first (finding T1). The
+	// existence stat doubles as the change-detection signature.
+	let filePath: string | null = null;
+	let signature = cache?.filePath ? await statUsageFile(cache.filePath) : null;
+	if (signature && cache?.filePath) {
+		filePath = cache.filePath;
+	} else {
+		// No usable memo: locate the rollout. No mtime floor — at a turn boundary the
+		// current session's rollout is the newest one matching this cwd.
+		const located = await findLatestCodexRollout({
+			sessionsDir: input.sessionsDir,
+			cwd: input.cwd,
+			sinceMs: Number.NEGATIVE_INFINITY,
+		});
+		if (!located) {
+			return { usage: null, cache: null };
+		}
+		filePath = located.file;
+		signature = await statUsageFile(filePath);
+		if (!signature) {
+			return { usage: null, cache: null };
+		}
+	}
+
+	if (isUsageCacheFresh(cache, filePath, signature)) {
+		return { usage: cache.usage, cache };
 	}
 	let content: string;
 	try {
-		content = await readFile(located.file, "utf8");
+		content = await readFile(filePath, "utf8");
 	} catch {
-		return null;
+		return { usage: null, cache: null };
 	}
-	return parseCodexRolloutUsage(content);
+	const usage = parseCodexRolloutUsage(content);
+	return { usage, cache: { filePath, mtimeMs: signature.mtimeMs, size: signature.size, usage } };
 }

@@ -22,7 +22,11 @@ import {
 	parseWorktreeEnsureRequest,
 } from "../core/api-validation";
 import { FileLibraryStore } from "../files/file-library-store";
-import { saveWorkspaceState, WorkspaceStateConflictError } from "../state/workspace-state";
+import {
+	invalidateGitRepositoryInfoCache,
+	saveWorkspaceState,
+	WorkspaceStateConflictError,
+} from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { SavedViewStore } from "../vault/saved-view-store";
 import { VaultDocumentStore } from "../vault/vault-document-store";
@@ -274,6 +278,11 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 					branch: body.branch,
 				});
 				if (response.ok) {
+					// The branch just changed — drop the short-TTL git-info memo so the
+					// broadcast's fresh snapshot reflects the new current branch immediately
+					// rather than after the cache window. Branch switches are rare, so
+					// clearing all entries is cheaper than reasoning about the repo-root key.
+					invalidateGitRepositoryInfoCache();
 					void deps.broadcastRuntimeWorkspaceStateUpdated(
 						workspaceScope.workspaceId,
 						workspaceScope.workspacePath,

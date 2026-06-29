@@ -25,6 +25,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { RuntimeTaskSessionUsage } from "../core/api-contract";
+import { isUsageCacheFresh, type SessionUsageReadCache, statUsageFile } from "./session-usage-cache";
 
 /**
  * Encode a cwd into Claude's on-disk project directory name. Claude replaces
@@ -134,22 +135,44 @@ export function parseClaudeSessionUsage(content: string): RuntimeTaskSessionUsag
 	return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens };
 }
 
+/** Result of a cached transcript read: the usage plus the memo to feed back next time. */
+export interface ClaudeSessionUsageResult {
+	usage: RuntimeTaskSessionUsage | null;
+	cache: SessionUsageReadCache | null;
+}
+
 /**
  * Read and accumulate cumulative token usage from a Claude session transcript.
- * Returns `null` (never throws) when the session id is unset, the file is absent,
- * or it carries no usage — every failure degrades silently.
+ * Returns `{ usage: null }` (never throws) when the session id is unset, the file
+ * is absent, or it carries no usage — every failure degrades silently.
+ *
+ * When `cache` describes the same file at the same `(mtime, size)`, the prior
+ * parse is reused and the file is neither re-read nor re-parsed (finding T2). The
+ * returned `cache` should be threaded back into the next call.
  */
-export async function readClaudeSessionUsage(input: ClaudeSessionFileInput): Promise<RuntimeTaskSessionUsage | null> {
+export async function readClaudeSessionUsage(
+	input: ClaudeSessionFileInput,
+	cache?: SessionUsageReadCache | null,
+): Promise<ClaudeSessionUsageResult> {
 	const sessionId = input.sessionId?.trim();
 	if (!sessionId) {
-		return null;
+		// No session id yet — keep any prior memo; the file path is unknowable.
+		return { usage: cache?.usage ?? null, cache: cache ?? null };
 	}
 	const filePath = resolveClaudeSessionFilePath({ ...input, sessionId });
+	const signature = await statUsageFile(filePath);
+	if (!signature) {
+		return { usage: null, cache: null };
+	}
+	if (isUsageCacheFresh(cache, filePath, signature)) {
+		return { usage: cache.usage, cache };
+	}
 	let content: string;
 	try {
 		content = await readFile(filePath, "utf8");
 	} catch {
-		return null;
+		return { usage: null, cache: null };
 	}
-	return parseClaudeSessionUsage(content);
+	const usage = parseClaudeSessionUsage(content);
+	return { usage, cache: { filePath, mtimeMs: signature.mtimeMs, size: signature.size, usage } };
 }

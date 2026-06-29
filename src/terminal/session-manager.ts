@@ -28,6 +28,7 @@ import {
 } from "./agent-session-adapters";
 import { readClaudeSessionUsage } from "./claude-session-usage";
 import { readCodexSessionUsage } from "./codex-session-usage";
+import type { SessionUsageReadCache } from "./session-usage-cache";
 import {
 	hasClaudeWorkspaceTrustPrompt,
 	shouldAutoConfirmClaudeWorkspaceTrust,
@@ -114,6 +115,11 @@ interface SessionEntry {
 	// set from the prepared launch. Null for agents whose usage file is derivable
 	// from the summary alone (Claude) or that emit no transcript.
 	sessionUsageDir: string | null;
+	// Memo of the last token-usage read (resolved transcript path + mtime/size +
+	// parsed usage). Lets a turn-boundary refresh skip the rollout-locator walk and
+	// the whole-file re-parse when nothing changed (findings T1/T2). Reset to null on
+	// each (re)launch so a resumed conversation re-resolves its transcript.
+	usageCache: SessionUsageReadCache | null;
 }
 
 export interface StartTaskSessionRequest {
@@ -208,6 +214,36 @@ function updateSummary(entry: SessionEntry, patch: Partial<RuntimeTaskSessionSum
 		updatedAt: now(),
 	};
 	return entry.summary;
+}
+
+/**
+ * Per-output-chunk `lastOutputAt` bump. Mutates in place rather than spreading a
+ * fresh ~16-field summary object on every chunk (finding T5) — this fires on the
+ * hottest path under token streaming and does not broadcast (no `emitSummary`), so
+ * there is no observer that needs a new object identity. Listeners always receive a
+ * `cloneSummary` copy at the discrete emit sites, never this raw reference.
+ */
+function touchLastOutput(entry: SessionEntry): void {
+	const timestamp = now();
+	entry.summary.lastOutputAt = timestamp;
+	entry.summary.updatedAt = timestamp;
+}
+
+/**
+ * Release the workspace-trust scratch buffer once the trust prompt is handled, so
+ * the per-chunk decode + concat gate (`needsDecodedOutput`) closes for the rest of
+ * the session (finding T4): for Claude that stops the decode entirely; for Codex it
+ * stops it outside the `awaiting_review` transition-inspection window. Set to `null`
+ * (gate closed) when nothing else needs it. While a Codex deferred startup input is
+ * still pending (plan-mode launch), keep an empty buffer so the startup-UI fallback
+ * can still match the accumulated output — nulling too early would break plan-mode
+ * startup detection.
+ */
+function releaseWorkspaceTrustBuffer(active: ActiveProcessState): void {
+	if (active.workspaceTrustBuffer === null) {
+		return;
+	}
+	active.workspaceTrustBuffer = active.deferredStartupInput !== null ? "" : null;
 }
 
 function isActiveState(state: RuntimeTaskSessionState): boolean {
@@ -323,6 +359,10 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 		const deferredInput = active.deferredStartupInput;
 		active.deferredStartupInput = null;
 		active.session.write(deferredInput);
+		// Codex startup is complete: trust is auto-confirmed and the plan-mode input is
+		// in flight, so the trust buffer's last consumer (the startup-UI fallback) is
+		// done. Release it to close the per-chunk decode gate during streaming (T4).
+		releaseWorkspaceTrustBuffer(active);
 		return true;
 	}
 
@@ -404,6 +444,7 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 				autoRestartTimestamps: [],
 				pendingAutoRestart: null,
 				sessionUsageDir: null,
+				usageCache: null,
 			});
 		}
 	}
@@ -579,16 +620,15 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 									}
 									activeEntry.session.write("\r");
 									// Trust text can remain in the rolling buffer after we auto-confirm.
-									// Clear it so later startup/prompt checks do not match stale trust output.
-									if (activeEntry.workspaceTrustBuffer !== null) {
-										activeEntry.workspaceTrustBuffer = "";
-									}
+									// Release it so later startup/prompt checks do not match stale trust
+									// output, and so the per-chunk decode gate can close (finding T4).
+									releaseWorkspaceTrustBuffer(activeEntry);
 									activeEntry.workspaceTrustConfirmTimer = null;
 								}, trustConfirmDelayMs);
 							}
 						}
 					}
-					updateSummary(entry, { lastOutputAt: now() });
+					touchLastOutput(entry);
 
 					// Codex plan-mode startup input is deferred until we know the TUI rendered.
 					// Trigger on either the interactive prompt marker or the startup header text.
@@ -760,6 +800,9 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 		// can re-read it at turn boundaries (Codex rollouts; tracks any projected
 		// custom-provider CODEX_HOME). Claude derives its file from the summary alone.
 		entry.sessionUsageDir = launch.sessionUsageDir ?? null;
+		// Drop any prior usage memo: a (re)launch may resume onto a different
+		// transcript/rollout, so the resolved path + parse must be re-derived.
+		entry.usageCache = null;
 
 		// Self-heal the token-usage chip on (re)launch: a resumed session already has
 		// a transcript on disk, so reading it now surfaces the prior cumulative usage
@@ -832,24 +875,26 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			return;
 		}
 		const sessionId = entry.summary.agentSessionId;
+		const priorCache = entry.usageCache;
 		let usage: RuntimeTaskSessionUsage | null;
+		let nextCache: SessionUsageReadCache | null;
 		if (agentId === "claude") {
 			// Claude's transcript path is derivable from the pinned session id + cwd.
 			if (!sessionId) {
 				return;
 			}
-			usage = await readClaudeSessionUsage({ cwd, sessionId });
+			({ usage, cache: nextCache } = await readClaudeSessionUsage({ cwd, sessionId }, priorCache));
 		} else if (agentId === "codex") {
 			// Codex's rollout is located by cwd (id-independent), so usage surfaces
 			// even before the post-launch session-id capture lands.
 			if (!entry.sessionUsageDir) {
 				return;
 			}
-			usage = await readCodexSessionUsage({ sessionsDir: entry.sessionUsageDir, cwd });
+			({ usage, cache: nextCache } = await readCodexSessionUsage(
+				{ sessionsDir: entry.sessionUsageDir, cwd },
+				priorCache,
+			));
 		} else {
-			return;
-		}
-		if (!usage) {
 			return;
 		}
 		// Re-resolve after the await: the agent (and, for Claude, the session id the
@@ -862,6 +907,17 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			return;
 		}
 		if (agentId === "claude" && current.summary.agentSessionId !== sessionId) {
+			return;
+		}
+		// Persist the memo (resolved transcript path + signature + parse) so the next
+		// refresh can skip the locator walk and the re-parse — but only when no
+		// concurrent (re)launch or refresh replaced it meanwhile. Identity-comparing
+		// against the snapshot we started from means a relaunch's reset-to-null is never
+		// clobbered by this in-flight read's stale memo.
+		if (current.usageCache === priorCache) {
+			current.usageCache = nextCache;
+		}
+		if (!usage) {
 			return;
 		}
 		const prev = current.summary.usage ?? null;
@@ -954,7 +1010,7 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 							);
 						}
 					}
-					updateSummary(entry, { lastOutputAt: now() });
+					touchLastOutput(entry);
 
 					if (entry.listeners.size > 0) {
 						for (const taskListener of entry.listeners.values()) {
@@ -1379,9 +1435,7 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			return entry.summary;
 		}
 		if (transition.clearAttentionBuffer && entry.active) {
-			if (entry.active.workspaceTrustBuffer !== null) {
-				entry.active.workspaceTrustBuffer = "";
-			}
+			releaseWorkspaceTrustBuffer(entry.active);
 		}
 		if (entry.active && transition.changed && transition.patch.state === "awaiting_review") {
 			entry.active.awaitingCodexPromptAfterEnter = false;
@@ -1417,6 +1471,7 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			autoRestartTimestamps: [],
 			pendingAutoRestart: null,
 			sessionUsageDir: null,
+			usageCache: null,
 		};
 		this.entries.set(taskId, created);
 		return created;

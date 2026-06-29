@@ -11,6 +11,14 @@ const { Terminal } = headlessTerminalModule as typeof import("@xterm/headless");
 // per-scroll clone/trim cost and memory versus the previous 10k.
 const TERMINAL_SCROLLBACK = 5_000;
 
+// Depth of scrollback included in a reconnect restore snapshot. A reconnecting
+// viewer only needs enough history to repaint its viewport and scroll back a little
+// — not the full 5k-line buffer, which `SerializeAddon.serialize()` would otherwise
+// walk into one large ANSI string on every control-socket (re)connect (finding T7).
+// The full transcript is preserved separately via the committed-lines path, so this
+// cap does not affect transcript fidelity, only the visual restore depth.
+const RESTORE_SNAPSHOT_SCROLLBACK = 1_000;
+
 // Micro-batching: PTY output arrives as a flood of tiny chunks (one escape
 // sequence / line each). Feeding every chunk to @xterm/headless individually
 // allocates a Uint8Array + a Promise and walks the serial queue per chunk, which
@@ -147,7 +155,7 @@ export class TerminalStateMirror {
 			return { snapshot: "", cols: this.terminal.cols, rows: this.terminal.rows };
 		}
 		return {
-			snapshot: this.serializeAddon.serialize(),
+			snapshot: this.serializeAddon.serialize({ scrollback: RESTORE_SNAPSHOT_SCROLLBACK }),
 			cols: this.terminal.cols,
 			rows: this.terminal.rows,
 		};

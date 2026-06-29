@@ -148,9 +148,15 @@ export interface LatestCodexRollout {
  */
 export async function findLatestCodexRollout(input: FindLatestCodexSessionInput): Promise<LatestCodexRollout | null> {
 	const files = await collectRolloutFiles(input.sessionsDir);
-	let best: LatestCodexRollout | null = null;
-	let bestMtimeMs = Number.NEGATIVE_INFINITY;
 	const floor = input.sinceMs - MTIME_FLOOR_TOLERANCE_MS;
+
+	// Stat all candidates (cheap), drop those below the mtime floor, then sort by
+	// mtime descending. The active rollout is the most recently written one, so
+	// reading `session_meta` newest-first and returning at the first cwd match means
+	// we usually open exactly one rollout instead of every file whose mtime beat the
+	// running max — turning the per-walk `session_meta` reads from O(files) into ≈1
+	// (finding T1). The cwd disambiguates concurrent sessions sharing `~/.codex`.
+	const candidates: Array<{ file: string; mtimeMs: number }> = [];
 	for (const file of files) {
 		let mtimeMs: number;
 		try {
@@ -158,17 +164,21 @@ export async function findLatestCodexRollout(input: FindLatestCodexSessionInput)
 		} catch {
 			continue;
 		}
-		if (mtimeMs < floor || mtimeMs <= bestMtimeMs) {
+		if (mtimeMs < floor) {
 			continue;
 		}
-		const meta = await readRolloutSessionMeta(file);
+		candidates.push({ file, mtimeMs });
+	}
+	candidates.sort((left, right) => right.mtimeMs - left.mtimeMs);
+
+	for (const candidate of candidates) {
+		const meta = await readRolloutSessionMeta(candidate.file);
 		if (!meta || meta.cwd !== input.cwd) {
 			continue;
 		}
-		best = { file, id: meta.id };
-		bestMtimeMs = mtimeMs;
+		return { file: candidate.file, id: meta.id };
 	}
-	return best;
+	return null;
 }
 
 /**

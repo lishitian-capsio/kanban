@@ -167,7 +167,7 @@ describe("readClaudeSessionUsage", () => {
 	});
 
 	it("returns null when the session id is missing", async () => {
-		const usage = await readClaudeSessionUsage({
+		const { usage } = await readClaudeSessionUsage({
 			cwd: "/home/dev/proj",
 			sessionId: "   ",
 			claudeConfigDir: tempRoot ?? undefined,
@@ -176,7 +176,7 @@ describe("readClaudeSessionUsage", () => {
 	});
 
 	it("returns null when the session file does not exist", async () => {
-		const usage = await readClaudeSessionUsage({
+		const { usage } = await readClaudeSessionUsage({
 			cwd: "/home/dev/proj",
 			sessionId: "missing-session",
 			claudeConfigDir: tempRoot ?? undefined,
@@ -192,7 +192,34 @@ describe("readClaudeSessionUsage", () => {
 		const line = assistantLine({ id: "m1", input: 100, cacheRead: 20, output: 10 });
 		writeFileSync(filePath, [line, line].join("\n"), "utf8");
 
-		const usage = await readClaudeSessionUsage({ cwd, sessionId, claudeConfigDir: tempRoot ?? undefined });
+		const { usage } = await readClaudeSessionUsage({ cwd, sessionId, claudeConfigDir: tempRoot ?? undefined });
 		expect(usage).toEqual({ inputTokens: 120, outputTokens: 10, totalTokens: 130 });
+	});
+
+	it("reuses the cached parse when the file is unchanged and re-reads after it grows", async () => {
+		const cwd = "/home/dev/proj";
+		const sessionId = "22222222-2222-2222-2222-222222222222";
+		const filePath = resolveClaudeSessionFilePath({ cwd, sessionId, claudeConfigDir: tempRoot ?? undefined });
+		mkdirSync(join(filePath, ".."), { recursive: true });
+		writeFileSync(filePath, assistantLine({ id: "m1", input: 100, output: 10 }), "utf8");
+
+		const first = await readClaudeSessionUsage({ cwd, sessionId, claudeConfigDir: tempRoot ?? undefined });
+		expect(first.usage).toEqual({ inputTokens: 100, outputTokens: 10, totalTokens: 110 });
+		expect(first.cache?.filePath).toBe(filePath);
+
+		// Unchanged file → same memo object returned (no re-parse).
+		const second = await readClaudeSessionUsage({ cwd, sessionId, claudeConfigDir: tempRoot ?? undefined }, first.cache);
+		expect(second.cache).toBe(first.cache);
+		expect(second.usage).toEqual(first.usage);
+
+		// Grow the file (new message id, larger size) → memo is stale → re-parse.
+		writeFileSync(
+			filePath,
+			[assistantLine({ id: "m1", input: 100, output: 10 }), assistantLine({ id: "m2", input: 50, output: 5 })].join("\n"),
+			"utf8",
+		);
+		const third = await readClaudeSessionUsage({ cwd, sessionId, claudeConfigDir: tempRoot ?? undefined }, second.cache);
+		expect(third.cache).not.toBe(second.cache);
+		expect(third.usage).toEqual({ inputTokens: 150, outputTokens: 15, totalTokens: 165 });
 	});
 });
