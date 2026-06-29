@@ -1,0 +1,20 @@
+{
+  "id": "18a65",
+  "title": "统一会话 agent 表示（卡片/tab/下拉/rail/对话头部/选择器）",
+  "prompt": "实现 vault 设计文档 decision/d746c「Unify the 会话-agent representation across card, tab, dropdown, and rail」——先用 kanban CLI 读它：vault doc show d746c，按其中的决策实现。\n\n目标：让同一个「会话 agent(home thread)」在六处表示里视觉+结构一致，跨 board 模式和 session(全屏) 模式。底层原子(AgentIcon / HomeSessionCardStatusMarker / deriveHomeSessionCardStatus / deriveSessionShortId)已共享，问题在组合包装不一致。\n\n两层身份(别混)：\n- 线程实例原子(agent 头像 + 状态点 + 标题)：用于 ① 卡片 ② tab ③ 下拉 ④ Pi rail。\n- agent 类型身份(图标 + 标签，⑤ 另带 provider·model)：用于 ⑤ 对话头部 ⑥ 新建选择器。\n- 公约数：AgentIcon 的处理(尺寸/是否带框/永远靠左)六处统一。\n\n四条统一规则：\n1. 身份原子=带状态点的 agent 头像(图标进统一小框、角上叠状态点)，永远在最左，标题紧随。这会让 ②tab 和 ③下拉也出现状态点(它们现在没有)、并把它们靠右的图标改到靠左；④Pi rail 补上头像。\n2. 激活高亮=以 accent 为统一信号：tile(①卡片)用 accent 描边；线性行(②tab/③下拉/④rail)用 accent 下划线或左条 + surface-2 底。信号一致，形态随容器。\n3. 标题字重=选中粗、未选中常规次级色，六处统一(①卡片不再总是粗)。\n4. ①卡片元数据全留(provider·model / token / 任务计数 / 时间·短码 四组都不删)，但收进一个克制的分组次级区，统一低字重，排在身份+一行内容之下，不跟身份抢视觉。\n\n落地：抽一个变体驱动的共享组件 SessionAgentIdentity(头像+状态+标题，variant: card|tab|dropdown-item|rail-item)，让 ①②③④ 复用同一原子；⑤⑥ 对齐同一套 AgentIcon 处理。可能再抽一个 getActiveHighlightClass 小工具。derive helpers 保持状态语义的唯一来源。\n\n六个文件：\n- web-ui/src/components/home-agent/home-session-card.tsx (①)\n- web-ui/src/components/home-agent/session-tab-strip.tsx (②)\n- web-ui/src/components/home-agent/home-thread-bar.tsx (③ 触发器+菜单项)\n- web-ui/src/components/home-agent/pi-session-rail.tsx (④)\n- web-ui/src/components/home-agent/home-agent-conversation.tsx:210-223 (⑤)\n- web-ui/src/components/home-agent/home-thread-create-dialog.tsx:108-130 (⑥)\n\n约束：暗色主题、用 globals.css 的 @theme token；状态色沿用现有语义(running/await-review/error/idle)；高频 slice 在叶子组件订阅(卡片的 taskCounts 已是)。范围之外：board 任务卡(表示任务执行 agent，不是会话 agent)，只需顺带共享同一 AgentIcon 处理、不在本任务改。\n\n合理处补测试。最后说明抽了哪个共享组件、六处如何改、行为变化(tab/下拉新增状态点、rail 新增头像、卡片标题改为选中驱动字重)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "be8da62b-73a2-48bf-99f8-7aa66272411b",
+  "baseRef": "main",
+  "createdAt": 1782722539377,
+  "updatedAt": 1782722539377,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
