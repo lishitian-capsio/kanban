@@ -1,0 +1,20 @@
+{
+  "id": "7e034",
+  "title": "开发:File 轻量查看/编辑弹窗(overlay)",
+  "prompt": "按照设计任务产出的设计文档(.plan/docs/ 下的 File 轻量弹窗设计文档),实现 vault \"file\" 的轻量单文件查看/编辑弹窗(overlay)。\n\n开始前:先读设计文档,严格按其中的组件架构、数据流、状态管理与触发接线方案实现。如设计文档与现状有冲突,以实际代码为准并在 PR/提交说明里指出。\n\n实现要点(以设计文档为准):\n- 弹窗以 overlay 形式叠在当前界面之上,board 保持挂载、不重排;弹窗按需 mount,关闭即 unmount。\n- 第一版只做单文件:查看 + 简单编辑 + 保存 + 关闭;弹窗内不做文件列表浏览。\n- 通过 file id / path 打开;复用现有 vault tRPC CRUD,不新建后端读写路径。\n- 复用项目已有的 UI 原语(@/components/ui/dialog)与已有 markdown 编辑器(注意 md-editor ghosting 已知坑)。\n- 触发入口:从 vault wikilink / 文件引用处点开;预留后续扩展入口。\n\n完成标准:\n- 弹窗可从设计指定入口打开,正确加载并保存单个文件,关闭后干净卸载,board 无明显卡顿(对比 vault/database 视图明显更快)。\n- 通过 typecheck 与相关测试。\n- 遵循 web-ui 的 Tailwind v4 / 设计 token / Radix 约定(见 AGENTS.md)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782717864164,
+  "updatedAt": 1782717864164,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
