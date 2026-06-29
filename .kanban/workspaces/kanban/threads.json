@@ -51,7 +51,7 @@
       "titleSource": "auto",
       "createdAt": 1782698377856,
       "updatedAt": 1782700538886,
-      "pendingNextStep": "建个任务：在 decision 和 note 类型的 authoring 提示里补上 related_tasks 约定"
+      "pendingNextStep": "启动任务 A（0b0a8）"
     },
     {
       "id": "09cbba03-af49-47b6-9e38-85e50946643b",
@@ -73,6 +73,6 @@
       "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
       "09cbba03-af49-47b6-9e38-85e50946643b"
     ],
-    "activeThreadId": "be8da62b-73a2-48bf-99f8-7aa66272411b"
+    "activeThreadId": null
   }
 }
