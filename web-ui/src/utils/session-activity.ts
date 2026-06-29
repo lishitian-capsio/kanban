@@ -124,7 +124,19 @@ export function getCardSessionActivity(
 		return { dotColor: SESSION_ACTIVITY_COLOR.warning, text: "Out of credits" };
 	}
 	const hookActivity = summary.latestHookActivity;
-	const activityText = hookActivity?.activityText?.trim();
+	const rawActivityText = hookActivity?.activityText?.trim();
+	// "Agent active" / "Working on task" / "Resumed…" are running-indicators set
+	// while a turn is in flight. Terminal agents (Claude/Codex/…) end a turn via a
+	// hook that carries no final message, so this text is never overwritten and
+	// lingers after the session settles into awaiting_review/idle. Honoring it once
+	// the agent is no longer running makes an idle session read as "Thinking…", so
+	// drop it unless the session is genuinely running — the derivation then falls
+	// back to the state-based label (e.g. "Waiting for review").
+	const isRunningIndicator =
+		rawActivityText === "Agent active" ||
+		rawActivityText === "Working on task" ||
+		(rawActivityText?.startsWith("Resumed") ?? false);
+	const activityText = isRunningIndicator && summary.state !== "running" ? undefined : rawActivityText;
 	const toolName = hookActivity?.toolName?.trim() ?? null;
 	const toolInputSummary = hookActivity?.toolInputSummary?.trim() ?? null;
 	const finalMessage = hookActivity?.finalMessage?.trim();

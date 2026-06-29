@@ -110,6 +110,34 @@ describe("getCardSessionActivity", () => {
 		expect(activity?.dotColor).toBe(SESSION_ACTIVITY_COLOR.error);
 	});
 
+	it("does not render 'Thinking...' from a stale running-indicator once awaiting review", () => {
+		// Terminal agents (Claude/Codex/…) set activityText to a running-indicator
+		// like "Resumed after user input" / "Agent active" during a turn, but their
+		// turn-end hook carries no final message, so the indicator is never cleared.
+		// A settled (awaiting_review) session must read as idle/waiting, not Thinking.
+		for (const stale of ["Resumed after user input", "Agent active", "Working on task"]) {
+			expect(
+				getCardSessionActivity(makeSummary("awaiting_review", { activityText: stale })),
+			).toEqual<CardSessionActivity>({
+				dotColor: SESSION_ACTIVITY_COLOR.success,
+				text: "Waiting for review",
+			});
+		}
+	});
+
+	it("still shows 'Thinking...' from a running-indicator while genuinely running", () => {
+		for (const live of ["Resumed after user input", "Agent active", "Working on task"]) {
+			expect(getCardSessionActivity(makeSummary("running", { activityText: live }))).toEqual<CardSessionActivity>({
+				dotColor: SESSION_ACTIVITY_COLOR.thinking,
+				text: "Thinking...",
+			});
+		}
+	});
+
+	it("does not surface a stale running-indicator for an idle session", () => {
+		expect(getCardSessionActivity(makeSummary("idle", { activityText: "Agent active" }))).toBeNull();
+	});
+
 	it("reports out-of-credits (orange) for a credit-limit hook", () => {
 		const activity = getCardSessionActivity(makeSummary("failed", { notificationType: "credit_limit" }));
 		expect(activity).toEqual<CardSessionActivity>({
