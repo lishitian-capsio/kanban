@@ -73,10 +73,11 @@
     {
       "id": "3e599da8-ac7b-4c0a-b7bb-48bd0e7c10aa",
       "agentId": "claude",
-      "name": "git push，怎么实现多仓库push？目前我们好像只能在settings下设置单个仓库",
+      "name": "多 remote push 支持",
       "titleSource": "auto",
       "createdAt": 1782703239868,
-      "updatedAt": 1782703239868
+      "updatedAt": 1782703803131,
+      "pendingNextStep": "开始任务 90622（仓库代码多 remote push）"
     }
   ],
   "fullscreenTabs": {
