@@ -9,6 +9,7 @@ import type {
 	RuntimeTaskSessionReviewReason,
 	RuntimeTaskSessionState,
 	RuntimeTaskSessionSummary,
+	RuntimeTaskSessionUsage,
 	RuntimeTaskTurnCheckpoint,
 } from "../core/api-contract";
 import { createLogger } from "../logging";
@@ -26,6 +27,7 @@ import {
 	prepareAgentLaunch,
 } from "./agent-session-adapters";
 import { readClaudeSessionUsage } from "./claude-session-usage";
+import { readCodexSessionUsage } from "./codex-session-usage";
 import {
 	hasClaudeWorkspaceTrustPrompt,
 	shouldAutoConfirmClaudeWorkspaceTrust,
@@ -108,6 +110,10 @@ interface SessionEntry {
 	suppressAutoRestartOnExit: boolean;
 	autoRestartTimestamps: number[];
 	pendingAutoRestart: Promise<void> | null;
+	// Effective on-disk sessions dir for the token-usage reader (Codex rollouts);
+	// set from the prepared launch. Null for agents whose usage file is derivable
+	// from the summary alone (Claude) or that emit no transcript.
+	sessionUsageDir: string | null;
 }
 
 export interface StartTaskSessionRequest {
@@ -397,6 +403,7 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 				suppressAutoRestartOnExit: false,
 				autoRestartTimestamps: [],
 				pendingAutoRestart: null,
+				sessionUsageDir: null,
 			});
 		}
 	}
@@ -749,6 +756,11 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			void this.captureAndApplyAgentSessionId(entry, session, launch.captureAgentSessionId, startedAt);
 		}
 
+		// Remember where this agent writes its transcript so the token-usage reader
+		// can re-read it at turn boundaries (Codex rollouts; tracks any projected
+		// custom-provider CODEX_HOME). Claude derives its file from the summary alone.
+		entry.sessionUsageDir = launch.sessionUsageDir ?? null;
+
 		// Self-heal the token-usage chip on (re)launch: a resumed session already has
 		// a transcript on disk, so reading it now surfaces the prior cumulative usage
 		// immediately — before the first new turn boundary. No-op for a fresh task
@@ -800,9 +812,10 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 	 * Refresh a CLI agent's cumulative token usage from its on-disk session
 	 * transcript and fold the result onto the live summary. CLI agents emit no
 	 * token telemetry to Kanban, but Claude records per-message `usage` to a local
-	 * JSONL keyed by the session id Kanban already pins — so re-reading that file
-	 * at a turn boundary (and on relaunch) is the equivalent of pi's per-run
-	 * accumulate. The on-disk file holds the *full* session, so this SETs the total
+	 * JSONL keyed by the session id Kanban already pins, and Codex records a
+	 * cumulative `total_token_usage` in its rollout file — so re-reading those at a
+	 * turn boundary (and on relaunch) is the equivalent of pi's per-run accumulate.
+	 * The on-disk file holds the *full* session, so this SETs the total
 	 * (idempotent) rather than incrementing. Persisted + broadcast through the same
 	 * `updateSummary` → `listSummaries()` → `sessions.json` / websocket path as pi.
 	 * Best-effort: any read failure leaves the prior usage untouched and never
@@ -810,24 +823,45 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 	 */
 	private async captureSessionUsage(taskId: string): Promise<void> {
 		const entry = this.entries.get(taskId);
-		if (!entry || entry.summary.agentId !== "claude") {
+		if (!entry) {
+			return;
+		}
+		const agentId = entry.summary.agentId;
+		const cwd = entry.summary.workspacePath;
+		if (!cwd) {
 			return;
 		}
 		const sessionId = entry.summary.agentSessionId;
-		const cwd = entry.summary.workspacePath;
-		if (!sessionId || !cwd) {
+		let usage: RuntimeTaskSessionUsage | null;
+		if (agentId === "claude") {
+			// Claude's transcript path is derivable from the pinned session id + cwd.
+			if (!sessionId) {
+				return;
+			}
+			usage = await readClaudeSessionUsage({ cwd, sessionId });
+		} else if (agentId === "codex") {
+			// Codex's rollout is located by cwd (id-independent), so usage surfaces
+			// even before the post-launch session-id capture lands.
+			if (!entry.sessionUsageDir) {
+				return;
+			}
+			usage = await readCodexSessionUsage({ sessionsDir: entry.sessionUsageDir, cwd });
+		} else {
 			return;
 		}
-		const usage = await readClaudeSessionUsage({ cwd, sessionId });
 		if (!usage) {
 			return;
 		}
-		// Re-resolve after the await: the session id must still match the one we read
-		// for, so a relaunch onto a different conversation can't be stamped with the
-		// old file's usage. Skip no-op and stale (smaller) reads — usage only grows,
-		// so an out-of-order concurrent read must not regress the displayed total.
+		// Re-resolve after the await: the agent (and, for Claude, the session id the
+		// file is keyed by) must still match what we read for, so a relaunch onto a
+		// different conversation can't be stamped with the old file's usage. Skip
+		// no-op and stale (smaller) reads — usage only grows, so an out-of-order
+		// concurrent read must not regress the displayed total.
 		const current = this.entries.get(taskId);
-		if (!current || current.summary.agentSessionId !== sessionId) {
+		if (!current || current.summary.agentId !== agentId) {
+			return;
+		}
+		if (agentId === "claude" && current.summary.agentSessionId !== sessionId) {
 			return;
 		}
 		const prev = current.summary.usage ?? null;
@@ -1382,6 +1416,7 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			suppressAutoRestartOnExit: false,
 			autoRestartTimestamps: [],
 			pendingAutoRestart: null,
+			sessionUsageDir: null,
 		};
 		this.entries.set(taskId, created);
 		return created;

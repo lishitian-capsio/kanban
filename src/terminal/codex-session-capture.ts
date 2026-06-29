@@ -132,14 +132,23 @@ export interface FindLatestCodexSessionInput {
 	sinceMs: number;
 }
 
+export interface LatestCodexRollout {
+	/** Absolute path to the matching rollout `*.jsonl` file. */
+	file: string;
+	/** The rollout's canonical session id (from its `session_meta` line). */
+	id: string;
+}
+
 /**
- * Find the session id of the most recently modified rollout under `sessionsDir`
- * whose `cwd` matches and whose mtime is at/after `sinceMs`. Returns null when
- * none qualifies.
+ * Find the most recently modified rollout under `sessionsDir` whose `cwd` matches
+ * and whose mtime is at/after `sinceMs`. Returns its file path + session id, or
+ * null when none qualifies. This is the shared cwd-matching locator behind both
+ * session-id capture and token-usage reading — the worktree `cwd` disambiguates
+ * concurrent sessions sharing a `~/.codex` default login (each task = one cwd).
  */
-export async function findLatestCodexSessionId(input: FindLatestCodexSessionInput): Promise<string | null> {
+export async function findLatestCodexRollout(input: FindLatestCodexSessionInput): Promise<LatestCodexRollout | null> {
 	const files = await collectRolloutFiles(input.sessionsDir);
-	let bestId: string | null = null;
+	let best: LatestCodexRollout | null = null;
 	let bestMtimeMs = Number.NEGATIVE_INFINITY;
 	const floor = input.sinceMs - MTIME_FLOOR_TOLERANCE_MS;
 	for (const file of files) {
@@ -156,10 +165,19 @@ export async function findLatestCodexSessionId(input: FindLatestCodexSessionInpu
 		if (!meta || meta.cwd !== input.cwd) {
 			continue;
 		}
-		bestId = meta.id;
+		best = { file, id: meta.id };
 		bestMtimeMs = mtimeMs;
 	}
-	return bestId;
+	return best;
+}
+
+/**
+ * Find the session id of the most recently modified rollout under `sessionsDir`
+ * whose `cwd` matches and whose mtime is at/after `sinceMs`. Returns null when
+ * none qualifies.
+ */
+export async function findLatestCodexSessionId(input: FindLatestCodexSessionInput): Promise<string | null> {
+	return (await findLatestCodexRollout(input))?.id ?? null;
 }
 
 export interface CaptureCodexSessionOptions {

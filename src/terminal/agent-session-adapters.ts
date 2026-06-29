@@ -105,6 +105,14 @@ export interface PreparedAgentLaunch {
 	 * the agent reuses the id or mints a fresh one on resume.
 	 */
 	captureAgentSessionId?: (input: { startedAtMs: number }) => Promise<string | null>;
+	/**
+	 * The effective `sessions` directory the agent writes its on-disk transcript into,
+	 * for the token-usage reader (Codex: `<CODEX_HOME>/sessions`, which tracks any
+	 * projected custom-provider CODEX_HOME). Callers store it on the session entry so
+	 * cumulative usage can be re-read at turn boundaries. Unset for agents whose usage
+	 * file is derivable from the summary alone (Claude) or that emit no transcript.
+	 */
+	sessionUsageDir?: string;
 }
 
 interface HookContext {
@@ -851,6 +859,9 @@ const codexAdapter: AgentSessionAdapter = {
 			detectOutputTransition: codexPromptDetector,
 			shouldInspectOutputForTransition: shouldInspectCodexOutputForTransition,
 			captureAgentSessionId,
+			// Same effective sessions dir the capture hook scans — the token-usage
+			// reader re-reads the matching rollout's cumulative `total_token_usage`.
+			sessionUsageDir: codexSessionsDir,
 		};
 	},
 };
