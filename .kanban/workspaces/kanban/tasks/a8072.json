@@ -1,0 +1,19 @@
+{
+  "id": "a8072",
+  "title": "修正 qoder agent:installUrl 与二进制名核实",
+  "prompt": "修正 qoder CLI agent 注册里的两个问题(都在 src/core/agent-catalog.ts 的 qoder 条目),让它真正可用。\n\n## 1. installUrl 网址不对(用户已确认)\n当前 catalog 里 qoder 的 installUrl 是 `https://docs.qoder.com/cli/quick-start`,缺了语言段。正确地址是:\n`https://docs.qoder.com/en/cli/quick-start`\n把 installUrl 改成正确地址。\n\n## 2. 二进制名很可能写错,导致检测/启动失败(关键)\n当前 catalog 里 `binary: \"qodercli\"`,但在本机 PATH 上**没有 `qodercli`**,只有一个名为 `qoder` 的可执行文件:\n`/home/developer/.qoder-server/bin/.../bin/remote-cli/qoder`\nKanban 是按 PATH 找 catalog 里的 binary 名来检测并启动 agent 的,名字对不上 → qoder 在 UI 里能选,但真去跑任务会因为找不到 `qodercli` 而启动失败。\n\n请核实 qoder CLI 的**真实可执行文件名**与启动用法,再决定怎么改:\n- 优先查官方文档 https://docs.qoder.com/en/cli/quick-start 和 `qoder --help`(以及确认官方安装后装出来的命令到底叫 `qoder` 还是 `qodercli`)。\n- 如果官方独立 CLI 确实叫 `qoder`(本机这个就是),把 catalog 的 `binary` 改成 `qoder`;如果官方叫 `qodercli` 而本机这个是 IDE 自带的另一个东西,则保留 `qodercli` 但在说明里讲清需要装官方 CLI / 或用 per-agent executablePath 覆盖。给出你的判断依据。\n- 顺带核实 autonomousArgs(当前是 `--dangerously-skip-permissions`)对 qoder 是否正确——参考已有记忆:qoder 是 Claude Code 的 fork,flag 需核实,**不是 `--yolo`**。确认 baseArgs / autonomousArgs 与 qoder 实际 CLI 一致。\n\n## 约束\n- 只动 qoder 相关的注册/适配,遵循现有 CLI agent 模式(参考 claude adapter,qoder 适配此前按 claudeAdapter 克隆、设置写 ~/.qoder/settings.json)。\n- 遵循 AGENTS.md;不做无关重构。\n- 完成后确认 web:typecheck 及相关 typecheck/测试通过,并说明:最终 binary 名、启动参数、判断依据。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782699429158,
+  "updatedAt": 1782699429158,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}
