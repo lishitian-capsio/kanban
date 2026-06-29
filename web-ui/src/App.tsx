@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { UpdateNotificationController } from "@/components/update-notification-controller";
+import { useVaultSettings } from "@/components/vault/data/use-vault-settings";
 import { VaultView } from "@/components/vault/vault-view";
 import { createInitialBoardData } from "@/data/board-data";
 import { createIdleTaskSession } from "@/hooks/app-utils";
@@ -134,6 +135,9 @@ export default function App(): ReactElement {
 	const isInitialRuntimeLoad =
 		!hasReceivedSnapshot && currentProjectId === null && projects.length === 0 && !streamError;
 	const isAwaitingWorkspaceSnapshot = currentProjectId !== null && streamedWorkspaceState === null;
+	// Lifted from the vault surface so the top-bar Vault button can host the agent
+	// vault-management mode picker without the vault being open.
+	const vaultSettings = useVaultSettings(currentProjectId);
 	const {
 		config: runtimeProjectConfig,
 		isLoading: isRuntimeProjectConfigLoading,
@@ -974,6 +978,9 @@ export default function App(): ReactElement {
 						isGitHistoryOpen={isGitHistoryOpen}
 						onToggleVault={hasNoProjects || selectedCard ? undefined : handleToggleVault}
 						isVaultOpen={isVaultOpen}
+						vaultMode={vaultSettings.vaultMode}
+						onVaultModeChange={(next) => void vaultSettings.setVaultMode(next)}
+						vaultModeDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
 						onToggleDatabase={hasNoProjects || selectedCard ? undefined : handleToggleDatabase}
 						isDatabaseOpen={isDatabaseOpen}
 						onToggleHomeChat={isHomeChatAvailable ? handleToggleHomeChat : undefined}

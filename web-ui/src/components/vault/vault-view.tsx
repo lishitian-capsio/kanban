@@ -7,7 +7,6 @@ import { FilesView } from "@/components/files/files-view";
 import { buildDocFromTemplate } from "./create/build-doc-from-template";
 import { CustomerAnchorPanel } from "./customer/customer-anchor-panel";
 import { type UseVaultDocsResult, useVaultDocs, type VaultDocPatch } from "./data/use-vault-docs";
-import { useVaultSettings } from "./data/use-vault-settings";
 import type { VaultDoc } from "./data/vault-doc-model";
 import { getVaultTypeView, listVaultTypeViews } from "./data/vault-type-registry";
 import { useVaultWikilinks } from "./links/use-vault-wikilinks";
@@ -44,7 +43,6 @@ export function VaultView({
 	initialView: VaultInitialView;
 }): React.ReactElement {
 	const types = useMemo(() => listVaultTypeViews(), []);
-	const vaultSettings = useVaultSettings(workspaceId);
 	const [selection, setSelection] = useState<VaultSelection>(() => selectionFromInitial(initialView));
 	const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
 	const [searchOpen, setSearchOpen] = useState(false);
@@ -204,9 +202,6 @@ export function VaultView({
 				selection={selection}
 				onSelect={handleSelectSurface}
 				onOpenSearch={() => setSearchOpen(true)}
-				vaultMode={vaultSettings.vaultMode}
-				onVaultModeChange={(next) => void vaultSettings.setVaultMode(next)}
-				vaultModeDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
 			/>
 			<VaultSearchPanel
 				workspaceId={workspaceId}

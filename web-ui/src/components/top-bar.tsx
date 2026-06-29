@@ -11,7 +11,6 @@ import {
 	Command,
 	Database,
 	GitBranch,
-	Library,
 	Menu,
 	Play,
 	Plus,
@@ -33,8 +32,9 @@ import { cn } from "@/components/ui/cn";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
+import { VaultControlButton } from "@/components/vault-control-button";
 import { useIsMobile } from "@/hooks/use-is-mobile";
-import type { RuntimeGitSyncAction, RuntimeProjectShortcut } from "@/runtime/types";
+import type { RuntimeGitSyncAction, RuntimeProjectShortcut, RuntimeVaultMode } from "@/runtime/types";
 import {
 	useHomeGitSummaryValue,
 	useTaskWorkspaceInfoValue,
@@ -321,6 +321,9 @@ export function TopBar({
 	isGitHistoryOpen,
 	onToggleVault,
 	isVaultOpen,
+	vaultMode,
+	onVaultModeChange,
+	vaultModeDisabled,
 	onToggleDatabase,
 	isDatabaseOpen,
 	onToggleHomeChat,
@@ -369,6 +372,9 @@ export function TopBar({
 	isGitHistoryOpen?: boolean;
 	onToggleVault?: () => void;
 	isVaultOpen?: boolean;
+	vaultMode?: RuntimeVaultMode;
+	onVaultModeChange?: (next: RuntimeVaultMode) => void;
+	vaultModeDisabled?: boolean;
 	onToggleDatabase?: () => void;
 	isDatabaseOpen?: boolean;
 	onToggleHomeChat?: () => void;
@@ -559,16 +565,13 @@ export function TopBar({
 								<HomeBoardSyncControl workspaceId={boardSyncWorkspaceId} />
 							) : null}
 							{!hideProjectDependentActions && onToggleVault ? (
-								<Button
-									variant={isVaultOpen ? "primary" : "default"}
-									size="sm"
-									icon={<Library size={14} />}
-									onClick={onToggleVault}
-									className={cn("shrink-0", isVaultOpen ? "ring-1 ring-accent" : "kb-navbar-btn")}
-									title="Vault"
-								>
-									Vault
-								</Button>
+								<VaultControlButton
+									isVaultOpen={isVaultOpen === true}
+									onToggleVault={onToggleVault}
+									vaultMode={vaultMode ?? "off"}
+									onVaultModeChange={onVaultModeChange ?? (() => {})}
+									vaultModeDisabled={vaultModeDisabled}
+								/>
 							) : null}
 							{!hideProjectDependentActions && onToggleDatabase ? (
 								<Button
