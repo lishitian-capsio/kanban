@@ -87,19 +87,35 @@
       "createdAt": 1782713705085,
       "updatedAt": 1782713904690,
       "pendingNextStep": "启动这个 home 卡片状态 bug 任务"
+    },
+    {
+      "id": "72b6df6d-952c-4f47-a67e-fd9873fde479",
+      "agentId": "claude",
+      "name": "vault和kanban agent的开关能不能就设计到header那个vault按钮上，不是已经有一些示例了吗？比如…",
+      "titleSource": "auto",
+      "createdAt": 1782715700672,
+      "updatedAt": 1782715700672
+    },
+    {
+      "id": "e211cecb-0eda-4458-ba46-1fbc486d4e40",
+      "agentId": "claude",
+      "name": "New chat thread，这个弹窗需要重新设计下",
+      "titleSource": "auto",
+      "createdAt": 1782715725360,
+      "updatedAt": 1782715725360
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "3434ae10-5e66-420a-8e03-7b70b3d73379",
-      "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
       "be8da62b-73a2-48bf-99f8-7aa66272411b",
       "09cbba03-af49-47b6-9e38-85e50946643b",
       "0dc23e3d-665b-4b31-b72f-edd3c9614521",
       "3e599da8-ac7b-4c0a-b7bb-48bd0e7c10aa",
       "6a585585-b1b3-41e5-8785-009188294312",
-      "64e7235d-6c2b-4575-90f6-e6f766c1de20"
+      "64e7235d-6c2b-4575-90f6-e6f766c1de20",
+      "72b6df6d-952c-4f47-a67e-fd9873fde479",
+      "e211cecb-0eda-4458-ba46-1fbc486d4e40"
     ],
-    "activeThreadId": "6a585585-b1b3-41e5-8785-009188294312"
+    "activeThreadId": "e211cecb-0eda-4458-ba46-1fbc486d4e40"
   }
 }

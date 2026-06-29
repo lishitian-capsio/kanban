@@ -1,0 +1,20 @@
+{
+  "id": "4be98",
+  "title": "Vault/agent 开关整合进 header 的 vault 按钮",
+  "prompt": "把 vault 和 kanban agent 的开关整合到 header 顶栏那个 vault 按钮上，而不是放在单独的位置。\n\n参考现有示例：header 里已经有类似交互的按钮，比如\"打开 IDE\"那个按钮——沿用同样的 UI 模式（按钮 + 下拉/弹层）来承载这些开关。\n\n具体要求：\n- 找到顶栏 header 里现有的 vault 按钮，以及\"打开 IDE\"按钮（作为交互/样式参考）。\n- 把 vault 模式开关（vaultMode：off/cli-only/on-demand/managed 四档，见 vault-layered-toggle 实现）以及 kanban agent 相关开关，收纳进 vault 按钮的下拉/弹层菜单里。\n- 复用现有 UI 原语（Button、Popover/DropdownMenu、Tooltip 等，见 AGENTS.md 的 web-ui 约定），保持暗色主题和设计 token 一致。\n- 不要新增独立的、零散的开关入口；整合到这一个按钮即可。\n\n先在 worktree 里定位这两个按钮的现有组件，确认 vaultMode 当前是在哪里切换的，再动手改。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "72b6df6d-952c-4f47-a67e-fd9873fde479",
+  "baseRef": "main",
+  "createdAt": 1782715748360,
+  "updatedAt": 1782715748360,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
