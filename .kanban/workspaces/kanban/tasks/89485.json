@@ -1,0 +1,20 @@
+{
+  "id": "89485",
+  "title": "调研: Agent 会话/终端性能瓶颈",
+  "prompt": "对 Kanban 终端 agent 会话链路做性能调研，产出书面瓶颈清单（写到 .plan/docs/perf-terminal-findings.md），不要改业务代码。\n\n重点排查方向（自行核实）：\n- PTY 输出处理：applyOutput 的 CPU 占用（既有 Bun 事件循环 busy-wait 冻结根因＝逐 chunk GC churn，已用 micro-batch + scrollback→5k 修复），确认无回归、是否还有逐块处理热点。\n- 滚动回放/headless mirror：TerminalStateMirror.getCommittedLines / xterm headless 镜像在长输出下的开销与内存。\n- transcript 捕获：terminal-transcript-capture.ts 在每个 turn 边界折叠 committed-line delta 的成本；journal 写入 coalescing（250ms debounce / id-change）是否有效。\n- token 统计：claude 从 ~/.claude session JSONL、codex 从 rollout JSONL 解析 token 的频率与文件读取开销（findLatestCodexRollout cwd-match 等），是否在卡片刷新时重复全量读文件。\n- 多会话并发：多个终端 agent 同时跑时的运行时压力（注意既有原则：热路径别起交互式 shell）。\n\n产出：「现象→定位证据→影响范围→建议修复→预估收益/风险」+ 优先级。作为实现任务输入。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6a585585-b1b3-41e5-8785-009188294312",
+  "baseRef": "main",
+  "createdAt": 1782713845139,
+  "updatedAt": 1782713845139,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}
