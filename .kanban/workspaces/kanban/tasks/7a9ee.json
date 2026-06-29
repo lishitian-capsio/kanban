@@ -1,0 +1,20 @@
+{
+  "id": "7a9ee",
+  "title": "重设计 home chat 为明确的 Board⟷Session 两态切换",
+  "prompt": "目标：把 kanban agent 首页聊天(home chat)的视图重构成一个概念清晰的「两态切换」：Board 模式 ⟷ Session 模式。当前 UI 把这两态用「停靠位置(left/right/float) + fullscreen」混在一起表达，概念是糊的——用户真正的心智模型只有两个模式。\n\n【先 plan 后实现】本任务以 plan 模式启动：先通读相关组件、产出一份具体的重设计方案（组件改动点、状态/URL 模型、控件布局、迁移影响），等审阅通过后再实现。\n\n两态定义：\n- Board 模式（非全屏）：看板(kanban board)是主体；聊天是「辅助面板」，可停靠左/右或浮窗(dock left/right/float)。停靠位置是 Board 模式下的子选择，只在这个模式里有意义。\n- Session 模式（全屏）：会话占满整个视口，就是现有的全屏体验（含 Home/Pi/Task/会话 tab 那套，URL ?chat= 路由）。此模式下没有停靠位置概念，只有「回到 Board」的出口。\n\n要做（实现阶段）：\n1. 提供一个清晰、单一的模式切换入口/出口（Board ⟷ Session），取代现在分散在 dock 位置按钮 + 单独 fullscreen 切换里的混乱表达。命名与图标要让用户一眼看懂「现在在哪个模式、点哪里换模式」。\n2. Session 模式下，右上角只保留「退出到 Board」，隐藏 dock-left/right/float（这部分会与已合入的 7ab37 一致/叠加，复用其成果，不要回退它）。\n3. Board 模式下，保留 left/right/float 停靠选择作为该模式的子选项，行为不变。\n4. 不要破坏现有全屏 tab 系统与 URL 路由：useFullscreenChatNavigation（?chat=home|pi|threadId）、selectHomeChatLayout、dockable-chat-panel、全屏 Home/Pi/Task/会话 tab。这次是重整「模式入口/出口 + 控件归属 + 命名」，不是推翻全屏会话 UI。\n5. 暗色主题，沿用现有 DockButton/UI primitives 与 Tailwind 设计 token，不新增自定义 CSS。\n6. 合理处补单元测试：模式切换、各模式下控件的渲染条件（Session 模式只剩退出、Board 模式有停靠选择）。\n\n相关文件（自行核对）：web-ui/src/components/home-agent/home-chat-workspace.tsx（HomeChatWorkspace、isFullscreen 推导）、web-ui/src/hooks/use-fullscreen-chat-navigation.ts、web-ui/src/components/home-agent/chat-dock-header.tsx（ChatDockControls）、dockable-chat-panel.tsx（DockHeaderWithChildren）、selectHomeChatLayout 相关。\n\n注意：这是 UI 重设计，倾向最精简、最直观的两态表达，避免过度设计；不确定的取舍在 plan 阶段列出选项给我决定。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "0dc23e3d-665b-4b31-b72f-edd3c9614521",
+  "baseRef": "main",
+  "createdAt": 1782716829435,
+  "updatedAt": 1782716829435,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
