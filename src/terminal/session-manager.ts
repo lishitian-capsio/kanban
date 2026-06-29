@@ -25,6 +25,7 @@ import {
 	type PreparedAgentLaunch,
 	prepareAgentLaunch,
 } from "./agent-session-adapters";
+import { readClaudeSessionUsage } from "./claude-session-usage";
 import {
 	hasClaudeWorkspaceTrustPrompt,
 	shouldAutoConfirmClaudeWorkspaceTrust,
@@ -748,6 +749,12 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			void this.captureAndApplyAgentSessionId(entry, session, launch.captureAgentSessionId, startedAt);
 		}
 
+		// Self-heal the token-usage chip on (re)launch: a resumed session already has
+		// a transcript on disk, so reading it now surfaces the prior cumulative usage
+		// immediately — before the first new turn boundary. No-op for a fresh task
+		// (file absent) or an agent without a readable transcript. Fire-and-forget.
+		void this.captureSessionUsage(request.taskId);
+
 		return cloneSummary(entry.summary);
 	}
 
@@ -786,6 +793,61 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 			taskId: current.summary.taskId,
 			agentSessionId: capturedId,
 		});
+		this.emitSummary(summary);
+	}
+
+	/**
+	 * Refresh a CLI agent's cumulative token usage from its on-disk session
+	 * transcript and fold the result onto the live summary. CLI agents emit no
+	 * token telemetry to Kanban, but Claude records per-message `usage` to a local
+	 * JSONL keyed by the session id Kanban already pins — so re-reading that file
+	 * at a turn boundary (and on relaunch) is the equivalent of pi's per-run
+	 * accumulate. The on-disk file holds the *full* session, so this SETs the total
+	 * (idempotent) rather than incrementing. Persisted + broadcast through the same
+	 * `updateSummary` → `listSummaries()` → `sessions.json` / websocket path as pi.
+	 * Best-effort: any read failure leaves the prior usage untouched and never
+	 * disrupts the session lifecycle.
+	 */
+	private async captureSessionUsage(taskId: string): Promise<void> {
+		const entry = this.entries.get(taskId);
+		if (!entry || entry.summary.agentId !== "claude") {
+			return;
+		}
+		const sessionId = entry.summary.agentSessionId;
+		const cwd = entry.summary.workspacePath;
+		if (!sessionId || !cwd) {
+			return;
+		}
+		const usage = await readClaudeSessionUsage({ cwd, sessionId });
+		if (!usage) {
+			return;
+		}
+		// Re-resolve after the await: the session id must still match the one we read
+		// for, so a relaunch onto a different conversation can't be stamped with the
+		// old file's usage. Skip no-op and stale (smaller) reads — usage only grows,
+		// so an out-of-order concurrent read must not regress the displayed total.
+		const current = this.entries.get(taskId);
+		if (!current || current.summary.agentSessionId !== sessionId) {
+			return;
+		}
+		const prev = current.summary.usage ?? null;
+		if (
+			prev &&
+			prev.inputTokens === usage.inputTokens &&
+			prev.outputTokens === usage.outputTokens &&
+			prev.totalTokens === usage.totalTokens
+		) {
+			return;
+		}
+		if (prev && usage.totalTokens < prev.totalTokens) {
+			return;
+		}
+		const summary = updateSummary(current, { usage });
+		if (current.active) {
+			for (const listener of current.listeners.values()) {
+				listener.onState?.(cloneSummary(summary));
+			}
+		}
 		this.emitSummary(summary);
 	}
 
@@ -1295,6 +1357,10 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 		// hydrated/inactive entries (and unit-test fakes) are skipped.
 		if (transition.changed && transition.patch.state === "awaiting_review" && entry.terminalStateMirror) {
 			this.captureAssistantTurn(entry);
+			// Turn boundary is also when the agent has flushed its latest messages
+			// (with token usage) to its session transcript. Re-read it to refresh the
+			// cumulative usage chip. Fire-and-forget — never blocks the transition.
+			void this.captureSessionUsage(entry.summary.taskId);
 		}
 		return updateSummary(entry, transition.patch);
 	}

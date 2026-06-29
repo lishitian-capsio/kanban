@@ -1509,9 +1509,11 @@ export const runtimeTaskTurnCheckpointSchema = z.object({
 export type RuntimeTaskTurnCheckpoint = z.infer<typeof runtimeTaskTurnCheckpointSchema>;
 
 /**
- * Cumulative token usage for a session, summed across the session's turns. Only
- * agents that surface per-run telemetry (pi) populate this; CLI/terminal agents
- * have no token accounting and leave it null. Non-sensitive — no keys/cost.
+ * Cumulative token usage for a session, summed across the session's turns. pi
+ * populates this from its per-run telemetry; Claude (a CLI agent) populates it by
+ * reading the per-message `usage` in its on-disk session transcript at turn
+ * boundaries (see `terminal/claude-session-usage.ts`). Other CLI agents that
+ * expose no token accounting leave it null. Non-sensitive — no keys/cost.
  */
 export const runtimeTaskSessionUsageSchema = z.object({
 	inputTokens: z.number().nonnegative(),
