@@ -1,0 +1,19 @@
+{
+  "id": "686f7",
+  "title": "全屏模式状态由 URL 标识（可路由）",
+  "prompt": "需求：让 kanban agent 的全屏模式状态体现在 URL 上，成为可路由的状态，而不是仅存在于内存里的组件 state。\n\n目标行为：\n- 进入/退出全屏会改变 URL（例如增加一个 query 参数或路由段）；当前在全屏内选中的 tab（Home / Pi 等）也体现在 URL 上。\n- 刷新页面后仍停留在原来的全屏视图与 tab。\n- 浏览器前进/后退可在 全屏 ↔ 非全屏、以及全屏内不同 tab/会话 之间正确导航。\n- 全屏视图可通过 URL 深链直接打开/分享。\n\n附带收益（重要）：这能根治\"从全屏点进任务/会话再返回后丢失全屏\"一类 bug——因为导航由 URL 驱动，返回时会恢复到之前的 URL 状态（全屏 + 对应 tab），不再依赖易丢失的内存状态。\n\n实现要点（供参考，不限定）：\n- 找到现有路由/导航方案（web-ui 用 URL 同步 currentProjectId / selectedTaskId 等；参考 use-project-navigation / 运行时 store 从 URL 读取初始状态的做法）。\n- 把\"是否全屏 + 全屏内当前 tab（+ 必要时当前会话）\"纳入 URL，并与现有的 project/task 选择参数协调，避免冲突。\n- 保证模块加载时能从 URL 还原初始状态（首屏不闪），与现有 store 的 URL 种子逻辑一致。\n- 不破坏非全屏布局的现有 URL 行为与导航。\n\n协调提示：任务 #def6f 正在移除全屏 Tasks tab；本任务只需处理仍保留的全屏 tab（Home / Pi 等）的 URL 化，不要重新引入 Tasks tab。\n\n期望结果：全屏模式及其 tab 由 URL 标识，刷新/前进后退/深链都能正确恢复，且不再出现返回后丢全屏的问题。涉及 web-ui 路由/导航与运行时 store 的 URL 同步。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1782698340385,
+  "updatedAt": 1782698340385,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
