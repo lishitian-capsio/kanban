@@ -128,8 +128,9 @@
     "openThreadIds": [
       "3434ae10-5e66-420a-8e03-7b70b3d73379",
       "1219a752-a9d8-49b6-99aa-3405d222faea",
-      "6588c4a9-28df-4a75-9774-172e2bb7832c"
+      "6588c4a9-28df-4a75-9774-172e2bb7832c",
+      "be8da62b-73a2-48bf-99f8-7aa66272411b"
     ],
-    "activeThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c"
+    "activeThreadId": "be8da62b-73a2-48bf-99f8-7aa66272411b"
   }
 }
