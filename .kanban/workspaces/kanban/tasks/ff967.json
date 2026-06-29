@@ -3,7 +3,7 @@
   "title": "CLI agent token 统计：Claude 会话文件 usage 读取器（任务A）",
   "prompt": "目标：让 Claude（以及后续其它 CLI agent）的任务卡片上能显示 token 用量。当前 CLI agent 的会话摘要 usage 永远是 null（见 src/core/api-contract.ts 的 RuntimeTaskSessionSummary.usage 注释，CLI 无 token telemetry），所以卡片上只有 provider·model、没有 token chip。本任务先把 Claude 这条链路打通。\n\n关键事实：token 数其实写在 Claude 自己的磁盘会话文件里——~/.claude/projects/<cwd-slug>/<session-id>.jsonl，每条 message 一行，含 usage:{input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens}。Kanban 启动 Claude 时已经 pin 了 --session-id（见 claude session resume 实现，session-manager / claude adapter），所以会话文件路径是已知/可推导的。\n\n要做：\n1. 新增一个会话文件 usage 读取器：解析 Claude 会话 JSONL，累加所有 message 的 token。映射到 RuntimeTaskSessionUsage：inputTokens、outputTokens、totalTokens。建议把 cache_creation_input_tokens / cache_read_input_tokens 折进 inputTokens（口径要在注释里写清楚）；totalTokens = input + output。容错：torn 末行、文件不存在、字段缺失都要安全降级，不抛。\n2. 在回合边界写入 summary.usage：CLI agent 转入 awaiting_review（Stop hook）时、以及会话刷新/重启加载时，跑一次读取器，得到累计 usage 后调用 updateSummary({usage})，走和 pi 完全相同的持久化+广播路径（listSummaries → sessions.json → websocket）。不要新增 fs.watch 常驻监听（实时非必需，回合级更新即可），保持幂等。\n3. 前端不需要改：SessionMetaBadges 已经按 usage.totalTokens>0 渲染 token chip。验证 Claude 任务卡片在转 review 后能出现 token chip，且 tooltip 的 in/out/total 正确。\n4. 口径与 pi 一致：真实 API usage，不是估算。\n\n参考实现位置（自行核对）：src/agent-sdk/kanban/pi-event-adapter.ts 的 accumulateUsage（pi 的累加做法可对照）、src/terminal/session-manager.ts 的 summary 创建/更新、src/terminal/terminal-transcript-capture.ts 的转 review 折叠时点、src/terminal/codex-session-capture.ts（capture-after-launch 定位文件的既有套路）。\n\n合理处补单元测试（读取器的解析/累加/容错是纯逻辑，重点测）。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -12,7 +12,7 @@
   },
   "baseRef": "main",
   "createdAt": 1782703650963,
-  "updatedAt": 1782703784126,
+  "updatedAt": 1782703887497,
   "column": "in_progress",
   "rank": "aE",
   "dependsOn": []
