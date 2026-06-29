@@ -82,10 +82,11 @@
     {
       "id": "6a585585-b1b3-41e5-8785-009188294312",
       "agentId": "claude",
-      "name": "全面的性能优化",
+      "name": "全面性能优化任务拆分",
       "titleSource": "auto",
       "createdAt": 1782713705085,
-      "updatedAt": 1782713705085
+      "updatedAt": 1782713904690,
+      "pendingNextStep": "把四个调研任务都启动起来"
     }
   ],
   "fullscreenTabs": {
