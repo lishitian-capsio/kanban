@@ -48,6 +48,8 @@ export interface BoardCard {
 	agentId?: RuntimeAgentId;
 	agentSettings?: RuntimeTaskAgentSettings;
 	owner?: RuntimeTaskOwner;
+	/** Home chat thread that originated this task; absent when unattributed (board-direct). */
+	originThreadId?: string;
 	baseRef: string;
 	createdAt: number;
 	updatedAt: number;

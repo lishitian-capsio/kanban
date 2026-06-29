@@ -69,6 +69,37 @@ describe("task shard store", () => {
 		}
 	});
 
+	it("round-trips a task's originThreadId and tolerates shards without it", async () => {
+		const { path: dir, cleanup } = createTempDir("kanban-shard-");
+		try {
+			const input = board({
+				columns: [
+					{
+						id: "backlog",
+						title: "Backlog",
+						cards: [card("aaa", { originThreadId: "thread-7" }), card("bbb")],
+					},
+					{ id: "in_progress", title: "In Progress", cards: [] },
+					{ id: "review", title: "Review", cards: [] },
+					{ id: "trash", title: "Done", cards: [] },
+				],
+			});
+
+			await saveShardedBoard(dir, input);
+
+			// A legacy shard hand-written without the field must still load (backward compat),
+			// and the stamped one must preserve its originThreadId.
+			const reloaded = await loadShardedBoard(dir);
+			const backlog = reloaded.columns.find((column) => column.id === "backlog");
+			const stamped = backlog?.cards.find((cardEntry) => cardEntry.id === "aaa");
+			const plain = backlog?.cards.find((cardEntry) => cardEntry.id === "bbb");
+			expect(stamped?.originThreadId).toBe("thread-7");
+			expect(plain?.originThreadId).toBeUndefined();
+		} finally {
+			cleanup();
+		}
+	});
+
 	it("writes one file per task plus a cards-free board.json manifest", async () => {
 		const { path: dir, cleanup } = createTempDir("kanban-shard-");
 		try {

@@ -160,6 +160,7 @@ function normalizeCard(rawCard: unknown): BoardCard | null {
 		agentId?: unknown;
 		agentSettings?: unknown;
 		owner?: unknown;
+		originThreadId?: unknown;
 		createdAt?: unknown;
 		updatedAt?: unknown;
 	};
@@ -193,6 +194,9 @@ function normalizeCard(rawCard: unknown): BoardCard | null {
 		...(typeof card.agentId === "string" && card.agentId ? { agentId: card.agentId as RuntimeAgentId } : {}),
 		...(agentSettings !== undefined ? { agentSettings } : {}),
 		...(normalizeTaskOwner(card.owner) ? { owner: normalizeTaskOwner(card.owner) } : {}),
+		...(typeof card.originThreadId === "string" && card.originThreadId
+			? { originThreadId: card.originThreadId }
+			: {}),
 		createdAt: typeof card.createdAt === "number" ? card.createdAt : now,
 		updatedAt: typeof card.updatedAt === "number" ? card.updatedAt : now,
 	};

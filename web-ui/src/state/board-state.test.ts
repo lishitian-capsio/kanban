@@ -63,6 +63,37 @@ function stubNonSecureContext(): void {
 	});
 }
 
+describe("originThreadId normalization", () => {
+	it("preserves a task's originThreadId when normalizing inbound board data", () => {
+		const normalized = normalizeBoardData({
+			columns: [
+				{
+					id: "backlog",
+					cards: [
+						{ id: "aaa", prompt: "From a thread", baseRef: "main", originThreadId: "thread-7" },
+						{ id: "bbb", prompt: "Board direct", baseRef: "main" },
+					],
+				},
+			],
+			dependencies: [],
+		});
+		const backlog = normalized?.columns.find((column) => column.id === "backlog");
+		const stamped = backlog?.cards.find((card) => card.id === "aaa");
+		const plain = backlog?.cards.find((card) => card.id === "bbb");
+		expect(stamped?.originThreadId).toBe("thread-7");
+		expect(plain?.originThreadId).toBeUndefined();
+	});
+
+	it("ignores a non-string originThreadId", () => {
+		const normalized = normalizeBoardData({
+			columns: [{ id: "backlog", cards: [{ id: "aaa", prompt: "P", baseRef: "main", originThreadId: 42 }] }],
+			dependencies: [],
+		});
+		const card = normalized?.columns.find((column) => column.id === "backlog")?.cards[0];
+		expect(card?.originThreadId).toBeUndefined();
+	});
+});
+
 describe("board dependency state", () => {
 	it("creates tasks when randomUUID is unavailable", () => {
 		stubNonSecureContext();

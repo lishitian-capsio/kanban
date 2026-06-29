@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveCreateTaskAgentId } from "../../../src/core/default-task-agent";
+import { resolveCreateTaskAgentId, resolveCreateTaskOriginThreadId } from "../../../src/core/default-task-agent";
 
 const HOME_CLAUDE = "__home_agent__:workspace-1:claude";
 const HOME_PI = "__home_agent__:workspace-1:pi";
+const HOME_CLAUDE_THREAD = "__home_agent__:workspace-1:claude:thread-7";
 const REGULAR_TASK_ID = "4f1c2d3e-task-uuid";
 
 describe("resolveCreateTaskAgentId", () => {
@@ -66,5 +67,46 @@ describe("resolveCreateTaskAgentId", () => {
 				callerSessionId: "__home_agent__:workspace-1:not-a-real-agent",
 			}),
 		).toBeUndefined();
+	});
+});
+
+describe("resolveCreateTaskOriginThreadId", () => {
+	it("returns the explicit thread id even when the caller is a home session", () => {
+		expect(
+			resolveCreateTaskOriginThreadId({
+				explicitThreadId: "thread-explicit",
+				callerSessionId: HOME_CLAUDE_THREAD,
+			}),
+		).toBe("thread-explicit");
+	});
+
+	it("trims an explicit thread id and ignores a whitespace-only one", () => {
+		expect(resolveCreateTaskOriginThreadId({ explicitThreadId: "  thread-9  " })).toBe("thread-9");
+		expect(
+			resolveCreateTaskOriginThreadId({
+				explicitThreadId: "   ",
+				callerSessionId: HOME_CLAUDE_THREAD,
+			}),
+		).toBe("thread-7");
+	});
+
+	it("derives the originating thread from a four-segment home caller session", () => {
+		expect(resolveCreateTaskOriginThreadId({ callerSessionId: HOME_CLAUDE_THREAD })).toBe("thread-7");
+	});
+
+	it("derives the default thread from a legacy three-segment home caller session", () => {
+		// A sidebar agent chatting in the default thread still genuinely originated the task
+		// from that session, so it is stamped with the default thread id (not left unset).
+		expect(resolveCreateTaskOriginThreadId({ callerSessionId: HOME_CLAUDE })).toBe("default");
+		expect(resolveCreateTaskOriginThreadId({ callerSessionId: HOME_PI })).toBe("default");
+	});
+
+	it("returns undefined for a regular (non-home) caller task id", () => {
+		expect(resolveCreateTaskOriginThreadId({ callerSessionId: REGULAR_TASK_ID })).toBeUndefined();
+	});
+
+	it("returns undefined when neither an explicit id nor a caller session is present", () => {
+		expect(resolveCreateTaskOriginThreadId({})).toBeUndefined();
+		expect(resolveCreateTaskOriginThreadId({ explicitThreadId: "", callerSessionId: "" })).toBeUndefined();
 	});
 });

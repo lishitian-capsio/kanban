@@ -56,6 +56,34 @@ describe("deleteTasksFromBoard", () => {
 	});
 });
 
+describe("origin thread stamping", () => {
+	it("stamps originThreadId on a new task when provided", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{ prompt: "From a thread", baseRef: "main", originThreadId: "thread-7" },
+			() => "aaaaa111",
+		);
+		expect(created.task.originThreadId).toBe("thread-7");
+	});
+
+	it("omits originThreadId entirely when not provided (board-direct creation)", () => {
+		const created = addTaskToColumn(createBoard(), "backlog", { prompt: "Board direct", baseRef: "main" }, () => "bbbbb111");
+		expect(created.task.originThreadId).toBeUndefined();
+		expect("originThreadId" in created.task).toBe(false);
+	});
+
+	it("ignores a blank originThreadId", () => {
+		const created = addTaskToColumn(
+			createBoard(),
+			"backlog",
+			{ prompt: "Blank origin", baseRef: "main", originThreadId: "   " },
+			() => "ccccc111",
+		);
+		expect("originThreadId" in created.task).toBe(false);
+	});
+});
+
 describe("task images", () => {
 	it("preserves images when creating and updating tasks", () => {
 		const created = addTaskToColumn(

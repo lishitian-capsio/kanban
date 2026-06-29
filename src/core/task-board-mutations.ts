@@ -24,6 +24,8 @@ export interface RuntimeCreateTaskInput {
 	agentId?: RuntimeAgentId;
 	agentSettings?: RuntimeTaskAgentSettings;
 	owner?: RuntimeTaskOwner;
+	/** Home chat thread that originated the task; omitted/blank leaves the task unattributed. */
+	originThreadId?: string;
 	baseRef: string;
 }
 
@@ -329,6 +331,7 @@ export function addTaskToColumn(
 		...(input.agentId ? { agentId: input.agentId } : {}),
 		...(input.agentSettings !== undefined ? { agentSettings: cloneTaskAgentSettings(input.agentSettings) } : {}),
 		...(cloneTaskOwner(input.owner) ? { owner: cloneTaskOwner(input.owner) } : {}),
+		...(input.originThreadId?.trim() ? { originThreadId: input.originThreadId.trim() } : {}),
 		baseRef,
 		createdAt: now,
 		updatedAt: now,

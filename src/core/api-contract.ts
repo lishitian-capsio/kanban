@@ -239,6 +239,12 @@ export const runtimeBoardCardObjectSchema = z.object({
 	agentId: runtimeAgentIdSchema.optional(),
 	agentSettings: runtimeTaskAgentSettingsSchema.optional(),
 	owner: runtimeTaskOwnerSchema.optional(),
+	// The home (sidebar) chat thread that originated this task, when known. A
+	// declarative, write-once provenance stamp set at creation (NOT a live channel:
+	// see decisions 10c53/bccca) so the fullscreen UI can group tasks by the session
+	// that spawned them. Optional + back-compat: tasks created on the board directly,
+	// or by a plain CLI invocation with no home session, simply omit it.
+	originThreadId: z.string().optional(),
 	baseRef: z.string(),
 	createdAt: z.number(),
 	updatedAt: z.number(),

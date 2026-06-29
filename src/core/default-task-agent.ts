@@ -1,5 +1,5 @@
 import type { RuntimeAgentId } from "./api-contract";
-import { resolveHomeAgentId } from "./home-agent-session";
+import { parseHomeAgentSessionId, resolveHomeAgentId } from "./home-agent-session";
 
 export interface ResolveCreateTaskAgentIdInput {
 	/**
@@ -43,6 +43,47 @@ export function resolveCreateTaskAgentId(input: ResolveCreateTaskAgentIdInput): 
 		const callerAgentId = resolveHomeAgentId(input.callerSessionId);
 		if (callerAgentId) {
 			return callerAgentId;
+		}
+	}
+	return undefined;
+}
+
+export interface ResolveCreateTaskOriginThreadIdInput {
+	/**
+	 * An explicitly requested origin thread id (e.g. `task create --origin-thread-id`),
+	 * for callers that already know the thread. A trimmed non-empty value always wins.
+	 */
+	explicitThreadId?: string | undefined;
+	/**
+	 * The caller's session id, read from `KANBAN_SESSION_TASK_ID` at the CLI boundary.
+	 * When it encodes a home chat session (the sidebar agent created the task), that
+	 * session's thread becomes the new task's origin so the fullscreen UI can group it
+	 * under the conversation that spawned it.
+	 */
+	callerSessionId?: string | undefined;
+}
+
+/**
+ * Resolve the home thread id to stamp as a new task's origin.
+ *
+ * Precedence: explicit `--origin-thread-id` > the calling home chat's thread > `undefined`.
+ *
+ * A home caller in the legacy default thread resolves to {@link DEFAULT_HOME_THREAD_ID}
+ * (`"default"`), not `undefined`: the agent genuinely originated the task from that
+ * session. Only a non-home caller (a plain task id, or no session at all) leaves the
+ * task unattributed.
+ *
+ * Pure and never throws — mirrors {@link resolveCreateTaskAgentId}.
+ */
+export function resolveCreateTaskOriginThreadId(input: ResolveCreateTaskOriginThreadIdInput): string | undefined {
+	const explicit = input.explicitThreadId?.trim();
+	if (explicit) {
+		return explicit;
+	}
+	if (input.callerSessionId) {
+		const parsed = parseHomeAgentSessionId(input.callerSessionId);
+		if (parsed) {
+			return parsed.threadId;
 		}
 	}
 	return undefined;

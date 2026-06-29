@@ -11,7 +11,7 @@ import type {
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
 import { runtimeAgentIdSchema, runtimeReasoningEffortSchema } from "../core/api-contract";
-import { resolveCreateTaskAgentId } from "../core/default-task-agent";
+import { resolveCreateTaskAgentId, resolveCreateTaskOriginThreadId } from "../core/default-task-agent";
 import {
 	addTaskDependency,
 	addTaskToColumn,
@@ -302,6 +302,7 @@ function formatTaskRecord(
 		...(task.agentId ? { agentId: task.agentId } : {}),
 		...formatTaskAgentSettings(task.agentSettings),
 		...(task.owner ? { owner: task.owner } : {}),
+		...(task.originThreadId ? { originThreadId: task.originThreadId } : {}),
 		createdAt: task.createdAt,
 		updatedAt: task.updatedAt,
 		session: session
@@ -452,6 +453,7 @@ async function createTask(input: {
 	agentId?: RuntimeAgentId;
 	agentSettings?: RuntimeTaskAgentSettings;
 	owner?: RuntimeTaskOwner;
+	originThreadId?: string;
 }): Promise<JsonRecord> {
 	const workspaceRepoPath = await resolveWorkspaceRepoPath(input.projectPath, input.cwd);
 	const workspaceId = await ensureRuntimeWorkspace(workspaceRepoPath);
@@ -478,6 +480,7 @@ async function createTask(input: {
 				agentId: input.agentId,
 				agentSettings: input.agentSettings,
 				owner: resolvedOwner,
+				originThreadId: input.originThreadId,
 				baseRef: resolvedBaseRef,
 			},
 			() => globalThis.crypto.randomUUID(),
@@ -503,6 +506,7 @@ async function createTask(input: {
 			...(created.agentId ? { agentId: created.agentId } : {}),
 			...formatTaskAgentSettings(created.agentSettings),
 			...(created.owner ? { owner: created.owner } : {}),
+			...(created.originThreadId ? { originThreadId: created.originThreadId } : {}),
 		},
 	};
 }
@@ -1146,6 +1150,10 @@ export function registerTaskCommand(program: Command): void {
 		)
 		.option("--model <id>", 'Model override (e.g. claude-sonnet-4-20250514). Use "default" for workspace default.')
 		.option("--reasoning-effort <level>", "Reasoning effort override: default | low | medium | high | xhigh.")
+		.option(
+			"--origin-thread-id <id>",
+			`Home chat thread that originated the task. Defaults to the calling home session's thread (from ${KANBAN_SESSION_TASK_ID_ENV}); omit when creating directly on the board.`,
+		)
 		.action(async function (
 			this: Command,
 			options: {
@@ -1160,6 +1168,7 @@ export function registerTaskCommand(program: Command): void {
 				provider?: string;
 				model?: string;
 				reasoningEffort?: string;
+				originThreadId?: string;
 			},
 		) {
 			const globals = readGlobalCliOptions(this);
@@ -1172,6 +1181,13 @@ export function registerTaskCommand(program: Command): void {
 			const callerSessionId = process.env[KANBAN_SESSION_TASK_ID_ENV]?.trim() || undefined;
 			const resolvedAgentId = resolveCreateTaskAgentId({
 				explicitAgentId: parseAgentId(options.agentId),
+				callerSessionId,
+			});
+			// Stamp the originating home thread the same way: an explicit --origin-thread-id
+			// wins, else inherit the calling home session's thread (the sidebar agent creating
+			// a task in a thread), else leave unattributed (board-direct / no home session).
+			const resolvedOriginThreadId = resolveCreateTaskOriginThreadId({
+				explicitThreadId: options.originThreadId,
 				callerSessionId,
 			});
 			await runCliCommand(
@@ -1193,6 +1209,7 @@ export function registerTaskCommand(program: Command): void {
 							modelId: parseOptionalStringOrDefault(options.model) ?? undefined,
 							reasoningEffort: parseTaskReasoningEffort(options.reasoningEffort),
 						}),
+						originThreadId: resolvedOriginThreadId,
 					}),
 				{ globals },
 			);
