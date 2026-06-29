@@ -32,6 +32,8 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { UpdateNotificationController } from "@/components/update-notification-controller";
 import { useVaultSettings } from "@/components/vault/data/use-vault-settings";
+import { ChatWikilinkProvider } from "@/components/vault/quick-dialog/chat-wikilink-provider";
+import { VaultFileDialogProvider } from "@/components/vault/quick-dialog/vault-file-dialog-provider";
 import { createInitialBoardData } from "@/data/board-data";
 import { RuntimeDisconnectedFallback } from "@/hooks/runtime-disconnected-fallback";
 import { useAppHotkeys } from "@/hooks/use-app-hotkeys";
@@ -887,434 +889,444 @@ export default function App(): ReactElement {
 
 	return (
 		<LayoutCustomizationsProvider onResetBottomTerminalLayoutCustomizations={resetBottomTerminalLayoutCustomizations}>
-			<div className="flex h-[100svh] min-w-0 overflow-hidden">
-				{isHomeChatAvailable && (chatDock.open || isFullscreen) ? (
-					<DockableChatPanel
-						dock={chatDock}
-						isFullscreen={isFullscreen}
-						onEnterFullscreen={handleEnterFullscreen}
-						onExitFullscreen={handleExitFullscreen}
-						projectSwitcher={
-							<SidebarProjectSwitcher
-								projects={displayedProjects}
-								isLoadingProjects={isProjectListLoading}
-								currentProjectId={navigationCurrentProjectId}
-								removingProjectId={removingProjectId}
-								onSelectProject={(projectId) => {
-									void handleSelectProject(projectId);
-								}}
-								onRemoveProject={handleRemoveProject}
-								onAddProject={() => {
-									void handleAddProject();
-								}}
+			<VaultFileDialogProvider workspaceId={currentProjectId}>
+				<ChatWikilinkProvider workspaceId={currentProjectId} enabled={vaultSettings.vaultMode !== "off"}>
+					<div className="flex h-[100svh] min-w-0 overflow-hidden">
+						{isHomeChatAvailable && (chatDock.open || isFullscreen) ? (
+							<DockableChatPanel
+								dock={chatDock}
+								isFullscreen={isFullscreen}
+								onEnterFullscreen={handleEnterFullscreen}
+								onExitFullscreen={handleExitFullscreen}
+								projectSwitcher={
+									<SidebarProjectSwitcher
+										projects={displayedProjects}
+										isLoadingProjects={isProjectListLoading}
+										currentProjectId={navigationCurrentProjectId}
+										removingProjectId={removingProjectId}
+										onSelectProject={(projectId) => {
+											void handleSelectProject(projectId);
+										}}
+										onRemoveProject={handleRemoveProject}
+										onAddProject={() => {
+											void handleAddProject();
+										}}
+									/>
+								}
+								fullscreenContent={
+									<HomeChatWorkspace
+										currentProjectId={currentProjectId}
+										runtimeProjectConfig={runtimeProjectConfig}
+										homeThreads={homeThreads}
+										taskSessions={sessions}
+										workspaceGit={workspaceGit}
+										fullscreenChatTab={fullscreenChatTab}
+										onNavigateFullscreenTab={navigateFullscreenTab}
+										onReplaceFullscreenTab={replaceFullscreenTab}
+									/>
+								}
+							>
+								<HomeSidebarAgentPanel
+									currentProjectId={currentProjectId}
+									hasNoProjects={hasNoProjects}
+									runtimeProjectConfig={runtimeProjectConfig}
+									homeThreads={homeThreads}
+									taskSessions={sessions}
+									workspaceGit={workspaceGit}
+								/>
+							</DockableChatPanel>
+						) : null}
+						<div className="order-2 flex flex-col flex-1 min-w-0 overflow-hidden">
+							<TopBar
+								onBack={selectedCard ? handleBack : undefined}
+								workspacePath={navbarWorkspacePath}
+								isWorkspacePathLoading={shouldShowProjectLoadingState}
+								workspaceHint={navbarWorkspaceHint}
+								runtimeHint={navbarRuntimeHint}
+								selectedTaskId={selectedCard?.card.id ?? null}
+								selectedTaskBaseRef={selectedCard?.card.baseRef ?? null}
+								selectedTaskOwner={selectedCard?.card.owner ?? null}
+								showHomeGitSummary={!hasNoProjects && !selectedCard}
+								runningGitAction={selectedCard || hasNoProjects ? null : runningGitAction}
+								onGitFetch={
+									selectedCard
+										? undefined
+										: () => {
+												void runGitAction("fetch");
+											}
+								}
+								onGitPull={
+									selectedCard
+										? undefined
+										: () => {
+												void runGitAction("pull");
+											}
+								}
+								onGitPush={
+									selectedCard
+										? undefined
+										: () => {
+												void runGitAction("push");
+											}
+								}
+								boardSyncWorkspaceId={selectedCard ? null : currentProjectId}
+								onToggleTerminal={
+									hasNoProjects
+										? undefined
+										: selectedCard
+											? handleToggleDetailTerminal
+											: handleToggleHomeTerminal
+								}
+								isTerminalOpen={selectedCard ? isDetailTerminalOpen : showHomeBottomTerminal}
+								isTerminalLoading={selectedCard ? isDetailTerminalStarting : isHomeTerminalStarting}
+								onOpenSettings={handleOpenSettings}
+								showDebugButton={debugModeEnabled}
+								onOpenDebugDialog={debugModeEnabled ? handleOpenDebugDialog : undefined}
+								shortcuts={shortcuts}
+								selectedShortcutLabel={selectedShortcutLabel}
+								onSelectShortcutLabel={handleSelectShortcutLabel}
+								runningShortcutLabel={runningShortcutLabel}
+								onRunShortcut={handleRunShortcut}
+								onCreateFirstShortcut={currentProjectId ? handleCreateShortcut : undefined}
+								openTargetOptions={openTargetOptions}
+								selectedOpenTargetId={selectedOpenTargetId}
+								onSelectOpenTarget={onSelectOpenTarget}
+								onOpenWorkspace={onOpenWorkspace}
+								canOpenWorkspace={canOpenWorkspace}
+								isOpeningWorkspace={isOpeningWorkspace}
+								onToggleGitHistory={hasNoProjects ? undefined : handleToggleGitHistory}
+								isGitHistoryOpen={isGitHistoryOpen}
+								onToggleVault={hasNoProjects || selectedCard ? undefined : handleToggleVault}
+								isVaultOpen={isVaultOpen}
+								vaultMode={vaultSettings.vaultMode}
+								onVaultModeChange={(next) => void vaultSettings.setVaultMode(next)}
+								vaultModeDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
+								onToggleDatabase={hasNoProjects || selectedCard ? undefined : handleToggleDatabase}
+								isDatabaseOpen={isDatabaseOpen}
+								onToggleHomeChat={isHomeChatAvailable ? handleToggleHomeChat : undefined}
+								isHomeChatOpen={chatDock.open}
+								hideProjectDependentActions={shouldHideProjectDependentTopBarActions}
 							/>
-						}
-						fullscreenContent={
-							<HomeChatWorkspace
-								currentProjectId={currentProjectId}
-								runtimeProjectConfig={runtimeProjectConfig}
-								homeThreads={homeThreads}
-								taskSessions={sessions}
-								workspaceGit={workspaceGit}
-								fullscreenChatTab={fullscreenChatTab}
-								onNavigateFullscreenTab={navigateFullscreenTab}
-								onReplaceFullscreenTab={replaceFullscreenTab}
-							/>
-						}
-					>
-						<HomeSidebarAgentPanel
-							currentProjectId={currentProjectId}
-							hasNoProjects={hasNoProjects}
-							runtimeProjectConfig={runtimeProjectConfig}
-							homeThreads={homeThreads}
-							taskSessions={sessions}
-							workspaceGit={workspaceGit}
-						/>
-					</DockableChatPanel>
-				) : null}
-				<div className="order-2 flex flex-col flex-1 min-w-0 overflow-hidden">
-					<TopBar
-						onBack={selectedCard ? handleBack : undefined}
-						workspacePath={navbarWorkspacePath}
-						isWorkspacePathLoading={shouldShowProjectLoadingState}
-						workspaceHint={navbarWorkspaceHint}
-						runtimeHint={navbarRuntimeHint}
-						selectedTaskId={selectedCard?.card.id ?? null}
-						selectedTaskBaseRef={selectedCard?.card.baseRef ?? null}
-						selectedTaskOwner={selectedCard?.card.owner ?? null}
-						showHomeGitSummary={!hasNoProjects && !selectedCard}
-						runningGitAction={selectedCard || hasNoProjects ? null : runningGitAction}
-						onGitFetch={
-							selectedCard
-								? undefined
-								: () => {
-										void runGitAction("fetch");
-									}
-						}
-						onGitPull={
-							selectedCard
-								? undefined
-								: () => {
-										void runGitAction("pull");
-									}
-						}
-						onGitPush={
-							selectedCard
-								? undefined
-								: () => {
-										void runGitAction("push");
-									}
-						}
-						boardSyncWorkspaceId={selectedCard ? null : currentProjectId}
-						onToggleTerminal={
-							hasNoProjects ? undefined : selectedCard ? handleToggleDetailTerminal : handleToggleHomeTerminal
-						}
-						isTerminalOpen={selectedCard ? isDetailTerminalOpen : showHomeBottomTerminal}
-						isTerminalLoading={selectedCard ? isDetailTerminalStarting : isHomeTerminalStarting}
-						onOpenSettings={handleOpenSettings}
-						showDebugButton={debugModeEnabled}
-						onOpenDebugDialog={debugModeEnabled ? handleOpenDebugDialog : undefined}
-						shortcuts={shortcuts}
-						selectedShortcutLabel={selectedShortcutLabel}
-						onSelectShortcutLabel={handleSelectShortcutLabel}
-						runningShortcutLabel={runningShortcutLabel}
-						onRunShortcut={handleRunShortcut}
-						onCreateFirstShortcut={currentProjectId ? handleCreateShortcut : undefined}
-						openTargetOptions={openTargetOptions}
-						selectedOpenTargetId={selectedOpenTargetId}
-						onSelectOpenTarget={onSelectOpenTarget}
-						onOpenWorkspace={onOpenWorkspace}
-						canOpenWorkspace={canOpenWorkspace}
-						isOpeningWorkspace={isOpeningWorkspace}
-						onToggleGitHistory={hasNoProjects ? undefined : handleToggleGitHistory}
-						isGitHistoryOpen={isGitHistoryOpen}
-						onToggleVault={hasNoProjects || selectedCard ? undefined : handleToggleVault}
-						isVaultOpen={isVaultOpen}
-						vaultMode={vaultSettings.vaultMode}
-						onVaultModeChange={(next) => void vaultSettings.setVaultMode(next)}
-						vaultModeDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
-						onToggleDatabase={hasNoProjects || selectedCard ? undefined : handleToggleDatabase}
-						isDatabaseOpen={isDatabaseOpen}
-						onToggleHomeChat={isHomeChatAvailable ? handleToggleHomeChat : undefined}
-						isHomeChatOpen={chatDock.open}
-						hideProjectDependentActions={shouldHideProjectDependentTopBarActions}
-					/>
-					<div className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden">
-						<div
-							className="kb-home-layout"
-							aria-hidden={selectedCard ? true : undefined}
-							style={selectedCard ? { visibility: "hidden" } : undefined}
-						>
-							{shouldShowProjectLoadingState ? (
-								<div className="flex flex-1 min-h-0 items-center justify-center bg-surface-0">
-									<Spinner size={30} />
-								</div>
-							) : hasNoProjects ? (
-								<div className="flex flex-1 min-h-0 items-center justify-center bg-surface-0 p-6">
-									<div className="flex flex-col items-center justify-center gap-3 text-text-tertiary">
-										<FolderOpen size={48} strokeWidth={1} />
-										<h3 className="text-sm font-semibold text-text-primary">No projects yet</h3>
-										<p className="text-[13px] text-text-secondary">
-											Add a git repository to start using Kanban.
-										</p>
-										<Button
-											variant="primary"
-											onClick={() => {
-												void handleAddProject();
-											}}
-										>
-											Add Project
-										</Button>
-									</div>
-								</div>
-							) : (
-								<div className="flex flex-1 flex-col min-h-0 min-w-0">
-									{/* Mounted-but-hidden while fullscreen (see isHomeChatFullscreen above): the
+							<div className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden">
+								<div
+									className="kb-home-layout"
+									aria-hidden={selectedCard ? true : undefined}
+									style={selectedCard ? { visibility: "hidden" } : undefined}
+								>
+									{shouldShowProjectLoadingState ? (
+										<div className="flex flex-1 min-h-0 items-center justify-center bg-surface-0">
+											<Spinner size={30} />
+										</div>
+									) : hasNoProjects ? (
+										<div className="flex flex-1 min-h-0 items-center justify-center bg-surface-0 p-6">
+											<div className="flex flex-col items-center justify-center gap-3 text-text-tertiary">
+												<FolderOpen size={48} strokeWidth={1} />
+												<h3 className="text-sm font-semibold text-text-primary">No projects yet</h3>
+												<p className="text-[13px] text-text-secondary">
+													Add a git repository to start using Kanban.
+												</p>
+												<Button
+													variant="primary"
+													onClick={() => {
+														void handleAddProject();
+													}}
+												>
+													Add Project
+												</Button>
+											</div>
+										</div>
+									) : (
+										<div className="flex flex-1 flex-col min-h-0 min-w-0">
+											{/* Mounted-but-hidden while fullscreen (see isHomeChatFullscreen above): the
 									    board stays in the tree so entering/exiting fullscreen is a cheap
 									    `visibility` flip instead of a full column/card unmount + remount. */}
-									<div
-										className="flex flex-1 min-h-0 min-w-0"
-										aria-hidden={isHomeChatFullscreen ? true : undefined}
-										style={isHomeChatFullscreen ? { visibility: "hidden" } : undefined}
-									>
-										<Suspense fallback={<LazyViewFallback />}>
-											{isVaultOpen ? (
-												<VaultView workspaceId={currentProjectId} initialView="requirements" />
-											) : isDatabaseOpen ? (
-												<DatabaseView workspaceId={currentProjectId} />
-											) : isGitHistoryOpen ? (
-												<GitHistoryView
-													workspaceId={currentProjectId}
-													gitHistory={gitHistory}
-													onCheckoutBranch={(branch) => {
-														void switchHomeBranch(branch);
-													}}
-													onDiscardWorkingChanges={() => {
-														void discardHomeWorkingChanges();
-													}}
-													isDiscardWorkingChangesPending={isDiscardingHomeWorkingChanges}
-												/>
-											) : (
-												<KanbanBoard
-													data={board}
-													workspacePath={workspacePath}
-													onCardSelect={handleCardSelect}
-													onCreateTask={handleOpenCreateTask}
-													onStartTask={handleStartTaskFromBoard}
-													onStartAllTasks={handleStartAllBacklogTasksFromBoard}
-													onClearTrash={handleOpenClearTrash}
-													editingTaskId={editingTaskId}
-													inlineTaskEditor={inlineTaskEditor}
-													onEditTask={handleOpenEditTask}
-													onSaveTaskTitle={handleSaveTaskTitle}
-													onCommitTask={handleCommitTask}
-													onOpenPrTask={handleOpenPrTask}
-													onCancelAutomaticTaskAction={handleCancelAutomaticTaskAction}
-													commitTaskLoadingById={commitTaskLoadingById}
-													openPrTaskLoadingById={openPrTaskLoadingById}
-													moveToTrashLoadingById={moveToTrashLoadingById}
-													onMoveToTrashTask={handleMoveReviewCardToTrash}
-													onRestoreFromTrashTask={handleRestoreTaskFromTrash}
-													dependencies={board.dependencies}
-													onCreateDependency={handleCreateDependency}
-													onDeleteDependency={handleDeleteDependency}
-													onRequestProgrammaticCardMoveReady={
-														selectedCard ? undefined : handleProgrammaticCardMoveReady
-													}
-													onDragEnd={handleDragEnd}
-													defaultKanbanModelId={runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null}
-												/>
-											)}
-										</Suspense>
-									</div>
-									{showHomeBottomTerminal ? (
-										<ResizableBottomPane
-											minHeight={200}
-											initialHeight={homeTerminalPaneHeight}
-											onHeightChange={setHomeTerminalPaneHeight}
-											onCollapse={collapseHomeTerminal}
-											isExpanded={isHomeTerminalExpanded}
-										>
 											<div
-												style={{
-													display: "flex",
-													flex: "1 1 0",
-													minWidth: 0,
-													paddingLeft: 12,
-													paddingRight: 12,
-												}}
+												className="flex flex-1 min-h-0 min-w-0"
+												aria-hidden={isHomeChatFullscreen ? true : undefined}
+												style={isHomeChatFullscreen ? { visibility: "hidden" } : undefined}
 											>
 												<Suspense fallback={<LazyViewFallback />}>
-													<AgentTerminalPanel
-														key={`home-shell-${homeTerminalTaskId}`}
-														taskId={homeTerminalTaskId}
-														workspaceId={currentProjectId}
-														summary={homeTerminalSummary}
-														onSummary={upsertSession}
-														showSessionToolbar={false}
-														autoFocus
-														onClose={closeHomeTerminal}
-														minimalHeaderTitle="Terminal"
-														minimalHeaderSubtitle={homeTerminalSubtitle}
-														panelBackgroundColor="var(--color-surface-1)"
-														terminalBackgroundColor={terminalThemeColors.surfaceRaised}
-														cursorColor={terminalThemeColors.textPrimary}
-														onConnectionReady={markTerminalConnectionReady}
-														agentCommand={agentCommand}
-														onSendAgentCommand={handleSendAgentCommandToHomeTerminal}
-														isExpanded={isHomeTerminalExpanded}
-														onToggleExpand={handleToggleExpandHomeTerminal}
-													/>
+													{isVaultOpen ? (
+														<VaultView workspaceId={currentProjectId} initialView="requirements" />
+													) : isDatabaseOpen ? (
+														<DatabaseView workspaceId={currentProjectId} />
+													) : isGitHistoryOpen ? (
+														<GitHistoryView
+															workspaceId={currentProjectId}
+															gitHistory={gitHistory}
+															onCheckoutBranch={(branch) => {
+																void switchHomeBranch(branch);
+															}}
+															onDiscardWorkingChanges={() => {
+																void discardHomeWorkingChanges();
+															}}
+															isDiscardWorkingChangesPending={isDiscardingHomeWorkingChanges}
+														/>
+													) : (
+														<KanbanBoard
+															data={board}
+															workspacePath={workspacePath}
+															onCardSelect={handleCardSelect}
+															onCreateTask={handleOpenCreateTask}
+															onStartTask={handleStartTaskFromBoard}
+															onStartAllTasks={handleStartAllBacklogTasksFromBoard}
+															onClearTrash={handleOpenClearTrash}
+															editingTaskId={editingTaskId}
+															inlineTaskEditor={inlineTaskEditor}
+															onEditTask={handleOpenEditTask}
+															onSaveTaskTitle={handleSaveTaskTitle}
+															onCommitTask={handleCommitTask}
+															onOpenPrTask={handleOpenPrTask}
+															onCancelAutomaticTaskAction={handleCancelAutomaticTaskAction}
+															commitTaskLoadingById={commitTaskLoadingById}
+															openPrTaskLoadingById={openPrTaskLoadingById}
+															moveToTrashLoadingById={moveToTrashLoadingById}
+															onMoveToTrashTask={handleMoveReviewCardToTrash}
+															onRestoreFromTrashTask={handleRestoreTaskFromTrash}
+															dependencies={board.dependencies}
+															onCreateDependency={handleCreateDependency}
+															onDeleteDependency={handleDeleteDependency}
+															onRequestProgrammaticCardMoveReady={
+																selectedCard ? undefined : handleProgrammaticCardMoveReady
+															}
+															onDragEnd={handleDragEnd}
+															defaultKanbanModelId={
+																runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null
+															}
+														/>
+													)}
 												</Suspense>
 											</div>
-										</ResizableBottomPane>
-									) : null}
+											{showHomeBottomTerminal ? (
+												<ResizableBottomPane
+													minHeight={200}
+													initialHeight={homeTerminalPaneHeight}
+													onHeightChange={setHomeTerminalPaneHeight}
+													onCollapse={collapseHomeTerminal}
+													isExpanded={isHomeTerminalExpanded}
+												>
+													<div
+														style={{
+															display: "flex",
+															flex: "1 1 0",
+															minWidth: 0,
+															paddingLeft: 12,
+															paddingRight: 12,
+														}}
+													>
+														<Suspense fallback={<LazyViewFallback />}>
+															<AgentTerminalPanel
+																key={`home-shell-${homeTerminalTaskId}`}
+																taskId={homeTerminalTaskId}
+																workspaceId={currentProjectId}
+																summary={homeTerminalSummary}
+																onSummary={upsertSession}
+																showSessionToolbar={false}
+																autoFocus
+																onClose={closeHomeTerminal}
+																minimalHeaderTitle="Terminal"
+																minimalHeaderSubtitle={homeTerminalSubtitle}
+																panelBackgroundColor="var(--color-surface-1)"
+																terminalBackgroundColor={terminalThemeColors.surfaceRaised}
+																cursorColor={terminalThemeColors.textPrimary}
+																onConnectionReady={markTerminalConnectionReady}
+																agentCommand={agentCommand}
+																onSendAgentCommand={handleSendAgentCommandToHomeTerminal}
+																isExpanded={isHomeTerminalExpanded}
+																onToggleExpand={handleToggleExpandHomeTerminal}
+															/>
+														</Suspense>
+													</div>
+												</ResizableBottomPane>
+											) : null}
+										</div>
+									)}
 								</div>
-							)}
-						</div>
-						{selectedCard ? (
-							<div className="absolute inset-0 flex min-h-0 min-w-0">
-								<Suspense fallback={<LazyViewFallback />}>
-									<CardDetailView
-										selection={selectedCard}
-										currentProjectId={currentProjectId}
-										workspacePath={workspacePath}
-										selectedAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
-										runtimeConfig={runtimeProjectConfig ?? null}
-										onSessionSummary={upsertSession}
-										onCardSelect={handleCardSelect}
-										onTaskDragEnd={handleDetailTaskDragEnd}
-										onCreateTask={handleOpenCreateTask}
-										onStartTask={handleStartTaskFromBoard}
-										onStartAllTasks={handleStartAllBacklogTasksFromBoard}
-										onClearTrash={handleOpenClearTrash}
-										editingTaskId={editingTaskId}
-										inlineTaskEditor={inlineTaskEditor}
-										onEditTask={(task) => {
-											handleOpenEditTask(task, { preserveDetailSelection: true });
-										}}
-										onSaveTaskTitle={handleSaveTaskTitle}
-										onCommitTask={handleCommitTask}
-										onOpenPrTask={handleOpenPrTask}
-										onAgentCommitTask={handleAgentCommitTask}
-										onAgentOpenPrTask={handleAgentOpenPrTask}
-										commitTaskLoadingById={commitTaskLoadingById}
-										openPrTaskLoadingById={openPrTaskLoadingById}
-										agentCommitTaskLoadingById={agentCommitTaskLoadingById}
-										agentOpenPrTaskLoadingById={agentOpenPrTaskLoadingById}
-										moveToTrashLoadingById={moveToTrashLoadingById}
-										onMoveReviewCardToTrash={handleMoveReviewCardToTrash}
-										onRestoreTaskFromTrash={handleRestoreTaskFromTrash}
-										onCancelAutomaticTaskAction={handleCancelAutomaticTaskAction}
-										onAddReviewComments={(taskId: string, text: string) => {
-											void handleAddReviewComments(taskId, text);
-										}}
-										onSendReviewComments={(taskId: string, text: string) => {
-											void handleSendReviewComments(taskId, text);
-										}}
-										onSendKanbanChatMessage={sendTaskChatMessage}
-										onCancelKanbanChatTurn={cancelTaskChatTurn}
-										onLoadKanbanChatMessages={fetchTaskChatMessages}
-										onMoveToTrash={handleMoveToTrash}
-										isMoveToTrashLoading={moveToTrashLoadingById[selectedCard.card.id] ?? false}
-										gitHistoryPanel={
-											isGitHistoryOpen ? (
-												<GitHistoryView workspaceId={currentProjectId} gitHistory={gitHistory} />
-											) : undefined
-										}
-										onCloseGitHistory={handleCloseGitHistory}
-										bottomTerminalOpen={isDetailTerminalOpen}
-										bottomTerminalTaskId={detailTerminalTaskId}
-										bottomTerminalSummary={detailTerminalSummary}
-										bottomTerminalSubtitle={detailTerminalSubtitle}
-										onBottomTerminalClose={closeDetailTerminal}
-										onBottomTerminalCollapse={collapseDetailTerminal}
-										bottomTerminalPaneHeight={detailTerminalPaneHeight}
-										onBottomTerminalPaneHeightChange={setDetailTerminalPaneHeight}
-										onBottomTerminalConnectionReady={markTerminalConnectionReady}
-										bottomTerminalAgentCommand={agentCommand}
-										onBottomTerminalSendAgentCommand={handleSendAgentCommandToDetailTerminal}
-										isBottomTerminalExpanded={isDetailTerminalExpanded}
-										onBottomTerminalToggleExpand={handleToggleExpandDetailTerminal}
-										isDocumentVisible={isDocumentVisible}
-										onKanbanSettingsSaved={refreshRuntimeProjectConfig}
-										onTaskKanbanSettingsChanged={handleKanbanTaskSettingsChangedForTask}
-									/>
-								</Suspense>
+								{selectedCard ? (
+									<div className="absolute inset-0 flex min-h-0 min-w-0">
+										<Suspense fallback={<LazyViewFallback />}>
+											<CardDetailView
+												selection={selectedCard}
+												currentProjectId={currentProjectId}
+												workspacePath={workspacePath}
+												selectedAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
+												runtimeConfig={runtimeProjectConfig ?? null}
+												onSessionSummary={upsertSession}
+												onCardSelect={handleCardSelect}
+												onTaskDragEnd={handleDetailTaskDragEnd}
+												onCreateTask={handleOpenCreateTask}
+												onStartTask={handleStartTaskFromBoard}
+												onStartAllTasks={handleStartAllBacklogTasksFromBoard}
+												onClearTrash={handleOpenClearTrash}
+												editingTaskId={editingTaskId}
+												inlineTaskEditor={inlineTaskEditor}
+												onEditTask={(task) => {
+													handleOpenEditTask(task, { preserveDetailSelection: true });
+												}}
+												onSaveTaskTitle={handleSaveTaskTitle}
+												onCommitTask={handleCommitTask}
+												onOpenPrTask={handleOpenPrTask}
+												onAgentCommitTask={handleAgentCommitTask}
+												onAgentOpenPrTask={handleAgentOpenPrTask}
+												commitTaskLoadingById={commitTaskLoadingById}
+												openPrTaskLoadingById={openPrTaskLoadingById}
+												agentCommitTaskLoadingById={agentCommitTaskLoadingById}
+												agentOpenPrTaskLoadingById={agentOpenPrTaskLoadingById}
+												moveToTrashLoadingById={moveToTrashLoadingById}
+												onMoveReviewCardToTrash={handleMoveReviewCardToTrash}
+												onRestoreTaskFromTrash={handleRestoreTaskFromTrash}
+												onCancelAutomaticTaskAction={handleCancelAutomaticTaskAction}
+												onAddReviewComments={(taskId: string, text: string) => {
+													void handleAddReviewComments(taskId, text);
+												}}
+												onSendReviewComments={(taskId: string, text: string) => {
+													void handleSendReviewComments(taskId, text);
+												}}
+												onSendKanbanChatMessage={sendTaskChatMessage}
+												onCancelKanbanChatTurn={cancelTaskChatTurn}
+												onLoadKanbanChatMessages={fetchTaskChatMessages}
+												onMoveToTrash={handleMoveToTrash}
+												isMoveToTrashLoading={moveToTrashLoadingById[selectedCard.card.id] ?? false}
+												gitHistoryPanel={
+													isGitHistoryOpen ? (
+														<GitHistoryView workspaceId={currentProjectId} gitHistory={gitHistory} />
+													) : undefined
+												}
+												onCloseGitHistory={handleCloseGitHistory}
+												bottomTerminalOpen={isDetailTerminalOpen}
+												bottomTerminalTaskId={detailTerminalTaskId}
+												bottomTerminalSummary={detailTerminalSummary}
+												bottomTerminalSubtitle={detailTerminalSubtitle}
+												onBottomTerminalClose={closeDetailTerminal}
+												onBottomTerminalCollapse={collapseDetailTerminal}
+												bottomTerminalPaneHeight={detailTerminalPaneHeight}
+												onBottomTerminalPaneHeightChange={setDetailTerminalPaneHeight}
+												onBottomTerminalConnectionReady={markTerminalConnectionReady}
+												bottomTerminalAgentCommand={agentCommand}
+												onBottomTerminalSendAgentCommand={handleSendAgentCommandToDetailTerminal}
+												isBottomTerminalExpanded={isDetailTerminalExpanded}
+												onBottomTerminalToggleExpand={handleToggleExpandDetailTerminal}
+												isDocumentVisible={isDocumentVisible}
+												onKanbanSettingsSaved={refreshRuntimeProjectConfig}
+												onTaskKanbanSettingsChanged={handleKanbanTaskSettingsChangedForTask}
+											/>
+										</Suspense>
+									</div>
+								) : null}
 							</div>
-						) : null}
+						</div>
+						<RuntimeSettingsDialog
+							open={isSettingsOpen}
+							workspaceId={settingsWorkspaceId}
+							initialConfig={settingsRuntimeProjectConfig}
+							initialSection={settingsInitialSection}
+							onOpenChange={(nextOpen) => {
+								setIsSettingsOpen(nextOpen);
+								if (!nextOpen) {
+									setSettingsInitialSection(null);
+								}
+							}}
+							onSaved={() => {
+								refreshRuntimeProjectConfig();
+								refreshSettingsRuntimeProjectConfig();
+							}}
+						/>
+						<DebugDialog
+							open={isDebugDialogOpen}
+							onOpenChange={handleDebugDialogOpenChange}
+							isResetAllStatePending={isResetAllStatePending}
+							onShowStartupOnboardingDialog={handleShowStartupOnboardingDialog}
+							onResetAllState={handleResetAllState}
+						/>
+						<TaskCreateDialog
+							open={isInlineTaskCreateOpen}
+							onOpenChange={handleCreateDialogOpenChange}
+							prompt={newTaskPrompt}
+							onPromptChange={setNewTaskPrompt}
+							images={newTaskImages}
+							onImagesChange={setNewTaskImages}
+							onCreate={handleCreateTask}
+							onCreateAndStart={handleCreateAndStartTask}
+							onCreateStartAndOpen={handleCreateStartAndOpenTask}
+							onCreateMultiple={handleCreateTasks}
+							onCreateAndStartMultiple={handleCreateAndStartTasks}
+							startInPlanMode={newTaskStartInPlanMode}
+							onStartInPlanModeChange={setNewTaskStartInPlanMode}
+							startInPlanModeDisabled={isNewTaskStartInPlanModeDisabled}
+							autoReviewEnabled={newTaskAutoReviewEnabled}
+							onAutoReviewEnabledChange={setNewTaskAutoReviewEnabled}
+							autoReviewMode={newTaskAutoReviewMode}
+							onAutoReviewModeChange={setNewTaskAutoReviewMode}
+							workspaceId={currentProjectId}
+							branchRef={newTaskBranchRef}
+							branchOptions={createTaskBranchOptions}
+							onBranchRefChange={setNewTaskBranchRef}
+							agentId={newTaskAgentId}
+							onAgentIdChange={setNewTaskAgentId}
+							agentSettings={newTaskAgentSettings}
+							onKanbanSettingsChange={setNewTaskKanbanSettings}
+							defaultAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
+							defaultModelId={runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null}
+							defaultReasoningEffort={runtimeProjectConfig?.kanbanProviderSettings?.reasoningEffort ?? null}
+						/>
+						<ClearTrashDialog
+							open={isClearTrashDialogOpen}
+							taskCount={trashTaskCount}
+							onCancel={() => setIsClearTrashDialogOpen(false)}
+							onConfirm={handleConfirmClearTrash}
+						/>
+						<StartupOnboardingDialog
+							open={isStartupOnboardingDialogOpen}
+							onClose={handleCloseStartupOnboardingDialog}
+							selectedAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
+							agents={runtimeProjectConfig?.agents ?? []}
+							kanbanProviderSettings={runtimeProjectConfig?.kanbanProviderSettings ?? null}
+							workspaceId={currentProjectId}
+							runtimeConfig={runtimeProjectConfig ?? null}
+							onSelectAgent={handleSelectOnboardingAgent}
+							onKanbanSetupSaved={handleOnboardingKanbanSetupSaved}
+						/>
+
+						<AddProjectDialog
+							open={isAddProjectDialogOpen}
+							onOpenChange={setIsAddProjectDialogOpen}
+							onProjectAdded={handleAddProjectSuccess}
+							currentProjectId={currentProjectId}
+							initialGitInitPath={pendingNativeGitInitPath}
+						/>
+
+						<UpdateNotificationController />
+
+						<AlertDialog
+							open={gitActionError !== null}
+							onOpenChange={(open) => {
+								if (!open) {
+									clearGitActionError();
+								}
+							}}
+						>
+							<AlertDialogHeader>
+								<AlertDialogTitle>{gitActionErrorTitle}</AlertDialogTitle>
+							</AlertDialogHeader>
+							<AlertDialogBody>
+								<p>{gitActionError?.message}</p>
+								{gitActionError?.output ? (
+									<pre className="max-h-[220px] overflow-auto rounded-md bg-surface-0 p-3 font-mono text-xs text-text-secondary whitespace-pre-wrap">
+										{gitActionError.output}
+									</pre>
+								) : null}
+							</AlertDialogBody>
+							<AlertDialogFooter className="justify-end">
+								<AlertDialogAction asChild>
+									<Button variant="default" onClick={clearGitActionError}>
+										Close
+									</Button>
+								</AlertDialogAction>
+							</AlertDialogFooter>
+						</AlertDialog>
 					</div>
-				</div>
-				<RuntimeSettingsDialog
-					open={isSettingsOpen}
-					workspaceId={settingsWorkspaceId}
-					initialConfig={settingsRuntimeProjectConfig}
-					initialSection={settingsInitialSection}
-					onOpenChange={(nextOpen) => {
-						setIsSettingsOpen(nextOpen);
-						if (!nextOpen) {
-							setSettingsInitialSection(null);
-						}
-					}}
-					onSaved={() => {
-						refreshRuntimeProjectConfig();
-						refreshSettingsRuntimeProjectConfig();
-					}}
-				/>
-				<DebugDialog
-					open={isDebugDialogOpen}
-					onOpenChange={handleDebugDialogOpenChange}
-					isResetAllStatePending={isResetAllStatePending}
-					onShowStartupOnboardingDialog={handleShowStartupOnboardingDialog}
-					onResetAllState={handleResetAllState}
-				/>
-				<TaskCreateDialog
-					open={isInlineTaskCreateOpen}
-					onOpenChange={handleCreateDialogOpenChange}
-					prompt={newTaskPrompt}
-					onPromptChange={setNewTaskPrompt}
-					images={newTaskImages}
-					onImagesChange={setNewTaskImages}
-					onCreate={handleCreateTask}
-					onCreateAndStart={handleCreateAndStartTask}
-					onCreateStartAndOpen={handleCreateStartAndOpenTask}
-					onCreateMultiple={handleCreateTasks}
-					onCreateAndStartMultiple={handleCreateAndStartTasks}
-					startInPlanMode={newTaskStartInPlanMode}
-					onStartInPlanModeChange={setNewTaskStartInPlanMode}
-					startInPlanModeDisabled={isNewTaskStartInPlanModeDisabled}
-					autoReviewEnabled={newTaskAutoReviewEnabled}
-					onAutoReviewEnabledChange={setNewTaskAutoReviewEnabled}
-					autoReviewMode={newTaskAutoReviewMode}
-					onAutoReviewModeChange={setNewTaskAutoReviewMode}
-					workspaceId={currentProjectId}
-					branchRef={newTaskBranchRef}
-					branchOptions={createTaskBranchOptions}
-					onBranchRefChange={setNewTaskBranchRef}
-					agentId={newTaskAgentId}
-					onAgentIdChange={setNewTaskAgentId}
-					agentSettings={newTaskAgentSettings}
-					onKanbanSettingsChange={setNewTaskKanbanSettings}
-					defaultAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
-					defaultModelId={runtimeProjectConfig?.kanbanProviderSettings?.modelId ?? null}
-					defaultReasoningEffort={runtimeProjectConfig?.kanbanProviderSettings?.reasoningEffort ?? null}
-				/>
-				<ClearTrashDialog
-					open={isClearTrashDialogOpen}
-					taskCount={trashTaskCount}
-					onCancel={() => setIsClearTrashDialogOpen(false)}
-					onConfirm={handleConfirmClearTrash}
-				/>
-				<StartupOnboardingDialog
-					open={isStartupOnboardingDialogOpen}
-					onClose={handleCloseStartupOnboardingDialog}
-					selectedAgentId={runtimeProjectConfig?.selectedAgentId ?? null}
-					agents={runtimeProjectConfig?.agents ?? []}
-					kanbanProviderSettings={runtimeProjectConfig?.kanbanProviderSettings ?? null}
-					workspaceId={currentProjectId}
-					runtimeConfig={runtimeProjectConfig ?? null}
-					onSelectAgent={handleSelectOnboardingAgent}
-					onKanbanSetupSaved={handleOnboardingKanbanSetupSaved}
-				/>
-
-				<AddProjectDialog
-					open={isAddProjectDialogOpen}
-					onOpenChange={setIsAddProjectDialogOpen}
-					onProjectAdded={handleAddProjectSuccess}
-					currentProjectId={currentProjectId}
-					initialGitInitPath={pendingNativeGitInitPath}
-				/>
-
-				<UpdateNotificationController />
-
-				<AlertDialog
-					open={gitActionError !== null}
-					onOpenChange={(open) => {
-						if (!open) {
-							clearGitActionError();
-						}
-					}}
-				>
-					<AlertDialogHeader>
-						<AlertDialogTitle>{gitActionErrorTitle}</AlertDialogTitle>
-					</AlertDialogHeader>
-					<AlertDialogBody>
-						<p>{gitActionError?.message}</p>
-						{gitActionError?.output ? (
-							<pre className="max-h-[220px] overflow-auto rounded-md bg-surface-0 p-3 font-mono text-xs text-text-secondary whitespace-pre-wrap">
-								{gitActionError.output}
-							</pre>
-						) : null}
-					</AlertDialogBody>
-					<AlertDialogFooter className="justify-end">
-						<AlertDialogAction asChild>
-							<Button variant="default" onClick={clearGitActionError}>
-								Close
-							</Button>
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialog>
-			</div>
+				</ChatWikilinkProvider>
+			</VaultFileDialogProvider>
 		</LayoutCustomizationsProvider>
 	);
 }

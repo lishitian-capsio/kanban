@@ -11,6 +11,7 @@ import { LazyKanbanMarkdownContent } from "@/components/detail-panels/kanban-mar
 import { TaskImageStrip } from "@/components/task-image-strip";
 import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
+import { useChatWikilinks } from "@/components/vault/quick-dialog/chat-wikilink-context";
 import type { KanbanChatMessage } from "@/hooks/use-kanban-chat-session";
 
 function ToolMessageBlock({ message }: { message: KanbanChatMessage }): ReactElement {
@@ -184,6 +185,10 @@ export const KanbanChatMessageItem = memo(function KanbanChatMessageItem({
 }: {
 	message: KanbanChatMessage;
 }): ReactElement {
+	// Stable binding from context (undefined when the vault is off) — reading it
+	// here never defeats this component's memo because the reference only changes
+	// when the vault doc pool changes, not per streaming token.
+	const wikilinks = useChatWikilinks();
 	if (message.role === "tool") {
 		return <ToolMessageBlock message={message} />;
 	}
@@ -206,7 +211,7 @@ export const KanbanChatMessageItem = memo(function KanbanChatMessageItem({
 		const normalizedAssistantContent = message.content.replace(/^\n+/, "");
 		return (
 			<div className="min-w-0 w-full px-1.5 text-sm text-text-primary">
-				<LazyKanbanMarkdownContent content={normalizedAssistantContent} />
+				<LazyKanbanMarkdownContent content={normalizedAssistantContent} wikilinks={wikilinks} />
 			</div>
 		);
 	}
