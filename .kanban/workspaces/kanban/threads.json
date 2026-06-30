@@ -159,6 +159,14 @@
       "createdAt": 1782801665092,
       "updatedAt": 1782801686932,
       "pendingNextStep": "启动任务 ea862"
+    },
+    {
+      "id": "06c6ab99-9953-4960-bdc9-ac841e691168",
+      "agentId": "pi",
+      "name": "New session",
+      "titleSource": "manual",
+      "createdAt": 1782806002422,
+      "updatedAt": 1782806002422
     }
   ],
   "fullscreenTabs": {
@@ -168,6 +176,6 @@
       "e5060a7c-ba48-41e0-b356-495436c7d21d",
       "6588c4a9-28df-4a75-9774-172e2bb7832c"
     ],
-    "activeThreadId": "16d0ae97-5f56-4649-ba14-d0134b8c262e"
+    "activeThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c"
   }
 }
