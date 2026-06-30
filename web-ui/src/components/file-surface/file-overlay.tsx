@@ -86,7 +86,7 @@ export function FileOverlay({
 						setConfirmOpen(true);
 					}
 				}}
-				contentClassName="max-w-3xl w-[90vw] h-[80vh] p-0"
+				contentClassName="!max-w-none !w-[96vw] !h-[94vh] !max-h-[94vh] p-0"
 			>
 				{fileId ? (
 					<FileOverlayBody
