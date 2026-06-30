@@ -136,10 +136,10 @@
     {
       "id": "5fec3500-5c60-4477-8b05-794bc8dd76a7",
       "agentId": "claude",
-      "name": "全屏状态流转动画任务",
+      "name": "修复全屏卡片动画漏出",
       "titleSource": "auto",
       "createdAt": 1782781545466,
-      "updatedAt": 1782781586318,
+      "updatedAt": 1782788919125,
       "pendingNextStep": "启动任务 #59568，让 coding agent 开始实现全屏状态流转动画"
     },
     {
