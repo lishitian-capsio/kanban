@@ -1,0 +1,20 @@
+{
+  "id": "8c066",
+  "title": "修复 board 自动流转时的页面卡顿/偶发卡死",
+  "prompt": "复现并修复：当任务发生【后端驱动的自动状态流转】时，board 页面卡顿掉帧，有时还会彻底卡住、必须刷新浏览器才恢复。\n\n## 症状（用户报告）\n- 触发场景：任务自动流转 —— task start、任务完成进 review、链式 linked 任务自动启动、auto-review 后移到 done 等由后端广播驱动的列变化。\n- 两类表现都存在：(1) 转换瞬间明显掉帧/卡顿；(2) 偶发卡片状态停在旧值不动，刷新后才更新（疑似 websocket 状态流卡死或某次广播未触发重渲染）。\n\n## 排查方向（先用 systematic-debugging 复现，再定位根因，不要凭猜改）\n状态流转的广播链路大致是：后端 task 列变化 -> broadcastRuntimeWorkspaceStateUpdated / task_sessions_updated / board_sync_status_updated -> 前端 runtime 状态流。重点核查 web-ui：\n1. 渲染风暴：runtime-stream-store.ts 的 per-field / per-taskId 监听切分是否在自动流转这条路径上失效，导致 task_sessions_updated / workspace_state_updated 把整棵树重渲染。确认高频 slice 仍只在叶子 fiber 订阅（参考 perf10 既有约定）。\n2. board 本地状态：workspaceState -> useWorkspaceSync -> 本地 board/sessions，board ref 由 revision 守卫。核查 revision 守卫是否会在自动流转时丢弃本应生效的更新（这可能就是“卡住要刷新”的根因），或反过来每次广播都重建 board 数组造成卡顿。\n3. 卡死/需刷新：排查 websocket 连接在一连串快速广播下是否会卡住、漏 dispatch，或某个 useSyncExternalStore selector 因引用恒变/恒不变导致漏更新。\n4. 链式自动启动那一刻往往同时发多条广播（done + 新任务 in_progress + sync 状态），确认是否广播风暴 + 缺少批处理/去抖。\n\n## 要求\n- 先给出可稳定复现的步骤与根因证据（before 数据：渲染次数/卡顿点），再动手。\n- 修复后用 verification 证明：自动流转不再整树重渲染、不再出现需刷新才更新的卡死。\n- 不要为降行数牺牲清晰度；遵循仓库既有 granular store / 叶子订阅 架构，别回退已有性能优化。\n- 跑相关测试（runtime-stream-store.test.tsx 等），web:typecheck 通过。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "5fec3500-5c60-4477-8b05-794bc8dd76a7",
+  "baseRef": "main",
+  "createdAt": 1782799676283,
+  "updatedAt": 1782799676283,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
