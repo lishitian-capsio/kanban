@@ -148,7 +148,8 @@
       "name": "Design Kanban agent Home view",
       "titleSource": "auto",
       "createdAt": 1782781795470,
-      "updatedAt": 1782781833255
+      "updatedAt": 1782781833255,
+      "pendingNextStep": "把任务 6c895 开起来跑"
     },
     {
       "id": "05ae5b1d-6387-46fa-ae3d-ad128d7026ae",
