@@ -1,0 +1,20 @@
+{
+  "id": "dc2d3",
+  "title": "fullscreen 会话:File 作为 tab 放在 Home 与 Pi 之间",
+  "prompt": "在 fullscreen / session 模式的会话标签条里,把 File 做成一个一等 **tab**,位置排在 **Home 和 Pi 之间**(顺序:Home → File → Pi → …)。\n\n背景:fullscreen 会话体验已有一组 tab——Home tab(session-card 网格 launcher)、Pi tab(多 session rail)、Task tab 等,见 components/home-agent/(HomeChatWorkspace / 全屏会话那套)与相关记忆(home tab launcher / pi tab multi-session / fullscreen Task tab)。先读这套 tab 的定义与渲染顺序再动手。\n\n要做的:\n- 在 fullscreen 会话 tab 列表里新增 File tab,插在 Home 与 Pi 之间。\n- 选中 File tab 时,在 fullscreen 区域呈现 File(复用已落地的 file-surface:store / file-library-overlay / file-dialog / ?files、?file= 路由),保持轻量、board 不被 unmount;不要新造第二套 File 逻辑或重型整页视图。\n- 与本任务的前置任务 55056 协调:55056 若在 session 模式加了临时入口按钮,本任务以\"File tab\"为准——复用其留下的 store/overlay 能力,把 session 模式的入口收敛成这个 tab(避免出现重复入口)。\n- tab 的图标/样式/激活态对齐其它 tab(lucide 图标、设计 token、Radix、@/components/ui)。\n\n约束:\n- 复用同一套 file-surface store / overlay / 路由,不重复逻辑。\n- 通过 web:typecheck、lint、相关测试。\n- 遵循 AGENTS.md 的 web-ui 约定。\n- 提交说明写清:File tab 加在哪个 tab 列表、插入顺序、选中时如何呈现 File、是否收敛了 55056 的临时入口。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782788255834,
+  "updatedAt": 1782788255834,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
