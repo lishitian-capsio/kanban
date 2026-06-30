@@ -1,5 +1,5 @@
 import type { DropResult } from "@hello-pangea/dnd";
-import { Files, GitCompareArrows, Maximize2, MessageSquare, Minimize2, X } from "lucide-react";
+import { Files, FileText, GitCompareArrows, Maximize2, MessageSquare, Minimize2, X } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -12,6 +12,7 @@ import {
 	KanbanAgentChatPanel,
 	type KanbanAgentChatPanelHandle,
 } from "@/components/detail-panels/kanban-agent-chat-panel";
+import { fileSurfaceStore } from "@/components/file-surface";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { createIdleTaskSession } from "@/hooks/app-utils";
@@ -315,13 +316,26 @@ function DiffToolbar({
 					Artifacts
 				</DiffModeButton>
 			</div>
+			{/* Open the File surface library overlay from within the task detail. The board
+			    top-bar's File button is disabled while a card is selected, so this is the
+			    task header's entry point. Same portaled overlay, same store — it layers above
+			    the detail without unmounting it. */}
+			<Button
+				variant="ghost"
+				size="sm"
+				icon={<FileText size={14} />}
+				onClick={() => fileSurfaceStore.openLibrary()}
+				className="ml-auto h-5"
+				aria-label="Open files"
+				title="Files"
+			/>
 			{!hideExpand ? (
 				<Button
 					variant="ghost"
 					size="sm"
 					icon={isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
 					onClick={onToggleExpand}
-					className="ml-auto h-5"
+					className="h-5"
 					aria-label={isExpanded ? "Collapse split diff view" : "Expand split diff view"}
 				/>
 			) : null}

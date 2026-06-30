@@ -7,7 +7,7 @@
 // the thread (that stays an explicit action in the launcher / thread bar). Only the session-tab
 // region scrolls horizontally when the tabs overflow; the anchored tabs stay pinned and visible.
 import { createHomeAgentSessionId } from "@runtime-home-agent-session";
-import { Bot, LayoutGrid, X } from "lucide-react";
+import { Bot, FileText, LayoutGrid, X } from "lucide-react";
 import { type ReactElement, useEffect, useRef } from "react";
 
 import { deriveHomeSessionCardStatus } from "@/components/home-agent/home-session-card-derive";
@@ -33,6 +33,8 @@ interface SessionTabStripProps {
 	onActivatePi: () => void;
 	onActivateTab: (threadId: string) => void;
 	onCloseTab: (threadId: string) => void;
+	/** Open the File surface library overlay (portaled above this workspace). */
+	onOpenFile?: () => void;
 }
 
 export function SessionTabStrip({
@@ -47,6 +49,7 @@ export function SessionTabStrip({
 	onActivatePi,
 	onActivateTab,
 	onCloseTab,
+	onOpenFile,
 }: SessionTabStripProps): ReactElement {
 	// The Pi tab is a peer of the Home tab; while it is active neither Home
 	// nor any session tab is highlighted.
@@ -175,6 +178,25 @@ export function SessionTabStrip({
 					);
 				})}
 			</div>
+
+			{/* Trailing action, pinned outside the scroll region so it stays reachable in
+			    fullscreen/session mode regardless of how many session tabs overflow. Opens
+			    the same File surface library overlay as the board top bar — a portaled
+			    overlay that layers above this workspace without unmounting it. */}
+			{onOpenFile ? (
+				<div className="flex flex-none items-stretch">
+					<button
+						type="button"
+						onClick={onOpenFile}
+						title="Files"
+						aria-label="Open files"
+						className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] text-text-secondary outline-none transition-colors hover:bg-surface-3 hover:text-text-primary focus-visible:border-border-focus"
+					>
+						<FileText size={14} className="shrink-0" aria-hidden="true" />
+						<span>File</span>
+					</button>
+				</div>
+			) : null}
 		</div>
 	);
 }

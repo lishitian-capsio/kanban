@@ -21,6 +21,7 @@ import type { ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { notifyError } from "@/components/app-toaster";
+import { fileSurfaceStore } from "@/components/file-surface";
 import { HomeAddSessionCard } from "@/components/home-agent/home-add-session-card";
 import { HomeAgentConversation } from "@/components/home-agent/home-agent-conversation";
 import { HomeSessionCard } from "@/components/home-agent/home-session-card";
@@ -223,6 +224,7 @@ export function HomeChatWorkspace({
 				onActivatePi={handleActivatePi}
 				onActivateTab={handleActivateSessionTab}
 				onCloseTab={handleCloseSessionTab}
+				onOpenFile={() => fileSurfaceStore.openLibrary()}
 			/>
 
 			{piTabActive ? (

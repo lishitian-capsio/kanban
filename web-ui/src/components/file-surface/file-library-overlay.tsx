@@ -53,7 +53,7 @@ export function FileLibraryOverlay({
 					onClose();
 				}
 			}}
-			contentClassName="max-w-5xl w-[92vw] h-[85vh] p-0 overflow-hidden"
+			contentClassName="!max-w-none !w-[96vw] !h-[94vh] !max-h-[94vh] p-0 overflow-hidden"
 		>
 			<RadixDialog.Title className="sr-only">Files</RadixDialog.Title>
 			<div className="flex flex-1 min-h-0 flex-col">
