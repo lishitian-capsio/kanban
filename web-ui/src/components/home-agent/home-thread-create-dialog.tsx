@@ -1,11 +1,13 @@
-import { Check, MessageSquarePlus } from "lucide-react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { AlertCircle, Check, Mic, MicOff, MessageSquarePlus, Square } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { AgentAvatar } from "@/components/home-agent/agent-icon";
+import { useNativeSpeechDictation } from "@/components/home-agent/use-native-speech-dictation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
+import { Tooltip } from "@/components/ui/tooltip";
 import { isNativeAgentSelected } from "@/runtime/native-agent";
 import type { RuntimeAgentDefinition, RuntimeAgentId } from "@/runtime/types";
 import { isMacPlatform } from "@/utils/platform";
@@ -16,6 +18,18 @@ interface HomeThreadCreateDialogProps {
 	agents: RuntimeAgentDefinition[];
 	defaultAgentId: RuntimeAgentId;
 	onCreate: (input: { description: string; agentId: RuntimeAgentId }) => void | Promise<unknown>;
+}
+
+function appendDictationText(value: string, transcript: string): string {
+	const trimmedTranscript = transcript.trim();
+	if (!trimmedTranscript) {
+		return value;
+	}
+	if (!value.trim()) {
+		return trimmedTranscript;
+	}
+	const separator = /[\s\n]$/.test(value) ? "" : " ";
+	return `${value}${separator}${trimmedTranscript}`;
 }
 
 export function HomeThreadCreateDialog({
@@ -40,6 +54,9 @@ export function HomeThreadCreateDialog({
 	}, [selectableAgents, defaultAgentId]);
 
 	const descriptionId = useId();
+	const descriptionHelpId = useId();
+	const descriptionStatusId = useId();
+	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 	const [description, setDescription] = useState("");
 	const [agentId, setAgentId] = useState<RuntimeAgentId | null>(resolvedDefaultAgentId);
 	const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,8 +70,54 @@ export function HomeThreadCreateDialog({
 		}
 	}, [open, resolvedDefaultAgentId]);
 
+	const focusDescriptionEnd = useCallback(() => {
+		window.requestAnimationFrame(() => {
+			const textarea = textareaRef.current;
+			if (!textarea) {
+				return;
+			}
+			textarea.focus();
+			const cursor = textarea.value.length;
+			textarea.setSelectionRange(cursor, cursor);
+		});
+	}, []);
+
+	const handleDictationTranscript = useCallback(
+		(transcript: string) => {
+			setDescription((current) => appendDictationText(current, transcript));
+			focusDescriptionEnd();
+		},
+		[focusDescriptionEnd],
+	);
+
+	const {
+		isSupported: isSpeechSupported,
+		status: speechStatus,
+		message: speechMessage,
+		interimTranscript,
+		start: startListening,
+		stop: stopListening,
+		reset: resetVoiceInput,
+	} = useNativeSpeechDictation(handleDictationTranscript);
+
+	useEffect(() => {
+		if (open) {
+			return;
+		}
+		resetVoiceInput();
+	}, [open, resetVoiceInput]);
+
 	const trimmedDescription = description.trim();
 	const canSubmit = trimmedDescription.length > 0 && !isSubmitting && agentId !== null;
+	const descriptionStateText = useMemo(() => {
+		if (!isSpeechSupported) {
+			return "Voice input is unavailable in this browser. Type the opening prompt instead.";
+		}
+		if (speechMessage) {
+			return speechMessage;
+		}
+		return "The thread's agent works from this opening prompt and names the thread itself.";
+	}, [isSpeechSupported, speechMessage]);
 
 	const handleSubmit = async () => {
 		if (!canSubmit || agentId === null) {
@@ -73,28 +136,114 @@ export function HomeThreadCreateDialog({
 		<Dialog open={open} onOpenChange={onOpenChange} contentClassName="max-w-md">
 			<DialogHeader title="New chat thread" icon={<MessageSquarePlus size={16} />} />
 			<DialogBody className="flex flex-col gap-5">
-				<div className="flex flex-col gap-1.5">
+				<div className="flex flex-col gap-2">
 					<label htmlFor={descriptionId} className="text-[12px] font-medium text-text-secondary">
-						Description
+						Opening prompt
 					</label>
-					<textarea
-						id={descriptionId}
-						value={description}
-						autoFocus
-						rows={4}
-						placeholder="Describe what you want to work on…"
-						onChange={(event) => setDescription(event.target.value)}
-						onKeyDown={(event) => {
-							// Enter inserts a newline; ⌘/Ctrl+Enter submits.
-							if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-								event.preventDefault();
-								void handleSubmit();
-							}
-						}}
-						className="resize-none rounded-md border border-border bg-surface-2 px-2.5 py-2 text-[13px] leading-relaxed text-text-primary placeholder:text-text-tertiary transition-colors focus:border-border-focus focus:outline-none"
-					/>
-					<p className="text-[11px] text-text-tertiary">
-						The thread's agent works on this and names the thread itself.
+					<div
+						className={cn(
+							"rounded-lg border bg-surface-2 transition-colors focus-within:border-border-focus",
+							speechStatus === "error" ? "border-status-red/50" : "border-border-bright",
+							speechStatus === "listening" && "border-accent bg-surface-3/40",
+						)}
+					>
+						<textarea
+							ref={textareaRef}
+							id={descriptionId}
+							value={description}
+							autoFocus
+							rows={5}
+							aria-describedby={`${descriptionHelpId} ${descriptionStatusId}`}
+							aria-required="true"
+							placeholder="Describe the work, question, or next step for this thread..."
+							onChange={(event) => {
+								setDescription(event.target.value);
+							}}
+							onKeyDown={(event) => {
+								// Enter inserts a newline; ⌘/Ctrl+Enter submits.
+								if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+									event.preventDefault();
+									void handleSubmit();
+									return;
+								}
+								if (event.key === "Escape" && speechStatus === "listening") {
+									event.preventDefault();
+									stopListening();
+								}
+							}}
+							className="min-h-[132px] w-full resize-none bg-transparent px-3 py-2.5 text-[13px] leading-relaxed text-text-primary placeholder:text-text-tertiary focus:outline-none"
+						/>
+						{interimTranscript ? (
+							<div className="mx-3 mb-2 rounded-md border border-border bg-surface-1 px-2 py-1.5 text-[12px] leading-relaxed text-text-secondary">
+								<span className="text-text-tertiary">Listening: </span>
+								{interimTranscript}
+							</div>
+						) : null}
+						<div className="flex min-w-0 items-center gap-2 border-t border-border px-2.5 py-2">
+							<p id={descriptionStatusId} className="min-w-0 flex-1 text-[11px] leading-4 text-text-tertiary">
+								{speechStatus === "error" ? (
+									<span className="inline-flex min-w-0 items-center gap-1 text-status-red">
+										<AlertCircle size={12} className="shrink-0" />
+										<span className="min-w-0 break-words">{descriptionStateText}</span>
+									</span>
+								) : (
+									descriptionStateText
+								)}
+							</p>
+							<Tooltip
+								side="top"
+								content={
+									isSpeechSupported
+										? speechStatus === "listening"
+											? "Stop voice input"
+											: "Dictate the opening prompt"
+										: "Voice input is not supported in this browser"
+								}
+							>
+								<button
+									type="button"
+									aria-label={speechStatus === "listening" ? "Stop voice input" : "Start voice input"}
+									aria-pressed={speechStatus === "listening"}
+									disabled={!isSpeechSupported || isSubmitting}
+									onClick={() => {
+										if (speechStatus === "listening") {
+											stopListening();
+										} else {
+											startListening();
+										}
+									}}
+									className={cn(
+										"inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-[12px] font-medium transition-colors",
+										"focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
+										"disabled:pointer-events-none disabled:cursor-default disabled:opacity-45",
+										speechStatus === "listening"
+											? "border-status-red/40 bg-status-red/10 text-status-red hover:bg-status-red/20"
+											: "border-border-bright bg-surface-3 text-text-primary hover:bg-surface-4",
+									)}
+								>
+									{speechStatus === "listening" ? (
+										<>
+											<span className="h-1.5 w-1.5 animate-pulse rounded-full bg-status-red" />
+											<Square size={12} className="fill-current" />
+											Stop
+										</>
+									) : isSpeechSupported ? (
+										<>
+											<Mic size={14} />
+											Voice
+										</>
+									) : (
+										<>
+											<MicOff size={14} />
+											Voice
+										</>
+									)}
+								</button>
+							</Tooltip>
+						</div>
+					</div>
+					<p id={descriptionHelpId} className="text-[11px] text-text-tertiary">
+						Use a clear first instruction. Long prompts are preserved and can span multiple lines.
 					</p>
 				</div>
 
