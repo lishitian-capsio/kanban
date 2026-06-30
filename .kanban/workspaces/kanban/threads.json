@@ -136,11 +136,11 @@
     {
       "id": "5fec3500-5c60-4477-8b05-794bc8dd76a7",
       "agentId": "claude",
-      "name": "修复全屏卡片动画漏出",
+      "name": "Board 终端 hook 报错诊断",
       "titleSource": "auto",
       "createdAt": 1782781545466,
-      "updatedAt": 1782788919125,
-      "pendingNextStep": "启动任务 #af945，修复全屏下 board 卡片换列动画漏出的问题"
+      "updatedAt": 1782796091361,
+      "pendingNextStep": "建个任务：让 kanban hooks ingest 在缺少 KANBAN_SESSION_TASK_ID 时静默退出（exit 0），不再刷屏报错"
     },
     {
       "id": "e5060a7c-ba48-41e0-b356-495436c7d21d",
