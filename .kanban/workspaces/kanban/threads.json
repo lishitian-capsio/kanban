@@ -110,11 +110,11 @@
     {
       "id": "6588c4a9-28df-4a75-9774-172e2bb7832c",
       "agentId": "claude",
-      "name": "File 轻量弹窗设计与开发",
+      "name": "加宽 file 文件弹窗",
       "titleSource": "auto",
       "createdAt": 1782717051577,
-      "updatedAt": 1782717834150,
-      "pendingNextStep": "启动设计任务 97f59"
+      "updatedAt": 1782783469354,
+      "pendingNextStep": "开始这个加宽 file 弹窗的任务"
     },
     {
       "id": "1219a752-a9d8-49b6-99aa-3405d222faea",
@@ -171,6 +171,6 @@
       "6588c4a9-28df-4a75-9774-172e2bb7832c",
       "72b6df6d-952c-4f47-a67e-fd9873fde479"
     ],
-    "activeThreadId": "5fec3500-5c60-4477-8b05-794bc8dd76a7"
+    "activeThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c"
   }
 }
