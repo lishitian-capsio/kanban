@@ -1,0 +1,20 @@
+{
+  "id": "9e910",
+  "title": "Session 模式：settings 移到右上角",
+  "prompt": "在 session 模式下，把 settings（设置）入口移动到界面的右上角。\n\n背景：当前 session 模式下 settings 的位置不在右上角，需要调整布局把它放到右上角，与其他全屏/锚定标签区的视觉对齐保持一致（参考 web-ui 现有的顶部标签栏 / TopBar 对齐约定）。\n\n要求：\n- 仅在 session 模式下生效，不要影响其他模式的 settings 位置。\n- 复用现有的 settings 入口组件，不要新建重复组件。\n- 遵循 web-ui 的 Tailwind / 设计 token 约定与暗色主题。\n\n请先在 web-ui 中定位 session 模式的布局容器与 settings 入口当前的挂载点，确认改动范围后再实现。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "ab1cbbfe-a5b9-4481-adc1-3325483c72ce",
+  "baseRef": "main",
+  "createdAt": 1782780611205,
+  "updatedAt": 1782780611205,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}
