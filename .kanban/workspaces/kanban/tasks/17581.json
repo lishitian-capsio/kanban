@@ -1,0 +1,20 @@
+{
+  "id": "17581",
+  "title": "移除全部语音功能",
+  "prompt": "移除项目中全部的语音相关功能，不再需要。\n\n需要移除的范围（请先在代码中实际搜索确认，不要遗漏）：\n1. 语音转文字 / STT：后端模块 src/stt/、tRPC 的 stt 路由、相关配置（~/.kanban/settings/stt-config.json 及其读取服务），以及 web-ui 中聊天输入框 KanbanChatComposer 里的 VoiceInputButton、use-voice-input.ts、voice-input-state.ts 等。\n2. 新建线程对话框中的原生 Web Speech 语音听写（detectSpeechDictationSupport / 相关 hook 与按钮）。\n3. 语音命令控制看板：聊天/命令 toggle、本地语音命令解析（4 个动词 → 确认）等。\n\n要求：\n- 彻底移除上述功能的 UI 入口、组件、hook、状态机、后端模块、路由与配置读写，删除随之变成死代码的文件。\n- 清理相关测试（src/stt 下的测试、web-ui 中 voice 相关测试），不要留下引用已删除模块的悬挂 import。\n- 不要破坏聊天输入框 KanbanChatComposer 的其余功能（草稿、发送等）。\n- 跑通 typecheck（含 web:typecheck）与相关测试，确认没有残留引用。\n- 遵循项目的 TypeScript 与 web-ui 约定。\n\n请先全面搜索 voice / STT / speech / dictation / MediaRecorder / VoiceInput 等关键字，列出受影响文件后再动手。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "ab1cbbfe-a5b9-4481-adc1-3325483c72ce",
+  "baseRef": "main",
+  "createdAt": 1782808119255,
+  "updatedAt": 1782808119255,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
