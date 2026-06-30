@@ -1013,8 +1013,6 @@ export default function App(): ReactElement {
 								isVaultOpen={isVaultOpen}
 								vaultMode={vaultSettings.vaultMode}
 								onVaultModeChange={(next) => void vaultSettings.setVaultMode(next)}
-								agentDatabaseAccessEnabled={vaultSettings.agentDatabaseAccessEnabled}
-								onAgentDatabaseAccessChange={(next) => void vaultSettings.setAgentDatabaseAccessEnabled(next)}
 								vaultModeDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
 								onToggleDatabase={hasNoProjects || selectedCard ? undefined : handleToggleDatabase}
 								isDatabaseOpen={isDatabaseOpen}

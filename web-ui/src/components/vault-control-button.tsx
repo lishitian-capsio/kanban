@@ -5,32 +5,27 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
-import { DatabaseAccessSelect } from "@/components/vault/database-access-select";
 import { VaultModeSelect } from "@/components/vault/vault-mode-select";
 import type { RuntimeVaultMode } from "@/runtime/types";
 
 /**
  * Top-bar Vault control: a split button whose left half toggles the vault surface
  * open/closed (matching its sibling Database button) and whose right half opens a
- * popover hosting the agent-capability switches — vault-management mode and the
- * agent database-access gate. Folding these in here keeps them reachable without
- * first opening the vault and avoids scattered switch entries down in the sidebar.
+ * popover hosting the agent vault-management mode picker. Folding it in here keeps it
+ * reachable without first opening the vault. (The agent database-access gate lives in
+ * the Database view, next to the surface it governs.)
  */
 export function VaultControlButton({
 	isVaultOpen,
 	onToggleVault,
 	vaultMode,
 	onVaultModeChange,
-	agentDatabaseAccessEnabled,
-	onAgentDatabaseAccessChange,
 	settingsDisabled = false,
 }: {
 	isVaultOpen: boolean;
 	onToggleVault: () => void;
 	vaultMode: RuntimeVaultMode;
 	onVaultModeChange: (next: RuntimeVaultMode) => void;
-	agentDatabaseAccessEnabled: boolean;
-	onAgentDatabaseAccessChange: (next: boolean) => void;
 	settingsDisabled?: boolean;
 }): React.ReactElement {
 	const [isPopoverOpen, setIsPopoverOpen] = useState(false);
@@ -66,12 +61,6 @@ export function VaultControlButton({
 					>
 						<div className="flex min-w-[280px] flex-col gap-3">
 							<VaultModeSelect mode={vaultMode} onChange={onVaultModeChange} disabled={settingsDisabled} />
-							<div className="h-px bg-border" />
-							<DatabaseAccessSelect
-								enabled={agentDatabaseAccessEnabled}
-								onChange={onAgentDatabaseAccessChange}
-								disabled={settingsDisabled}
-							/>
 						</div>
 					</RadixPopover.Content>
 				</RadixPopover.Portal>

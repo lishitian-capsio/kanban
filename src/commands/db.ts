@@ -106,7 +106,7 @@ async function resolveDbWorkspace(
 		throw new CliError(
 			"database_access_disabled",
 			"Agent database access is disabled for this workspace. An operator can enable it in the " +
-				"Vault settings popover (Agent database access). The CLI database channel is read-only.",
+				"Database view (the “Allow agents to query via the kanban db CLI” switch). The CLI database channel is read-only.",
 		);
 	}
 	return { repoPath, client };

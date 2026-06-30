@@ -19,6 +19,7 @@ import type {
 	RuntimeDbUpsertConnectionRequest,
 } from "@/runtime/types";
 import { ConnectionDialog } from "./connection-dialog";
+import { DatabaseAgentAccessControl } from "./database-agent-access-control";
 import { DatabaseSidebar } from "./database-sidebar";
 import { dbErrorMessage } from "./db-utils";
 import { TableDataPanel } from "./table-data-panel";
@@ -120,6 +121,7 @@ export function DatabaseView({ workspaceId }: DatabaseViewProps): React.ReactEle
 				onEnsureIntrospection={ensureLoaded}
 				onReloadIntrospection={reloadIntrospection}
 				onSelectTable={handleSelectTable}
+				footer={<DatabaseAgentAccessControl workspaceId={workspaceId} />}
 			/>
 
 			{selectedConnection && selectedTable ? (

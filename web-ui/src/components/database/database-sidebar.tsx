@@ -24,6 +24,8 @@ export interface DatabaseSidebarProps {
 	onEnsureIntrospection: (connId: string) => void;
 	onReloadIntrospection: (connId: string) => void;
 	onSelectTable: (connId: string, table: RuntimeDbTable) => void;
+	/** Pinned to the bottom of the rail, below the scrollable connections list. */
+	footer?: React.ReactNode;
 }
 
 export function DatabaseSidebar({
@@ -39,6 +41,7 @@ export function DatabaseSidebar({
 	onEnsureIntrospection,
 	onReloadIntrospection,
 	onSelectTable,
+	footer,
 }: DatabaseSidebarProps): React.ReactElement {
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -129,6 +132,7 @@ export function DatabaseSidebar({
 					);
 				})}
 			</div>
+			{footer}
 		</div>
 	);
 }

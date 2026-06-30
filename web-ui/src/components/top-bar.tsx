@@ -325,8 +325,6 @@ export function TopBar({
 	isVaultOpen,
 	vaultMode,
 	onVaultModeChange,
-	agentDatabaseAccessEnabled,
-	onAgentDatabaseAccessChange,
 	vaultModeDisabled,
 	onToggleDatabase,
 	isDatabaseOpen,
@@ -379,8 +377,6 @@ export function TopBar({
 	isVaultOpen?: boolean;
 	vaultMode?: RuntimeVaultMode;
 	onVaultModeChange?: (next: RuntimeVaultMode) => void;
-	agentDatabaseAccessEnabled?: boolean;
-	onAgentDatabaseAccessChange?: (next: boolean) => void;
 	vaultModeDisabled?: boolean;
 	onToggleDatabase?: () => void;
 	isDatabaseOpen?: boolean;
@@ -582,8 +578,6 @@ export function TopBar({
 									onToggleVault={onToggleVault}
 									vaultMode={vaultMode ?? "off"}
 									onVaultModeChange={onVaultModeChange ?? (() => {})}
-									agentDatabaseAccessEnabled={agentDatabaseAccessEnabled === true}
-									onAgentDatabaseAccessChange={onAgentDatabaseAccessChange ?? (() => {})}
 									settingsDisabled={vaultModeDisabled}
 								/>
 							) : null}
