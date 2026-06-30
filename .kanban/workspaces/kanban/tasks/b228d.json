@@ -1,0 +1,20 @@
+{
+  "id": "b228d",
+  "title": "Settings agent 探测:显示探测到的可执行文件路径",
+  "prompt": "在 Settings 的 agent 探测(检测各 CLI agent 是否可用:claude/codex/droid/kiro/gemini/opencode/qoder 等)里,探测到某个 agent 时,把它**解析出的可执行文件绝对路径**也显示出来(目前应该只显示可用/检测到的状态,没显示路径)。\n\n先调研现有实现再动手:\n- 后端探测逻辑:agent 检测走的是直接 PATH 检查(见 AGENTS.md「prefer direct PATH checks」),以及 agent catalog(src/core/agent-catalog.ts)、per-agent executablePath override(见『agent executable path override』:每 agent 可设绝对 executablePath)。找到探测/detect 的实现与它返回给前端的结构。\n- 前端:Settings 里渲染 agent 探测结果的组件。\n\n要做的:\n- 让探测在判定某 agent 可用的同时,解析并返回它实际使用的可执行文件绝对路径(优先 per-agent executablePath override,否则 PATH 解析到的路径)。如果后端探测结果里已有该路径,只需透传;没有则在探测处补上(用已有的 PATH 解析/which 逻辑,避免新引入同步 spawn 在热路径——遵循 AGENTS.md「No sync subprocess on hot paths」)。\n- 在 Settings UI 中,每个探测到的 agent 旁/下显示该路径(等宽、可选地可复制;过长要能省略/换行不破版)。未探测到的 agent 不显示路径或显示「未找到」。\n\n约束:\n- 不改变探测的判定逻辑本身,只是附带并展示路径。\n- 路径只是本地可执行文件位置,不是密钥,正常显示即可。\n- 通过 typecheck / web:typecheck、lint、相关测试;若契约结构有变,前后端契约(api-contract / tRPC)一并更新。\n- 遵循 AGENTS.md 的 web-ui 约定(Tailwind v4 / 设计 token / Radix / @/components/ui)。\n- 提交说明写清:探测返回结构改了哪些、路径在 Settings 哪个组件展示。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782788099323,
+  "updatedAt": 1782788099323,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
