@@ -1,0 +1,20 @@
+{
+  "id": "66c2b",
+  "title": "board 模式退休 Pi default 会话（对齐全屏）",
+  "prompt": "board/侧边栏模式下 Pi 仍显示一个 default 会话，而全屏模式已在之前的改动（commit 6f839）中退休了 default。这导致 board 与全屏两种模式对 Pi 会话的呈现规则不一致。\n\n目标：让 board 模式对齐全屏模式，不再显示/依赖那个 default Pi 会话，两种模式共用同一份 Pi 会话列表与状态来源。\n\n实现要求：\n1. 定位 6f839 那次只在全屏退休 default、却在 board/侧边栏保留 default 的逻辑（参考记忆：default home session retired 仅 fullscreen，KEEP sidebar）。\n2. 在 board 模式同样退休 default 会话，确保不破坏既有 home thread / 多 session 行为。\n3. 与 Pi 会话收归任务（会话随模式漂移的统一收口）保持一致，不要重复或冲突的状态来源。\n4. 自测：board 模式不再出现孤立的 default Pi 会话，且与全屏模式行为一致；typecheck 通过。\n\n注意：这是 UI/状态归位重构，不要改动后端会话契约（除非必要）。建议在 Pi 会话收归主任务完成后再做，避免互相打架。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "16d0ae97-5f56-4649-ba14-d0134b8c262e",
+  "baseRef": "main",
+  "createdAt": 1782810048881,
+  "updatedAt": 1782810048881,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
