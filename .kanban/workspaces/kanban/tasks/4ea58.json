@@ -1,7 +1,7 @@
 {
   "id": "4ea58",
   "title": "加宽 file 文件弹窗",
-  "prompt": "file 文件弹窗（File surface 的 quick dialog / 文件查看编辑 overlay）太窄了，显示不太对。请加宽这个弹窗以获得更合理的阅读/编辑宽度。\n\n相关组件可能在 web-ui/src/components/file-surface/ 下（vault file quick dialog / 单文件查看编辑 overlay）。请先定位到实际渲染该弹窗的组件，确认其宽度约束（max-width / width class），调整为更适合 markdown 文件查看与编辑的宽度，并确保在小屏下仍然 responsive、不溢出。\n\n验收：打开某个文件的弹窗后，宽度明显更宽、内容布局正常，且窄屏不破版。",
+  "prompt": "file 文件弹窗（File surface 的 quick dialog / 文件查看编辑 overlay）太窄了。请把它加宽到接近全屏的宽度。\n\n相关组件可能在 web-ui/src/components/file-surface/ 下（vault file quick dialog / 单文件查看编辑 overlay）。请先定位到实际渲染该弹窗的组件，确认其宽度约束（max-width / width class）。\n\n要求：\n- 弹窗宽度做到接近全屏（例如留出小幅的左右/上下边距，如 inset 之类，而不是占满到边）。可参考类似的全屏/接近全屏 overlay 的实现方式，宽高都明显放大。\n- 内容（markdown 查看与编辑区域）随之撑开，布局正常。\n- 在小屏下仍然 responsive、不溢出、不破版。\n\n验收：打开某个文件的弹窗后，弹窗占据接近整个视口、四周仅留少量边距，内容布局正常。",
   "startInPlanMode": false,
   "autoReviewEnabled": false,
   "autoReviewMode": "commit",
@@ -13,7 +13,7 @@
   "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
   "baseRef": "main",
   "createdAt": 1782783461775,
-  "updatedAt": 1782783461775,
+  "updatedAt": 1782783531359,
   "column": "backlog",
   "rank": "a0",
   "dependsOn": []
