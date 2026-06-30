@@ -149,22 +149,12 @@
       "titleSource": "auto",
       "createdAt": 1782781795470,
       "updatedAt": 1782781833255
-    },
-    {
-      "id": "8b480843-0aa0-47e7-8b2a-8932e524d948",
-      "agentId": "codex",
-      "name": "部署地址访问问题",
-      "titleSource": "auto",
-      "createdAt": 1782782122126,
-      "updatedAt": 1782782274790,
-      "pendingNextStep": "Start task 1c728"
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "8b480843-0aa0-47e7-8b2a-8932e524d948",
-      "e5060a7c-ba48-41e0-b356-495436c7d21d"
+      "6588c4a9-28df-4a75-9774-172e2bb7832c"
     ],
-    "activeThreadId": "e5060a7c-ba48-41e0-b356-495436c7d21d"
+    "activeThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c"
   }
 }
