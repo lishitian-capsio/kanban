@@ -140,7 +140,7 @@
       "titleSource": "auto",
       "createdAt": 1782781545466,
       "updatedAt": 1782788919125,
-      "pendingNextStep": "启动任务 #59568，让 coding agent 开始实现全屏状态流转动画"
+      "pendingNextStep": "启动任务 #af945，修复全屏下 board 卡片换列动画漏出的问题"
     },
     {
       "id": "e5060a7c-ba48-41e0-b356-495436c7d21d",
