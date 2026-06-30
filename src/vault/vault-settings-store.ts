@@ -14,14 +14,19 @@ const FILES_DIR = "files";
 const SETTINGS_FILENAME = "settings.json";
 
 /**
- * Migrate a raw on-disk vault-settings object to the current `vaultMode` shape.
+ * Migrate a raw on-disk vault-settings object to the current
+ * `agentVaultManagementEnabled` boolean shape.
  *
- * The setting started life as a boolean `managed` flag and was later promoted to
- * the four-tier {@link RuntimeVaultMode} enum. To keep existing workspaces working
- * we map the legacy field on read: `managed: true` → `"managed"`, and `managed:
- * false` (or an absent field) → `"off"`. New-shape objects (already carrying
- * `vaultMode`) pass through untouched, and non-object input is returned as-is so
- * the schema validation downstream can reject it with a clear error.
+ * The setting has had three shapes over time: a boolean `managed` flag, then a
+ * four-tier `vaultMode` enum (`off`/`cli-only`/`on-demand`/`managed`), and now a
+ * plain boolean again. To keep existing workspaces working we map the legacy field
+ * on read, collapsing the enum to on/off: `vaultMode === "managed"` (or the even
+ * older `managed: true`) → `true`, and every other value (including `off` or an
+ * absent field) → `false`. New-shape objects (already carrying
+ * `agentVaultManagementEnabled`) pass through untouched, and non-object input is
+ * returned as-is so the schema validation downstream can reject it with a clear
+ * error. The legacy keys are dropped so they don't linger on disk after the next
+ * write.
  *
  * Pure and side-effect-free so the migration is unit-testable.
  */
@@ -30,20 +35,25 @@ export function migrateRawVaultSettings(raw: unknown): unknown {
 		return raw;
 	}
 	const record = raw as Record<string, unknown>;
-	if ("vaultMode" in record) {
+	if ("agentVaultManagementEnabled" in record) {
 		return record;
 	}
-	return { vaultMode: record.managed === true ? "managed" : "off" };
+	const enabled = record.vaultMode === "managed" || record.managed === true;
+	const next: Record<string, unknown> = { ...record, agentVaultManagementEnabled: enabled };
+	delete next.vaultMode;
+	delete next.managed;
+	return next;
 }
 
 /**
- * Repo-scoped store for workspace-level vault settings — currently just the
- * vault-takeover switch ({@link RuntimeVaultSettings.vaultMode}). Persisted as a
- * single committed file at `<repo>/.kanban/files/settings.json`, sibling to the
- * doc/view shards, so the setting travels with the vault.
+ * Repo-scoped store for workspace-level vault settings — the vault-takeover switch
+ * ({@link RuntimeVaultSettings.agentVaultManagementEnabled}), the agent
+ * database-access gate, and the extra push remotes. Persisted as a single committed
+ * file at `<repo>/.kanban/files/settings.json`, sibling to the doc/view shards, so
+ * the settings travel with the vault.
  *
- * Reads degrade to the schema defaults (`vaultMode: "off"`) when the file is
- * absent, and migrate the legacy boolean `managed` shape via
+ * Reads degrade to the schema defaults (everything off) when the file is absent,
+ * and migrate the legacy `managed` boolean / `vaultMode` enum shapes via
  * {@link migrateRawVaultSettings}. Writes serialize on the **same directory lock
  * as the document, blob, and view channels** (the shared `files/` dir) so
  * settings writes never interleave with doc writes.
@@ -84,7 +94,9 @@ export class VaultSettingsStore {
 			const current = await this.readSettings();
 			const next = runtimeVaultSettingsSchema.parse({
 				...current,
-				...(patch.vaultMode !== undefined ? { vaultMode: patch.vaultMode } : {}),
+				...(patch.agentVaultManagementEnabled !== undefined
+					? { agentVaultManagementEnabled: patch.agentVaultManagementEnabled }
+					: {}),
 				...(patch.extraPushRemotes !== undefined ? { extraPushRemotes: patch.extraPushRemotes } : {}),
 				...(patch.agentDatabaseAccessEnabled !== undefined
 					? { agentDatabaseAccessEnabled: patch.agentDatabaseAccessEnabled }

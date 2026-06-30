@@ -27,20 +27,46 @@ afterEach(async () => {
 });
 
 describe("migrateRawVaultSettings", () => {
-	it("maps legacy managed=true to vaultMode 'managed'", () => {
-		expect(migrateRawVaultSettings({ managed: true })).toEqual({ vaultMode: "managed" });
+	it("maps the legacy vaultMode 'managed' enum to agentVaultManagementEnabled=true", () => {
+		expect(migrateRawVaultSettings({ vaultMode: "managed" })).toEqual({ agentVaultManagementEnabled: true });
 	});
 
-	it("maps legacy managed=false to vaultMode 'off'", () => {
-		expect(migrateRawVaultSettings({ managed: false })).toEqual({ vaultMode: "off" });
+	it("collapses the lower legacy vaultMode tiers to agentVaultManagementEnabled=false", () => {
+		for (const vaultMode of ["off", "cli-only", "on-demand"]) {
+			expect(migrateRawVaultSettings({ vaultMode })).toEqual({ agentVaultManagementEnabled: false });
+		}
 	});
 
-	it("maps an empty/legacy object with no managed field to vaultMode 'off'", () => {
-		expect(migrateRawVaultSettings({})).toEqual({ vaultMode: "off" });
+	it("maps the even-older managed=true boolean to agentVaultManagementEnabled=true", () => {
+		expect(migrateRawVaultSettings({ managed: true })).toEqual({ agentVaultManagementEnabled: true });
 	});
 
-	it("passes a new-shape vaultMode value through unchanged", () => {
-		expect(migrateRawVaultSettings({ vaultMode: "on-demand" })).toEqual({ vaultMode: "on-demand" });
+	it("maps managed=false to agentVaultManagementEnabled=false", () => {
+		expect(migrateRawVaultSettings({ managed: false })).toEqual({ agentVaultManagementEnabled: false });
+	});
+
+	it("maps an empty/legacy object with no recognized field to agentVaultManagementEnabled=false", () => {
+		expect(migrateRawVaultSettings({})).toEqual({ agentVaultManagementEnabled: false });
+	});
+
+	it("preserves sibling fields while dropping the legacy keys", () => {
+		expect(
+			migrateRawVaultSettings({
+				vaultMode: "managed",
+				extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
+				agentDatabaseAccessEnabled: true,
+			}),
+		).toEqual({
+			agentVaultManagementEnabled: true,
+			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
+			agentDatabaseAccessEnabled: true,
+		});
+	});
+
+	it("passes a new-shape agentVaultManagementEnabled value through unchanged", () => {
+		expect(migrateRawVaultSettings({ agentVaultManagementEnabled: true })).toEqual({
+			agentVaultManagementEnabled: true,
+		});
 	});
 
 	it("returns non-object input unchanged so schema validation can reject it", () => {
@@ -50,107 +76,121 @@ describe("migrateRawVaultSettings", () => {
 });
 
 describe("VaultSettingsStore.get", () => {
-	it("defaults to vaultMode 'off', no extra push remotes, and database access disabled when no settings file exists", async () => {
+	it("defaults to everything off when no settings file exists", async () => {
 		const settings = await store.get();
-		expect(settings).toEqual({ vaultMode: "off", extraPushRemotes: [], agentDatabaseAccessEnabled: false });
-	});
-
-	it("migrates a legacy managed=true file to vaultMode 'managed' on read", async () => {
-		await writeRawSettings({ managed: true });
-		expect(await store.get()).toEqual({
-			vaultMode: "managed",
+		expect(settings).toEqual({
+			agentVaultManagementEnabled: false,
 			extraPushRemotes: [],
 			agentDatabaseAccessEnabled: false,
 		});
 	});
 
-	it("migrates a legacy managed=false file to vaultMode 'off' on read", async () => {
-		await writeRawSettings({ managed: false });
-		expect(await store.get()).toEqual({ vaultMode: "off", extraPushRemotes: [], agentDatabaseAccessEnabled: false });
+	it("migrates a legacy vaultMode 'managed' file to agentVaultManagementEnabled=true on read", async () => {
+		await writeRawSettings({ vaultMode: "managed" });
+		expect(await store.get()).toEqual({
+			agentVaultManagementEnabled: true,
+			extraPushRemotes: [],
+			agentDatabaseAccessEnabled: false,
+		});
+	});
+
+	it("migrates a legacy vaultMode 'on-demand' file to agentVaultManagementEnabled=false on read", async () => {
+		await writeRawSettings({ vaultMode: "on-demand" });
+		expect(await store.get()).toEqual({
+			agentVaultManagementEnabled: false,
+			extraPushRemotes: [],
+			agentDatabaseAccessEnabled: false,
+		});
+	});
+
+	it("migrates the even-older managed=true boolean file on read", async () => {
+		await writeRawSettings({ managed: true });
+		expect(await store.get()).toEqual({
+			agentVaultManagementEnabled: true,
+			extraPushRemotes: [],
+			agentDatabaseAccessEnabled: false,
+		});
 	});
 
 	it("reads back persisted extra push remotes", async () => {
 		await writeRawSettings({
-			vaultMode: "off",
+			agentVaultManagementEnabled: false,
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 		});
 		expect(await store.get()).toEqual({
-			vaultMode: "off",
+			agentVaultManagementEnabled: false,
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 			agentDatabaseAccessEnabled: false,
 		});
 	});
 
 	it("defaults agentDatabaseAccessEnabled to false for a legacy file that omits it", async () => {
-		await writeRawSettings({ vaultMode: "on-demand", extraPushRemotes: [] });
+		await writeRawSettings({ vaultMode: "managed", extraPushRemotes: [] });
 		expect((await store.get()).agentDatabaseAccessEnabled).toBe(false);
 	});
 
 	it("reads back a persisted agentDatabaseAccessEnabled=true flag", async () => {
-		await writeRawSettings({ vaultMode: "off", extraPushRemotes: [], agentDatabaseAccessEnabled: true });
+		await writeRawSettings({ agentVaultManagementEnabled: false, extraPushRemotes: [], agentDatabaseAccessEnabled: true });
 		expect((await store.get()).agentDatabaseAccessEnabled).toBe(true);
 	});
 });
 
 describe("VaultSettingsStore.set", () => {
-	it("persists each vaultMode tier and reads it back", async () => {
-		for (const vaultMode of ["off", "cli-only", "on-demand", "managed"] as const) {
-			const written = await store.set({ vaultMode, extraPushRemotes: [], agentDatabaseAccessEnabled: false });
-			expect(written).toEqual({ vaultMode, extraPushRemotes: [], agentDatabaseAccessEnabled: false });
+	it("persists each agentVaultManagementEnabled value and reads it back", async () => {
+		for (const agentVaultManagementEnabled of [true, false] as const) {
+			const written = await store.set({
+				agentVaultManagementEnabled,
+				extraPushRemotes: [],
+				agentDatabaseAccessEnabled: false,
+			});
+			expect(written).toEqual({ agentVaultManagementEnabled, extraPushRemotes: [], agentDatabaseAccessEnabled: false });
 
 			const onDisk = JSON.parse(await readFile(settingsPath(), "utf8"));
-			expect(onDisk).toEqual({ vaultMode, extraPushRemotes: [], agentDatabaseAccessEnabled: false });
+			expect(onDisk).toEqual({ agentVaultManagementEnabled, extraPushRemotes: [], agentDatabaseAccessEnabled: false });
 
 			const reread = await new VaultSettingsStore(repoPath).get();
-			expect(reread).toEqual({ vaultMode, extraPushRemotes: [], agentDatabaseAccessEnabled: false });
+			expect(reread).toEqual({ agentVaultManagementEnabled, extraPushRemotes: [], agentDatabaseAccessEnabled: false });
 		}
-	});
-
-	it("can move the mode back down to 'off'", async () => {
-		await store.set({ vaultMode: "managed", extraPushRemotes: [], agentDatabaseAccessEnabled: false });
-		const written = await store.set({ vaultMode: "off", extraPushRemotes: [], agentDatabaseAccessEnabled: false });
-		expect(written).toEqual({ vaultMode: "off", extraPushRemotes: [], agentDatabaseAccessEnabled: false });
-		expect(await store.get()).toEqual({ vaultMode: "off", extraPushRemotes: [], agentDatabaseAccessEnabled: false });
 	});
 });
 
 describe("VaultSettingsStore.update", () => {
-	it("changes only vaultMode and preserves the existing extraPushRemotes", async () => {
+	it("changes only agentVaultManagementEnabled and preserves the existing extraPushRemotes", async () => {
 		await store.set({
-			vaultMode: "off",
+			agentVaultManagementEnabled: false,
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 			agentDatabaseAccessEnabled: false,
 		});
-		const updated = await store.update({ vaultMode: "managed" });
+		const updated = await store.update({ agentVaultManagementEnabled: true });
 		expect(updated).toEqual({
-			vaultMode: "managed",
+			agentVaultManagementEnabled: true,
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 			agentDatabaseAccessEnabled: false,
 		});
 		expect(await new VaultSettingsStore(repoPath).get()).toEqual(updated);
 	});
 
-	it("changes only extraPushRemotes and preserves the existing vaultMode", async () => {
-		await store.set({ vaultMode: "on-demand", extraPushRemotes: [], agentDatabaseAccessEnabled: false });
+	it("changes only extraPushRemotes and preserves agentVaultManagementEnabled", async () => {
+		await store.set({ agentVaultManagementEnabled: true, extraPushRemotes: [], agentDatabaseAccessEnabled: false });
 		const updated = await store.update({
 			extraPushRemotes: [{ name: "mirror", url: "https://github.com/o/r.git" }],
 		});
 		expect(updated).toEqual({
-			vaultMode: "on-demand",
+			agentVaultManagementEnabled: true,
 			extraPushRemotes: [{ name: "mirror", url: "https://github.com/o/r.git" }],
 			agentDatabaseAccessEnabled: false,
 		});
 	});
 
-	it("toggles only agentDatabaseAccessEnabled and preserves vaultMode + extraPushRemotes", async () => {
+	it("toggles only agentDatabaseAccessEnabled and preserves agentVaultManagementEnabled + extraPushRemotes", async () => {
 		await store.set({
-			vaultMode: "on-demand",
+			agentVaultManagementEnabled: true,
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 			agentDatabaseAccessEnabled: false,
 		});
 		const enabled = await store.update({ agentDatabaseAccessEnabled: true });
 		expect(enabled).toEqual({
-			vaultMode: "on-demand",
+			agentVaultManagementEnabled: true,
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 			agentDatabaseAccessEnabled: true,
 		});
@@ -161,9 +201,9 @@ describe("VaultSettingsStore.update", () => {
 	});
 
 	it("is a no-op that returns the current settings when given an empty patch", async () => {
-		await store.set({ vaultMode: "cli-only", extraPushRemotes: [], agentDatabaseAccessEnabled: true });
+		await store.set({ agentVaultManagementEnabled: true, extraPushRemotes: [], agentDatabaseAccessEnabled: true });
 		expect(await store.update({})).toEqual({
-			vaultMode: "cli-only",
+			agentVaultManagementEnabled: true,
 			extraPushRemotes: [],
 			agentDatabaseAccessEnabled: true,
 		});

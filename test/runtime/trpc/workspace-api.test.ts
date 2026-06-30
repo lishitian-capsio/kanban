@@ -592,70 +592,70 @@ describe("createWorkspaceApi vault settings", () => {
 		await rm(repoPath, { recursive: true, force: true });
 	});
 
-	it("defaults to vaultMode off, then round-trips an update and broadcasts", async () => {
+	it("defaults to vault management off, then round-trips an update and broadcasts", async () => {
 		const api = createApi();
 
 		expect((await api.getVaultSettings(scope())).settings).toEqual({
-			vaultMode: "off",
+			agentVaultManagementEnabled: false,
 			extraPushRemotes: [],
 			agentDatabaseAccessEnabled: false,
 		});
 
-		const updated = await api.updateVaultSettings(scope(), { vaultMode: "managed" });
-		expect(updated.settings).toEqual({ vaultMode: "managed", extraPushRemotes: [], agentDatabaseAccessEnabled: false });
+		const updated = await api.updateVaultSettings(scope(), { agentVaultManagementEnabled: true });
+		expect(updated.settings).toEqual({
+			agentVaultManagementEnabled: true,
+			extraPushRemotes: [],
+			agentDatabaseAccessEnabled: false,
+		});
 		expect(broadcastRuntimeWorkspaceStateUpdated).toHaveBeenCalledWith("workspace-1", repoPath);
 
 		expect((await api.getVaultSettings(scope())).settings).toEqual({
-			vaultMode: "managed",
+			agentVaultManagementEnabled: true,
 			extraPushRemotes: [],
 			agentDatabaseAccessEnabled: false,
 		});
 
-		const stepped = await api.updateVaultSettings(scope(), { vaultMode: "cli-only" });
-		expect(stepped.settings).toEqual({ vaultMode: "cli-only", extraPushRemotes: [], agentDatabaseAccessEnabled: false });
-		expect((await api.getVaultSettings(scope())).settings).toEqual({
-			vaultMode: "cli-only",
+		const reverted = await api.updateVaultSettings(scope(), { agentVaultManagementEnabled: false });
+		expect(reverted.settings).toEqual({
+			agentVaultManagementEnabled: false,
 			extraPushRemotes: [],
 			agentDatabaseAccessEnabled: false,
 		});
-
-		const reverted = await api.updateVaultSettings(scope(), { vaultMode: "off" });
-		expect(reverted.settings).toEqual({ vaultMode: "off", extraPushRemotes: [], agentDatabaseAccessEnabled: false });
 		expect((await api.getVaultSettings(scope())).settings).toEqual({
-			vaultMode: "off",
+			agentVaultManagementEnabled: false,
 			extraPushRemotes: [],
 			agentDatabaseAccessEnabled: false,
 		});
 	});
 
-	it("updates extra push remotes without clobbering vaultMode, and vice versa", async () => {
+	it("updates extra push remotes without clobbering vault management, and vice versa", async () => {
 		const api = createApi();
 
-		await api.updateVaultSettings(scope(), { vaultMode: "managed" });
+		await api.updateVaultSettings(scope(), { agentVaultManagementEnabled: true });
 		const withRemotes = await api.updateVaultSettings(scope(), {
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 		});
 		expect(withRemotes.settings).toEqual({
-			vaultMode: "managed",
+			agentVaultManagementEnabled: true,
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 			agentDatabaseAccessEnabled: false,
 		});
 
-		// Changing vaultMode alone preserves the configured remotes.
-		const modeOnly = await api.updateVaultSettings(scope(), { vaultMode: "off" });
-		expect(modeOnly.settings.extraPushRemotes).toEqual([{ name: "gitee", url: "https://gitee.com/o/r.git" }]);
+		// Changing vault management alone preserves the configured remotes.
+		const toggleOnly = await api.updateVaultSettings(scope(), { agentVaultManagementEnabled: false });
+		expect(toggleOnly.settings.extraPushRemotes).toEqual([{ name: "gitee", url: "https://gitee.com/o/r.git" }]);
 	});
 
-	it("toggles agentDatabaseAccessEnabled without clobbering vaultMode or remotes, and broadcasts", async () => {
+	it("toggles agentDatabaseAccessEnabled without clobbering vault management or remotes, and broadcasts", async () => {
 		const api = createApi();
 
 		await api.updateVaultSettings(scope(), {
-			vaultMode: "managed",
+			agentVaultManagementEnabled: true,
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 		});
 		const enabled = await api.updateVaultSettings(scope(), { agentDatabaseAccessEnabled: true });
 		expect(enabled.settings).toEqual({
-			vaultMode: "managed",
+			agentVaultManagementEnabled: true,
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 			agentDatabaseAccessEnabled: true,
 		});
@@ -664,7 +664,7 @@ describe("createWorkspaceApi vault settings", () => {
 
 		const disabled = await api.updateVaultSettings(scope(), { agentDatabaseAccessEnabled: false });
 		expect(disabled.settings.agentDatabaseAccessEnabled).toBe(false);
-		expect(disabled.settings.vaultMode).toBe("managed");
+		expect(disabled.settings.agentVaultManagementEnabled).toBe(true);
 	});
 });
 

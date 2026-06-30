@@ -591,7 +591,7 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 		},
 		updateVaultSettings: async (workspaceScope, input) => {
 			const settings = await new VaultSettingsStore(workspaceScope.workspacePath).update({
-				vaultMode: input.vaultMode,
+				agentVaultManagementEnabled: input.agentVaultManagementEnabled,
 				extraPushRemotes:
 					input.extraPushRemotes === undefined ? undefined : normalizeExtraPushRemotes(input.extraPushRemotes),
 				agentDatabaseAccessEnabled: input.agentDatabaseAccessEnabled,

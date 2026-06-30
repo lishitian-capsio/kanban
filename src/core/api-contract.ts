@@ -978,24 +978,19 @@ export type RuntimeVaultSearchResponse = z.infer<typeof runtimeVaultSearchRespon
 // ---------------------------------------------------------------------------
 // Vault settings
 //
-// Workspace-level vault preferences. `vaultMode` is the vault-takeover switch, a
-// strictly progressive four-tier enum where each tier is a superset of the one
-// before it. It governs how much vault guidance is injected into the sidebar
-// agent's system prompt:
-//   - `off`        (the default): nothing — no vault intro, type index, vault CLI
-//                  reference, or proactive directive is injected at all.
-//   - `cli-only`   : the "knowledge vault documents" intro + the vault CLI command
-//                  reference, but NOT the per-workspace document-type index.
-//   - `on-demand`  : everything in `cli-only` plus the document-type index.
-//   - `managed`    : everything in `on-demand` plus the proactive-management
-//                  directive that authorizes the agent to create/maintain vault
-//                  documents on its own initiative.
-// The setting is repo-scoped and committed alongside the docs (`<repo>/.kanban/
-// files/settings.json`), so it travels with the vault.
+// Workspace-level vault preferences. `agentVaultManagementEnabled` is the
+// vault-takeover switch — a deliberately lean two-state boolean that mirrors
+// `agentDatabaseAccessEnabled`. When `true`, the full vault guidance is injected
+// into the sidebar agent's system prompt (the "knowledge vault documents" intro,
+// the per-workspace document-type index, the vault CLI command reference, and the
+// proactive-management directive that authorizes the agent to create/maintain
+// vault documents on its own initiative). When `false` (the default), nothing
+// vault-related is injected at all and the agent won't touch the vault. The
+// setting is repo-scoped and committed alongside the docs (`<repo>/.kanban/
+// files/settings.json`), so it travels with the vault. (It supersedes an earlier
+// four-tier `vaultMode` enum; persisted legacy values migrate on read — see
+// `migrateRawVaultSettings`.)
 // ---------------------------------------------------------------------------
-
-export const runtimeVaultModeSchema = z.enum(["off", "cli-only", "on-demand", "managed"]);
-export type RuntimeVaultMode = z.infer<typeof runtimeVaultModeSchema>;
 
 // An extra git push remote ("mirror" target). After a successful `git push` of the repo
 // code, Kanban also pushes the same branch to each configured remote by URL, so one
@@ -1015,14 +1010,17 @@ export const runtimeExtraPushRemoteSchema = z.object({
 export type RuntimeExtraPushRemote = z.infer<typeof runtimeExtraPushRemoteSchema>;
 
 export const runtimeVaultSettingsSchema = z.object({
-	vaultMode: runtimeVaultModeSchema.default("off"),
+	// Vault-takeover switch — a two-state boolean (see the section comment above). `true`
+	// injects the full vault guidance + proactive-management directive; `false` (default)
+	// injects nothing. A peer of `agentDatabaseAccessEnabled` in shape and intent.
+	agentVaultManagementEnabled: z.boolean().default(false),
 	extraPushRemotes: z.array(runtimeExtraPushRemoteSchema).default([]),
 	// Gate for the agent-facing `kanban db` CLI (the read-only database channel added in
 	// task 77f6f). A deliberately lean two-state switch — `false` (the default) refuses
-	// every `db` subcommand with a clear error, `true` allows the read-only path. Unlike
-	// `vaultMode` this is not a progressive tier ladder: the CLI is read-only by design, so
-	// the only meaningful question is whether the agent may touch the database at all. Row
-	// edits go through the human Database UI on a separate channel and are unaffected.
+	// every `db` subcommand with a clear error, `true` allows the read-only path. The CLI
+	// is read-only by design, so the only meaningful question is whether the agent may touch
+	// the database at all. Row edits go through the human Database UI on a separate channel
+	// and are unaffected.
 	agentDatabaseAccessEnabled: z.boolean().default(false),
 });
 export type RuntimeVaultSettings = z.infer<typeof runtimeVaultSettingsSchema>;
@@ -1034,10 +1032,10 @@ export type RuntimeVaultSettingsGetResponse = z.infer<typeof runtimeVaultSetting
 
 // Partial update — only the provided fields are changed; omitted fields keep their
 // current persisted value (the store does a locked read-modify-write). This lets the
-// vault-mode toggle and the extra-push-remotes list save independently without one
-// clobbering the other.
+// vault-management toggle and the extra-push-remotes list save independently without
+// one clobbering the other.
 export const runtimeVaultSettingsUpdateRequestSchema = z.object({
-	vaultMode: runtimeVaultModeSchema.optional(),
+	agentVaultManagementEnabled: z.boolean().optional(),
 	extraPushRemotes: z.array(runtimeExtraPushRemoteSchema).optional(),
 	agentDatabaseAccessEnabled: z.boolean().optional(),
 });

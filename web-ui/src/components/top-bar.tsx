@@ -36,7 +36,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useFileSurfaceActive } from "@/components/file-surface";
 import { VaultControlButton } from "@/components/vault-control-button";
 import { useIsMobile } from "@/hooks/use-is-mobile";
-import type { RuntimeGitSyncAction, RuntimeProjectShortcut, RuntimeVaultMode } from "@/runtime/types";
+import type { RuntimeGitSyncAction, RuntimeProjectShortcut } from "@/runtime/types";
 import {
 	useHomeGitSummaryValue,
 	useTaskWorkspaceInfoValue,
@@ -323,9 +323,9 @@ export function TopBar({
 	isGitHistoryOpen,
 	onToggleVault,
 	isVaultOpen,
-	vaultMode,
-	onVaultModeChange,
-	vaultModeDisabled,
+	agentVaultManagementEnabled,
+	onAgentVaultManagementChange,
+	vaultSettingsDisabled,
 	onToggleDatabase,
 	isDatabaseOpen,
 	onOpenFile,
@@ -375,9 +375,9 @@ export function TopBar({
 	isGitHistoryOpen?: boolean;
 	onToggleVault?: () => void;
 	isVaultOpen?: boolean;
-	vaultMode?: RuntimeVaultMode;
-	onVaultModeChange?: (next: RuntimeVaultMode) => void;
-	vaultModeDisabled?: boolean;
+	agentVaultManagementEnabled?: boolean;
+	onAgentVaultManagementChange?: (next: boolean) => void;
+	vaultSettingsDisabled?: boolean;
 	onToggleDatabase?: () => void;
 	isDatabaseOpen?: boolean;
 	/** Open the File surface (the binary file library; quick-open is reachable within). */
@@ -576,9 +576,9 @@ export function TopBar({
 								<VaultControlButton
 									isVaultOpen={isVaultOpen === true}
 									onToggleVault={onToggleVault}
-									vaultMode={vaultMode ?? "off"}
-									onVaultModeChange={onVaultModeChange ?? (() => {})}
-									settingsDisabled={vaultModeDisabled}
+									agentVaultManagementEnabled={agentVaultManagementEnabled ?? false}
+									onAgentVaultManagementChange={onAgentVaultManagementChange ?? (() => {})}
+									settingsDisabled={vaultSettingsDisabled}
 								/>
 							) : null}
 							{!hideProjectDependentActions && onToggleDatabase ? (

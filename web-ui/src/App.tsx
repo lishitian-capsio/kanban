@@ -903,7 +903,7 @@ export default function App(): ReactElement {
 	return (
 		<LayoutCustomizationsProvider onResetBottomTerminalLayoutCustomizations={resetBottomTerminalLayoutCustomizations}>
 			<FileSurfaceProvider workspaceId={currentProjectId}>
-				<ChatWikilinkProvider workspaceId={currentProjectId} enabled={vaultSettings.vaultMode !== "off"}>
+				<ChatWikilinkProvider workspaceId={currentProjectId} enabled={vaultSettings.agentVaultManagementEnabled}>
 					<div className="flex h-[100svh] min-w-0 overflow-hidden">
 						{isHomeChatAvailable && (chatDock.open || isFullscreen) ? (
 							<DockableChatPanel
@@ -1011,9 +1011,11 @@ export default function App(): ReactElement {
 								isGitHistoryOpen={isGitHistoryOpen}
 								onToggleVault={hasNoProjects || selectedCard ? undefined : handleToggleVault}
 								isVaultOpen={isVaultOpen}
-								vaultMode={vaultSettings.vaultMode}
-								onVaultModeChange={(next) => void vaultSettings.setVaultMode(next)}
-								vaultModeDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
+								agentVaultManagementEnabled={vaultSettings.agentVaultManagementEnabled}
+								onAgentVaultManagementChange={(next) =>
+									void vaultSettings.setAgentVaultManagementEnabled(next)
+								}
+								vaultSettingsDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
 								onToggleDatabase={hasNoProjects || selectedCard ? undefined : handleToggleDatabase}
 								isDatabaseOpen={isDatabaseOpen}
 								onOpenFile={hasNoProjects ? undefined : () => fileSurfaceStore.openLibrary()}

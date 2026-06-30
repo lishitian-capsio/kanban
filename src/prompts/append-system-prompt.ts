@@ -2,7 +2,7 @@ import { realpathSync } from "node:fs";
 
 import packageJson from "../../package.json" with { type: "json" };
 
-import type { RuntimeAgentId, RuntimeVaultMode } from "../core/api-contract";
+import type { RuntimeAgentId } from "../core/api-contract";
 import { DEFAULT_HOME_THREAD_ID, isHomeAgentSessionId, parseHomeAgentSessionId } from "../core/home-agent-session";
 import { resolveKanbanCommandParts } from "../core/kanban-command";
 import { buildShellCommandLine } from "../core/shell";
@@ -47,26 +47,13 @@ export interface RenderAppendSystemPromptOptions {
 	 */
 	suggestNextStepDirective?: boolean;
 	/**
-	 * The workspace's vault-takeover mode (see `RuntimeVaultSettings.vaultMode`), a
-	 * strictly progressive four-tier enum. It decides how much vault guidance is
-	 * injected, each tier a superset of the previous one:
-	 *   - `off` (the default): no vault content at all.
-	 *   - `cli-only`: the vault intro + vault CLI command reference.
-	 *   - `on-demand`: also the per-workspace document-type index.
-	 *   - `managed`: also the proactive-management directive.
+	 * The workspace's vault-takeover switch (see
+	 * `RuntimeVaultSettings.agentVaultManagementEnabled`), a plain on/off boolean. When
+	 * `true`, the full vault guidance is injected — the vault intro, the per-workspace
+	 * document-type index, the vault CLI command reference, and the proactive-management
+	 * directive. When `false` (the default), no vault content is injected at all.
 	 */
-	vaultMode?: RuntimeVaultMode;
-}
-
-const VAULT_MODE_RANK: Record<RuntimeVaultMode, number> = {
-	off: 0,
-	"cli-only": 1,
-	"on-demand": 2,
-	managed: 3,
-};
-
-function vaultModeAtLeast(mode: RuntimeVaultMode, threshold: RuntimeVaultMode): boolean {
-	return VAULT_MODE_RANK[mode] >= VAULT_MODE_RANK[threshold];
+	agentVaultManagementEnabled?: boolean;
 }
 
 const APPEND_PROMPT_AGENT_IDS: readonly RuntimeAgentId[] = [
@@ -115,7 +102,7 @@ function renderLinearSetupGuidanceForAgent(agentId: RuntimeAgentId | null): stri
 /**
  * Render the "knowledge vault documents" intro paragraph — the type-agnostic
  * framing of what the vault is, that reading/editing docs is allowed work, and
- * that tasks and documents are independent. Injected from the `cli-only` tier up.
+ * that tasks and documents are independent. Injected when vault management is enabled.
  * Pure and side-effect-free so the rendering logic is unit-testable.
  */
 function renderVaultIntroSection(): string {
@@ -134,7 +121,7 @@ Tasks and vault documents are independent things. There is no ordering, hierarch
  *
  * This is type-agnostic — there are no per-type branches. When no types are defined,
  * it degrades to generic vault-document guidance that still points at the discovery
- * commands. Injected from the `on-demand` tier up. Pure and side-effect-free.
+ * commands. Injected when vault management is enabled. Pure and side-effect-free.
  */
 function renderVaultTypeIndexSection(types: readonly VaultTypeDefinition[], kanbanCommand: string): string {
 	if (types.length === 0) {
@@ -160,7 +147,7 @@ Each type is self-governing: it carries its own authoring prompt describing whic
 /**
  * Render the vault CLI command reference (the `## vault type list` … `## vault doc
  * delete` sections). Extracted from the main template so it can be gated by the
- * vault mode — injected from the `cli-only` tier up, omitted entirely when off.
+ * vault-management switch — injected when enabled, omitted entirely when off.
  * Pure and side-effect-free.
  */
 function renderVaultCliReference(kanbanCommand: string): string {
@@ -253,23 +240,19 @@ Parameters:
 }
 
 /**
- * Render the vault "documents" prompt section for the given mode: the intro from
- * `cli-only` up, plus the type index from `on-demand` up. Returns an empty string
- * for `off`. Pure and side-effect-free.
+ * Render the vault "documents" prompt section: the intro plus the document-type
+ * index. Returns an empty string when vault management is disabled. Pure and
+ * side-effect-free.
  */
 function renderVaultDocumentsSection(
-	mode: RuntimeVaultMode,
+	enabled: boolean,
 	types: readonly VaultTypeDefinition[],
 	kanbanCommand: string,
 ): string {
-	if (!vaultModeAtLeast(mode, "cli-only")) {
+	if (!enabled) {
 		return "";
 	}
-	const sections = [renderVaultIntroSection()];
-	if (vaultModeAtLeast(mode, "on-demand")) {
-		sections.push(renderVaultTypeIndexSection(types, kanbanCommand));
-	}
-	return sections.join("\n\n");
+	return [renderVaultIntroSection(), renderVaultTypeIndexSection(types, kanbanCommand)].join("\n\n");
 }
 
 /**
@@ -279,7 +262,7 @@ function renderVaultDocumentsSection(
  * flips that posture: it authorizes the agent to maintain the vault on its own
  * initiative, while deliberately NOT hardcoding a procedure — what to write and when
  * is governed by each type's self-describing authoring prompt (`vault type show`).
- * Injected only at the `managed` tier; lower tiers omit it. Pure/side-effect-free.
+ * Injected only when vault management is enabled. Pure/side-effect-free.
  */
 function renderVaultManagedDirective(kanbanCommand: string): string {
 	return `# Proactive vault management is ENABLED
@@ -381,14 +364,16 @@ export function resolveAppendSystemPromptCommandPrefix(
 export function renderAppendSystemPrompt(commandPrefix: string, options: RenderAppendSystemPromptOptions = {}): string {
 	const kanbanCommand = commandPrefix.trim() || DEFAULT_COMMAND_PREFIX;
 	const selectedAgentId = options.agentId ?? null;
-	const vaultMode = options.vaultMode ?? "off";
-	const vaultDocumentsSection = renderVaultDocumentsSection(vaultMode, options.vaultTypes ?? [], kanbanCommand);
-	const vaultManagedDirective = vaultModeAtLeast(vaultMode, "managed")
-		? renderVaultManagedDirective(kanbanCommand)
-		: "";
+	const vaultManagementEnabled = options.agentVaultManagementEnabled ?? false;
+	const vaultDocumentsSection = renderVaultDocumentsSection(
+		vaultManagementEnabled,
+		options.vaultTypes ?? [],
+		kanbanCommand,
+	);
+	const vaultManagedDirective = vaultManagementEnabled ? renderVaultManagedDirective(kanbanCommand) : "";
 	const vaultIntroAndManaged = [vaultDocumentsSection, vaultManagedDirective].filter(Boolean).join("\n\n");
 	const vaultIntroBlock = vaultIntroAndManaged ? `\n${vaultIntroAndManaged}\n` : "";
-	const vaultCliReference = vaultModeAtLeast(vaultMode, "cli-only") ? renderVaultCliReference(kanbanCommand) : "";
+	const vaultCliReference = vaultManagementEnabled ? renderVaultCliReference(kanbanCommand) : "";
 	const vaultCliReferenceBlock = vaultCliReference ? `${vaultCliReference}\n\n` : "";
 	const selfTitleBlock = options.selfTitleDirective ? `\n${renderSelfTitleDirective(kanbanCommand)}\n` : "";
 	const suggestNextStepBlock = options.suggestNextStepDirective
@@ -593,24 +578,24 @@ async function loadVaultTypesForHomeSession(taskId: string): Promise<readonly Va
 }
 
 /**
- * Load the workspace's vault-takeover mode for the home session encoded in
+ * Load the workspace's vault-takeover switch for the home session encoded in
  * `taskId`. Mirrors {@link loadVaultTypesForHomeSession}: resolves the repo path
- * from the parsed workspace id and degrades to `"off"` — never throws — when the
+ * from the parsed workspace id and degrades to `false` — never throws — when the
  * workspace is unknown or the read fails, so prompt rendering always succeeds.
  */
-async function loadVaultModeForHomeSession(taskId: string): Promise<RuntimeVaultMode> {
+async function loadVaultManagementEnabledForHomeSession(taskId: string): Promise<boolean> {
 	const parts = parseHomeAgentSessionId(taskId);
 	if (!parts) {
-		return "off";
+		return false;
 	}
 	try {
 		const repoPath = await resolveRepoPathForWorkspaceId(parts.workspaceId);
 		if (!repoPath) {
-			return "off";
+			return false;
 		}
-		return (await new VaultSettingsStore(repoPath).get()).vaultMode;
+		return (await new VaultSettingsStore(repoPath).get()).agentVaultManagementEnabled;
 	} catch {
-		return "off";
+		return false;
 	}
 }
 
@@ -621,9 +606,9 @@ export async function resolveHomeAgentAppendSystemPrompt(
 	if (!isHomeAgentSessionId(taskId)) {
 		return null;
 	}
-	const [vaultTypes, vaultMode] = await Promise.all([
+	const [vaultTypes, agentVaultManagementEnabled] = await Promise.all([
 		loadVaultTypesForHomeSession(taskId),
-		loadVaultModeForHomeSession(taskId),
+		loadVaultManagementEnabledForHomeSession(taskId),
 	]);
 	// Self-titling is per-thread: the synthetic default thread keeps its fixed "Default"
 	// label (it is not a registry entry), so only created (non-default) threads get the
@@ -635,6 +620,6 @@ export async function resolveHomeAgentAppendSystemPrompt(
 		selfTitleDirective: isNonDefaultThread,
 		suggestNextStepDirective: isNonDefaultThread,
 		vaultTypes,
-		vaultMode,
+		agentVaultManagementEnabled,
 	});
 }
