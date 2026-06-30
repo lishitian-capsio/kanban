@@ -136,10 +136,11 @@
     {
       "id": "5fec3500-5c60-4477-8b05-794bc8dd76a7",
       "agentId": "claude",
-      "name": "进入session模式，board的任务卡片会在状态转化闪现在全屏之上，就是board的任务状态的动画转化",
+      "name": "全屏状态流转动画任务",
       "titleSource": "auto",
       "createdAt": 1782781545466,
-      "updatedAt": 1782781545466
+      "updatedAt": 1782781586318,
+      "pendingNextStep": "启动任务 #59568，让 coding agent 开始实现全屏状态流转动画"
     }
   ],
   "fullscreenTabs": {
