@@ -289,6 +289,35 @@ describe("CardDetailView", () => {
 		expect(container.querySelector('button[aria-label="Expand split diff view"]')).toBeInstanceOf(HTMLButtonElement);
 	});
 
+	it("no longer renders the File library button in the diff toolbar", async () => {
+		await act(async () => {
+			root.render(
+				<CardDetailView
+					selection={createSelection()}
+					currentProjectId="workspace-1"
+					onSessionSummary={() => {}}
+					onCardSelect={() => {}}
+					onTaskDragEnd={() => {}}
+					onMoveToTrash={() => {}}
+					bottomTerminalOpen={false}
+					bottomTerminalTaskId={null}
+					bottomTerminalSummary={null}
+					onBottomTerminalClose={() => {}}
+				/>,
+			);
+		});
+
+		// The File-surface entry point moved to the top bar (next to the task owner
+		// badge); the diff toolbar must not carry a duplicate.
+		expect(container.querySelector('button[aria-label="Open files"]')).toBeNull();
+		// The diff-mode switcher and the expand toggle stay put.
+		const allChangesButton = Array.from(container.querySelectorAll("button")).find(
+			(button) => button.textContent?.trim() === "All Changes",
+		);
+		expect(allChangesButton).toBeInstanceOf(HTMLButtonElement);
+		expect(container.querySelector('button[aria-label="Expand split diff view"]')).toBeInstanceOf(HTMLButtonElement);
+	});
+
 	it("clears stale diff content when switching from all changes to last turn", async () => {
 		await act(async () => {
 			root.render(

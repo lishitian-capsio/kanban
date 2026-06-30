@@ -1016,9 +1016,7 @@ export default function App(): ReactElement {
 								vaultModeDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
 								onToggleDatabase={hasNoProjects || selectedCard ? undefined : handleToggleDatabase}
 								isDatabaseOpen={isDatabaseOpen}
-								onOpenFile={
-									hasNoProjects || selectedCard ? undefined : () => fileSurfaceStore.openLibrary()
-								}
+								onOpenFile={hasNoProjects ? undefined : () => fileSurfaceStore.openLibrary()}
 								onToggleHomeChat={isHomeChatAvailable ? handleToggleHomeChat : undefined}
 								isHomeChatOpen={chatDock.open}
 								hideProjectDependentActions={shouldHideProjectDependentTopBarActions}

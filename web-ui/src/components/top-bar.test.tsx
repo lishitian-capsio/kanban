@@ -163,6 +163,46 @@ describe("TopBar script shortcut onboarding", () => {
 		expect(ownerBadge?.textContent).toContain("Ada Lovelace");
 	});
 
+	it("shows the File button next to the owner badge while a task is selected", async () => {
+		const onOpenFile = vi.fn();
+
+		await act(async () => {
+			root.render(
+				<TopBar
+					openTargetOptions={[]}
+					selectedOpenTargetId="vscode"
+					onSelectOpenTarget={() => {}}
+					onOpenWorkspace={() => {}}
+					canOpenWorkspace={false}
+					isOpeningWorkspace={false}
+					shortcuts={[]}
+					selectedTaskId="task-1"
+					selectedTaskBaseRef="main"
+					selectedTaskOwner={{ name: "Ada Lovelace", email: "ada@example.com" }}
+					onOpenFile={onOpenFile}
+				/>,
+			);
+		});
+
+		const fileButton = findButtonByText(container, "File");
+		expect(fileButton).toBeInstanceOf(HTMLButtonElement);
+
+		const ownerBadge = Array.from(container.querySelectorAll("span")).find(
+			(span) => span.getAttribute("title") === "Created by Ada Lovelace <ada@example.com>",
+		);
+		expect(ownerBadge).toBeDefined();
+		// The File entry sits to the right of the owner badge in DOM order.
+		const relativePosition = ownerBadge?.compareDocumentPosition(fileButton as HTMLButtonElement) ?? 0;
+		expect(relativePosition & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+		await act(async () => {
+			fileButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			fileButton?.click();
+		});
+
+		expect(onOpenFile).toHaveBeenCalledTimes(1);
+	});
+
 	it("omits the owner indicator when the selected task has no owner", async () => {
 		await act(async () => {
 			root.render(
