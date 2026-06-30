@@ -1,0 +1,20 @@
+{
+  "id": "662cb",
+  "title": "Move agent DB access toggle into the Database view",
+  "prompt": "Relocate the per-workspace 'agent database access' toggle (agentDatabaseAccessEnabled) so it lives in the human Database view, not wherever it currently sits (Settings).\n\nContext:\n- The toggle gates the 'kanban db' CLI for agents per-workspace (off/on). It is stored as agentDatabaseAccessEnabled in VaultSettingsStore and enforced in db.ts resolveDbWorkspace (error code database_access_disabled). The human Database view itself is never gated by it.\n- The human Database UI is backed by the tRPC 'database' router (see web-ui Database view / DatabaseView component). Editing there is separately gated by allowWrites + PK.\n\nWhat to do:\n- Surface the agentDatabaseAccessEnabled toggle as a control inside the Database view (a clear on/off switch labeled around 'Allow agents to query this database via the kanban db CLI', with helper text), reading and writing the SAME VaultSettingsStore field through the existing settings tRPC path. Do not introduce a second source of truth.\n- Remove the toggle from its current Settings location (or, if it makes sense to keep a pointer, decide during implementation — but the primary control should be in the Database view per the user's request). Avoid duplicating a live toggle in two places.\n- Keep backend semantics unchanged: the gate still only affects the agent-facing 'kanban db' CLI, never the human Database UI.\n- Match existing web-ui conventions: Radix Switch styled with Tailwind, design tokens, Tooltip/helper text patterns already used in Settings.\n\nVerification: toggling in the Database view persists to VaultSettingsStore; an agent 'kanban db' call respects the new value (allowed when on, database_access_disabled when off); the human Database view continues to work regardless of the toggle.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e211cecb-0eda-4458-ba46-1fbc486d4e40",
+  "baseRef": "main",
+  "createdAt": 1782796975113,
+  "updatedAt": 1782796975113,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
