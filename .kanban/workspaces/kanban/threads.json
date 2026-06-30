@@ -145,11 +145,11 @@
     {
       "id": "e5060a7c-ba48-41e0-b356-495436c7d21d",
       "agentId": "claude",
-      "name": "Design Kanban agent Home view",
+      "name": "丰富全屏 column-flash toast",
       "titleSource": "auto",
       "createdAt": 1782781795470,
-      "updatedAt": 1782781833255,
-      "pendingNextStep": "把任务 6c895 开起来跑"
+      "updatedAt": 1782808732248,
+      "pendingNextStep": "开始任务 f87c2"
     },
     {
       "id": "16d0ae97-5f56-4649-ba14-d0134b8c262e",
