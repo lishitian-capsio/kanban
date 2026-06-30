@@ -14,7 +14,7 @@ import type { ReactElement } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import { SessionProviderControl } from "@/components/agent-providers/session-provider-control";
-import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
+import { LazyAgentTerminalPanel as AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel-lazy";
 import {
 	KanbanAgentChatPanel,
 	type KanbanAgentChatPanelHandle,

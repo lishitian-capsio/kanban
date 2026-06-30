@@ -223,3 +223,18 @@
 5. **P2** #6/#7（随 #2）、#8（仅大看板）、#9（仅长历史）、#10（随 #3/#4）。
 
 各条均为后续实现任务的输入，落地前应按对应 `file:line` 复核当前代码（本基线为 worktree `d739a`）。
+
+---
+
+## 实现状态（第一轮 commit `2d2f9724` + 第二轮）
+
+第一轮（`2d2f9724`）落地：P0 代码分割（lazy 各重界面 + lazy markdown）、P1 #2 per-task session slice、P1 #3 终端 LRU、P1 #4 chat 数组**封顶**（1000）、P1 #5 split diff **高亮缓存**。
+
+第二轮补齐第一轮遗漏的子项（仅 P0/P1，逐条复核确认未做）：
+
+- **P0 — AgentTerminalPanel lazy 边界被静态导入击穿（已修）**：`home-agent-conversation`（首屏 home 侧栏）静态 `import` `AgentTerminalPanel`，把 `persistent-terminal-manager → @xterm` 拉进入口 chunk，使 `dist/index.html` 在首屏 `modulepreload` 了 `xterm-vendor`（620KB raw / **142KB gzip**）。新增共享 `agent-terminal-panel-lazy.tsx`（`LazyAgentTerminalPanel`），App/card-detail-view/home-agent-conversation 三处全部走它 → xterm 仅在终端真正挂载时动态加载。**收益**：入口 gzip 542.6 → 535.6KB，且首屏不再 fetch 142KB gzip 的 xterm；build 不再报 dynamic-vs-static 警告。
+- **P1 #4 — chat 淘汰路径（已补）**：封顶已有，缺淘汰。新增 `pruneChatForRemovedTasks`，在 `workspace_state_updated` 用**前一块板 vs 新板的 card-id diff** 删除已离板任务的 chat（及指向它的 `latestTaskChatMessage`）。用 diff 而非「不在板上即删」是关键：合成的 `__home_agent__:…` home-chat id 从不是 board card，故永不被误删。测试：`runtime-stream-store.test.tsx`（淘汰 + latest 清空 + home-id 存活 + 无变更不 churn）。
+- **P1 #5 — split diff 文件级 memo（已补高性价比部分）**：高亮缓存第一轮已做（消除了 CPU 热点 `Prism.highlight`）。本轮补：把 `UnifiedDiff`/`SplitDiff` 包成 `React.memo`，把回调用 ref 稳定身份，并给每个文件传**按 path 切片且未变路径引用稳定**的 comment 子集（`stabilizeCommentsByPath`）。效果：在评论框打字（每次按键产生新 `comments` Map）只重渲染**被编辑的那个文件**，不再重渲染所有展开文件的全部行。测试：`diff-viewer-panel.test.tsx`（`stabilizeCommentsByPath` 引用稳定性）。
+  - **未做（刻意推迟）：diff 整文件虚拟化**。findings 本身将其列为 #5 最低性价比、最高风险子项；且折叠文件**已**不渲染其行（`diff-viewer-panel.tsx` `{isExpanded ? … : null}`，等价于「懒渲染折叠文件」），CPU 热点已被高亮缓存消除，键盘提交快捷键（Cmd+Enter）读取实时 `comments` Map 与 react-virtuoso + 内联评论 + 多文件分组 + 滚动同步耦合，drop-in 虚拟化风险显著大于收益。若未来出现单文件数千行 + 全展开的实测卡顿再做。
+
+P2 各项（#6–#10）不在本轮范围（仅 P0/P1）。

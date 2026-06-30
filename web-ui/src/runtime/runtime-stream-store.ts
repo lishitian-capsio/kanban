@@ -15,6 +15,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import { parseProjectIdFromPathname } from "@/hooks/app-utils";
 import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
 import type {
+	RuntimeBoardData,
 	RuntimeBoardSyncStatus,
 	RuntimeKanbanMcpServerAuthStatus,
 	RuntimeOpsMetrics,
@@ -151,6 +152,55 @@ function mergeSessionSummaryByTaskId(
 		next[summary.taskId] = summary;
 	}
 	return next ?? current;
+}
+
+// Evict the per-task chat buffers (and `latestTaskChatMessage`, when it points
+// at an evicted task) for tasks that were on the *previous* board but are gone
+// from the *next* one — e.g. trash cleared or a hard delete. Without this the
+// `taskChatMessagesByTaskId` map only ever grew: the cap bounds each array, but
+// keys for churned-through tasks (done == trash is a high-churn 终态桶) never
+// left. The previous→next board *diff* is deliberate: only ids that were genuine
+// board cards can be flagged removed, so the synthetic `__home_agent__:…`
+// home-chat session ids — which never appear on the board — are never evicted.
+// The backend journal stays the source of truth; a re-added task re-fetches its
+// history on panel open. Returns the same references when nothing was removed so
+// the dispatch skips the chat-listener wake.
+function pruneChatForRemovedTasks(
+	taskChatMessagesByTaskId: Record<string, RuntimeTaskChatMessage[]>,
+	latestTaskChatMessage: RuntimeStateStreamTaskChatMessage | null,
+	previousBoard: RuntimeBoardData | null | undefined,
+	nextBoard: RuntimeBoardData,
+): {
+	taskChatMessagesByTaskId: Record<string, RuntimeTaskChatMessage[]>;
+	latestTaskChatMessage: RuntimeStateStreamTaskChatMessage | null;
+} {
+	if (!previousBoard) {
+		return { taskChatMessagesByTaskId, latestTaskChatMessage };
+	}
+	const nextIds = new Set<string>();
+	for (const column of nextBoard.columns) {
+		for (const card of column.cards) {
+			nextIds.add(card.id);
+		}
+	}
+	const removed: string[] = [];
+	for (const column of previousBoard.columns) {
+		for (const card of column.cards) {
+			if (!nextIds.has(card.id) && card.id in taskChatMessagesByTaskId) {
+				removed.push(card.id);
+			}
+		}
+	}
+	if (removed.length === 0) {
+		return { taskChatMessagesByTaskId, latestTaskChatMessage };
+	}
+	const nextMessages = { ...taskChatMessagesByTaskId };
+	for (const id of removed) {
+		delete nextMessages[id];
+	}
+	const nextLatest =
+		latestTaskChatMessage && removed.includes(latestTaskChatMessage.taskId) ? null : latestTaskChatMessage;
+	return { taskChatMessagesByTaskId: nextMessages, latestTaskChatMessage: nextLatest };
 }
 
 export function createInitialRuntimeStateStreamStore(requestedWorkspaceId: string | null): RuntimeStateStreamStore {
@@ -362,6 +412,12 @@ export function runtimeStateStreamReducer(
 				Object.values(action.workspaceState.sessions ?? {}),
 			),
 		};
+		const pruned = pruneChatForRemovedTasks(
+			state.taskChatMessagesByTaskId,
+			state.latestTaskChatMessage,
+			state.workspaceState?.board,
+			action.workspaceState.board,
+		);
 		return {
 			...state,
 			workspaceState: mergedWorkspaceState,
@@ -369,6 +425,8 @@ export function runtimeStateStreamReducer(
 				state.sessionSummaryByTaskId,
 				Object.values(action.workspaceState.sessions ?? {}),
 			),
+			taskChatMessagesByTaskId: pruned.taskChatMessagesByTaskId,
+			latestTaskChatMessage: pruned.latestTaskChatMessage,
 		};
 	}
 	if (action.type === "task_sessions_updated") {

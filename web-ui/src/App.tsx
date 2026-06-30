@@ -9,6 +9,7 @@ import { AddProjectDialog } from "@/components/add-project-dialog";
 import { notifyError, showAppToast } from "@/components/app-toaster";
 import { ClearTrashDialog } from "@/components/clear-trash-dialog";
 import { DebugDialog } from "@/components/debug-dialog";
+import { LazyAgentTerminalPanel as AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel-lazy";
 import { FileSurfaceProvider, fileSurfaceStore } from "@/components/file-surface";
 import { DockableChatPanel } from "@/components/home-agent/dockable-chat-panel";
 import { HomeChatWorkspace } from "@/components/home-agent/home-chat-workspace";
@@ -92,9 +93,6 @@ const GitHistoryView = lazy(() =>
 );
 const CardDetailView = lazy(() =>
 	import("@/components/card-detail-view").then((module) => ({ default: module.CardDetailView })),
-);
-const AgentTerminalPanel = lazy(() =>
-	import("@/components/detail-panels/agent-terminal-panel").then((module) => ({ default: module.AgentTerminalPanel })),
 );
 
 export default function App(): ReactElement {

@@ -2,8 +2,16 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { type DiffLineComment, DiffViewerPanel } from "@/components/detail-panels/diff-viewer-panel";
+import {
+	type DiffLineComment,
+	DiffViewerPanel,
+	stabilizeCommentsByPath,
+} from "@/components/detail-panels/diff-viewer-panel";
 import type { RuntimeWorkspaceFileChange } from "@/runtime/types";
+
+function makeComment(filePath: string, lineNumber: number, text: string): DiffLineComment {
+	return { filePath, lineNumber, lineText: `line-${lineNumber}`, variant: "added", comment: text };
+}
 
 const hotkeyRegistrations: Array<{
 	keys: string;
@@ -382,5 +390,37 @@ describe("DiffViewerPanel", () => {
 
 		expect(onSendToTerminal).toHaveBeenCalledWith("src/example.ts:1 | const value = 2;\n> Ship this");
 		expect(onCommentsChange).toHaveBeenCalledWith(new Map());
+	});
+
+	describe("stabilizeCommentsByPath", () => {
+		it("reuses the bucket reference for files whose comments did not change", () => {
+			const comments = new Map<string, DiffLineComment>([
+				["a:added:1", makeComment("a.ts", 1, "alpha")],
+				["b:added:1", makeComment("b.ts", 1, "beta")],
+			]);
+			const first = stabilizeCommentsByPath(comments, new Map());
+
+			// Edit only a.ts's comment (new comment object for that key).
+			const nextComments = new Map(comments);
+			nextComments.set("a:added:1", makeComment("a.ts", 1, "alpha-edited"));
+			const second = stabilizeCommentsByPath(nextComments, first);
+
+			// a.ts's bucket is a fresh reference; b.ts's bucket is reused as-is, so the
+			// memoized b.ts file diff bails out of re-rendering.
+			expect(second.get("a.ts")).not.toBe(first.get("a.ts"));
+			expect(second.get("b.ts")).toBe(first.get("b.ts"));
+		});
+
+		it("keeps untouched buckets stable when a comment is added to another file", () => {
+			const comments = new Map<string, DiffLineComment>([["a:added:1", makeComment("a.ts", 1, "alpha")]]);
+			const first = stabilizeCommentsByPath(comments, new Map());
+
+			const nextComments = new Map(comments);
+			nextComments.set("c:added:2", makeComment("c.ts", 2, "gamma"));
+			const second = stabilizeCommentsByPath(nextComments, first);
+
+			expect(second.get("a.ts")).toBe(first.get("a.ts"));
+			expect(second.get("c.ts")).toBeDefined();
+		});
 	});
 });

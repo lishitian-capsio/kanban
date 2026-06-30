@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, Command, CornerDownLeft, MessageSquare, X } from "lucide-react";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import {
 	buildDisplayItems,
@@ -44,6 +44,51 @@ export type DiffViewMode = "unified" | "split";
 
 function commentKey(filePath: string, lineNumber: number, variant: DiffLineComment["variant"]): string {
 	return `${filePath}:${variant}:${lineNumber}`;
+}
+
+// Stable empty subset so comment-less files get a referentially-stable `comments`
+// prop and the memo'd file component bails out across re-renders.
+const EMPTY_COMMENTS: Map<string, DiffLineComment> = new Map();
+
+// Two per-file comment buckets are equal when they hold the same keys mapped to
+// the same comment objects. Comment edits replace the object (`{...existing}`),
+// so an unchanged file's bucket keeps every reference — letting the grouping
+// memo reuse the prior bucket reference and the memo'd file diff skip rendering.
+function commentBucketsEqual(a: Map<string, DiffLineComment>, b: Map<string, DiffLineComment>): boolean {
+	if (a.size !== b.size) {
+		return false;
+	}
+	for (const [key, value] of a) {
+		if (b.get(key) !== value) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// Group comments by file path, reusing the matching per-path bucket from
+// `previous` whenever a path's comments are unchanged. This keeps the bucket
+// reference stable for files a comment edit didn't touch, so the memoized
+// per-file diff component bails out instead of re-rendering its rows.
+export function stabilizeCommentsByPath(
+	comments: Map<string, DiffLineComment>,
+	previous: Map<string, Map<string, DiffLineComment>>,
+): Map<string, Map<string, DiffLineComment>> {
+	const grouped = new Map<string, Map<string, DiffLineComment>>();
+	for (const [key, comment] of comments) {
+		let bucket = grouped.get(comment.filePath);
+		if (!bucket) {
+			bucket = new Map();
+			grouped.set(comment.filePath, bucket);
+		}
+		bucket.set(key, comment);
+	}
+	const stable = new Map<string, Map<string, DiffLineComment>>();
+	for (const [filePath, bucket] of grouped) {
+		const priorBucket = previous.get(filePath);
+		stable.set(filePath, priorBucket && commentBucketsEqual(priorBucket, bucket) ? priorBucket : bucket);
+	}
+	return stable;
 }
 
 function formatCommentsForTerminal(comments: DiffLineComment[]): string {
@@ -119,7 +164,7 @@ function InlineComment({
 	);
 }
 
-function UnifiedDiff({
+function UnifiedDiffInner({
 	path,
 	oldText,
 	newText,
@@ -132,9 +177,19 @@ function UnifiedDiff({
 	oldText: string | null | undefined;
 	newText: string;
 	comments: Map<string, DiffLineComment>;
-	onAddComment: (lineNumber: number, lineText: string, variant: "added" | "removed" | "context") => void;
-	onUpdateComment: (lineNumber: number, variant: "added" | "removed" | "context", text: string) => void;
-	onDeleteComment: (lineNumber: number, variant: "added" | "removed" | "context") => void;
+	onAddComment: (
+		filePath: string,
+		lineNumber: number,
+		lineText: string,
+		variant: "added" | "removed" | "context",
+	) => void;
+	onUpdateComment: (
+		filePath: string,
+		lineNumber: number,
+		variant: "added" | "removed" | "context",
+		text: string,
+	) => void;
+	onDeleteComment: (filePath: string, lineNumber: number, variant: "added" | "removed" | "context") => void;
 }): React.ReactElement {
 	const { expandedBlocks, expandTop, expandBottom, expandAll } = useIncrementalExpand();
 	const prismLanguage = useMemo(() => resolvePrismLanguage(path), [path]);
@@ -172,7 +227,7 @@ function UnifiedDiff({
 		const handleRowClick =
 			row.lineNumber != null && !hasComment
 				? () => {
-						onAddComment(row.lineNumber!, row.text, row.variant);
+						onAddComment(path, row.lineNumber!, row.text, row.variant);
 					}
 				: undefined;
 
@@ -188,7 +243,7 @@ function UnifiedDiff({
 									hasComment
 										? (event) => {
 												event.stopPropagation();
-												onDeleteComment(row.lineNumber!, row.variant);
+												onDeleteComment(path, row.lineNumber!, row.variant);
 											}
 										: undefined
 								}
@@ -213,8 +268,8 @@ function UnifiedDiff({
 				{existingComment ? (
 					<InlineComment
 						comment={existingComment}
-						onChange={(text) => onUpdateComment(row.lineNumber!, row.variant, text)}
-						onDelete={() => onDeleteComment(row.lineNumber!, row.variant)}
+						onChange={(text) => onUpdateComment(path, row.lineNumber!, row.variant, text)}
+						onDelete={() => onDeleteComment(path, row.lineNumber!, row.variant)}
 					/>
 				) : null}
 			</div>
@@ -243,6 +298,12 @@ function UnifiedDiff({
 		</>
 	);
 }
+
+// Memoized at the file granularity: a comment keystroke produces a new top-level
+// `comments` Map, but each file is handed only its own (referentially-stable for
+// untouched paths) comment subset, so editing one file's comment no longer
+// re-renders every other expanded file's rows.
+const UnifiedDiff = memo(UnifiedDiffInner);
 
 interface SplitDiffRowPair {
 	key: string;
@@ -322,7 +383,7 @@ function isCommentableOnSplitSide(row: UnifiedDiffRow, side: "left" | "right"): 
 	return side === "right";
 }
 
-function SplitDiff({
+function SplitDiffInner({
 	path,
 	oldText,
 	newText,
@@ -335,9 +396,19 @@ function SplitDiff({
 	oldText: string | null | undefined;
 	newText: string;
 	comments: Map<string, DiffLineComment>;
-	onAddComment: (lineNumber: number, lineText: string, variant: "added" | "removed" | "context") => void;
-	onUpdateComment: (lineNumber: number, variant: "added" | "removed" | "context", text: string) => void;
-	onDeleteComment: (lineNumber: number, variant: "added" | "removed" | "context") => void;
+	onAddComment: (
+		filePath: string,
+		lineNumber: number,
+		lineText: string,
+		variant: "added" | "removed" | "context",
+	) => void;
+	onUpdateComment: (
+		filePath: string,
+		lineNumber: number,
+		variant: "added" | "removed" | "context",
+		text: string,
+	) => void;
+	onDeleteComment: (filePath: string, lineNumber: number, variant: "added" | "removed" | "context") => void;
 }): React.ReactElement {
 	const { expandedBlocks, expandTop, expandBottom, expandAll } = useIncrementalExpand();
 	const prismLanguage = useMemo(() => resolvePrismLanguage(path), [path]);
@@ -392,7 +463,7 @@ function SplitDiff({
 					onClick={
 						canClickRow
 							? () => {
-									onAddComment(rowLineNumber, row.text, row.variant);
+									onAddComment(path, rowLineNumber, row.text, row.variant);
 								}
 							: undefined
 					}
@@ -406,7 +477,7 @@ function SplitDiff({
 									hasComment
 										? (event) => {
 												event.stopPropagation();
-												onDeleteComment(rowLineNumber, row.variant);
+												onDeleteComment(path, rowLineNumber, row.variant);
 											}
 										: undefined
 								}
@@ -431,8 +502,8 @@ function SplitDiff({
 				{existingComment ? (
 					<InlineComment
 						comment={existingComment}
-						onChange={(text) => onUpdateComment(rowLineNumber, row.variant, text)}
-						onDelete={() => onDeleteComment(rowLineNumber, row.variant)}
+						onChange={(text) => onUpdateComment(path, rowLineNumber, row.variant, text)}
+						onDelete={() => onDeleteComment(path, rowLineNumber, row.variant)}
 					/>
 				) : null}
 			</div>
@@ -515,6 +586,8 @@ function SplitDiff({
 		</div>
 	);
 }
+
+const SplitDiff = memo(SplitDiffInner);
 
 export function DiffViewerPanel({
 	workspaceFiles,
@@ -678,13 +751,21 @@ export function DiffViewerPanel({
 		scrollToPath(selectedPath);
 	}, [scrollToPath, selectedPath]);
 
+	// Read the live comments Map through a ref so the mutation handlers keep a
+	// stable identity across renders (they no longer depend on `comments`). That
+	// stability is what lets the memoized per-file diff components bail out when a
+	// keystroke only touches another file's comment.
+	const commentsRef = useRef(comments);
+	commentsRef.current = comments;
+
 	const handleAddComment = useCallback(
 		(filePath: string, lineNumber: number, lineText: string, variant: "added" | "removed" | "context") => {
+			const current = commentsRef.current;
 			const key = commentKey(filePath, lineNumber, variant);
-			if (comments.has(key)) {
+			if (current.has(key)) {
 				return;
 			}
-			const next = new Map(comments);
+			const next = new Map(current);
 			// Remove any existing empty comment boxes before opening a new one
 			for (const [existingKey, existingComment] of next) {
 				if (existingComment.comment.trim() === "") {
@@ -700,31 +781,43 @@ export function DiffViewerPanel({
 			});
 			onCommentsChange(next);
 		},
-		[comments, onCommentsChange],
+		[onCommentsChange],
 	);
 
 	const handleUpdateComment = useCallback(
 		(filePath: string, lineNumber: number, variant: "added" | "removed" | "context", text: string) => {
+			const current = commentsRef.current;
 			const key = commentKey(filePath, lineNumber, variant);
-			const existing = comments.get(key);
+			const existing = current.get(key);
 			if (!existing) {
 				return;
 			}
-			const next = new Map(comments);
+			const next = new Map(current);
 			next.set(key, { ...existing, comment: text });
 			onCommentsChange(next);
 		},
-		[comments, onCommentsChange],
+		[onCommentsChange],
 	);
 
 	const handleDeleteComment = useCallback(
 		(filePath: string, lineNumber: number, variant: "added" | "removed" | "context") => {
-			const next = new Map(comments);
+			const next = new Map(commentsRef.current);
 			next.delete(commentKey(filePath, lineNumber, variant));
 			onCommentsChange(next);
 		},
-		[comments, onCommentsChange],
+		[onCommentsChange],
 	);
+
+	// Group comments by file path, reusing the prior per-path Map reference when a
+	// path's comments are unchanged. Editing one file's comment yields a new Map
+	// only for that path; every other path keeps its reference, so the memoized
+	// file diff for those paths skips rendering.
+	const commentsByPathRef = useRef<Map<string, Map<string, DiffLineComment>>>(new Map());
+	const commentsByPath = useMemo(() => {
+		const stable = stabilizeCommentsByPath(comments, commentsByPathRef.current);
+		commentsByPathRef.current = stable;
+		return stable;
+	}, [comments]);
 
 	const nonEmptyComments = useMemo(() => {
 		return Array.from(comments.values()).filter((c) => c.comment.trim().length > 0);
@@ -908,32 +1001,20 @@ export function DiffViewerPanel({
 															path={group.path}
 															oldText={entry.oldText}
 															newText={entry.newText}
-															comments={comments}
-															onAddComment={(lineNumber, lineText, variant) =>
-																handleAddComment(group.path, lineNumber, lineText, variant)
-															}
-															onUpdateComment={(lineNumber, variant, text) =>
-																handleUpdateComment(group.path, lineNumber, variant, text)
-															}
-															onDeleteComment={(lineNumber, variant) =>
-																handleDeleteComment(group.path, lineNumber, variant)
-															}
+															comments={commentsByPath.get(group.path) ?? EMPTY_COMMENTS}
+															onAddComment={handleAddComment}
+															onUpdateComment={handleUpdateComment}
+															onDeleteComment={handleDeleteComment}
 														/>
 													) : (
 														<UnifiedDiff
 															path={group.path}
 															oldText={entry.oldText}
 															newText={entry.newText}
-															comments={comments}
-															onAddComment={(lineNumber, lineText, variant) =>
-																handleAddComment(group.path, lineNumber, lineText, variant)
-															}
-															onUpdateComment={(lineNumber, variant, text) =>
-																handleUpdateComment(group.path, lineNumber, variant, text)
-															}
-															onDeleteComment={(lineNumber, variant) =>
-																handleDeleteComment(group.path, lineNumber, variant)
-															}
+															comments={commentsByPath.get(group.path) ?? EMPTY_COMMENTS}
+															onAddComment={handleAddComment}
+															onUpdateComment={handleUpdateComment}
+															onDeleteComment={handleDeleteComment}
 														/>
 													)}
 												</div>

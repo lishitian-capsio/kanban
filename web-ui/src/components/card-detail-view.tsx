@@ -3,7 +3,7 @@ import { Files, GitCompareArrows, Maximize2, MessageSquare, Minimize2, X } from 
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
+import { LazyAgentTerminalPanel as AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel-lazy";
 import { ArtifactsPanel } from "@/components/detail-panels/artifacts-panel";
 import { ColumnContextPanel } from "@/components/detail-panels/column-context-panel";
 import { type DiffLineComment, DiffViewerPanel } from "@/components/detail-panels/diff-viewer-panel";

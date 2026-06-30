@@ -15,14 +15,43 @@ import {
 	useTaskSessionSummary,
 } from "@/runtime/runtime-stream-store";
 import type {
+	RuntimeBoardCard,
 	RuntimeBoardSyncStatus,
 	RuntimeOpsMetrics,
 	RuntimeTaskChatMessage,
 	RuntimeTaskSessionSummary,
+	RuntimeWorkspaceStateResponse,
 } from "@/runtime/types";
 
 function makeMessage(id: string, content: string): RuntimeTaskChatMessage {
 	return { id, role: "assistant", content, createdAt: 1 };
+}
+
+function makeBoardCard(id: string): RuntimeBoardCard {
+	return { id, title: id, prompt: id, startInPlanMode: false, baseRef: "main", createdAt: 1, updatedAt: 1 };
+}
+
+// A minimal workspace-state response whose board holds the given task ids (all
+// in one column — the eviction diff only reads card ids, not columns).
+function makeWorkspaceState(taskIds: string[]): RuntimeWorkspaceStateResponse {
+	return {
+		repoPath: "/repo",
+		statePath: "/repo/.kanban",
+		git: { currentBranch: "main", defaultBranch: "main", branches: ["main"] },
+		board: {
+			columns: [{ id: "in_progress", title: "In Progress", cards: taskIds.map(makeBoardCard) }],
+			dependencies: [],
+		},
+		sessions: {},
+		revision: 1,
+	};
+}
+
+function sendChat(taskId: string, messageId: string): void {
+	dispatchRuntimeStreamAction({
+		type: "task_chat_message",
+		payload: { type: "task_chat_message", workspaceId: "ws", taskId, message: makeMessage(messageId, "hi") },
+	});
 }
 
 function makeSessionSummary(
@@ -388,5 +417,51 @@ describe("runtime-stream-store granular subscriptions", () => {
 		// Oldest dropped, newest retained at the tail.
 		expect(messages[0]?.id).toBe(`m${total - TASK_CHAT_MESSAGE_LIMIT}`);
 		expect(messages[messages.length - 1]?.id).toBe(`m${total - 1}`);
+	});
+
+	it("evicts chat buffers for tasks gone from the board and clears latest when it pointed at one", () => {
+		dispatchRuntimeStreamAction({
+			type: "workspace_state_updated",
+			workspaceState: makeWorkspaceState(["task-a", "task-b"]),
+		});
+		sendChat("task-a", "a1");
+		sendChat("task-b", "b1");
+		expect(getRuntimeStreamStore().latestTaskChatMessage?.taskId).toBe("task-b");
+
+		// task-b is hard-deleted (absent from the next board).
+		dispatchRuntimeStreamAction({ type: "workspace_state_updated", workspaceState: makeWorkspaceState(["task-a"]) });
+
+		const store = getRuntimeStreamStore();
+		expect(store.taskChatMessagesByTaskId["task-b"]).toBeUndefined();
+		expect(store.taskChatMessagesByTaskId["task-a"]).toHaveLength(1);
+		// `latestTaskChatMessage` pointed at the evicted task, so it is cleared.
+		expect(store.latestTaskChatMessage).toBeNull();
+	});
+
+	it("never evicts synthetic home-chat ids on a board update (they are not board cards)", () => {
+		const homeId = "__home_agent__:ws:pi";
+		dispatchRuntimeStreamAction({ type: "workspace_state_updated", workspaceState: makeWorkspaceState(["task-a"]) });
+		sendChat(homeId, "h1");
+		sendChat("task-a", "a1");
+
+		// task-a leaves the board entirely; the home thread must survive.
+		dispatchRuntimeStreamAction({ type: "workspace_state_updated", workspaceState: makeWorkspaceState([]) });
+
+		const store = getRuntimeStreamStore();
+		expect(store.taskChatMessagesByTaskId["task-a"]).toBeUndefined();
+		expect(store.taskChatMessagesByTaskId[homeId]).toHaveLength(1);
+	});
+
+	it("keeps the same chat map reference when a board update removes nothing", () => {
+		dispatchRuntimeStreamAction({ type: "workspace_state_updated", workspaceState: makeWorkspaceState(["task-a"]) });
+		sendChat("task-a", "a1");
+		const before = getRuntimeStreamStore().taskChatMessagesByTaskId;
+
+		// A board update that only adds a task must not churn the chat map.
+		dispatchRuntimeStreamAction({
+			type: "workspace_state_updated",
+			workspaceState: makeWorkspaceState(["task-a", "task-c"]),
+		});
+		expect(getRuntimeStreamStore().taskChatMessagesByTaskId).toBe(before);
 	});
 });
