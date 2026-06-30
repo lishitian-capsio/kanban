@@ -1,7 +1,12 @@
-import { AlertCircle, Check, Mic, MicOff, MessageSquarePlus, Square } from "lucide-react";
+import { AlertCircle, Check, MessageSquarePlus, Mic, MicOff, Square } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { AgentAvatar } from "@/components/home-agent/agent-icon";
+import {
+	appendDictationText,
+	describeSpeechDictationUnsupported,
+	describeSpeechDictationUnsupportedTooltip,
+} from "@/components/home-agent/native-speech-dictation-state";
 import { useNativeSpeechDictation } from "@/components/home-agent/use-native-speech-dictation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
@@ -18,18 +23,6 @@ interface HomeThreadCreateDialogProps {
 	agents: RuntimeAgentDefinition[];
 	defaultAgentId: RuntimeAgentId;
 	onCreate: (input: { description: string; agentId: RuntimeAgentId }) => void | Promise<unknown>;
-}
-
-function appendDictationText(value: string, transcript: string): string {
-	const trimmedTranscript = transcript.trim();
-	if (!trimmedTranscript) {
-		return value;
-	}
-	if (!value.trim()) {
-		return trimmedTranscript;
-	}
-	const separator = /[\s\n]$/.test(value) ? "" : " ";
-	return `${value}${separator}${trimmedTranscript}`;
 }
 
 export function HomeThreadCreateDialog({
@@ -92,6 +85,7 @@ export function HomeThreadCreateDialog({
 
 	const {
 		isSupported: isSpeechSupported,
+		unsupportedReason: speechUnsupportedReason,
 		status: speechStatus,
 		message: speechMessage,
 		interimTranscript,
@@ -110,14 +104,14 @@ export function HomeThreadCreateDialog({
 	const trimmedDescription = description.trim();
 	const canSubmit = trimmedDescription.length > 0 && !isSubmitting && agentId !== null;
 	const descriptionStateText = useMemo(() => {
-		if (!isSpeechSupported) {
-			return "Voice input is unavailable in this browser. Type the opening prompt instead.";
+		if (speechUnsupportedReason) {
+			return describeSpeechDictationUnsupported(speechUnsupportedReason);
 		}
 		if (speechMessage) {
 			return speechMessage;
 		}
 		return "The thread's agent works from this opening prompt and names the thread itself.";
-	}, [isSpeechSupported, speechMessage]);
+	}, [speechUnsupportedReason, speechMessage]);
 
 	const handleSubmit = async () => {
 		if (!canSubmit || agentId === null) {
@@ -193,11 +187,11 @@ export function HomeThreadCreateDialog({
 							<Tooltip
 								side="top"
 								content={
-									isSpeechSupported
-										? speechStatus === "listening"
+									speechUnsupportedReason
+										? describeSpeechDictationUnsupportedTooltip(speechUnsupportedReason)
+										: speechStatus === "listening"
 											? "Stop voice input"
 											: "Dictate the opening prompt"
-										: "Voice input is not supported in this browser"
 								}
 							>
 								<button

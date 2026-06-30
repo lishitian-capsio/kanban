@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+	describeSpeechDictationError,
+	describeSpeechDictationUnsupported,
+	detectSpeechDictationSupport,
+	type SpeechDictationUnsupportedReason,
+} from "@/components/home-agent/native-speech-dictation-state";
+
 export type NativeSpeechStatus = "idle" | "listening" | "error";
 
 type NativeSpeechRecognitionErrorCode =
@@ -63,6 +70,8 @@ interface SpeechRecognitionWindow extends Window {
 
 export interface UseNativeSpeechDictationResult {
 	isSupported: boolean;
+	/** Why dictation is unavailable (insecure context vs. unsupported browser); null when supported. */
+	unsupportedReason: SpeechDictationUnsupportedReason | null;
 	status: NativeSpeechStatus;
 	message: string | null;
 	interimTranscript: string;
@@ -79,32 +88,16 @@ function getNativeSpeechRecognitionConstructor(): NativeSpeechRecognitionConstru
 	return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
 }
 
-function describeSpeechRecognitionError(error: NativeSpeechRecognitionErrorEvent): string {
-	switch (error.error) {
-		case "not-allowed":
-		case "service-not-allowed":
-			return "Microphone access is blocked for this browser or page.";
-		case "audio-capture":
-			return "No microphone was detected.";
-		case "language-not-supported":
-			return "Speech recognition is not available for this browser language.";
-		case "network":
-			return "Speech recognition could not reach the browser service.";
-		case "no-speech":
-			return "No speech was detected. Try again or type the description.";
-		case "aborted":
-			return "Voice input stopped.";
-		default:
-			return error.message || "Voice input stopped unexpectedly.";
-	}
-}
-
 export function useNativeSpeechDictation(onTranscript: (transcript: string) => void): UseNativeSpeechDictationResult {
 	const recognitionRef = useRef<NativeSpeechRecognition | null>(null);
 	const onTranscriptRef = useRef(onTranscript);
 	onTranscriptRef.current = onTranscript;
 
-	const [isSupported] = useState(() => getNativeSpeechRecognitionConstructor() !== null);
+	const [support] = useState(() =>
+		detectSpeechDictationSupport(typeof window === "undefined" ? null : (window as SpeechRecognitionWindow)),
+	);
+	const isSupported = support.supported;
+	const unsupportedReason = support.supported ? null : support.reason;
 	const [status, setStatus] = useState<NativeSpeechStatus>("idle");
 	const [message, setMessage] = useState<string | null>(null);
 	const [interimTranscript, setInterimTranscript] = useState("");
@@ -135,10 +128,20 @@ export function useNativeSpeechDictation(onTranscript: (transcript: string) => v
 	useEffect(() => abortRecognition, [abortRecognition]);
 
 	const start = useCallback(() => {
+		// Re-check support at click time: an insecure (plain-HTTP LAN) context exposes
+		// the constructor but can never capture audio, so surface the actionable
+		// HTTPS/localhost guidance instead of letting start() emit a raw `not-allowed`.
+		const currentSupport = detectSpeechDictationSupport(
+			typeof window === "undefined" ? null : (window as SpeechRecognitionWindow),
+		);
 		const Recognition = getNativeSpeechRecognitionConstructor();
-		if (!Recognition) {
+		if (!currentSupport.supported || !Recognition) {
 			setStatus("error");
-			setMessage("Voice input is not supported in this browser.");
+			setMessage(
+				describeSpeechDictationUnsupported(
+					currentSupport.supported ? "unsupported-browser" : currentSupport.reason,
+				),
+			);
 			return;
 		}
 
@@ -172,7 +175,7 @@ export function useNativeSpeechDictation(onTranscript: (transcript: string) => v
 		};
 		recognition.onerror = (event) => {
 			setStatus("error");
-			setMessage(describeSpeechRecognitionError(event));
+			setMessage(describeSpeechDictationError(event.error, event.message));
 			setInterimTranscript("");
 		};
 		recognition.onend = () => {
@@ -193,5 +196,5 @@ export function useNativeSpeechDictation(onTranscript: (transcript: string) => v
 		}
 	}, [abortRecognition]);
 
-	return { isSupported, status, message, interimTranscript, start, stop, reset };
+	return { isSupported, unsupportedReason, status, message, interimTranscript, start, stop, reset };
 }
