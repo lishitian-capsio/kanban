@@ -1,0 +1,20 @@
+{
+  "id": "6c895",
+  "title": "Persist internal auth token across runtime restarts (fix hook 401 'Unable to tra…",
+  "prompt": "Bug: When the runtime is bound to a non-localhost host (remote mode / 'kanban service install' daemon), agent hooks fail with: 'kanban hooks ingest: Unable to transform response from server'.\n\nRoot cause (confirmed):\n1. Remote bind => /api/trpc enforces auth. An unauthenticated or stale-token POST returns a plain 401 body {\"error\":\"Authentication required.\"} (HTTP 401), which is NOT a tRPC envelope. @trpc/client then throws literally 'Unable to transform response from server'; src/commands/hooks.ts runHooksIngest prefixes it 'kanban hooks ingest:'.\n2. CLI/hook subprocesses authenticate via env var KANBAN_INTERNAL_AUTH_TOKEN (src/security/passcode-manager.ts getInternalToken).\n3. generateInternalToken() = randomBytes(32), regenerated FRESH on every runtime start (src/cli.ts ~line 675) and NEVER persisted. By contrast the user-facing passcode IS persisted (resolveAndPersistPasscode, cli.ts ~673) -- the internal token is the inconsistency.\n4. Therefore: (a) any agent session that outlived a daemon restart carries a stale token and 401s; (b) any agent run independently (not spawned by the daemon) never receives a token at all and can never authenticate to the local daemon. The systemd/launchd service model makes both common.\n\nFix: Persist the internal auth token to a machine-local 0600 file (same pattern/dir as passcode.json -- see passcode-manager + resolveAndPersistPasscode), and have getInternalToken / startup reuse the persisted value across restarts instead of always rotating. Keep it machine-local (never in <repo>/.kanban, never logged), mirroring the GitHub/STT secret conventions. Confirm validateInternalToken still works for both daemon-spawned children (env) and independently-launched CLI/hook processes (read persisted file). Add/adjust tests covering: token survives a simulated restart; a hook request with the persisted token authenticates; rotation no longer happens on plain restart.\n\nVerification: with the runtime bound to a LAN host, a 'kanban hooks ingest --event activity' from a fresh process (no env token) should authenticate via the persisted token and NOT return 'Unable to transform response from server'.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e5060a7c-ba48-41e0-b356-495436c7d21d",
+  "baseRef": "main",
+  "createdAt": 1782795701540,
+  "updatedAt": 1782795701540,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
