@@ -26,7 +26,6 @@ import {
 	reconcileOnEnterFullscreen,
 	setActiveSessionTab as setActiveSessionTabOp,
 } from "@/components/home-agent/home-fullscreen-tabs";
-import { derivePiSessions, isPiSession, resolvePiSessionSelection } from "@/components/home-agent/pi-sessions";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeAgentId, RuntimeConfigResponse, RuntimeHomeChatThread } from "@/runtime/types";
 
@@ -59,7 +58,7 @@ export interface UseHomeThreadsResult {
 	/**
 	 * Create a thread. With a `description` it kicks off the thread's first turn (and seeds a
 	 * provisional `auto` title); with only a `name` it creates a blank session (no kickoff) — the
-	 * Pi rail's "New session" uses the latter. Resolves to the new thread id, or null on failure.
+	 * Pi tab's "New session" uses the latter. Resolves to the new thread id, or null on failure.
 	 */
 	createThread: (input: { description?: string; name?: string; agentId: RuntimeAgentId }) => Promise<string | null>;
 	renameThread: (threadId: string, name: string) => Promise<void>;
@@ -70,17 +69,6 @@ export interface UseHomeThreadsResult {
 	 * broadcasts a session-context bump, so a subsequent {@link refresh} reconciles either way.
 	 */
 	clearNextStep: (threadId: string) => void;
-	/**
-	 * The selected pi session (a created `agentId === "pi"` thread), or `null` when none is
-	 * focused. This is the SINGLE source of truth the Pi-area session rail reads in BOTH board
-	 * and session (fullscreen) modes — it lives here (not in a per-mode component) so a pi
-	 * session never drifts between the board dropdown and a fullscreen tab when the mode flips.
-	 * Stale ids (the session was closed) resolve to `null`, which means "show the non-pi
-	 * fallback" (the dropdown thread / the Home launcher) rather than forcing a pi conversation.
-	 */
-	activePiSessionId: string | null;
-	/** Select a pi session (`null` clears the selection so the surface shows its non-pi fallback). */
-	setActivePiSessionId: (threadId: string | null) => void;
 	/**
 	 * Re-fetch the registry for the current workspace. Used to pick up agent-driven
 	 * title changes (a thread self-titles via `home-thread set-title`, which bumps the
@@ -129,10 +117,6 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		Record<string, RuntimeHomeChatThread[]>
 	>({});
 	const [activeThreadIdByWorkspace, setActiveThreadIdByWorkspace] = useState<Record<string, string>>({});
-	// The selected pi session per workspace (the Pi-area rail's active item). Kept per workspace
-	// like the active thread so each workspace remembers its own pi selection; resolved against
-	// the live pi-session list below so a closed/cross-workspace id degrades to null.
-	const [activePiSessionIdByWorkspace, setActivePiSessionIdByWorkspace] = useState<Record<string, string | null>>({});
 	const [fullscreenTabsByWorkspace, setFullscreenTabsByWorkspace] = useState<Record<string, FullscreenTabsState>>({});
 	// Mirror of fullscreenTabsByWorkspace read synchronously inside the tab mutations so
 	// rapid successive actions compose off the latest value (not the render-lagged state).
@@ -243,39 +227,12 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		[currentProjectId],
 	);
 
-	// The active pi session, resolved against the live pi-session list (a closed or
-	// cross-workspace id falls to null = "no pi session focused"). Derived from the same
-	// `threads` the rail renders, so the single source of truth can never disagree with the list.
-	const activePiSessionId = useMemo<string | null>(() => {
-		if (!currentProjectId) {
-			return null;
-		}
-		return resolvePiSessionSelection(
-			derivePiSessions(threads),
-			activePiSessionIdByWorkspace[currentProjectId] ?? null,
-		);
-	}, [currentProjectId, threads, activePiSessionIdByWorkspace]);
-
-	const setActivePiSessionId = useCallback(
-		(threadId: string | null) => {
-			if (!currentProjectId) {
-				return;
-			}
-			setActivePiSessionIdByWorkspace((current) => ({ ...current, [currentProjectId]: threadId }));
-		},
-		[currentProjectId],
-	);
-
 	const createThread = useCallback(
 		async ({
 			description,
 			name,
 			agentId,
-		}: {
-			description?: string;
-			name?: string;
-			agentId: RuntimeAgentId;
-		}): Promise<string | null> => {
+		}: { description?: string; name?: string; agentId: RuntimeAgentId }): Promise<string | null> => {
 			if (!currentProjectId) {
 				return null;
 			}
@@ -463,11 +420,10 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		[applyFullscreenTabs],
 	);
 
-	// The fullscreen tab strip never hosts the synthetic default thread NOR pi sessions (pi lives
-	// in the rail), so entering fullscreen while either is the active docked thread seeds the Home
-	// launcher (null), not a stale/pi session tab. Other created (non-pi) threads seed their own tab.
-	const seedActiveThreadId =
-		activeThread && !activeThread.isDefault && !isPiSession(activeThread) ? activeThread.id : null;
+	// The fullscreen workspace never exposes the synthetic default thread, so entering
+	// fullscreen while the docked default chat is active seeds the Home launcher (null), not a
+	// stale "default" session tab. Created threads still seed their own tab on enter.
+	const seedActiveThreadId = activeThread && !activeThread.isDefault ? activeThread.id : null;
 	const reconcileFullscreenTabsOnEnter = useCallback(
 		() => applyFullscreenTabs((current) => reconcileOnEnterFullscreen(current, seedActiveThreadId)),
 		[applyFullscreenTabs, seedActiveThreadId],
@@ -482,8 +438,6 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		renameThread,
 		closeThread,
 		clearNextStep,
-		activePiSessionId,
-		setActivePiSessionId,
 		refresh,
 		isLoading: loadingWorkspaceId !== null && loadingWorkspaceId === currentProjectId,
 		fullscreenTabs,

@@ -484,9 +484,9 @@ export default function App(): ReactElement {
 		navigateFullscreenTab(null);
 	}, [navigateFullscreenTab]);
 	// Continuity rule, fullscreen → docked: when fullscreen closes, the active session tab
-	// becomes the docked conversation, so collapsing never loses the user's place. The "home"
-	// launcher (not a thread) leaves the docked thread as-is. Track the last non-null tab in a ref
-	// because by the time the effect sees the transition the URL chat param is already cleared.
+	// becomes the docked conversation, so collapsing never loses the user's place. Home/Pi (not a
+	// thread) leaves the docked thread as-is. Track the last non-null tab in a ref because by the
+	// time the effect sees the transition the URL chat param is already cleared.
 	const lastFullscreenTabRef = useRef<string | null>(fullscreenChatTab);
 	if (fullscreenChatTab) {
 		lastFullscreenTabRef.current = fullscreenChatTab;
@@ -497,7 +497,7 @@ export default function App(): ReactElement {
 		previousIsFullscreenRef.current = isFullscreen;
 		if (wasFullscreen && !isFullscreen) {
 			const lastTab = lastFullscreenTabRef.current;
-			if (lastTab && lastTab !== "home") {
+			if (lastTab && lastTab !== "home" && lastTab !== "pi") {
 				setActiveHomeThread(lastTab);
 			}
 		}

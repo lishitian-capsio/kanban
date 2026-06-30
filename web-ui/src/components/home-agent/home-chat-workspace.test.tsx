@@ -62,8 +62,6 @@ function makeHomeThreads(threads: HomeThread[], overrides: Partial<UseHomeThread
 		renameThread: vi.fn(),
 		closeThread: vi.fn(),
 		clearNextStep: vi.fn(),
-		activePiSessionId: null,
-		setActivePiSessionId: vi.fn(),
 		refresh: vi.fn(),
 		isLoading: false,
 		fullscreenTabs: EMPTY_TABS,
@@ -256,30 +254,17 @@ describe("HomeChatWorkspace", () => {
 		expect(activeTab?.textContent).toContain("Refactor auth");
 	});
 
-	it("activating a session tab routes through the URL and clears the pi selection", () => {
+	it("activating a tab routes through the URL (onNavigateFullscreenTab)", () => {
 		const onNavigateFullscreenTab = vi.fn();
-		const setActivePiSessionId = vi.fn();
-		const threads = [
-			makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true),
-			makeThread("thread-2", "Refactor auth", "claude", false),
-		];
-		render({
-			homeThreads: makeHomeThreads(threads, {
-				setActivePiSessionId,
-				fullscreenTabs: { openThreadIds: ["thread-2"], activeThreadId: "thread-2" },
-			}),
-			fullscreenChatTab: "home",
-			onNavigateFullscreenTab,
-		});
-		const tab = [...container.querySelectorAll('[role="tab"]')].find((t) =>
-			t.textContent?.includes("Refactor auth"),
+		const threads = [makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)];
+		render({ homeThreads: makeHomeThreads(threads), fullscreenChatTab: "home", onNavigateFullscreenTab });
+		const piTab = [...container.querySelectorAll('[role="tab"]')].find(
+			(tab) => tab.textContent === "Pi",
 		) as HTMLButtonElement;
 		act(() => {
-			tab.click();
+			piTab.click();
 		});
-		expect(onNavigateFullscreenTab).toHaveBeenCalledWith("thread-2");
-		// The rail and the strip both feed the one right pane; clicking a tab clears the pi selection.
-		expect(setActivePiSessionId).toHaveBeenCalledWith(null);
+		expect(onNavigateFullscreenTab).toHaveBeenCalledWith("pi");
 	});
 
 	it("falls back to Home in place when the URL names a session that no longer exists", () => {
@@ -289,43 +274,43 @@ describe("HomeChatWorkspace", () => {
 		expect(onReplaceFullscreenTab).toHaveBeenCalledWith("home");
 	});
 
-	it("shows the active pi session's conversation in the right pane (pi rail, never a tab)", () => {
+	it("opens the Pi tab as a pi-scoped session workspace (created pi threads only, no default)", () => {
 		const threads = [
+			// The workspace-global default is claude here; the Pi tab no longer pins a base — it
+			// lists only created pi threads and excludes the synthetic default entirely.
 			makeThread(DEFAULT_HOME_THREAD_ID, "Default", "claude", true),
 			makeThread("pi-1", "Fix tests", "pi", false),
 			makeThread("claude-1", "Other agent", "claude", false),
 		];
-		render({
-			homeThreads: makeHomeThreads(threads, { activePiSessionId: "pi-1" }),
-			fullscreenChatTab: "home",
-		});
-		// The selected pi session's conversation owns the right pane.
+		render({ homeThreads: makeHomeThreads(threads), fullscreenChatTab: "pi" });
+		const piTab = [...container.querySelectorAll('[role="tab"]')].find(
+			(tab) => tab.textContent === "Pi",
+		) as HTMLButtonElement;
+		expect(piTab.getAttribute("aria-selected")).toBe("true");
+		// The first created pi session is active in the conversation (never the default thread id).
 		expect(container.querySelector('[data-testid="conversation"]')?.textContent).toBe("conversation:pi-1");
 		// The rail lists pi sessions only — the created pi thread, never the claude one.
 		expect(container.textContent).toContain("Fix tests");
-		// The launcher (which would list the non-pi "Other agent" card) is hidden behind the pi
-		// conversation, and there is no pi *tab*: no tab is highlighted while the rail owns the view.
 		expect(container.textContent).not.toContain("Other agent");
+		// The Home launcher add-card is gone while the Pi tab is active.
 		expect(container.querySelector('[aria-label="New chat session"]')).toBeNull();
-		expect(container.querySelector('[role="tab"][aria-selected="true"]')).toBeNull();
 	});
 
-	it("always offers the rail's New session control (no separate empty state)", () => {
+	it("shows the Pi tab empty state when there are no created pi sessions", () => {
 		const threads = [
 			makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true),
 			makeThread("claude-1", "Other agent", "claude", false),
 		];
-		render({ homeThreads: makeHomeThreads(threads), fullscreenChatTab: "home" });
-		// The rail's create affordance is always present even with zero pi sessions.
-		expect([...container.querySelectorAll("button")].some((b) => b.textContent === "New session")).toBe(true);
-		// With no pi session selected, the Home launcher (fallback) shows.
-		expect(container.querySelector('[aria-label="New chat session"]')).not.toBeNull();
+		render({ homeThreads: makeHomeThreads(threads), fullscreenChatTab: "pi" });
+		expect(container.textContent).toContain("No pi sessions yet");
+		// No conversation mounts while the Pi tab is empty.
+		expect(container.querySelector('[data-testid="conversation"]')).toBeNull();
 	});
 
-	it("creates a blank pi session from the rail New session control (name-only, no kickoff prompt)", async () => {
+	it("creates a blank pi session from the Pi tab empty state (name-only, no kickoff prompt)", async () => {
 		const createThread = vi.fn().mockResolvedValue(null);
 		const threads = [makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)];
-		render({ homeThreads: makeHomeThreads(threads, { createThread }), fullscreenChatTab: "home" });
+		render({ homeThreads: makeHomeThreads(threads, { createThread }), fullscreenChatTab: "pi" });
 		const newButton = [...container.querySelectorAll("button")].find(
 			(button) => button.textContent === "New session",
 		) as HTMLButtonElement;

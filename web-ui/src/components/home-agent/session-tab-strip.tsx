@@ -1,14 +1,13 @@
 // The horizontal tab strip for the fullscreen home workspace (decision 1902b).
 //
-// The leftmost tab is the permanent Home anchor (the launcher / session-card dashboard); it is
-// always present and cannot be closed. To its right sit the coexisting non-pi session tabs, one
-// per open thread, which the user switches between horizontally. (Pi sessions are NOT tabs — they
-// live in the permanent Pi rail to the left of this strip, in both modes.) Closing a session tab
-// is a UI-only collapse back to Home — it never hard-closes the thread (that stays an explicit
-// action in the launcher / thread bar). Only the session-tab region scrolls horizontally when the
-// tabs overflow; the Home anchor stays pinned and visible.
+// The leftmost tabs are the permanent anchors — Home (the launcher / session-card dashboard)
+// and Pi (native-agent workspace); they are always present and cannot be closed. To their
+// right sit the coexisting session tabs, one per open thread, which the user switches between
+// horizontally. Closing a session tab is a UI-only collapse back to Home — it never hard-closes
+// the thread (that stays an explicit action in the launcher / thread bar). Only the session-tab
+// region scrolls horizontally when the tabs overflow; the anchored tabs stay pinned and visible.
 import { createHomeAgentSessionId } from "@runtime-home-agent-session";
-import { FileText, LayoutGrid, X } from "lucide-react";
+import { Bot, FileText, LayoutGrid, X } from "lucide-react";
 import { type ReactElement, useEffect, useRef } from "react";
 
 import { deriveHomeSessionCardStatus } from "@/components/home-agent/home-session-card-derive";
@@ -23,18 +22,15 @@ interface SessionTabStripProps {
 	openThreadIds: string[];
 	/** The active tab's thread id, or null when the Home tab is active. */
 	activeThreadId: string | null;
-	/**
-	 * Whether a pi session conversation is currently showing (selected in the Pi rail). When true
-	 * the strip highlights NO tab — neither Home nor a session tab — because the pi rail owns the
-	 * view; clicking any tab here clears that pi selection upstream.
-	 */
-	piConversationActive: boolean;
+	/** Whether the fixed Pi tab (native-agent multi-session workspace) is the active tab. */
+	piTabActive: boolean;
 	agents: RuntimeAgentDefinition[];
 	/** Workspace id used to resolve each thread's session id for its status dot. */
 	currentProjectId: string;
 	/** Per-session summaries that drive each tab's status badge (rule 1: tabs now show status). */
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	onActivateHome: () => void;
+	onActivatePi: () => void;
 	onActivateTab: (threadId: string) => void;
 	onCloseTab: (threadId: string) => void;
 	/** Open the File surface library overlay (portaled above this workspace). */
@@ -45,17 +41,19 @@ export function SessionTabStrip({
 	threads,
 	openThreadIds,
 	activeThreadId,
-	piConversationActive,
+	piTabActive,
 	agents,
 	currentProjectId,
 	taskSessions,
 	onActivateHome,
+	onActivatePi,
 	onActivateTab,
 	onCloseTab,
 	onOpenFile,
 }: SessionTabStripProps): ReactElement {
-	// While a pi session conversation owns the view, neither Home nor any session tab is highlighted.
-	const homeActive = activeThreadId === null && !piConversationActive;
+	// The Pi tab is a peer of the Home tab; while it is active neither Home
+	// nor any session tab is highlighted.
+	const homeActive = activeThreadId === null && !piTabActive;
 
 	// Keep the active tab scrolled into view: when many session tabs overflow their
 	// scroll region, activating one (or opening a new one) that sits past the visible
@@ -79,7 +77,7 @@ export function SessionTabStrip({
 			block: "nearest",
 		});
 		hasScrolledRef.current = true;
-	}, [activeThreadId, piConversationActive]);
+	}, [activeThreadId, piTabActive]);
 
 	return (
 		<div
@@ -88,7 +86,7 @@ export function SessionTabStrip({
 			aria-label="Home agent sessions"
 			className="flex shrink-0 items-stretch gap-1 border-b border-border pb-1"
 		>
-			{/* Anchored Home tab — pinned outside the scroll region so it never scrolls away. */}
+			{/* Anchored tabs — pinned outside the scroll region so they never scroll away. */}
 			<div className="flex flex-none items-stretch gap-1">
 				<button
 					type="button"
@@ -106,6 +104,23 @@ export function SessionTabStrip({
 					<LayoutGrid size={14} className="shrink-0" aria-hidden="true" />
 					<span>Home</span>
 				</button>
+
+				<button
+					type="button"
+					role="tab"
+					aria-selected={piTabActive}
+					data-active-tab={piTabActive ? "true" : undefined}
+					onClick={onActivatePi}
+					title="Pi — native agent sessions"
+					className={cn(
+						"flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] outline-none transition-colors focus-visible:border-border-focus",
+						getActiveHighlightClass("tab", piTabActive),
+						piTabActive && "font-medium",
+					)}
+				>
+					<Bot size={14} className="shrink-0" aria-hidden="true" />
+					<span>Pi</span>
+				</button>
 			</div>
 
 			{/* Session tabs scroll horizontally. The scrollbar is fully hidden (no reserved/consumed
@@ -118,7 +133,7 @@ export function SessionTabStrip({
 					if (!thread) {
 						return null;
 					}
-					const isActive = threadId === activeThreadId && !piConversationActive;
+					const isActive = threadId === activeThreadId && !piTabActive;
 					const sessionTaskId = createHomeAgentSessionId(currentProjectId, thread.agentId, thread.id);
 					const status = deriveHomeSessionCardStatus(taskSessions[sessionTaskId] ?? null);
 					return (

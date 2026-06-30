@@ -2,9 +2,8 @@
 //
 // Whether the fullscreen workspace is open — and which tab is active inside it —
 // lives entirely in the URL (`?chat=<tab>`), not in component/localStorage state.
-// The value is the active tab: the reserved "home" (launcher) anchor, or a non-pi
-// session thread id. Its mere presence means fullscreen. (Pi sessions are not tabs —
-// they live in the Pi rail, tracked by `homeThreads.activePiSessionId`, not the URL.)
+// The value is the active tab: the reserved "home" (launcher) / "pi" (native-agent
+// workspace) anchors, or a session thread id. Its mere presence means fullscreen.
 //
 // Keeping this in the URL makes the fullscreen view refreshable, deep-linkable, and
 // navigable with the browser back/forward buttons — and it root-causes the
@@ -22,7 +21,7 @@ import { buildFullscreenChatUrl, parseFullscreenChatTabFromSearch } from "@/hook
 import { useWindowEvent } from "@/utils/react-use";
 
 export interface UseFullscreenChatNavigationResult {
-	/** The active fullscreen tab ("home" | a non-pi session thread id), or null when not fullscreen. */
+	/** The active fullscreen tab ("home" | "pi" | a session thread id), or null when not fullscreen. */
 	fullscreenChatTab: string | null;
 	/** Convenience flag: the fullscreen workspace is open. */
 	isFullscreen: boolean;
