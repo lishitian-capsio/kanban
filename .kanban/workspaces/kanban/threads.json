@@ -110,11 +110,11 @@
     {
       "id": "6588c4a9-28df-4a75-9774-172e2bb7832c",
       "agentId": "claude",
-      "name": "加宽 file 文件弹窗",
+      "name": "Move File button to detail header",
       "titleSource": "auto",
       "createdAt": 1782717051577,
-      "updatedAt": 1782783469354,
-      "pendingNextStep": "启动任务 4ea58"
+      "updatedAt": 1782807060499,
+      "pendingNextStep": "启动任务 687cc 开始实现"
     },
     {
       "id": "1219a752-a9d8-49b6-99aa-3405d222faea",
