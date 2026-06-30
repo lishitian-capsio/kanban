@@ -1,6 +1,6 @@
 {
-  "id": "ea862",
-  "title": "Pi 会话管理收归 Pi（board/session 模式统一）",
+  "id": "0b232",
+  "title": "Pi 会话管理收归 Pi（修复随模式漂移）",
   "prompt": "重构 Pi 的会话（session）管理入口，使其无论在 board 模式还是 session 模式下都统一收归到 Pi 自身，而不是随模式切换在多个位置之间漂移。\n\n核心 bug 复现（用户报告）：\n- 在 session 全屏模式下新建的 Pi 会话，最初挂在 Pi 上；\n- 切换到 board 模式后，同一会话跑到了 board 的下拉框（dropdown）会话里；\n- 再切回 session 全屏模式后，它又占用了会话 tab。\n即：会话的归属位置被错误地绑定到了【当前模式】，而不是始终归属于 Pi。\n\n期望行为：\n- Pi 会话的创建/切换/重命名/关闭等管理操作统一放在 Pi 区域内（Pi tab / Pi 面板自身），状态来源唯一。\n- 无论用户处于 board 模式还是 session 全屏模式，都使用同一套 Pi 会话入口与同一份会话状态，会话不再随模式迁移到 board 下拉框或 session tab。\n- 移除 session tab 上和 board 下拉框里重复/被取代的 Pi 会话管理控件，消除入口重复与状态不一致。\n\n实现要求：\n1. 先在 web-ui 中定位 Pi 会话管理相关代码：session 全屏模式下的会话 tab 控件、board 模式下下拉框里的 Pi 会话切换/管理逻辑，以及 Pi tab/面板本身（参考 fullscreen Pi tab 多 session、home 多 thread 等既有实现）。\n2. 找出会话归属为何随模式切换迁移的根因（很可能是会话列表/选中态按模式分别持有，而非共享单一来源），改为单一共享状态来源。\n3. 将会话管理 UI 与逻辑统一收归到 Pi 区域，board 模式与 session 全屏模式共用。\n4. 移除 session tab 和 board 下拉框中已被取代的 Pi 会话管理入口，确保没有死代码与重复状态。\n5. 遵循项目 web-ui 规范（Tailwind + Radix + lucide-react，granular runtime store 在 leaf fiber 订阅等），保持架构清晰、单一职责。\n6. 自测：按上面复现路径来回切换 board / session 全屏模式，Pi 会话始终稳定归属于 Pi、不再漂移；两种模式下都能完成会话创建/切换/重命名/关闭且状态一致；typecheck 通过。\n\n注意：这是 UI/状态归位重构，不要改动后端会话契约（除非必要）。",
   "startInPlanMode": false,
   "autoReviewEnabled": false,
@@ -12,9 +12,9 @@
   },
   "originThreadId": "16d0ae97-5f56-4649-ba14-d0134b8c262e",
   "baseRef": "main",
-  "createdAt": 1782801711367,
-  "updatedAt": 1782806056725,
-  "column": "trash",
+  "createdAt": 1782806096497,
+  "updatedAt": 1782806096497,
+  "column": "backlog",
   "rank": "a0",
   "dependsOn": []
 }
