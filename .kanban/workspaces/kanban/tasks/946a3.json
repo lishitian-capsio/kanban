@@ -1,7 +1,7 @@
 {
   "id": "946a3",
   "title": "Redesign new chat thread input",
-  "prompt": "Redesign the input field inside the New chat thread dialog in the web UI. Keep the scope focused on the dialog's input UX and visual treatment, following the existing web-ui design system: Tailwind v4 utilities, dark theme tokens from globals.css, Radix primitives where applicable, Lucide icons for controls, and existing UI primitives from src/components/ui/. Do not add a marketing-style layout or unrelated refactors. Inspect the current implementation first, identify the component that renders the New chat thread dialog, and improve the input so it feels polished, accessible, and consistent with the rest of Kanban. Cover focus, placeholder/label/help or validation states if applicable, spacing, sizing, keyboard behavior, and long text handling. Prefer extracting small domain/UI helpers only when they reduce real complexity; avoid thin pass-through components. Run the relevant typecheck/test/build command for web-ui if available, or report why verification could not run.",
+  "prompt": "Redesign the input field inside the New chat thread dialog in the web UI, and add voice input support to that input. Keep the scope focused on the dialog's input UX and visual treatment, following the existing web-ui design system: Tailwind v4 utilities, dark theme tokens from globals.css, Radix primitives where applicable, Lucide icons for controls, and existing UI primitives from src/components/ui/. Do not add a marketing-style layout or unrelated refactors. Inspect the current implementation first, identify the component that renders the New chat thread dialog, and improve the input so it feels polished, accessible, and consistent with the rest of Kanban. The redesigned input should include a voice/microphone affordance where appropriate, visible recording/listening/error/unsupported states if the browser API requires them, keyboard-friendly behavior, clear focus handling, placeholder/label/help or validation states if applicable, spacing, sizing, and long text handling. Prefer using browser-native speech APIs only if they fit the app's constraints; otherwise implement the UI affordance cleanly and document any runtime limitation. Prefer extracting small domain/UI helpers only when they reduce real complexity; avoid thin pass-through components. Run the relevant typecheck/test/build command for web-ui if available, or report why verification could not run.",
   "startInPlanMode": false,
   "autoReviewEnabled": false,
   "autoReviewMode": "commit",
@@ -13,7 +13,7 @@
   "originThreadId": "05ae5b1d-6387-46fa-ae3d-ad128d7026ae",
   "baseRef": "main",
   "createdAt": 1782788041900,
-  "updatedAt": 1782788041900,
+  "updatedAt": 1782788131536,
   "column": "backlog",
   "rank": "a0",
   "dependsOn": []
