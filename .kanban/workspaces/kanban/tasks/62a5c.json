@@ -1,0 +1,20 @@
+{
+  "id": "62a5c",
+  "title": "R2 Web UI: P1 渲染/内存/首屏清扫",
+  "prompt": "第二轮性能优化(Web UI P0/P1)。先读 .plan/docs/perf-web-ui-findings.md。\n\n【audit-first，强制】第一轮 web-ui 实现任务是 ed32f。动手前先 `git log`/diff 看 ed32f 落了哪些；已做的标注跳过，只补还没做的项。按 findings 优先级从高到低做。\n\n候选项(逐条先确认是否已实现，再补)：\n- P0 代码分割：生产代码 0 处 React.lazy/Suspense，重依赖全静态进首屏 bundle。给各界面加 lazy 边界 + Suspense fallback(复用现有 Spinner)，验证 vite 在 minify:false 下分块产物。首屏最大单项收益。\n- P1 #2 per-task session slice：task_sessions_updated 并入 App 级 workspaceState，agent 工作期整棵 App 每 ~150ms 重渲染。加 sessionSummaryByTaskId 监听映射 + useTaskSessionSummary(taskId) 叶子 hook，让 BoardCard/CardDetailView/HomeSessionCard 各自叶子订阅(照搬 chat 同款实现 runtime-stream-store.ts:543-577)；App 停止从 workspaceState 派生本地 sessions。回归 runtime-stream-store.test.tsx 隔离断言。这条解锁 P2 的 memo。\n- P1 #3 xterm 内存：每任务终端保留 10k 滚动+socket+WebGL，切任务不释放(disposePersistentTerminal 仅在 disabled/workspace 变更时触发)。改 LRU 淘汰停靠终端(保留最近 ~3-5 个)，依赖服务端 restore 快照恢复滚动；测「切回已淘汰任务」回归。\n- P1 #4 chat 数组无上限：upsertTaskChatMessage 未命中 id 即无长度检查地追加，按消息数×任务数无界增长。加展示层裁剪上限(后端 journal 仍是真相)，别误删仍在看板的活动任务。\n- P1 #5 diff 高亮：split 模式 diff 每行 Prism 高亮无缓存且整文件不虚拟化。加高亮缓存 + 大文件虚拟化，注意 diff 行 key 与评论态。\n\n约束：遵循既有 granular store 架构(高频 slice 在叶子 fiber 订阅)；优先 react-use；Tailwind 优先不加自定义 CSS；遵守 AGENTS.md 与 web:typecheck。每项给可测量收益(重渲染次数/首屏 JS 体积/内存)并在 PR 描述对比。范围仅限 findings 确认且 ed32f 未做的项。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6a585585-b1b3-41e5-8785-009188294312",
+  "baseRef": "main",
+  "createdAt": 1782780992816,
+  "updatedAt": 1782780992816,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}
