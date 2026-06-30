@@ -1,4 +1,5 @@
 {
   "vaultMode": "managed",
-  "extraPushRemotes": []
+  "extraPushRemotes": [],
+  "agentDatabaseAccessEnabled": false
 }
