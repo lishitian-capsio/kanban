@@ -29,7 +29,6 @@ import { useKanbanChatPanelController } from "@/hooks/use-kanban-chat-panel-cont
 import type { KanbanChatActionResult } from "@/hooks/use-kanban-chat-runtime-actions";
 import type { KanbanChatMessage } from "@/hooks/use-kanban-chat-session";
 import { useRuntimeSettingsKanbanController } from "@/hooks/use-runtime-settings-kanban-controller";
-import { appendTranscriptToDraft } from "@/hooks/voice-input-state";
 import type {
 	RuntimeConfigResponse,
 	RuntimeReasoningEffort,
@@ -38,6 +37,7 @@ import type {
 	RuntimeTaskSessionSummary,
 } from "@/runtime/types";
 import type { TaskImage } from "@/types";
+import { appendTextToDraft } from "@/utils/draft-text";
 
 // Treat the viewport as "at the bottom" within this many pixels, so Virtuoso
 // keeps following streamed output even when a freshly grown last message leaves
@@ -95,9 +95,6 @@ export interface KanbanAgentChatPanelProps {
 	// next-step suggestion chip). The panel stays agnostic about what it is — the owner builds
 	// and wires it; omitted on surfaces that don't use it.
 	suggestionSlot?: ReactElement | null;
-	// When set, the composer shows a Chat/Command voice toggle and routes command-mode
-	// transcripts here instead of the draft. Wired only on the home chat (board control).
-	onVoiceCommand?: (transcript: string) => void;
 	taskKanbanSettings?: RuntimeTaskAgentSettings;
 	taskHasExplicitKanbanSettings?: boolean;
 	onKanbanSettingsSaved?: () => void;
@@ -139,7 +136,6 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 			runtimeConfig = null,
 			modelControlSlot = null,
 			suggestionSlot = null,
-			onVoiceCommand,
 			taskKanbanSettings,
 			taskHasExplicitKanbanSettings = false,
 			onKanbanSettingsSaved,
@@ -352,7 +348,7 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 
 		const handleAppendToDraft = useCallback(
 			(text: string) => {
-				setDraft(appendTranscriptToDraft(draft, text));
+				setDraft(appendTextToDraft(draft, text));
 			},
 			[draft, setDraft],
 		);
@@ -468,7 +464,6 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 						attachmentWarningMessage={attachmentWarningMessage}
 						workspaceId={workspaceId}
 						modelControlSlot={modelControlSlot}
-						onVoiceCommand={onVoiceCommand}
 					/>
 				</div>
 				{showActionFooter ? (

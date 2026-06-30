@@ -50,7 +50,6 @@ import {
 	type RuntimeShortcutIconOption,
 	type RuntimeShortcutPickerIconId,
 } from "@/components/shared/runtime-shortcut-icons";
-import { SttConfigSetting } from "@/components/stt-config-setting";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Dialog, DialogFooter, DialogHeader } from "@/components/ui/dialog";
@@ -1418,7 +1417,6 @@ export function RuntimeSettingsDialog({
 					<ExtraPushRemotesSetting workspaceId={workspaceId} />
 					<GithubAuthSetting workspaceId={workspaceId} />
 					<GiteeAuthSetting workspaceId={workspaceId} />
-					<SttConfigSetting workspaceId={workspaceId} />
 					<div className="rounded-lg border border-border bg-surface-0 px-4 py-3 mb-4">
 						<div className="flex items-center justify-between mb-2">
 							<h6

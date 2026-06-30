@@ -1209,57 +1209,6 @@ export const runtimeGiteeLogoutResponseSchema = z.object({
 });
 export type RuntimeGiteeLogoutResponse = z.infer<typeof runtimeGiteeLogoutResponseSchema>;
 
-/**
- * Secret-free status of the machine-local speech-to-text (STT) config used by the
- * chat composer's voice input. The API key never crosses the wire — only a masked
- * preview and a `hasApiKey` flag, mirroring the saved-provider status convention.
- */
-export const runtimeSttStatusSchema = z.object({
-	/** True once a usable endpoint (base URL + model) is configured. */
-	configured: z.boolean(),
-	/** OpenAI-compatible base URL (e.g. `https://api.openai.com/v1`), or null when unset. */
-	baseUrl: z.string().nullable(),
-	/** STT model id (e.g. `whisper-1`), or null when unset. */
-	model: z.string().nullable(),
-	/** Default recognition language (BCP-47 / ISO-639-1, e.g. `zh`), or null when unset. */
-	language: z.string().nullable(),
-	/** Whether an API key is stored (self-hosted endpoints may need none). */
-	hasApiKey: z.boolean(),
-	/** Non-secret, partially-masked preview of the stored API key, or null when unset. */
-	apiKeyPreview: z.string().nullable(),
-});
-export type RuntimeSttStatus = z.infer<typeof runtimeSttStatusSchema>;
-
-/**
- * `stt.save` input. A field left undefined is preserved from the existing config;
- * `apiKey` left undefined keeps the stored key (so the model can be changed without
- * re-entering the secret), while an empty string clears it.
- */
-export const runtimeSttSaveRequestSchema = z.object({
-	baseUrl: z.string().min(1),
-	model: z.string().min(1).optional(),
-	language: z.string().optional(),
-	apiKey: z.string().optional(),
-});
-export type RuntimeSttSaveRequest = z.infer<typeof runtimeSttSaveRequestSchema>;
-
-/** `stt.transcribe` input: a single recorded clip uploaded as base64. */
-export const runtimeSttTranscribeRequestSchema = z.object({
-	/** Base64-encoded audio bytes (e.g. webm/opus from MediaRecorder). */
-	audioData: z.string().min(1),
-	/** MIME type of the recording (e.g. `audio/webm`). */
-	mime: z.string().min(1),
-	/** Optional per-request language override; falls back to the configured default. */
-	language: z.string().optional(),
-});
-export type RuntimeSttTranscribeRequest = z.infer<typeof runtimeSttTranscribeRequestSchema>;
-
-export const runtimeSttTranscribeResponseSchema = z.object({
-	/** The recognized transcript text (may be empty if nothing was recognized). */
-	text: z.string(),
-});
-export type RuntimeSttTranscribeResponse = z.infer<typeof runtimeSttTranscribeResponseSchema>;
-
 export const runtimeBoardAutoSyncRequestSchema = z.object({
 	paused: z.boolean(),
 });

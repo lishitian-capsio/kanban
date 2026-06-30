@@ -95,7 +95,7 @@ function copyTextViaExecCommand(text: string): boolean {
  * `BrowserClipboardProvider` reads `navigator.clipboard.writeText` directly, so
  * an incoming OSC 52 clipboard-write sequence throws an uncaught `TypeError`
  * mid-parse and breaks terminal rendering. Same secure-context class of guard as
- * `safeRandomUUID` and the voice-input button.
+ * `safeRandomUUID`.
  *
  * For an OSC 52 write this provider tries, in order: the async Clipboard API,
  * then a synchronous `execCommand("copy")` fallback (which can succeed even in a

@@ -21,7 +21,6 @@ import {
 	type KanbanComposerCompletionSuggestion,
 } from "@/components/detail-panels/kanban-chat-composer-completion";
 import { KanbanChatModelSelector } from "@/components/detail-panels/kanban-chat-model-selector";
-import { VoiceInputButton } from "@/components/detail-panels/voice-input-button";
 import { type InlineCompletionItem, InlineCompletionPicker } from "@/components/inline-completion-picker";
 import type { SearchSelectOption } from "@/components/search-select-dropdown";
 import { collectImageFilesFromDataTransfer, extractImagesFromDataTransfer } from "@/components/task-image-input-utils";
@@ -30,7 +29,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import { appendTranscriptToDraft } from "@/hooks/voice-input-state";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeReasoningEffort, RuntimeSlashCommand, RuntimeTaskSessionMode } from "@/runtime/types";
 import type { TaskImage } from "@/types";
@@ -73,7 +71,6 @@ export function KanbanChatComposer({
 	attachmentWarningMessage = null,
 	workspaceId = null,
 	modelControlSlot = null,
-	onVoiceCommand,
 }: {
 	taskId: string;
 	draft: string;
@@ -108,12 +105,7 @@ export function KanbanChatComposer({
 	// (e.g. the per-agent profile switcher). The model selector props are then
 	// owned by the slot's renderer.
 	modelControlSlot?: ReactElement | null;
-	// When provided, a Chat/Command voice toggle appears next to the mic. In Command
-	// mode the transcript is routed here (parse → confirm → execute) instead of being
-	// appended to the draft. Omitted (e.g. task chat) → the mic stays plain STT.
-	onVoiceCommand?: (transcript: string) => void;
 }): ReactElement {
-	const [voiceMode, setVoiceMode] = useState<"chat" | "command">("chat");
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 	const mentionSearchRequestIdRef = useRef(0);
 	const slashCommandsRequestIdRef = useRef(0);
@@ -348,39 +340,6 @@ export function KanbanChatComposer({
 		[draft, onDraftChange],
 	);
 
-	const handleVoiceTranscript = useCallback(
-		(text: string) => {
-			const next = appendTranscriptToDraft(draft, text);
-			if (next === draft) {
-				return;
-			}
-			onDraftChange(next);
-			// Fill the draft for the user to confirm/edit — never auto-send. Drop the cursor
-			// at the end of the inserted text so they can keep typing or hit Enter.
-			window.requestAnimationFrame(() => {
-				const textarea = textareaRef.current;
-				if (!textarea) {
-					return;
-				}
-				textarea.focus();
-				textarea.setSelectionRange(next.length, next.length);
-				setCursorIndex(next.length);
-			});
-		},
-		[draft, onDraftChange],
-	);
-
-	const handleMicTranscript = useCallback(
-		(text: string) => {
-			if (onVoiceCommand && voiceMode === "command") {
-				onVoiceCommand(text);
-				return;
-			}
-			handleVoiceTranscript(text);
-		},
-		[handleVoiceTranscript, onVoiceCommand, voiceMode],
-	);
-
 	const handleCompletionSelect = useCallback(
 		(item: InlineCompletionItem) => {
 			const suggestion = completionSuggestions.find((s) => s.id === item.id);
@@ -557,52 +516,6 @@ export function KanbanChatComposer({
 					</div>
 				)}
 				<div className="ml-auto flex shrink-0 items-center gap-2">
-					{onVoiceCommand ? (
-						<Tooltip
-							side="top"
-							content={
-								voiceMode === "command"
-									? "命令模式:语音转看板指令(执行前确认)"
-									: "聊天模式:语音转文字填入输入框"
-							}
-						>
-							<div
-								className="inline-flex h-7 shrink-0 items-center rounded-md border border-border-bright bg-surface-3 p-0.5"
-								role="tablist"
-								aria-label="Voice mode"
-							>
-								<button
-									type="button"
-									role="tab"
-									aria-selected={voiceMode === "chat"}
-									className={cn(
-										"h-5 rounded-sm px-2 text-[11px] font-medium hover:cursor-pointer",
-										voiceMode === "chat"
-											? "bg-surface-1 text-text-primary"
-											: "text-text-secondary hover:bg-surface-4 hover:text-text-primary",
-									)}
-									onClick={() => setVoiceMode("chat")}
-								>
-									聊天
-								</button>
-								<button
-									type="button"
-									role="tab"
-									aria-selected={voiceMode === "command"}
-									className={cn(
-										"h-5 rounded-sm px-2 text-[11px] font-medium hover:cursor-pointer",
-										voiceMode === "command"
-											? "bg-surface-1 text-text-primary"
-											: "text-text-secondary hover:bg-surface-4 hover:text-text-primary",
-									)}
-									onClick={() => setVoiceMode("command")}
-								>
-									命令
-								</button>
-							</div>
-						</Tooltip>
-					) : null}
-					<VoiceInputButton workspaceId={workspaceId} onTranscript={handleMicTranscript} disabled={!canSend} />
 					{showModeToggle ? (
 						<Tooltip
 							side="top"

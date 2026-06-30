@@ -29,10 +29,6 @@ import type {
 	RuntimeKanbanProviderModel,
 	RuntimeProjectShortcut,
 	RuntimeRunUpdateResponse,
-	RuntimeSttSaveRequest,
-	RuntimeSttStatus,
-	RuntimeSttTranscribeRequest,
-	RuntimeSttTranscribeResponse,
 	RuntimeUpdateStatusResponse,
 } from "@/runtime/types";
 
@@ -246,36 +242,6 @@ export async function setGiteeToken(
 export async function logoutGitee(workspaceId: string | null): Promise<RuntimeGiteeLogoutResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
 	return await trpcClient.gitee.logout.mutate();
-}
-
-// ── Speech-to-text (STT) config + transcription ──────────────────────────────
-// Machine-global (no workspace scope); the `stt` router is a sibling of `runtime`.
-// The API key never crosses the wire — status is masked; audio uploads as base64.
-
-export async function fetchSttStatus(workspaceId: string | null): Promise<RuntimeSttStatus> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.stt.status.query();
-}
-
-export async function saveSttConfig(
-	workspaceId: string | null,
-	request: RuntimeSttSaveRequest,
-): Promise<RuntimeSttStatus> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.stt.save.mutate(request);
-}
-
-export async function clearSttConfig(workspaceId: string | null): Promise<RuntimeSttStatus> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.stt.clear.mutate();
-}
-
-export async function transcribeAudioClip(
-	workspaceId: string | null,
-	request: RuntimeSttTranscribeRequest,
-): Promise<RuntimeSttTranscribeResponse> {
-	const trpcClient = getRuntimeTrpcClient(workspaceId);
-	return await trpcClient.stt.transcribe.mutate(request);
 }
 
 // ── Remote model fetching ──────────────────────────────────────────────────

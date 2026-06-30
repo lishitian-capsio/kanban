@@ -31,14 +31,10 @@ import { useKanbanChatRuntimeActions } from "@/hooks/use-kanban-chat-runtime-act
 import {
 	useLatestTaskChatMessageForTask,
 	useRuntimeKanbanSessionContextVersion,
-	useRuntimeWorkspaceState,
 	useTaskChatMessages,
 } from "@/runtime/runtime-stream-store";
 import type { RuntimeConfigResponse, RuntimeGitRepositoryInfo, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useTerminalThemeColors } from "@/terminal/theme-colors";
-import { useVoiceCommandController } from "@/voice-command/use-voice-command-controller";
-import type { VoiceCommandBoard } from "@/voice-command/voice-command";
-import { VoiceCommandConfirmDialog } from "@/voice-command/voice-command-confirm-dialog";
 
 interface HomeAgentConversationProps {
 	/** The thread whose conversation to show. Null renders a neutral "no session" state. */
@@ -156,23 +152,6 @@ export function HomeAgentConversation({
 		void chatPanelRef.current?.sendText(suggestion);
 	}, []);
 
-	// Voice-command control of the board: command-mode transcripts are parsed locally,
-	// confirmed, then sent as an id-qualified instruction down the SAME agent path the
-	// next-step chip uses. Resolves spoken task/column refs against the live board.
-	const workspaceState = useRuntimeWorkspaceState();
-	const voiceCommandBoard = useMemo<VoiceCommandBoard | null>(() => workspaceState?.board ?? null, [workspaceState]);
-	const handleExecuteVoiceCommand = useCallback((instruction: string) => {
-		void chatPanelRef.current?.sendText(instruction);
-	}, []);
-	const handleFillDraftFromVoice = useCallback((text: string) => {
-		chatPanelRef.current?.appendToDraft(text);
-	}, []);
-	const voiceCommand = useVoiceCommandController({
-		board: voiceCommandBoard,
-		onExecute: handleExecuteVoiceCommand,
-		onFillDraft: handleFillDraftFromVoice,
-	});
-
 	const nextStepSuggestionSlot = useMemo(
 		() =>
 			pendingNextStep ? <HomeNextStepSuggestion suggestion={pendingNextStep} onSend={handleSendNextStep} /> : null,
@@ -232,7 +211,6 @@ export function HomeAgentConversation({
 				onLoadMessages={handleLoadHomeKanbanChatMessages}
 				incomingMessage={latestHomeTaskChatMessage}
 				incomingMessages={homeTaskChatMessages}
-				onVoiceCommand={voiceCommand.handleTranscript}
 				composerPlaceholder="Ask Kanban to add, edit, start, or link tasks"
 			/>
 		);
@@ -269,11 +247,6 @@ export function HomeAgentConversation({
 		<div className="flex h-full w-full min-h-0 flex-col gap-2">
 			{activeAgentId && activeAgentId !== "pi" ? <TerminalAgentHints /> : null}
 			<div className="flex min-h-0 flex-1 [&>*]:w-full [&>*]:self-stretch">{body}</div>
-			<VoiceCommandConfirmDialog
-				pending={voiceCommand.pending}
-				onConfirm={voiceCommand.confirm}
-				onCancel={voiceCommand.cancel}
-			/>
 		</div>
 	);
 }
