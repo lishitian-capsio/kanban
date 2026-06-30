@@ -152,18 +152,19 @@
       "pendingNextStep": "把任务 6c895 开起来跑"
     },
     {
-      "id": "1600789b-a5ff-4227-a77c-45d20b5c7acb",
-      "agentId": "pi",
-      "name": "New session",
-      "titleSource": "manual",
-      "createdAt": 1782800278296,
-      "updatedAt": 1782800278296
+      "id": "16d0ae97-5f56-4649-ba14-d0134b8c262e",
+      "agentId": "claude",
+      "name": "Pi 会话管理收归 Pi",
+      "titleSource": "auto",
+      "createdAt": 1782801665092,
+      "updatedAt": 1782801686932
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "5fec3500-5c60-4477-8b05-794bc8dd76a7"
+      "5fec3500-5c60-4477-8b05-794bc8dd76a7",
+      "16d0ae97-5f56-4649-ba14-d0134b8c262e"
     ],
-    "activeThreadId": "5fec3500-5c60-4477-8b05-794bc8dd76a7"
+    "activeThreadId": "16d0ae97-5f56-4649-ba14-d0134b8c262e"
   }
 }
