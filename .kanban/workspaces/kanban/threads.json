@@ -150,6 +150,14 @@
       "createdAt": 1782781795470,
       "updatedAt": 1782781833255,
       "pendingNextStep": "把任务 6c895 开起来跑"
+    },
+    {
+      "id": "1600789b-a5ff-4227-a77c-45d20b5c7acb",
+      "agentId": "pi",
+      "name": "New session",
+      "titleSource": "manual",
+      "createdAt": 1782800278296,
+      "updatedAt": 1782800278296
     }
   ],
   "fullscreenTabs": {
