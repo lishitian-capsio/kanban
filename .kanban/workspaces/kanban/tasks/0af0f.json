@@ -1,0 +1,20 @@
+{
+  "id": "0af0f",
+  "title": "R2 终端: Codex rollout 定位缓存(P0) + token mtime 缓存(P1)",
+  "prompt": "第二轮性能优化(终端读层)。先读 .plan/docs/perf-terminal-findings.md 的 T1、T2 及末尾优先级表。\n\n【audit-first，强制】第一轮终端实现任务是 9a1e8，按记忆它可能已落地 T1-T4(usage 缓存/git-info single-flight/decode-gate)。动手前先 `git log`/diff 确认 T1、T2 是否已实现；已做的标注「已实现，跳过」，本任务只补仍未做的部分；若 T1+T2 都已做则关闭本任务。\n\n候选项(仅做仍未实现的)：\n- T1(P0)：Codex rollout 定位器每个 turn 边界全扫整个全局 ~/.codex/sessions 目录树(codex-session-capture.ts:100,149-172)。改为 per-session 缓存已解析的 rollout 路径 + 按日期剪枝目录遍历 + 命中首个 cwd 匹配即早退。这是唯一「随历史×并发无界增长」的路径，也顺带加速 launch capture。\n- T2(P1)：token-usage 读取每个 turn 边界全量重 parse 整个 JSONL，无缓存(claude-session-usage.ts:142-155；codex-session-usage.ts:103-124)。加 (path,mtime,size) 缓存(最小)或增量 tail-read；保证数值准确(claude 按 message.id 去重、codex 取最后 total_token_usage)。\n\n约束：不破坏既有 PTY busy-wait 修复与 transcript 折叠/journal coalescing；多会话并发遵守「热路径别起交互式 shell / 不要 spawnSync」；遵守 AGENTS.md，补/更新单元测试(缓存命中/失效、解析正确性纯逻辑重点测)。每项给可测量收益(每 turn 文件读取/目录遍历次数、解析耗时)并在 PR 描述对比。范围仅限 T1/T2 中 9a1e8 未做的部分；T3(git-info)归后端缓存任务、T5/6/7 属 P3 不在本轮。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6a585585-b1b3-41e5-8785-009188294312",
+  "baseRef": "main",
+  "createdAt": 1782781004193,
+  "updatedAt": 1782781004193,
+  "column": "backlog",
+  "rank": "Zw",
+  "dependsOn": []
+}
