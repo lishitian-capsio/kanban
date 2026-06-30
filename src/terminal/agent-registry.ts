@@ -6,7 +6,7 @@ import type {
 	RuntimeConfigResponse,
 	RuntimeKanbanProviderSettings,
 } from "../core/api-contract";
-import { isBinaryAvailableOnPath } from "./command-discovery";
+import { isBinaryAvailableOnPath, resolveBinaryPathOnPath } from "./command-discovery";
 
 export interface ResolvedAgentCommand {
 	agentId: RuntimeAgentId;
@@ -98,6 +98,11 @@ function getCuratedDefinitions(
 		// the `$PATH` scan captured in `detected`.
 		const isInstalled =
 			entry.id === "pi" ? true : override ? isBinaryAvailableOnPath(override) : detectedSet.has(entry.binary);
+		// The absolute path Kanban would launch: the override resolved on disk, or
+		// the catalog binary resolved on `$PATH`. `pi` is native (no CLI binary), so
+		// it has no resolved path. Detection (`isInstalled`) above is unchanged —
+		// this only surfaces where the binary lives.
+		const resolvedExecutablePath = entry.id === "pi" ? null : resolveBinaryPathOnPath(effectiveBinary);
 		return {
 			id: entry.id,
 			label: entry.label,
@@ -106,6 +111,7 @@ function getCuratedDefinitions(
 			defaultArgs,
 			installed: isInstalled,
 			configured: runtimeConfig.selectedAgentId === entry.id,
+			resolvedExecutablePath,
 		};
 	});
 }

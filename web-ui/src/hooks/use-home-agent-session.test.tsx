@@ -79,6 +79,7 @@ function createRuntimeConfig(overrides: Partial<RuntimeConfigResponse> = {}): Ru
 				defaultArgs: [],
 				installed: true,
 				configured: true,
+				resolvedExecutablePath: null,
 			},
 			{
 				id: "claude",
@@ -88,6 +89,7 @@ function createRuntimeConfig(overrides: Partial<RuntimeConfigResponse> = {}): Ru
 				defaultArgs: [],
 				installed: true,
 				configured: false,
+				resolvedExecutablePath: null,
 			},
 			{
 				id: "pi",
@@ -97,6 +99,7 @@ function createRuntimeConfig(overrides: Partial<RuntimeConfigResponse> = {}): Ru
 				defaultArgs: [],
 				installed: true,
 				configured: false,
+				resolvedExecutablePath: null,
 			},
 		],
 		shortcuts: [],

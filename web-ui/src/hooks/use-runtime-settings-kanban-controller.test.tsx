@@ -71,6 +71,7 @@ function createRuntimeConfigResponse(
 				defaultArgs: [],
 				installed: true,
 				configured: true,
+				resolvedExecutablePath: null,
 			},
 		],
 		shortcuts: [],

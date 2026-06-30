@@ -101,6 +101,7 @@ function createRuntimeConfig(selectedAgentId: RuntimeConfigResponse["selectedAge
 				defaultArgs: [],
 				installed: true,
 				configured: true,
+				resolvedExecutablePath: null,
 			},
 		],
 		shortcuts: [],

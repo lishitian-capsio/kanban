@@ -2261,6 +2261,14 @@ export const runtimeAgentDefinitionSchema = z.object({
 	defaultArgs: z.array(z.string()),
 	installed: z.boolean(),
 	configured: z.boolean(),
+	/**
+	 * Absolute filesystem path Kanban would launch for this agent: the per-agent
+	 * `executablePath` override when set and accessible, otherwise the path the
+	 * catalog binary resolves to on the inherited `$PATH`. `null` when the agent
+	 * is not detected (or for the native `pi` agent, which has no CLI binary).
+	 * Purely informational — a local executable location, not a secret.
+	 */
+	resolvedExecutablePath: z.string().nullable(),
 });
 export type RuntimeAgentDefinition = z.infer<typeof runtimeAgentDefinitionSchema>;
 

@@ -33,6 +33,7 @@ function createRuntimeConfigResponse(selectedAgentId: RuntimeConfigResponse["sel
 				defaultArgs: [],
 				installed: true,
 				configured: selectedAgentId === "codex",
+				resolvedExecutablePath: null,
 			},
 		],
 		shortcuts: [],

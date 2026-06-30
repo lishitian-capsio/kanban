@@ -33,6 +33,7 @@ function createRuntimeConfigResponse(
 				defaultArgs: [],
 				installed: false,
 				configured: true,
+				resolvedExecutablePath: null,
 			},
 			{
 				id: "claude",
@@ -42,6 +43,7 @@ function createRuntimeConfigResponse(
 				defaultArgs: [],
 				installed: true,
 				configured: true,
+				resolvedExecutablePath: null,
 			},
 		],
 		shortcuts: [],
@@ -171,6 +173,7 @@ describe("native-agent helpers", () => {
 					defaultArgs: [],
 					installed: true,
 					configured: true,
+					resolvedExecutablePath: null,
 				},
 			],
 			kanbanProviderSettings: {
@@ -199,6 +202,7 @@ describe("native-agent helpers", () => {
 					defaultArgs: [],
 					installed: true,
 					configured: true,
+					resolvedExecutablePath: null,
 				},
 				{
 					id: "codex",
@@ -208,6 +212,7 @@ describe("native-agent helpers", () => {
 					defaultArgs: [],
 					installed: true,
 					configured: false,
+					resolvedExecutablePath: null,
 				},
 			],
 			kanbanProviderSettings: {
@@ -240,6 +245,7 @@ describe("native-agent helpers", () => {
 					defaultArgs: [],
 					installed: true,
 					configured: true,
+					resolvedExecutablePath: null,
 				},
 			],
 			kanbanProviderSettings: {
@@ -302,6 +308,7 @@ describe("native-agent helpers", () => {
 				defaultArgs: [],
 				installed: true,
 				configured: false,
+				resolvedExecutablePath: null,
 			},
 		];
 		expect(isTaskAgentSetupSatisfied(config)).toBe(false);

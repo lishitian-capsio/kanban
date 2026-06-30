@@ -43,38 +43,56 @@ function getWindowsExecutableCandidates(binary: string): string[] {
 // unavailable for task-agent startup. That keeps behavior predictable and aligned with the
 // environment the Kanban process already has, instead of silently relying on hidden shell
 // side effects.
-export function isBinaryAvailableOnPath(binary: string): boolean {
+/**
+ * Resolves the absolute filesystem path Kanban would actually execute for the
+ * given binary, by scanning the inherited `$PATH` exactly the way
+ * {@link isBinaryAvailableOnPath} does — returning the resolved path instead of
+ * a boolean. An absolute/relative path resolves to itself when accessible; a
+ * bare name resolves to the first matching `$PATH` entry (with `PATHEXT`
+ * candidates on Windows). Returns `null` when nothing executable is found.
+ *
+ * Like its boolean sibling this is an in-process, synchronous PATH scan
+ * (`fs.accessSync`) — deliberately NOT a `which`/`where` subprocess — so it is
+ * safe on the config-load hot path.
+ */
+export function resolveBinaryPathOnPath(binary: string): string | null {
 	const trimmed = binary.trim();
 	if (!trimmed) {
-		return false;
+		return null;
 	}
 	if (trimmed.includes("/") || trimmed.includes("\\")) {
-		return canAccessPath(trimmed);
+		return canAccessPath(trimmed) ? trimmed : null;
 	}
 
 	const pathEntries = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
 	if (pathEntries.length === 0) {
-		return false;
+		return null;
 	}
 
 	if (process.platform === "win32") {
 		const candidates = getWindowsExecutableCandidates(trimmed);
 		for (const entry of pathEntries) {
 			for (const candidate of candidates) {
-				if (canAccessPath(join(entry, candidate))) {
-					return true;
+				const fullPath = join(entry, candidate);
+				if (canAccessPath(fullPath)) {
+					return fullPath;
 				}
 			}
 		}
-		return false;
+		return null;
 	}
 
 	for (const entry of pathEntries) {
-		if (canAccessPath(join(entry, trimmed))) {
-			return true;
+		const fullPath = join(entry, trimmed);
+		if (canAccessPath(fullPath)) {
+			return fullPath;
 		}
 	}
-	return false;
+	return null;
+}
+
+export function isBinaryAvailableOnPath(binary: string): boolean {
+	return resolveBinaryPathOnPath(binary) !== null;
 }
 
 /**

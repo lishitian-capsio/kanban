@@ -33,6 +33,7 @@ function createRuntimeConfigResponse(selectedAgentId: RuntimeConfigResponse["sel
 				defaultArgs: [],
 				installed: selectedAgentId === "claude",
 				configured: selectedAgentId === "claude",
+				resolvedExecutablePath: null,
 			},
 			{
 				id: "codex",
@@ -42,6 +43,7 @@ function createRuntimeConfigResponse(selectedAgentId: RuntimeConfigResponse["sel
 				defaultArgs: [],
 				installed: selectedAgentId === "codex",
 				configured: selectedAgentId === "codex",
+				resolvedExecutablePath: null,
 			},
 		],
 		shortcuts: [],

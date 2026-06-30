@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const commandDiscoveryMocks = vi.hoisted(() => ({
 	isBinaryAvailableOnPath: vi.fn(),
+	resolveBinaryPathOnPath: vi.fn(),
 }));
 
 vi.mock("../../../src/terminal/command-discovery.js", () => ({
 	isBinaryAvailableOnPath: commandDiscoveryMocks.isBinaryAvailableOnPath,
+	resolveBinaryPathOnPath: commandDiscoveryMocks.resolveBinaryPathOnPath,
 }));
 
 import type { RuntimeConfigState } from "../../../src/config/runtime-config";
@@ -41,6 +43,8 @@ function createRuntimeConfigState(overrides: Partial<RuntimeConfigState> = {}): 
 beforeEach(() => {
 	commandDiscoveryMocks.isBinaryAvailableOnPath.mockReset();
 	commandDiscoveryMocks.isBinaryAvailableOnPath.mockReturnValue(false);
+	commandDiscoveryMocks.resolveBinaryPathOnPath.mockReset();
+	commandDiscoveryMocks.resolveBinaryPathOnPath.mockReturnValue(null);
 	delete process.env.KANBAN_DEBUG_MODE;
 	delete process.env.DEBUG_MODE;
 	delete process.env.debug_mode;
@@ -163,6 +167,9 @@ describe("buildRuntimeConfigResponse", () => {
 		commandDiscoveryMocks.isBinaryAvailableOnPath.mockImplementation(
 			(binary: string) => binary === "/opt/tools/claude",
 		);
+		commandDiscoveryMocks.resolveBinaryPathOnPath.mockImplementation((binary: string) =>
+			binary === "/opt/tools/claude" ? "/opt/tools/claude" : null,
+		);
 
 		const response = buildRuntimeConfigResponse(
 			createRuntimeConfigState({ selectedAgentId: "claude" }),
@@ -184,8 +191,36 @@ describe("buildRuntimeConfigResponse", () => {
 		expect(claude?.installed).toBe(true);
 		expect(claude?.binary).toBe("/opt/tools/claude");
 		expect(claude?.command).toBe("/opt/tools/claude");
+		// The resolved launch path surfaces the override's on-disk location.
+		expect(claude?.resolvedExecutablePath).toBe("/opt/tools/claude");
 		// An agent without an override stays driven by PATH discovery (here: not found).
 		expect(response.agents.find((agent) => agent.id === "codex")?.installed).toBe(false);
+		expect(response.agents.find((agent) => agent.id === "codex")?.resolvedExecutablePath).toBeNull();
+	});
+
+	it("surfaces the resolved $PATH location for a detected catalog binary", () => {
+		commandDiscoveryMocks.isBinaryAvailableOnPath.mockImplementation((binary: string) => binary === "claude");
+		commandDiscoveryMocks.resolveBinaryPathOnPath.mockImplementation((binary: string) =>
+			binary === "claude" ? "/usr/local/bin/claude" : null,
+		);
+
+		const response = buildRuntimeConfigResponse(createRuntimeConfigState({ selectedAgentId: "claude" }), {
+			providerId: null,
+			modelId: null,
+			baseUrl: null,
+			apiKeyConfigured: false,
+			oauthProvider: null,
+			oauthAccessTokenConfigured: false,
+			oauthRefreshTokenConfigured: false,
+			oauthAccountId: null,
+			oauthExpiresAt: null,
+		});
+
+		const claude = response.agents.find((agent) => agent.id === "claude");
+		expect(claude?.installed).toBe(true);
+		expect(claude?.resolvedExecutablePath).toBe("/usr/local/bin/claude");
+		// The native pi agent has no CLI binary, so no resolved path.
+		expect(response.agents.find((agent) => agent.id === "pi")?.resolvedExecutablePath).toBeNull();
 	});
 
 	it("sets debug mode from runtime environment variables", () => {

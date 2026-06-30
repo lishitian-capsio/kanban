@@ -91,6 +91,8 @@ interface RuntimeSettingsAgentRowModel {
 	binary: string;
 	command: string;
 	installed: boolean | null;
+	/** Absolute path Kanban resolved for this agent's executable, or null when not detected. */
+	resolvedExecutablePath: string | null;
 }
 
 function quoteCommandPartForDisplay(part: string): string {
@@ -216,6 +218,13 @@ function AgentRow({
 					</div>
 					{agent.command ? (
 						<p className="text-text-secondary font-mono text-xs mt-0.5 m-0">{agent.command}</p>
+					) : null}
+					{isInstalled && agent.resolvedExecutablePath ? (
+						<Tooltip content={agent.resolvedExecutablePath}>
+							<p className="text-text-tertiary font-mono text-[11px] mt-0.5 m-0 truncate">
+								{formatPathForDisplay(agent.resolvedExecutablePath)}
+							</p>
+						</Tooltip>
 					) : null}
 				</div>
 			</div>
@@ -512,12 +521,14 @@ export function RuntimeSettingsDialog({
 				label: agent.label,
 				binary: agent.binary,
 				installed: agent.id === "pi" ? true : agent.installed,
+				resolvedExecutablePath: agent.resolvedExecutablePath,
 			})) ??
 			getRuntimeLaunchSupportedAgentCatalog().map((agent) => ({
 				id: agent.id,
 				label: agent.label,
 				binary: agent.binary,
 				installed: agent.id === "pi" ? true : null,
+				resolvedExecutablePath: null,
 			}));
 		const orderIndexByAgentId = new Map(SETTINGS_AGENT_ORDER.map((agentId, index) => [agentId, index] as const));
 		const orderedAgents = [...agents].sort((left, right) => {

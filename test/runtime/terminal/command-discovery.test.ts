@@ -1,7 +1,7 @@
 import { delimiter } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { buildPathWithBinaryDir } from "../../../src/terminal/command-discovery";
+import { buildPathWithBinaryDir, isBinaryAvailableOnPath, resolveBinaryPathOnPath } from "../../../src/terminal/command-discovery";
 
 describe("buildPathWithBinaryDir", () => {
 	it("prepends the directory of an absolute binary path", () => {
@@ -21,5 +21,25 @@ describe("buildPathWithBinaryDir", () => {
 
 	it("seeds PATH with the binary directory when PATH is empty", () => {
 		expect(buildPathWithBinaryDir("/opt/tools/claude", undefined)).toBe("/opt/tools");
+	});
+});
+
+describe("resolveBinaryPathOnPath", () => {
+	it("resolves an accessible absolute path to itself", () => {
+		// process.execPath is an absolute, executable binary on every platform.
+		expect(resolveBinaryPathOnPath(process.execPath)).toBe(process.execPath);
+	});
+
+	it("returns null for an absolute path that does not exist", () => {
+		expect(resolveBinaryPathOnPath("/definitely/not/here/kanban-nope")).toBeNull();
+	});
+
+	it("returns null for an empty binary name", () => {
+		expect(resolveBinaryPathOnPath("   ")).toBeNull();
+	});
+
+	it("agrees with isBinaryAvailableOnPath", () => {
+		expect(isBinaryAvailableOnPath(process.execPath)).toBe(true);
+		expect(isBinaryAvailableOnPath("/definitely/not/here/kanban-nope")).toBe(false);
 	});
 });

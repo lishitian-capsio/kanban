@@ -43,6 +43,7 @@ function createRuntimeConfigResponse(
 				defaultArgs: [],
 				installed: selectedAgentId === "claude",
 				configured: selectedAgentId === "claude",
+				resolvedExecutablePath: null,
 			},
 			{
 				id: "codex",
@@ -52,6 +53,7 @@ function createRuntimeConfigResponse(
 				defaultArgs: [],
 				installed: selectedAgentId === "codex",
 				configured: selectedAgentId === "codex",
+				resolvedExecutablePath: null,
 			},
 		],
 		shortcuts,
