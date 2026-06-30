@@ -1,0 +1,20 @@
+{
+  "id": "4ea58",
+  "title": "加宽 file 文件弹窗",
+  "prompt": "file 文件弹窗（File surface 的 quick dialog / 文件查看编辑 overlay）太窄了，显示不太对。请加宽这个弹窗以获得更合理的阅读/编辑宽度。\n\n相关组件可能在 web-ui/src/components/file-surface/ 下（vault file quick dialog / 单文件查看编辑 overlay）。请先定位到实际渲染该弹窗的组件，确认其宽度约束（max-width / width class），调整为更适合 markdown 文件查看与编辑的宽度，并确保在小屏下仍然 responsive、不溢出。\n\n验收：打开某个文件的弹窗后，宽度明显更宽、内容布局正常，且窄屏不破版。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782783461775,
+  "updatedAt": 1782783461775,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
