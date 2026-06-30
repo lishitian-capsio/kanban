@@ -156,7 +156,8 @@
       "name": "Redesign chat thread input",
       "titleSource": "auto",
       "createdAt": 1782787958880,
-      "updatedAt": 1782788041557
+      "updatedAt": 1782788041557,
+      "pendingNextStep": "Start task 946a3"
     }
   ],
   "fullscreenTabs": {
