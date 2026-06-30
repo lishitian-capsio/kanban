@@ -2,18 +2,20 @@
 //
 // Mounted (instead of the compact thread-bar surface) whenever the home chat is in its
 // fullscreen state — an orthogonal axis routed through the URL (`?chat=<tab>`, see
-// use-fullscreen-chat-navigation). It is a Home-tab + session-tab workspace:
-//   - a permanent **Home tab** (the launcher): a dashboard grid of session cards, one per
-//     home chat thread, with a fixed "+" add-session card last;
-//   - **coexisting session tabs**: clicking a card opens that conversation as its own tab to
-//     the right of the Home tab, and the tab strip switches between them horizontally.
+// use-fullscreen-chat-navigation). Layout is a permanent two-column workspace:
+//   - the **Pi session rail** (PiSessionManager) on the left: pi sessions are managed ONLY here,
+//     identically to board mode — never a tab. A selected pi session shows its conversation in
+//     the right pane (precedence over the tab content);
+//   - the right pane: a **Home tab** launcher (a dashboard grid of non-pi session cards + a "+"
+//     add-session card) plus **coexisting non-pi session tabs**, switched via the tab strip.
 //
-// This is a CONTROLLED component: the active tab is the `fullscreenChatTab` prop (the reserved
-// "home"/"pi" anchors or a session thread id, taken from the URL) and tab changes are reported
-// up via `onNavigateFullscreenTab`. The open-tab SET stays persisted (as view state) on the
-// per-workspace thread registry; only the active-tab selection moved to the URL. Both the cards
-// and the conversation draw from the same registry as the compact surface, so the session data
-// model is untouched. Closing a tab is a UI-only collapse back to Home, never a thread
+// This is a CONTROLLED component for the TAB axis: the active tab is the `fullscreenChatTab` prop
+// (the reserved "home" anchor or a non-pi session thread id, taken from the URL) and tab changes
+// are reported up via `onNavigateFullscreenTab`. The PI axis is separate — the active pi session
+// is the shared `homeThreads.activePiSessionId` (not a URL tab), so it never drifts between modes.
+// The open-tab SET stays persisted (as view state) on the per-workspace thread registry. Both the
+// cards and the conversation draw from the same registry as the compact surface, so the session
+// data model is untouched. Closing a tab is a UI-only collapse back to Home, never a thread
 // hard-close. The active conversation reuses the SAME HomeAgentConversation as the compact
 // sidebar, so a session never tears down when switching presentations.
 import { createHomeAgentSessionId } from "@runtime-home-agent-session";
@@ -25,7 +27,8 @@ import { fileSurfaceStore } from "@/components/file-surface";
 import { HomeAddSessionCard } from "@/components/home-agent/home-add-session-card";
 import { HomeAgentConversation } from "@/components/home-agent/home-agent-conversation";
 import { HomeSessionCard } from "@/components/home-agent/home-session-card";
-import { PiTabPanel } from "@/components/home-agent/pi-tab-panel";
+import { PiSessionManager } from "@/components/home-agent/pi-session-manager";
+import { PI_AGENT_ID } from "@/components/home-agent/pi-sessions";
 import { SessionTabStrip } from "@/components/home-agent/session-tab-strip";
 import type { UseHomeThreadsResult } from "@/hooks/use-home-threads";
 import { useRefreshHomeThreadsOnSessionContextBump } from "@/hooks/use-refresh-home-threads-on-context-bump";
@@ -40,10 +43,10 @@ interface HomeChatWorkspaceProps {
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	workspaceGit: RuntimeGitRepositoryInfo | null;
 	// The active fullscreen tab, routed through the URL (see use-fullscreen-chat-navigation):
-	// the reserved "home" (launcher) / "pi" anchors, or a session thread id. This workspace is
+	// the reserved "home" launcher anchor, or a non-pi session thread id. This workspace is
 	// a controlled component — it renders the tab named here and asks the parent to change it.
 	fullscreenChatTab: string | null;
-	/** Navigate to a tab, pushing browser history (user clicks: Home / Pi / a session tab). */
+	/** Navigate to a tab, pushing browser history (user clicks: Home / a session tab). */
 	onNavigateFullscreenTab: (tab: string) => void;
 	/** Correct the active tab in place (no history entry) — e.g. a deep link to a closed thread. */
 	onReplaceFullscreenTab: (tab: string) => void;
@@ -59,11 +62,11 @@ export function HomeChatWorkspace({
 	onNavigateFullscreenTab,
 	onReplaceFullscreenTab,
 }: HomeChatWorkspaceProps): ReactElement | null {
-	// The fixed Pi tab — the native-agent multi-session workspace — is a peer of the Home tab.
-	// "home" (or no tab) shows the launcher; "pi" shows the Pi workspace; any other value is the
-	// active session tab's thread id.
+	// Pi sessions are NOT tabs — they live in the permanent Pi rail (PiSessionManager) to the left.
+	// The tab strip carries only "home" (the launcher) + non-pi session-thread ids. A pi session
+	// being active is tracked by the shared `homeThreads.activePiSessionId`, not by the URL tab.
 	const activeTab = fullscreenChatTab ?? "home";
-	const piTabActive = activeTab === "pi";
+	const piConversationActive = homeThreads.activePiSessionId !== null;
 	// Keep agent-set titles fresh in the launcher cards + tab strip (mirrors the compact panel).
 	useRefreshHomeThreadsOnSessionContextBump(homeThreads.refresh);
 
@@ -77,12 +80,12 @@ export function HomeChatWorkspace({
 		reconcileRef.current();
 	}, []);
 
-	// The fullscreen experience does not expose the synthetic always-present default thread
-	// (retired here — the Pi tab + created session threads replace it); it stays reachable in
-	// the compact sidebar for cross-agent / legacy-transcript continuity. So the launcher cards,
-	// the tab strip, and the active-tab lookup all draw from the default-free list.
+	// The launcher cards, the tab strip, and the active-tab lookup all draw from the NON-PI,
+	// non-default list: pi sessions are owned exclusively by the Pi rail (never a launcher card or
+	// a session tab), and the synthetic always-present default thread stays reachable only in the
+	// compact sidebar dropdown for cross-agent / legacy-transcript continuity.
 	const fullscreenThreads = useMemo(
-		() => homeThreads.threads.filter((thread) => !thread.isDefault),
+		() => homeThreads.threads.filter((thread) => !thread.isDefault && thread.agentId !== PI_AGENT_ID),
 		[homeThreads.threads],
 	);
 
@@ -153,8 +156,8 @@ export function HomeChatWorkspace({
 	);
 
 	const { openThreadIds } = homeThreads.fullscreenTabs;
-	// The active session tab's thread id (when the active tab is a session, not Home/Pi).
-	const activeSessionThreadId = !piTabActive && activeTab !== "home" ? activeTab : null;
+	// The active session tab's thread id (when the active tab is a session, not Home).
+	const activeSessionThreadId = activeTab !== "home" ? activeTab : null;
 	// Threads already open in a session tab get the accent "already open" highlight on
 	// their launcher card (mirrors the board task card's selected styling).
 	const openThreadIdSet = useMemo(() => new Set(openThreadIds), [openThreadIds]);
@@ -188,10 +191,18 @@ export function HomeChatWorkspace({
 		return null;
 	}
 
-	// Activating Home / a session tab / Pi is a single URL navigation (pushes history).
-	const handleActivateHome = () => onNavigateFullscreenTab("home");
-	const handleActivateSessionTab = (threadId: string) => onNavigateFullscreenTab(threadId);
-	const handleActivatePi = () => onNavigateFullscreenTab("pi");
+	// Activating Home / a session tab is a single URL navigation (pushes history). It also clears
+	// any active pi-rail selection so the right pane swaps from the pi conversation to the tab's
+	// content (the pi rail and the tab strip both feed the one right pane; the strip wins on click).
+	const { setActivePiSessionId } = homeThreads;
+	const handleActivateHome = () => {
+		setActivePiSessionId(null);
+		onNavigateFullscreenTab("home");
+	};
+	const handleActivateSessionTab = (threadId: string) => {
+		setActivePiSessionId(null);
+		onNavigateFullscreenTab(threadId);
+	};
 
 	// Closing a session tab (UI-only collapse, never a thread hard-close): drop it from the
 	// open-tab set, and when it was the active tab, route to the neighbor that slides into its
@@ -207,76 +218,77 @@ export function HomeChatWorkspace({
 		onNavigateFullscreenTab(nextTab);
 	};
 
-	// The Home launcher shows when neither the Pi tab nor a session tab is active.
-	const showHomeTab = !piTabActive && activeTabThread === null;
+	// The Home launcher shows (as the right-pane fallback) when no session tab is active.
+	const showHomeTab = activeTabThread === null;
 
-	return (
-		<div className="flex h-full min-h-0 w-full flex-col gap-2">
-			<SessionTabStrip
-				threads={fullscreenThreads}
-				openThreadIds={openThreadIds}
-				activeThreadId={activeTabThread ? activeSessionThreadId : null}
-				piTabActive={piTabActive}
-				agents={runtimeProjectConfig.agents}
-				currentProjectId={currentProjectId}
-				taskSessions={taskSessions}
-				onActivateHome={handleActivateHome}
-				onActivatePi={handleActivatePi}
-				onActivateTab={handleActivateSessionTab}
-				onCloseTab={handleCloseSessionTab}
-				onOpenFile={() => fileSurfaceStore.openLibrary()}
-			/>
+	// The tab strip stays pinned to the top of the right pane (header slot) so it is reachable
+	// whether a pi session or the tab content is showing. The Pi rail owns the left column.
+	const tabStrip = (
+		<SessionTabStrip
+			threads={fullscreenThreads}
+			openThreadIds={openThreadIds}
+			activeThreadId={activeTabThread ? activeSessionThreadId : null}
+			piConversationActive={piConversationActive}
+			agents={runtimeProjectConfig.agents}
+			currentProjectId={currentProjectId}
+			taskSessions={taskSessions}
+			onActivateHome={handleActivateHome}
+			onActivateTab={handleActivateSessionTab}
+			onCloseTab={handleCloseSessionTab}
+			onOpenFile={() => fileSurfaceStore.openLibrary()}
+		/>
+	);
 
-			{piTabActive ? (
-				<PiTabPanel
-					currentProjectId={currentProjectId}
-					runtimeProjectConfig={runtimeProjectConfig}
-					homeThreads={homeThreads}
-					taskSessions={taskSessions}
-					workspaceGit={workspaceGit}
-				/>
-			) : showHomeTab ? (
-				<div className="flex min-h-0 flex-1 flex-col">
-					<div className="shrink-0 px-1 pb-3">
-						<h2 className="text-sm font-semibold text-text-primary">Sessions</h2>
-					</div>
-					<div className="scrollbar-overlay min-h-0 flex-1 overflow-y-auto px-1 pb-2">
-						<div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
-							{sessionCards.map(({ thread, taskId }) => (
-								<HomeSessionCard
-									key={thread.id}
-									thread={thread}
-									taskId={taskId}
-									agents={runtimeProjectConfig.agents}
-									summary={taskSessions[taskId] ?? null}
-									isOpen={openThreadIdSet.has(thread.id)}
-									currentProjectId={currentProjectId}
-									onOpenSession={openAndActivateTab}
-									onRename={renameThread}
-									onClose={closeThread}
-									onRestart={handleRestartSession}
-								/>
-							))}
-							<HomeAddSessionCard
-								agents={runtimeProjectConfig.agents}
-								defaultAgentId={runtimeProjectConfig.selectedAgentId}
-								onCreate={handleCreateSession}
-							/>
-						</div>
-					</div>
-				</div>
-			) : (
-				<div className="flex min-h-0 flex-1 [&>*]:w-full [&>*]:self-stretch">
-					<HomeAgentConversation
-						activeThread={activeTabThread}
-						currentProjectId={currentProjectId}
-						runtimeProjectConfig={runtimeProjectConfig}
-						taskSessions={taskSessions}
-						workspaceGit={workspaceGit}
-						onClearNextStep={homeThreads.clearNextStep}
+	const fallback = showHomeTab ? (
+		<div className="flex min-h-0 flex-1 flex-col">
+			<div className="shrink-0 px-1 pb-3">
+				<h2 className="text-sm font-semibold text-text-primary">Sessions</h2>
+			</div>
+			<div className="scrollbar-overlay min-h-0 flex-1 overflow-y-auto px-1 pb-2">
+				<div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
+					{sessionCards.map(({ thread, taskId }) => (
+						<HomeSessionCard
+							key={thread.id}
+							thread={thread}
+							taskId={taskId}
+							agents={runtimeProjectConfig.agents}
+							summary={taskSessions[taskId] ?? null}
+							isOpen={openThreadIdSet.has(thread.id)}
+							currentProjectId={currentProjectId}
+							onOpenSession={openAndActivateTab}
+							onRename={renameThread}
+							onClose={closeThread}
+							onRestart={handleRestartSession}
+						/>
+					))}
+					<HomeAddSessionCard
+						agents={runtimeProjectConfig.agents}
+						defaultAgentId={runtimeProjectConfig.selectedAgentId}
+						onCreate={handleCreateSession}
 					/>
 				</div>
-			)}
+			</div>
 		</div>
+	) : (
+		<HomeAgentConversation
+			activeThread={activeTabThread}
+			currentProjectId={currentProjectId}
+			runtimeProjectConfig={runtimeProjectConfig}
+			taskSessions={taskSessions}
+			workspaceGit={workspaceGit}
+			onClearNextStep={homeThreads.clearNextStep}
+		/>
+	);
+
+	return (
+		<PiSessionManager
+			currentProjectId={currentProjectId}
+			runtimeProjectConfig={runtimeProjectConfig}
+			homeThreads={homeThreads}
+			taskSessions={taskSessions}
+			workspaceGit={workspaceGit}
+			header={tabStrip}
+			fallback={fallback}
+		/>
 	);
 }

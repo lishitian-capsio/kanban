@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import {
 	derivePiSessions,
+	isPiSession,
 	nextActivePiSessionAfterClose,
-	resolveActivePiSessionId,
+	resolvePiSessionSelection,
 } from "@/components/home-agent/pi-sessions";
 import type { HomeThread } from "@/hooks/use-home-threads";
 import type { RuntimeAgentId } from "@/runtime/types";
@@ -45,30 +46,38 @@ describe("derivePiSessions", () => {
 	it("is empty until the user creates a pi session (no default/base presented)", () => {
 		expect(derivePiSessions([])).toEqual([]);
 		expect(derivePiSessions([makeThread({ id: "claude-1", agentId: "claude" })])).toEqual([]);
-		expect(
-			derivePiSessions([makeThread({ id: DEFAULT_HOME_THREAD_ID, agentId: "pi", isDefault: true })]),
-		).toEqual([]);
+		expect(derivePiSessions([makeThread({ id: DEFAULT_HOME_THREAD_ID, agentId: "pi", isDefault: true })])).toEqual(
+			[],
+		);
 	});
 });
 
-describe("resolveActivePiSessionId", () => {
+describe("isPiSession", () => {
+	it("is true only for a created (non-default) pi thread", () => {
+		expect(isPiSession(makeThread({ id: "pi-1", agentId: "pi" }))).toBe(true);
+		expect(isPiSession(makeThread({ id: "claude-1", agentId: "claude" }))).toBe(false);
+		expect(isPiSession(makeThread({ id: DEFAULT_HOME_THREAD_ID, agentId: "pi", isDefault: true }))).toBe(false);
+	});
+});
+
+describe("resolvePiSessionSelection", () => {
 	const sessions = derivePiSessions([makeThread({ id: "pi-1", agentId: "pi" })]);
 
 	it("keeps a requested id that still exists", () => {
-		expect(resolveActivePiSessionId(sessions, "pi-1")).toBe("pi-1");
+		expect(resolvePiSessionSelection(sessions, "pi-1")).toBe("pi-1");
 	});
 
-	it("falls back to the first session when the requested id is gone", () => {
-		expect(resolveActivePiSessionId(sessions, "pi-gone")).toBe("pi-1");
+	it("returns null when the requested id is gone (so the surface shows its fallback)", () => {
+		expect(resolvePiSessionSelection(sessions, "pi-gone")).toBeNull();
 	});
 
-	it("falls back to the first session when nothing is requested", () => {
-		expect(resolveActivePiSessionId(sessions, null)).toBe("pi-1");
+	it("returns null when nothing is requested (no pi session forced into view)", () => {
+		expect(resolvePiSessionSelection(sessions, null)).toBeNull();
 	});
 
 	it("returns null when there are no sessions", () => {
-		expect(resolveActivePiSessionId([], "pi-1")).toBeNull();
-		expect(resolveActivePiSessionId([], null)).toBeNull();
+		expect(resolvePiSessionSelection([], "pi-1")).toBeNull();
+		expect(resolvePiSessionSelection([], null)).toBeNull();
 	});
 });
 
