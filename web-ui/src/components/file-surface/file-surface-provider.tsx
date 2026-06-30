@@ -11,6 +11,9 @@ import { useFileRecents } from "./use-file-recents";
 // arrives only when a file is actually opened.
 const FileOverlay = lazy(() => import("./file-overlay").then((m) => ({ default: m.FileOverlay })));
 const FileQuickOpen = lazy(() => import("./file-quick-open").then((m) => ({ default: m.FileQuickOpen })));
+const FileLibraryOverlay = lazy(() =>
+	import("./file-library-overlay").then((m) => ({ default: m.FileLibraryOverlay })),
+);
 
 const subscribe = fileSurfaceStore.subscribe;
 const getSnapshot = fileSurfaceStore.getSnapshot;
@@ -72,6 +75,14 @@ export function FileSurfaceProvider({
 		fileSurfaceStore.closePalette();
 	}, []);
 
+	const handleCloseLibrary = useCallback(() => {
+		fileSurfaceStore.closeLibrary();
+	}, []);
+
+	const handleOpenPalette = useCallback(() => {
+		fileSurfaceStore.openPalette();
+	}, []);
+
 	return (
 		<FileSurfaceContext.Provider value={openFile}>
 			{children}
@@ -94,6 +105,16 @@ export function FileSurfaceProvider({
 						recents={recents}
 						openFile={openFile}
 						onClose={handleClosePalette}
+					/>
+				</Suspense>
+			) : null}
+			{snapshot.libraryOpen ? (
+				<Suspense fallback={null}>
+					<FileLibraryOverlay
+						open
+						workspaceId={snapshot.workspaceId ?? workspaceId}
+						onClose={handleCloseLibrary}
+						onOpenPalette={handleOpenPalette}
 					/>
 				</Suspense>
 			) : null}

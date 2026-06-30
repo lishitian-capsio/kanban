@@ -55,6 +55,58 @@ describe("fileSurfaceStore", () => {
 		expect(seeded.fileSurfaceStore.getSnapshot().workspaceId).toBe("ws-7");
 	});
 
+	it("seeds the library overlay from ?files on load", async () => {
+		vi.resetModules();
+		window.history.replaceState(null, "", "/project-1?files");
+		const seeded = await import("./file-surface-store");
+		expect(seeded.fileSurfaceStore.getSnapshot().libraryOpen).toBe(true);
+		expect(seeded.isFileSurfaceActive(seeded.fileSurfaceStore.getSnapshot())).toBe(true);
+	});
+
+	it("openLibrary sets the flag, workspace, and writes ?files", () => {
+		mod.fileSurfaceStore.setDefaultWorkspace("ws-1");
+		mod.fileSurfaceStore.openLibrary();
+		const snapshot = mod.fileSurfaceStore.getSnapshot();
+		expect(snapshot.libraryOpen).toBe(true);
+		expect(snapshot.workspaceId).toBe("ws-1");
+		expect(mod.isFileSurfaceActive(snapshot)).toBe(true);
+		expect(window.location.search).toContain("files");
+	});
+
+	it("closeLibrary clears the flag and the ?files param", () => {
+		mod.fileSurfaceStore.setDefaultWorkspace("ws-1");
+		mod.fileSurfaceStore.openLibrary();
+		mod.fileSurfaceStore.closeLibrary();
+		expect(mod.fileSurfaceStore.getSnapshot().libraryOpen).toBe(false);
+		expect(window.location.search).toBe("");
+	});
+
+	it("opening a file leaves the library overlay mounted underneath", () => {
+		mod.fileSurfaceStore.setDefaultWorkspace("ws-1");
+		mod.fileSurfaceStore.openLibrary();
+		mod.fileSurfaceStore.openFile("doc-1");
+		const snapshot = mod.fileSurfaceStore.getSnapshot();
+		expect(snapshot.libraryOpen).toBe(true);
+		expect(snapshot.fileId).toBe("doc-1");
+	});
+
+	it("the quick-open palette is reachable while the library is open", () => {
+		mod.fileSurfaceStore.openLibrary();
+		mod.fileSurfaceStore.openPalette();
+		const snapshot = mod.fileSurfaceStore.getSnapshot();
+		expect(snapshot.libraryOpen).toBe(true);
+		expect(snapshot.paletteOpen).toBe(true);
+	});
+
+	it("re-reads ?files on popstate (browser back/forward)", () => {
+		mod.fileSurfaceStore.subscribe(() => {});
+		mod.fileSurfaceStore.setDefaultWorkspace("ws-1");
+		mod.fileSurfaceStore.openLibrary();
+		window.history.replaceState(null, "", "/project-1");
+		window.dispatchEvent(new PopStateEvent("popstate"));
+		expect(mod.fileSurfaceStore.getSnapshot().libraryOpen).toBe(false);
+	});
+
 	it("palette open/close drives active state without a file", () => {
 		mod.fileSurfaceStore.openPalette();
 		expect(mod.fileSurfaceStore.getSnapshot().paletteOpen).toBe(true);

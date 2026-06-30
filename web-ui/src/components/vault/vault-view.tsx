@@ -1,8 +1,6 @@
 import type React from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-
-import { FilesView } from "@/components/files/files-view";
 
 import { buildDocFromTemplate } from "./create/build-doc-from-template";
 import { CustomerAnchorPanel } from "./customer/customer-anchor-panel";
@@ -16,20 +14,11 @@ import { VaultSearchPanel } from "./search/vault-search-panel";
 import { VaultContent } from "./vault-content";
 import { type VaultSelection, VaultSidebar } from "./vault-sidebar";
 
-/** Which entry point opened the vault (top-bar Files vs Requirements). */
-export type VaultInitialView = "files" | "requirements";
-
-function selectionFromInitial(initialView: VaultInitialView): VaultSelection {
-	if (initialView === "requirements") {
-		return { kind: "type", type: "requirement" };
-	}
-	return { kind: "files" };
-}
-
 /**
- * The unified vault surface. One component backs both top-bar entry points: `Files`
- * opens the All-files (binary) library, `Requirements` opens the `requirement` type
- * board/table. The left rail switches between document types and the file library.
+ * The unified vault surface — a typed-document knowledge base (Requirements,
+ * Customer, Decision, Note + vault types). The binary file library was rehomed
+ * out of Vault into the first-class File surface (file-surface-migration-design),
+ * so Vault is now documents-only; the left rail switches between document types.
  *
  * The customer↔requirement anchor needs cross-type data, so `customer` and
  * `requirement` docs are loaded as standing relation sources (used for the picker
@@ -37,25 +26,17 @@ function selectionFromInitial(initialView: VaultInitialView): VaultSelection {
  */
 export function VaultView({
 	workspaceId,
-	initialView,
 }: {
 	workspaceId: string | null;
-	initialView: VaultInitialView;
 }): React.ReactElement {
 	const types = useMemo(() => listVaultTypeViews(), []);
-	const [selection, setSelection] = useState<VaultSelection>(() => selectionFromInitial(initialView));
+	const [selection, setSelection] = useState<VaultSelection>(() => ({ kind: "type", type: "requirement" }));
 	const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
 	const [searchOpen, setSearchOpen] = useState(false);
 	const [quickOpenOpen, setQuickOpenOpen] = useState(false);
 
-	// Re-point the rail when the top-bar entry point changes (Files ↔ Requirements).
-	useEffect(() => {
-		setSelection(selectionFromInitial(initialView));
-		setSelectedDocId(null);
-	}, [initialView]);
-
-	const activeType = selection.kind === "type" ? selection.type : null;
-	const view = activeType ? getVaultTypeView(activeType) : undefined;
+	const activeType = selection.type;
+	const view = getVaultTypeView(activeType);
 
 	// Standing relation sources for the customer anchor; one fetch each.
 	const customerDocs = useVaultDocs(workspaceId, "customer");
@@ -215,9 +196,7 @@ export function VaultView({
 				onClose={() => setQuickOpenOpen(false)}
 				onOpenDoc={handleOpenDoc}
 			/>
-			{selection.kind === "files" ? (
-				<FilesView workspaceId={workspaceId} />
-			) : view ? (
+			{view ? (
 				<VaultContent
 					workspaceId={workspaceId}
 					view={view}

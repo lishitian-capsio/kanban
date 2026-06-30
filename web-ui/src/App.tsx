@@ -1004,7 +1004,7 @@ export default function App(): ReactElement {
 								onToggleDatabase={hasNoProjects || selectedCard ? undefined : handleToggleDatabase}
 								isDatabaseOpen={isDatabaseOpen}
 								onOpenFile={
-									hasNoProjects || selectedCard ? undefined : () => fileSurfaceStore.openPalette()
+									hasNoProjects || selectedCard ? undefined : () => fileSurfaceStore.openLibrary()
 								}
 								onToggleHomeChat={isHomeChatAvailable ? handleToggleHomeChat : undefined}
 								isHomeChatOpen={chatDock.open}
@@ -1050,7 +1050,7 @@ export default function App(): ReactElement {
 											>
 												<Suspense fallback={<LazyViewFallback />}>
 													{isVaultOpen ? (
-														<VaultView workspaceId={currentProjectId} initialView="requirements" />
+														<VaultView workspaceId={currentProjectId} />
 													) : isDatabaseOpen ? (
 														<DatabaseView workspaceId={currentProjectId} />
 													) : isGitHistoryOpen ? (

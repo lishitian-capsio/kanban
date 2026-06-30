@@ -1,4 +1,4 @@
-import { Files, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import type React from "react";
 
 import { cn } from "@/components/ui/cn";
@@ -6,15 +6,12 @@ import { Kbd } from "@/components/ui/kbd";
 
 import type { VaultTypeView } from "./data/vault-type-registry";
 
-/** Which surface the vault is showing: a document type's views, or the binary file library. */
-export type VaultSelection = { kind: "type"; type: string } | { kind: "files" };
-
-export function isSameSelection(a: VaultSelection, b: VaultSelection): boolean {
-	if (a.kind !== b.kind) {
-		return false;
-	}
-	return a.kind === "files" || a.type === (b as { type: string }).type;
-}
+/**
+ * Which surface the vault is showing: a document type's views. The binary file
+ * library was rehomed out of Vault into the first-class File surface
+ * (file-surface-migration-design), so Vault is now documents-only.
+ */
+export type VaultSelection = { kind: "type"; type: string };
 
 function SidebarItem({
 	icon,
@@ -80,15 +77,6 @@ export function VaultSidebar({
 						/>
 					);
 				})}
-			</div>
-			<div className="flex flex-col gap-1">
-				<span className="px-2.5 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Library</span>
-				<SidebarItem
-					icon={<Files size={15} />}
-					label="All files"
-					active={selection.kind === "files"}
-					onClick={() => onSelect({ kind: "files" })}
-				/>
 			</div>
 		</aside>
 	);

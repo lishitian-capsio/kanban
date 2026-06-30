@@ -14,6 +14,10 @@ const FULLSCREEN_CHAT_QUERY_PARAM = "chat";
 // overlay is open; the value is the vault document `id`. Independent of
 // `?task=`/`?chat=` — the overlay layers above whatever is behind it.
 const FILE_QUERY_PARAM = "file";
+// The File surface's binary-library mode (the file browser rehomed out of Vault).
+// A valueless flag (`?files`) — its presence means the library overlay is open.
+// Independent of `?file=`/`?task=`/`?chat=`; lets the library survive refresh.
+const FILES_LIBRARY_QUERY_PARAM = "files";
 
 export function normalizeStoredTaskAutoReviewMode(value: string): TaskAutoReviewMode | null {
 	if (value === "commit" || value === "pr") {
@@ -141,6 +145,28 @@ export function buildFileUrl(input: {
 		params.set(FILE_QUERY_PARAM, input.fileId);
 	} else {
 		params.delete(FILE_QUERY_PARAM);
+	}
+	const nextSearch = params.toString();
+	return `${input.pathname}${nextSearch ? `?${nextSearch}` : ""}${input.hash}`;
+}
+
+export function parseFilesLibraryFromSearch(search: string): boolean {
+	const params = new URLSearchParams(search);
+	return params.has(FILES_LIBRARY_QUERY_PARAM);
+}
+
+export function buildFilesLibraryUrl(input: {
+	pathname: string;
+	search: string;
+	hash: string;
+	open: boolean;
+}): string {
+	const params = new URLSearchParams(input.search);
+	if (input.open) {
+		// Valueless flag — set to empty string so it renders as `?files`.
+		params.set(FILES_LIBRARY_QUERY_PARAM, "");
+	} else {
+		params.delete(FILES_LIBRARY_QUERY_PARAM);
 	}
 	const nextSearch = params.toString();
 	return `${input.pathname}${nextSearch ? `?${nextSearch}` : ""}${input.hash}`;

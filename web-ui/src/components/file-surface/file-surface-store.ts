@@ -1,4 +1,9 @@
-import { buildFileUrl, parseFileIdFromSearch } from "@/hooks/app-utils";
+import {
+	buildFileUrl,
+	buildFilesLibraryUrl,
+	parseFileIdFromSearch,
+	parseFilesLibraryFromSearch,
+} from "@/hooks/app-utils";
 
 /**
  * The File surface's open state, held in a module-level external store rather
@@ -26,6 +31,12 @@ export interface FileSurfaceState {
 	workspaceId: string | null;
 	/** Whether the quick-open palette ("pick a file") is showing. Not URL-routed. */
 	paletteOpen: boolean;
+	/**
+	 * Whether the binary-library overlay (the file browser rehomed out of Vault)
+	 * is showing. URL-routed via `?files` so it survives refresh. Independent of
+	 * `fileId` — the single-doc overlay can layer above the library.
+	 */
+	libraryOpen: boolean;
 }
 
 export interface OpenFileOptions {
@@ -40,13 +51,22 @@ function readFileIdFromLocation(): string | null {
 	return parseFileIdFromSearch(window.location.search);
 }
 
-// Seed synchronously from the URL so a deep link / refresh to `?file=<id>` opens
-// the overlay on first paint with no flash. `workspaceId` is back-filled by the
-// provider (the workspace isn't encoded in the URL — it comes from the route).
+function readLibraryFromLocation(): boolean {
+	if (typeof window === "undefined") {
+		return false;
+	}
+	return parseFilesLibraryFromSearch(window.location.search);
+}
+
+// Seed synchronously from the URL so a deep link / refresh to `?file=<id>` or
+// `?files` opens the corresponding overlay on first paint with no flash.
+// `workspaceId` is back-filled by the provider (the workspace isn't encoded in
+// the URL — it comes from the route).
 let state: FileSurfaceState = {
 	fileId: readFileIdFromLocation(),
 	workspaceId: null,
 	paletteOpen: false,
+	libraryOpen: readLibraryFromLocation(),
 };
 
 // The provider's current workspace, used as the default when a file is opened
@@ -66,7 +86,8 @@ function setState(next: FileSurfaceState): void {
 	if (
 		next.fileId === state.fileId &&
 		next.workspaceId === state.workspaceId &&
-		next.paletteOpen === state.paletteOpen
+		next.paletteOpen === state.paletteOpen &&
+		next.libraryOpen === state.libraryOpen
 	) {
 		return;
 	}
@@ -96,12 +117,36 @@ function writeUrl(fileId: string | null, mode: "push" | "replace"): void {
 	}
 }
 
+function writeLibraryUrl(open: boolean, mode: "push" | "replace"): void {
+	if (typeof window === "undefined") {
+		return;
+	}
+	const currentUrl = new URL(window.location.href);
+	if (parseFilesLibraryFromSearch(currentUrl.search) === open) {
+		// Already at the target — never add a duplicate history entry.
+		return;
+	}
+	const nextUrl = buildFilesLibraryUrl({
+		pathname: currentUrl.pathname,
+		search: currentUrl.search,
+		hash: currentUrl.hash,
+		open,
+	});
+	if (mode === "push") {
+		window.history.pushState(window.history.state, "", nextUrl);
+	} else {
+		window.history.replaceState(window.history.state, "", nextUrl);
+	}
+}
+
 function handlePopState(): void {
 	const fileId = readFileIdFromLocation();
+	const libraryOpen = readLibraryFromLocation();
 	setState({
 		fileId,
-		workspaceId: fileId ? (state.workspaceId ?? defaultWorkspaceId) : null,
+		workspaceId: fileId || libraryOpen ? (state.workspaceId ?? defaultWorkspaceId) : null,
 		paletteOpen: false,
+		libraryOpen,
 	});
 }
 
@@ -127,7 +172,7 @@ export const fileSurfaceStore = {
 	 */
 	setDefaultWorkspace(workspaceId: string | null): void {
 		defaultWorkspaceId = workspaceId;
-		if (state.fileId && !state.workspaceId && workspaceId) {
+		if ((state.fileId || state.libraryOpen) && !state.workspaceId && workspaceId) {
 			setState({ ...state, workspaceId });
 		}
 	},
@@ -135,8 +180,9 @@ export const fileSurfaceStore = {
 	openFile(fileId: string, options?: OpenFileOptions): void {
 		writeUrl(fileId, "push");
 		setState({
+			...state,
 			fileId,
-			workspaceId: options?.workspaceId ?? defaultWorkspaceId,
+			workspaceId: options?.workspaceId ?? state.workspaceId ?? defaultWorkspaceId,
 			paletteOpen: false,
 		});
 	},
@@ -156,9 +202,31 @@ export const fileSurfaceStore = {
 		}
 		setState({ ...state, paletteOpen: false });
 	},
+
+	/** Open the binary-library overlay (the file browser rehomed out of Vault). */
+	openLibrary(): void {
+		writeLibraryUrl(true, "push");
+		setState({
+			...state,
+			workspaceId: state.workspaceId ?? defaultWorkspaceId,
+			libraryOpen: true,
+			paletteOpen: false,
+		});
+	},
+
+	closeLibrary(): void {
+		if (!state.libraryOpen) {
+			return;
+		}
+		writeLibraryUrl(false, "push");
+		setState({ ...state, libraryOpen: false });
+	},
 };
 
-/** True when any File surface UI is showing (editor overlay or quick-open palette). */
+/**
+ * True when any File surface UI is showing (single-doc editor overlay, the
+ * binary-library overlay, or the quick-open palette). Drives the top-bar ring.
+ */
 export function isFileSurfaceActive(snapshot: FileSurfaceState): boolean {
-	return snapshot.fileId !== null || snapshot.paletteOpen;
+	return snapshot.fileId !== null || snapshot.paletteOpen || snapshot.libraryOpen;
 }

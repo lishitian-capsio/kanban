@@ -380,7 +380,7 @@ export function TopBar({
 	vaultModeDisabled?: boolean;
 	onToggleDatabase?: () => void;
 	isDatabaseOpen?: boolean;
-	/** Open the File surface quick-open palette (single-file open/view/edit). */
+	/** Open the File surface (the binary file library; quick-open is reachable within). */
 	onOpenFile?: () => void;
 	onToggleHomeChat?: () => void;
 	isHomeChatOpen?: boolean;
@@ -603,7 +603,7 @@ export function TopBar({
 										"shrink-0",
 										isFileSurfaceActive ? "ring-1 ring-accent" : "kb-navbar-btn",
 									)}
-									title="Open a file"
+									title="Files"
 								>
 									File
 								</Button>
