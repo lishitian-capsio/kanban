@@ -1,0 +1,20 @@
+{
+  "id": "86cf1",
+  "title": "kanban agent 访问 database 的开关(默认 off,只读门控)",
+  "prompt": "给 kanban agent 的 database 访问能力加一个开关(闸门),思路对标 vault 的分层 toggle(vault-layered-toggle: vaultMode off/cli-only/on-demand/managed),但要更轻。\n\n为什么:任务 77f6f 给 agent 开了一个 database CLI 通道(管连接 + 只读查询)。能力给了,就需要一个开关控制 agent 到底能不能碰库,默认不开放。\n\n具体要求:\n- 新增一个 per-workspace 的设置,门控 kanban agent 对 database 的访问。因为本就只读,做成最简的两档即可:**off(默认)/ on(只读)**,不要照搬 vault 的 4 档,避免过度设计。\n- 后端:database CLI 子命令(77f6f 新增的那组)在执行前检查这个开关——off 时直接拒绝并返回标准 error envelope(给出清晰的\"agent database 访问未启用\"提示),on 时放行只读路径。\n- 设置的持久化沿用现有 workspace 设置存储(参考 vaultMode 的存放位置 / VaultSettingsStore 那套),不要新造存储层。\n- 前端:在现有 Settings / 或 vault toggle 同一区域,加一个简单的开关项让人切换(复用现有 UI 原语,暗色主题 + 设计 token,见 AGENTS.md)。保持和 vault toggle 视觉一致。\n- 写操作本就不在 77f6f 范围,这个开关也只管\"是否允许 agent 只读访问\",不引入写门控。\n\n先读 77f6f 落地的 database CLI 入口、以及 vaultMode / VaultSettingsStore 的设置存取与前端 toggle 实现,再以最小改动接上。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "72b6df6d-952c-4f47-a67e-fd9873fde479",
+  "baseRef": "main",
+  "createdAt": 1782780828637,
+  "updatedAt": 1782780828637,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
