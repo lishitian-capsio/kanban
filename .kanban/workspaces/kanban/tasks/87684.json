@@ -1,0 +1,20 @@
+{
+  "id": "87684",
+  "title": "Vault 与 Database 开关简化为开/关二态",
+  "prompt": "把 Settings 里 Vault 和 Database 的 agent 访问开关都简化成纯粹的「开 / 关」二态，两者风格统一。\n\n现状：\n- Vault 目前是 4 档 vaultMode（off / cli-only / on-demand / managed），通过它分级 gate 注入行为（见 vault layered toggle 实现，VaultSettingsStore 中的 vaultMode）。\n- Database 是 per-workspace 的 agent 访问开关（agentDatabaseAccessEnabled，gate 在 db.ts resolveDbWorkspace；human UI 不受影响）。\n\n目标：\n1. Vault：把 4 档收敛成布尔开/关。映射建议——「开」= 原 managed 的完整启用行为，「关」= off。中间的 cli-only / on-demand 档位去掉。前端 Settings 用一个简单的 Switch（Radix switch + 设计 token），后端把 vaultMode 简化为布尔（或保留枚举但 UI 只暴露两端，二选一由你判断哪个改动更干净、迁移成本更低；倾向直接简化为布尔并对已有持久化值做兼容映射：managed→on，其余/off→off）。\n2. Database：确认它已经是开/关，把 UI 控件样式/文案与 Vault 的开关统一，做成同一种 Switch 风格。\n\n要求：\n- 注意向后兼容：已持久化的旧 vaultMode 值要平滑迁移，不要让现有 workspace 设置丢失或报错。\n- 遵循 AGENTS.md web-ui 规范（Tailwind v4 + Radix + lucide-react，复用 src/components/ui 原语与设计 token，暗色主题）。\n- 同步更新相关 CLI / tRPC / 契约（如果 vaultMode 枚举出现在 api-contract、CLI 命令或 append-system-prompt 注入逻辑里，一并改干净并保持类型通过）。\n- 跑通 typecheck（含 web:typecheck）和相关单测。\n\n遵循 YAGNI，不要过度设计。先调研 vaultMode 与 agentDatabaseAccessEnabled 的读写链路并简述，再实施。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e211cecb-0eda-4458-ba46-1fbc486d4e40",
+  "baseRef": "main",
+  "createdAt": 1782808285952,
+  "updatedAt": 1782808285952,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
