@@ -150,25 +150,10 @@
       "createdAt": 1782781795470,
       "updatedAt": 1782781833255,
       "pendingNextStep": "把任务 6c895 开起来跑"
-    },
-    {
-      "id": "05ae5b1d-6387-46fa-ae3d-ad128d7026ae",
-      "agentId": "codex",
-      "name": "Redesign chat thread input",
-      "titleSource": "auto",
-      "createdAt": 1782787958880,
-      "updatedAt": 1782788041557,
-      "pendingNextStep": "Start task 946a3"
     }
   ],
   "fullscreenTabs": {
-    "openThreadIds": [
-      "ab1cbbfe-a5b9-4481-adc1-3325483c72ce",
-      "6588c4a9-28df-4a75-9774-172e2bb7832c",
-      "e5060a7c-ba48-41e0-b356-495436c7d21d",
-      "6a585585-b1b3-41e5-8785-009188294312",
-      "e211cecb-0eda-4458-ba46-1fbc486d4e40"
-    ],
-    "activeThreadId": "e211cecb-0eda-4458-ba46-1fbc486d4e40"
+    "openThreadIds": [],
+    "activeThreadId": null
   }
 }
