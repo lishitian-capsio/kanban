@@ -149,12 +149,22 @@
       "titleSource": "auto",
       "createdAt": 1782781795470,
       "updatedAt": 1782781833255
+    },
+    {
+      "id": "05ae5b1d-6387-46fa-ae3d-ad128d7026ae",
+      "agentId": "codex",
+      "name": "new chat thread的弹窗内的输入框需要重新设计下",
+      "titleSource": "auto",
+      "createdAt": 1782787958880,
+      "updatedAt": 1782787958880
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "6588c4a9-28df-4a75-9774-172e2bb7832c"
+      "6588c4a9-28df-4a75-9774-172e2bb7832c",
+      "05ae5b1d-6387-46fa-ae3d-ad128d7026ae",
+      "e5060a7c-ba48-41e0-b356-495436c7d21d"
     ],
-    "activeThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c"
+    "activeThreadId": "e5060a7c-ba48-41e0-b356-495436c7d21d"
   }
 }
