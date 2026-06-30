@@ -2,9 +2,12 @@ import type { Command } from "commander";
 
 import { printLine } from "../cli-output";
 import {
+	buildKanbanRuntimeAccessUrls,
 	DEFAULT_KANBAN_RUNTIME_HOST,
 	DEFAULT_KANBAN_RUNTIME_PORT,
+	getLocalNetworkHosts,
 	isRemoteRuntimeHost,
+	isWildcardBindHost,
 	type RuntimePortOption,
 } from "../core/runtime-endpoint";
 import { createLogger } from "../logging";
@@ -89,12 +92,17 @@ function isRemoteServiceConfig(config: ServiceConfig): boolean {
 	return isRemoteRuntimeHost(config.host ?? DEFAULT_KANBAN_RUNTIME_HOST);
 }
 
-/** Build the access URL the operator would share, mirroring the runtime's own origin. */
-function buildServiceAccessUrl(config: ServiceConfig): string {
+/** Build the access URLs the operator would share, mirroring the runtime's own URL logic. */
+function buildServiceAccessUrls(config: ServiceConfig): string[] {
 	const https = config.extraArgs?.includes("--https") ?? false;
 	const host = config.host ?? DEFAULT_KANBAN_RUNTIME_HOST;
 	const port = config.port ?? DEFAULT_KANBAN_RUNTIME_PORT;
-	return `${https ? "https" : "http"}://${host}:${port}`;
+	return buildKanbanRuntimeAccessUrls({
+		host,
+		port,
+		https,
+		localNetworkHosts: isWildcardBindHost(host) ? getLocalNetworkHosts() : [],
+	});
 }
 
 /**
@@ -105,7 +113,10 @@ function buildServiceAccessUrl(config: ServiceConfig): string {
 function printRemoteAccessInfo(config: ServiceConfig, passcode: string): void {
 	printLine("");
 	printLine(`🔐 Remote access passcode: ${passcode}`);
-	printLine(`   Access URL: ${buildServiceAccessUrl(config)}`);
+	printLine("   Access URLs:");
+	for (const url of buildServiceAccessUrls(config)) {
+		printLine(`   ${url}`);
+	}
 	printLine("   Share these with users who need access. View later with `kanban remote passcode show`.");
 	printLine("   Full access status: `kanban remote status`");
 	printLine("");

@@ -45,6 +45,8 @@ kanban
 ```
 Run this from the root of any git repo. Kanban will detect your installed CLI agent and launch a local running webserver in your browser. No account or setup required, it works right out of the box.
 
+By default the runtime binds to `127.0.0.1`, so only the local machine can connect. To expose it on your LAN, start it with `kanban --host 0.0.0.0` (or a specific interface IP). The startup output lists usable URLs for detected network interfaces; if another machine still cannot connect, check the OS firewall/security group. For a background service, bake the bind address in with `kanban service install --host 0.0.0.0`.
+
 ### 2. Create tasks
 Create a task card manually, or open the sidebar chat and ask your agent to break work down into tasks for you. Kanban injects board-management instructions into that session so you can simply ask it to add tasks, link tasks, or start work on your board.
 
@@ -82,7 +84,7 @@ kanban service restart            # restart
 kanban service uninstall          # disable + remove
 ```
 
-Options for `install` (baked into the service definition): `--name <name>` (default `kanban`, useful for multiple boards), `--host <ip>`, `--port <n>`, `--no-passcode`, and TLS passthrough `--https --cert <path> --key <path>`. The other subcommands only take `--name` to identify the service. Every command prints JSON.
+Options for `install` (baked into the service definition): `--name <name>` (default `kanban`, useful for multiple boards), `--host <ip>` (use `0.0.0.0` for LAN access), `--port <n>`, `--no-passcode`, and TLS passthrough `--https --cert <path> --key <path>`. The other subcommands only take `--name` to identify the service. Every command prints JSON.
 
 The generated launch command always includes `--skip-shutdown-cleanup` (so a service restart never deletes your in-flight task worktrees) and `--no-open` (a background service must not open a browser tab).
 

@@ -17,10 +17,10 @@ import type {
 } from "../core/api-contract";
 import { parseHomeAgentSessionId } from "../core/home-agent-session";
 import {
-	buildKanbanRuntimeUrl,
 	getKanbanRuntimeHost,
 	getKanbanRuntimeOrigin,
 	getKanbanRuntimePort,
+	getKanbanRuntimePrimaryAccessUrl,
 	getKanbanRuntimeTls,
 	isKanbanRemoteHost,
 } from "../core/runtime-endpoint";
@@ -622,8 +622,8 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 	}
 	const activeWorkspaceId = deps.workspaceRegistry.getActiveWorkspaceId();
 	const url = activeWorkspaceId
-		? buildKanbanRuntimeUrl(`/${encodeURIComponent(activeWorkspaceId)}`)
-		: getKanbanRuntimeOrigin();
+		? getKanbanRuntimePrimaryAccessUrl(`/${encodeURIComponent(activeWorkspaceId)}`)
+		: getKanbanRuntimePrimaryAccessUrl();
 
 	// No boot reconcile: per the board-sync redesign (auto commit + explicit push/pull,
 	// `.plan/docs/board-sync-redesign.md`) startup never touches the network. The badge

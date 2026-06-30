@@ -3,6 +3,7 @@
 kanban \- local orchestration board for coding agents
 .SH SYNOPSIS
 .B kanban
+.RI [ --host " " ip ]
 .RI [ --port " " number|auto ]
 .RI [ --no-open ]
 .RI [ command ]
@@ -23,6 +24,9 @@ starts the local Kanban runtime server and serves the web UI.
 When launched inside a git repository, it opens that repository's indexed workspace.
 When launched outside git, it starts with no active workspace or falls back to the first indexed project.
 .SH OPTIONS
+.TP
+.B --host <ip>
+Bind to a host/interface. Defaults to 127.0.0.1 for local-only access. Use 0.0.0.0 to listen on all interfaces for LAN access; Kanban prints detected usable URLs at startup. If another machine cannot connect, check the OS firewall/security group.
 .TP
 .B --port <number|auto>
 Bind to a specific local port or pick the first available port starting at 3484.
@@ -129,6 +133,9 @@ Start server without auto-opening a browser:
 .TP
 Start server on a custom port:
 .B kanban --port 9000
+.TP
+Start server reachable from the LAN:
+.B kanban --host 0.0.0.0
 .TP
 List tasks for the current workspace:
 .B kanban task list

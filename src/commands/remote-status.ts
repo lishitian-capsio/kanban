@@ -12,6 +12,8 @@
  * (`remote passcode show`). The caller passes the value solely so `set` can be computed.
  */
 
+import { buildKanbanRuntimeAccessUrls } from "../core/runtime-endpoint";
+
 /** Where a `remote status` reader can retrieve the passcode value (human channel only). */
 export const REMOTE_PASSCODE_VIEW_COMMAND = "kanban remote passcode show";
 
@@ -71,56 +73,6 @@ export interface RemoteStatusData {
 }
 
 /**
- * Whether a host is a link-local address (IPv6 `fe80::/10` or IPv4 `169.254.0.0/16`). These
- * are excluded from the *access URL* list because they require a scope/zone and are not
- * shareable — but they remain in `allowedHosts` (which mirrors the gate verbatim).
- */
-function isLinkLocalHost(host: string): boolean {
-	const normalized = host.trim().toLowerCase();
-	return /^fe[89ab][0-9a-f]:/.test(normalized) || normalized.startsWith("169.254.");
-}
-
-/**
- * Build the ordered, de-duplicated list of access URLs (design doc §5.1). Loopback is always
- * included so local access keeps working; a wildcard bind enumerates the real NIC IPs (the
- * literal "any address" is never something a browser connects to, and link-local addresses are
- * dropped as un-shareable), while a concrete remote bind lists that host verbatim. Remote/NIC
- * entries come first, loopback last (the operator usually wants the shareable URL on top).
- */
-function buildAccessUrls(input: RemoteStatusBuildInput): string[] {
-	const scheme = input.bind.https ? "https" : "http";
-	const urls: string[] = [];
-	const seen = new Set<string>();
-	const push = (host: string): void => {
-		const trimmed = host.trim();
-		if (!trimmed) {
-			return;
-		}
-		const authority = trimmed.includes(":") ? `[${trimmed}]` : trimmed;
-		const url = `${scheme}://${authority}:${input.bind.port}`;
-		if (!seen.has(url)) {
-			seen.add(url);
-			urls.push(url);
-		}
-	};
-
-	if (!input.isLoopbackBind) {
-		if (input.isWildcardBind) {
-			for (const ip of input.localNetworkHosts) {
-				if (!isLinkLocalHost(ip)) {
-					push(ip);
-				}
-			}
-		} else {
-			// A concrete remote bind is the host the operator explicitly chose — keep it as-is.
-			push(input.bind.host);
-		}
-	}
-	push("127.0.0.1");
-	return urls;
-}
-
-/**
  * Assemble the `remote status` machine `data` payload from resolved facts. Pure: no I/O, no
  * clock, no global reads. The passcode value is consumed only to derive `set` and is never
  * placed in the output.
@@ -132,7 +84,12 @@ export function buildRemoteStatusData(input: RemoteStatusBuildInput): RemoteStat
 
 	return {
 		bind: { ...input.bind },
-		accessUrls: buildAccessUrls(input),
+		accessUrls: buildKanbanRuntimeAccessUrls({
+			host: input.bind.host,
+			port: input.bind.port,
+			https: input.bind.https,
+			localNetworkHosts: input.isWildcardBind ? input.localNetworkHosts : [],
+		}),
 		remoteMode,
 		passcode: {
 			// A non-loopback bind requires a passcode unless the operator persisted a disable.

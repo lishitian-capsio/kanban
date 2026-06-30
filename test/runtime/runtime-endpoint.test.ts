@@ -1,17 +1,21 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+	buildKanbanRuntimeAccessUrls,
 	buildKanbanRuntimeUrl,
 	buildKanbanRuntimeWsUrl,
 	clearKanbanRuntimeTls,
 	DEFAULT_KANBAN_RUNTIME_PORT,
+	getKanbanRuntimeAccessUrls,
 	getKanbanRuntimeAllowedHosts,
 	getKanbanRuntimeHost,
 	getKanbanRuntimeNoProxyHosts,
 	getKanbanRuntimePort,
+	getKanbanRuntimePrimaryAccessUrl,
 	getLocalNetworkHosts,
 	getRuntimeFetch,
 	isKanbanRuntimeHttps,
+	isLinkLocalHost,
 	isLoopbackHost,
 	isWildcardBindHost,
 	parseCliPortOption,
@@ -30,6 +34,14 @@ const originalEnvTlsCa = process.env.KANBAN_RUNTIME_TLS_CA;
 const originalEnvNoProxy = process.env.NO_PROXY;
 const originalEnvNoProxyLower = process.env.no_proxy;
 const originalEnvAllowedHosts = process.env.KANBAN_RUNTIME_ALLOWED_HOSTS;
+const originalEnvInternalToken = process.env.KANBAN_INTERNAL_AUTH_TOKEN;
+
+beforeEach(() => {
+	setKanbanRuntimeHost("127.0.0.1");
+	setKanbanRuntimePort(originalRuntimePort);
+	clearKanbanRuntimeTls();
+	delete process.env.KANBAN_INTERNAL_AUTH_TOKEN;
+});
 
 afterEach(() => {
 	setKanbanRuntimePort(originalRuntimePort);
@@ -69,6 +81,11 @@ afterEach(() => {
 		delete process.env.KANBAN_RUNTIME_ALLOWED_HOSTS;
 	} else {
 		process.env.KANBAN_RUNTIME_ALLOWED_HOSTS = originalEnvAllowedHosts;
+	}
+	if (originalEnvInternalToken === undefined) {
+		delete process.env.KANBAN_INTERNAL_AUTH_TOKEN;
+	} else {
+		process.env.KANBAN_INTERNAL_AUTH_TOKEN = originalEnvInternalToken;
 	}
 });
 
@@ -175,6 +192,69 @@ describe("runtime-endpoint", () => {
 	});
 });
 
+describe("runtime access URLs", () => {
+	it("uses only loopback for the default local-only bind", () => {
+		const urls = buildKanbanRuntimeAccessUrls({
+			host: "127.0.0.1",
+			port: 3484,
+			https: false,
+			localNetworkHosts: ["192.168.50.203"],
+		});
+		expect(urls).toEqual(["http://127.0.0.1:3484"]);
+	});
+
+	it("enumerates concrete NIC URLs for a wildcard bind and never emits 0.0.0.0", () => {
+		const urls = buildKanbanRuntimeAccessUrls({
+			host: "0.0.0.0",
+			port: 3484,
+			https: false,
+			localNetworkHosts: ["192.168.50.203", "10.0.0.5"],
+		});
+		expect(urls).toEqual(["http://192.168.50.203:3484", "http://10.0.0.5:3484", "http://127.0.0.1:3484"]);
+		expect(urls.some((url) => url.includes("0.0.0.0"))).toBe(false);
+	});
+
+	it("preserves the active workspace path when building display URLs", () => {
+		const urls = buildKanbanRuntimeAccessUrls({
+			host: "0.0.0.0",
+			port: 3484,
+			https: false,
+			localNetworkHosts: ["192.168.50.203"],
+			pathname: "/workspace-1",
+		});
+		expect(urls).toEqual(["http://192.168.50.203:3484/workspace-1", "http://127.0.0.1:3484/workspace-1"]);
+	});
+
+	it("excludes link-local addresses from shareable wildcard access URLs", () => {
+		const urls = buildKanbanRuntimeAccessUrls({
+			host: "::",
+			port: 8443,
+			https: true,
+			localNetworkHosts: ["2001:db8::1", "fe80::1", "169.254.10.20"],
+		});
+		expect(urls).toEqual(["https://[2001:db8::1]:8443", "https://127.0.0.1:8443"]);
+	});
+
+	it("lists a concrete remote bind before loopback", () => {
+		const urls = buildKanbanRuntimeAccessUrls({
+			host: "192.168.50.203",
+			port: 4567,
+			https: false,
+			localNetworkHosts: [],
+		});
+		expect(urls).toEqual(["http://192.168.50.203:4567", "http://127.0.0.1:4567"]);
+	});
+
+	it("global access URL getters do not present a wildcard bind as the browser URL", () => {
+		setKanbanRuntimeHost("0.0.0.0");
+		setKanbanRuntimePort(4567);
+		const urls = getKanbanRuntimeAccessUrls("/workspace-1");
+		expect(urls).toContain("http://127.0.0.1:4567/workspace-1");
+		expect(urls.some((url) => url.includes("0.0.0.0"))).toBe(false);
+		expect(getKanbanRuntimePrimaryAccessUrl("/workspace-1")).not.toContain("0.0.0.0");
+	});
+});
+
 describe("isLoopbackHost", () => {
 	it("recognises the loopback aliases regardless of casing", () => {
 		expect(isLoopbackHost("127.0.0.1")).toBe(true);
@@ -202,6 +282,20 @@ describe("isWildcardBindHost", () => {
 		expect(isWildcardBindHost("127.0.0.1")).toBe(false);
 		expect(isWildcardBindHost("localhost")).toBe(false);
 		expect(isWildcardBindHost("192.168.50.203")).toBe(false);
+	});
+});
+
+describe("isLinkLocalHost", () => {
+	it("recognises IPv4 and IPv6 link-local addresses", () => {
+		expect(isLinkLocalHost("169.254.10.20")).toBe(true);
+		expect(isLinkLocalHost("fe80::1")).toBe(true);
+		expect(isLinkLocalHost("FE80::1")).toBe(true);
+	});
+
+	it("does not treat routable private or documentation addresses as link-local", () => {
+		expect(isLinkLocalHost("192.168.50.203")).toBe(false);
+		expect(isLinkLocalHost("10.0.0.5")).toBe(false);
+		expect(isLinkLocalHost("2001:db8::1")).toBe(false);
 	});
 });
 

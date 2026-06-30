@@ -172,6 +172,16 @@ export function isWildcardBindHost(host: string): boolean {
 }
 
 /**
+ * Whether a host is a link-local address (IPv6 `fe80::/10` or IPv4
+ * `169.254.0.0/16`). These are excluded from shareable access URL lists
+ * because they usually need an interface scope and are poor copy/paste targets.
+ */
+export function isLinkLocalHost(host: string): boolean {
+	const normalized = host.trim().toLowerCase();
+	return /^fe[89ab][0-9a-f]:/.test(normalized) || normalized.startsWith("169.254.");
+}
+
+/**
  * Whether a given bind host is "remote" (non-localhost), meaning the runtime is
  * reachable by other machines and passcode auth applies. Pure helper so callers
  * that know a host out-of-band (e.g. `kanban service install --host`) can decide
@@ -248,6 +258,77 @@ export function getKanbanRuntimeWsOrigin(): string {
 export function buildKanbanRuntimeUrl(pathname: string): string {
 	const normalizedPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
 	return `${getKanbanRuntimeOrigin()}${normalizedPath}`;
+}
+
+export interface RuntimeAccessUrlsInput {
+	host: string;
+	port: number;
+	https: boolean;
+	localNetworkHosts: readonly string[];
+	pathname?: string;
+}
+
+function formatUrlHost(host: string): string {
+	return host.includes(":") ? `[${host}]` : host;
+}
+
+/**
+ * Build the ordered, de-duplicated list of browser access URLs for a runtime
+ * bind. Wildcard bind addresses (`0.0.0.0` / `::`) are not client destinations,
+ * so this enumerates concrete NIC addresses instead and keeps loopback as a
+ * fallback. Remote/NIC URLs come first because those are the shareable ones.
+ */
+export function buildKanbanRuntimeAccessUrls(input: RuntimeAccessUrlsInput): string[] {
+	const scheme = input.https ? "https" : "http";
+	const normalizedPath =
+		input.pathname && input.pathname.length > 0
+			? input.pathname.startsWith("/")
+				? input.pathname
+				: `/${input.pathname}`
+			: "";
+	const urls: string[] = [];
+	const seen = new Set<string>();
+	const push = (host: string): void => {
+		const trimmed = host.trim();
+		if (!trimmed) {
+			return;
+		}
+		const url = `${scheme}://${formatUrlHost(trimmed)}:${input.port}${normalizedPath}`;
+		if (seen.has(url)) {
+			return;
+		}
+		seen.add(url);
+		urls.push(url);
+	};
+
+	if (!isLoopbackHost(input.host)) {
+		if (isWildcardBindHost(input.host)) {
+			for (const host of input.localNetworkHosts) {
+				if (!isLinkLocalHost(host)) {
+					push(host);
+				}
+			}
+		} else {
+			push(input.host);
+		}
+	}
+	push("127.0.0.1");
+	return urls;
+}
+
+export function getKanbanRuntimeAccessUrls(pathname?: string): string[] {
+	const host = getKanbanRuntimeHost();
+	return buildKanbanRuntimeAccessUrls({
+		host,
+		port: getKanbanRuntimePort(),
+		https: isKanbanRuntimeHttps(),
+		localNetworkHosts: isWildcardBindHost(host) ? getLocalNetworkHosts() : [],
+		pathname,
+	});
+}
+
+export function getKanbanRuntimePrimaryAccessUrl(pathname?: string): string {
+	return getKanbanRuntimeAccessUrls(pathname)[0] ?? buildKanbanRuntimeUrl(pathname ?? "/");
 }
 
 export function buildKanbanRuntimeWsUrl(pathname: string): string {

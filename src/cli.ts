@@ -30,6 +30,7 @@ import {
 	buildKanbanRuntimeUrl,
 	clearKanbanRuntimeTls,
 	DEFAULT_KANBAN_RUNTIME_PORT,
+	getKanbanRuntimeAccessUrls,
 	getKanbanRuntimeHost,
 	getKanbanRuntimeOrigin,
 	getKanbanRuntimePort,
@@ -291,6 +292,28 @@ async function canReachKanbanServer(workspaceId: string | null): Promise<boolean
 	} catch {
 		return false;
 	}
+}
+
+function getRuntimeAccessUrlsForServerUrl(serverUrl: string): string[] {
+	try {
+		const pathname = new URL(serverUrl).pathname;
+		return getKanbanRuntimeAccessUrls(pathname === "/" ? undefined : pathname);
+	} catch {
+		return getKanbanRuntimeAccessUrls();
+	}
+}
+
+function formatRuntimeAccessUrlList(urls: readonly string[]): string {
+	return urls.map((url) => `   ${url}`).join("\n");
+}
+
+function printRuntimeAccessSummary(serverUrl: string): void {
+	const accessUrls = getRuntimeAccessUrlsForServerUrl(serverUrl);
+	if (isKanbanRemoteHost()) {
+		printLine(`Available URLs:\n${formatRuntimeAccessUrlList(accessUrls)}`);
+		return;
+	}
+	printLine("Network access: local only (127.0.0.1). Use `kanban --host 0.0.0.0` to listen on LAN.");
 }
 
 async function tryOpenExistingServer(options: { noOpen: boolean; shouldAutoOpenBrowser: boolean }): Promise<boolean> {
@@ -627,7 +650,7 @@ async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolea
 
 	const tlsResult = await resolveRuntimeTls(options);
 	if (tlsResult.enabled) {
-		printLine(`HTTPS enabled on ${getKanbanRuntimeOrigin()}`);
+		printLine("HTTPS enabled.");
 	}
 
 	// Handle passcode generation for remote mode — deferred until after TLS
@@ -656,8 +679,9 @@ async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolea
 					: source === "explicit"
 						? "set from --passcode/KANBAN_PASSCODE"
 						: "newly generated";
+			const accessUrls = getKanbanRuntimeAccessUrls();
 			printLine(
-				`\n🔐 Remote access passcode: ${value}  (${note})\n   Access URL: ${getKanbanRuntimeOrigin()}\n\nShare these with users who need access.\n` +
+				`\n🔐 Remote access passcode: ${value}  (${note})\n   Access URLs:\n${formatRuntimeAccessUrlList(accessUrls)}\n\nShare these with users who need access.\n` +
 					"   View later: `kanban remote passcode show` · status: `kanban remote status`\n",
 			);
 		}
@@ -681,6 +705,7 @@ async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolea
 		throw error;
 	}
 	printLine(`Kanban running at ${runtime.url}`);
+	printRuntimeAccessSummary(runtime.url);
 	if (!options.noOpen && shouldAutoOpenBrowser) {
 		try {
 			openInBrowser(runtime.url, {
