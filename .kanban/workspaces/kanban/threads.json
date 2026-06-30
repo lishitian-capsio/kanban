@@ -130,7 +130,8 @@
       "name": "Session 模式 settings 移右上角",
       "titleSource": "auto",
       "createdAt": 1782780592665,
-      "updatedAt": 1782780615079
+      "updatedAt": 1782780615079,
+      "pendingNextStep": "Start task 9e910 now"
     }
   ],
   "fullscreenTabs": {
