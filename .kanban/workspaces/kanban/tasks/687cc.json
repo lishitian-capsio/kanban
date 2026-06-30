@@ -1,0 +1,20 @@
+{
+  "id": "687cc",
+  "title": "将任务详情的 File 按钮移到详情顶部标题栏",
+  "prompt": "在 web-ui 任务详情视图中，把打开 File surface 库覆盖层的 File 按钮（lucide `FileText` 图标，aria-label=\"Open files\"，onClick 调用 `fileSurfaceStore.openLibrary()`）从当前位置——`web-ui/src/components/card-detail-view.tsx` 里 `DiffToolbar` 组件（diff 面板工具条，带 All Changes / Last Turn / Artifacts 切换，约第 293–343 行，按钮用 `className=\"ml-auto h-5\"`）——移动到任务详情的顶部标题栏（即详情视图最上方显示任务标题的那条 header 栏），让它和标题同处一行而不是埋在 diff 工具条里。\n\n要求：\n1. 找到任务详情真正的顶部标题栏容器（显示当前任务标题的那一行），把 File 按钮放在那里，遵循该 header 已有的对齐/间距/按钮风格（参考 globals.css 设计 token 与 ui/button 的 ghost variant）。\n2. 从 `DiffToolbar` 中移除该 File 按钮及其上方那段说明注释；保留 expand/collapse 按钮和 diff 模式切换不变。\n3. 行为完全不变：仍然调用 `fileSurfaceStore.openLibrary()` 打开同一个 portaled 覆盖层；保留 `aria-label`/`title`。\n4. 顶部标题栏在普通详情和全屏/展开两种布局下都要正确显示该按钮，注意不要破坏 diff 展开（isDiffExpanded）时的布局。\n5. 更新/补充相关测试（card-detail-view.test.tsx）以反映按钮的新位置。\n\n不要改动 File surface 本身的逻辑，只是搬移这个入口按钮。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782807049269,
+  "updatedAt": 1782807049269,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
