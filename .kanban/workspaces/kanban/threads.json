@@ -149,19 +149,27 @@
       "titleSource": "auto",
       "createdAt": 1782781795470,
       "updatedAt": 1782781833255
+    },
+    {
+      "id": "8b480843-0aa0-47e7-8b2a-8932e524d948",
+      "agentId": "codex",
+      "name": "kanban的部署命令除了回环地址可以访问，本机的地址无法访问",
+      "titleSource": "auto",
+      "createdAt": 1782782122126,
+      "updatedAt": 1782782122126
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "6588c4a9-28df-4a75-9774-172e2bb7832c",
       "72b6df6d-952c-4f47-a67e-fd9873fde479",
       "6a585585-b1b3-41e5-8785-009188294312",
       "09cbba03-af49-47b6-9e38-85e50946643b",
       "ab1cbbfe-a5b9-4481-adc1-3325483c72ce",
       "5fec3500-5c60-4477-8b05-794bc8dd76a7",
       "e5060a7c-ba48-41e0-b356-495436c7d21d",
-      "1219a752-a9d8-49b6-99aa-3405d222faea"
+      "1219a752-a9d8-49b6-99aa-3405d222faea",
+      "8b480843-0aa0-47e7-8b2a-8932e524d948"
     ],
-    "activeThreadId": "72b6df6d-952c-4f47-a67e-fd9873fde479"
+    "activeThreadId": "8b480843-0aa0-47e7-8b2a-8932e524d948"
   }
 }
