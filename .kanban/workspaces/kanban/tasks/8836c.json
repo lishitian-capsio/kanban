@@ -1,0 +1,20 @@
+{
+  "id": "8836c",
+  "title": "修复新建会话 agent 的语音输入报错",
+  "prompt": "在 Kanban 侧边栏新建会话(new chat thread)的对话框里,语音输入(麦克风/STT)报错:\"Microphone access is blocked for this browser or page.\"\n\n请排查并修复新建会话 agent 处的语音输入失败问题。\n\n已知线索:\n- 语音输入功能(VoiceInputButton / use-voice-input.ts / voice-input-state.ts)依赖 getUserMedia,而 getUserMedia 只在安全上下文(HTTPS 或 localhost)下可用。当通过 LAN + 纯 HTTP 访问时,浏览器会直接拒绝麦克风访问,正是该报错。这与 safe-uuid 的 secure-context 约束是同一类问题。\n- 现有约定:不支持时 VoiceInputButton 渲染 null(在不安全上下文/jsdom 中不可见)。需要确认新建会话对话框这条路径是否正确遵循该约定,以及报错文案是否被用户真实看到。\n\n需要做的:\n1. 复现:在新建会话对话框(new chat thread dialog,代码里近期加过 voice input)中触发语音输入报错,确认触发条件(是否仅 LAN/HTTP、是否权限被拒等)。\n2. 定位报错来源:是 getUserMedia 被安全上下文拦截,还是用户拒绝授权,还是其他错误分类。\n3. 修复并改善体验:在不可用时给出清晰、可操作的提示(例如说明需要 HTTPS/localhost,或权限被拒后的引导),避免直接抛出原始浏览器报错给用户;不可用时按既有约定优雅降级。\n4. 补充/更新相关单测(voice-input-state.ts 等纯逻辑部分)。\n\n相关代码参考:web-ui 的 KanbanChatComposer / VoiceInputButton、hooks/use-voice-input.ts、hooks/voice-input-state.ts、新建会话对话框组件,以及后端 src/stt/。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "ab1cbbfe-a5b9-4481-adc1-3325483c72ce",
+  "baseRef": "main",
+  "createdAt": 1782796737385,
+  "updatedAt": 1782796737385,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
