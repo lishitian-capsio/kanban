@@ -101,10 +101,10 @@
     {
       "id": "e211cecb-0eda-4458-ba46-1fbc486d4e40",
       "agentId": "claude",
-      "name": "Redesign new chat thread dialog",
+      "name": "Move DB access toggle into Database view",
       "titleSource": "auto",
       "createdAt": 1782715725360,
-      "updatedAt": 1782715753733,
+      "updatedAt": 1782796953669,
       "pendingNextStep": "启动任务 fe645，让 agent 开始重新设计弹窗"
     },
     {
