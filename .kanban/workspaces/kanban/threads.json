@@ -153,10 +153,10 @@
     {
       "id": "05ae5b1d-6387-46fa-ae3d-ad128d7026ae",
       "agentId": "codex",
-      "name": "new chat thread的弹窗内的输入框需要重新设计下",
+      "name": "Redesign chat thread input",
       "titleSource": "auto",
       "createdAt": 1782787958880,
-      "updatedAt": 1782787958880
+      "updatedAt": 1782788041557
     }
   ],
   "fullscreenTabs": {
