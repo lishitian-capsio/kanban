@@ -86,6 +86,9 @@ export class VaultSettingsStore {
 				...current,
 				...(patch.vaultMode !== undefined ? { vaultMode: patch.vaultMode } : {}),
 				...(patch.extraPushRemotes !== undefined ? { extraPushRemotes: patch.extraPushRemotes } : {}),
+				...(patch.agentDatabaseAccessEnabled !== undefined
+					? { agentDatabaseAccessEnabled: patch.agentDatabaseAccessEnabled }
+					: {}),
 			});
 			await lockedFileSystem.writeJsonFileAtomic(this.settingsPath, next, { lock: null });
 			return next;

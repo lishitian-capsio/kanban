@@ -6,10 +6,12 @@ import { useTrpcQuery } from "@/runtime/use-trpc-query";
 
 export interface UseVaultSettingsResult {
 	vaultMode: RuntimeVaultMode;
+	agentDatabaseAccessEnabled: boolean;
 	isLoading: boolean;
 	errorMessage: string | null;
 	isMutating: boolean;
 	setVaultMode: (next: RuntimeVaultMode) => Promise<void>;
+	setAgentDatabaseAccessEnabled: (next: boolean) => Promise<void>;
 }
 
 /**
@@ -48,11 +50,31 @@ export function useVaultSettings(workspaceId: string | null): UseVaultSettingsRe
 		[workspaceId, query],
 	);
 
+	const setAgentDatabaseAccessEnabled = useCallback(
+		async (next: boolean): Promise<void> => {
+			if (!workspaceId) {
+				return;
+			}
+			setIsMutating(true);
+			try {
+				await getRuntimeTrpcClient(workspaceId).workspace.updateVaultSettings.mutate({
+					agentDatabaseAccessEnabled: next,
+				});
+				await query.refetch();
+			} finally {
+				setIsMutating(false);
+			}
+		},
+		[workspaceId, query],
+	);
+
 	return {
 		vaultMode: query.data?.vaultMode ?? "off",
+		agentDatabaseAccessEnabled: query.data?.agentDatabaseAccessEnabled ?? false,
 		isLoading: query.isLoading,
 		errorMessage: query.isError ? (query.error?.message ?? "Could not load vault settings.") : null,
 		isMutating,
 		setVaultMode,
+		setAgentDatabaseAccessEnabled,
 	};
 }

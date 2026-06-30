@@ -1017,6 +1017,13 @@ export type RuntimeExtraPushRemote = z.infer<typeof runtimeExtraPushRemoteSchema
 export const runtimeVaultSettingsSchema = z.object({
 	vaultMode: runtimeVaultModeSchema.default("off"),
 	extraPushRemotes: z.array(runtimeExtraPushRemoteSchema).default([]),
+	// Gate for the agent-facing `kanban db` CLI (the read-only database channel added in
+	// task 77f6f). A deliberately lean two-state switch — `false` (the default) refuses
+	// every `db` subcommand with a clear error, `true` allows the read-only path. Unlike
+	// `vaultMode` this is not a progressive tier ladder: the CLI is read-only by design, so
+	// the only meaningful question is whether the agent may touch the database at all. Row
+	// edits go through the human Database UI on a separate channel and are unaffected.
+	agentDatabaseAccessEnabled: z.boolean().default(false),
 });
 export type RuntimeVaultSettings = z.infer<typeof runtimeVaultSettingsSchema>;
 
@@ -1032,6 +1039,7 @@ export type RuntimeVaultSettingsGetResponse = z.infer<typeof runtimeVaultSetting
 export const runtimeVaultSettingsUpdateRequestSchema = z.object({
 	vaultMode: runtimeVaultModeSchema.optional(),
 	extraPushRemotes: z.array(runtimeExtraPushRemoteSchema).optional(),
+	agentDatabaseAccessEnabled: z.boolean().optional(),
 });
 export type RuntimeVaultSettingsUpdateRequest = z.infer<typeof runtimeVaultSettingsUpdateRequestSchema>;
 

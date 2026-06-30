@@ -337,6 +337,8 @@ const ERROR_HINTS: Partial<Record<string, string>> = {
 	document_not_found: "List valid ids with `kanban vault doc list`.",
 	connection_not_found: "List valid ids with `kanban db connection list`.",
 	write_not_allowed: "This connection is read-only. Re-add it with --allow-writes to permit writes.",
+	database_access_disabled:
+		"Agent database access is disabled for this workspace. Enable it in the Vault settings popover (Agent database access).",
 	passcode_not_set: "Set one with `kanban remote passcode set <value>`.",
 	dependency_cycle: "Remove the conflicting link with `kanban task unlink <dependency-id>`.",
 	service_unsupported_platform: "Managed services are not supported on this platform.",

@@ -128,31 +128,37 @@ const COMMAND_SCHEMA_REGISTRY: Record<string, CommandSchemaMeta> = {
 		output: { ref: "#/schemas/DependencyResult" },
 		errors: [...DEFAULT_WORKSPACE_ERRORS, "task_not_found"],
 	},
-	"db.connection.list": { output: { ref: GENERIC_OUTPUT_REF }, errors: DEFAULT_WORKSPACE_ERRORS },
-	"db.connection.add": { output: { ref: GENERIC_OUTPUT_REF }, errors: VALIDATION_ERRORS },
+	// Every `db` subcommand is gated by the per-workspace agent-database-access switch
+	// (`RuntimeVaultSettings.agentDatabaseAccessEnabled`), so each can fail with
+	// `database_access_disabled` before doing any work — see `resolveDbWorkspace` in `db.ts`.
+	"db.connection.list": {
+		output: { ref: GENERIC_OUTPUT_REF },
+		errors: [...DEFAULT_WORKSPACE_ERRORS, "database_access_disabled"],
+	},
+	"db.connection.add": { output: { ref: GENERIC_OUTPUT_REF }, errors: [...VALIDATION_ERRORS, "database_access_disabled"] },
 	"db.connection.remove": {
 		output: { ref: GENERIC_OUTPUT_REF },
-		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found"],
+		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found", "database_access_disabled"],
 	},
 	"db.connection.test": {
 		output: { ref: GENERIC_OUTPUT_REF },
-		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found"],
+		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found", "database_access_disabled"],
 	},
 	"db.tables": {
 		output: { ref: GENERIC_OUTPUT_REF },
-		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found"],
+		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found", "database_access_disabled"],
 	},
 	"db.describe": {
 		output: { ref: GENERIC_OUTPUT_REF },
-		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found"],
+		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found", "database_access_disabled"],
 	},
 	"db.browse": {
 		output: { ref: "#/schemas/DbRowsResult" },
-		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found", "write_not_allowed"],
+		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found", "write_not_allowed", "database_access_disabled"],
 	},
 	"db.query": {
 		output: { ref: "#/schemas/DbRowsResult" },
-		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found", "write_not_allowed"],
+		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found", "write_not_allowed", "database_access_disabled"],
 	},
 	"file.list": { output: { ref: GENERIC_OUTPUT_REF }, errors: DEFAULT_WORKSPACE_ERRORS },
 	"file.show": {

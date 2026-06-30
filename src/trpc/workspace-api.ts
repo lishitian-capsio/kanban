@@ -594,6 +594,7 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 				vaultMode: input.vaultMode,
 				extraPushRemotes:
 					input.extraPushRemotes === undefined ? undefined : normalizeExtraPushRemotes(input.extraPushRemotes),
+				agentDatabaseAccessEnabled: input.agentDatabaseAccessEnabled,
 			});
 			void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
 			return { settings };

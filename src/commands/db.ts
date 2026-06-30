@@ -84,14 +84,32 @@ function parseBooleanFlag(value: unknown, flagName: string): boolean | undefined
 	throw new Error(`Invalid boolean value for ${flagName}: "${value}". Use true or false.`);
 }
 
-/** Resolve the workspace and register it with the runtime so its scope header is recognized. */
+/**
+ * Resolve the workspace and register it with the runtime so its scope header is recognized.
+ *
+ * This is the single chokepoint every `db` subcommand passes through, so it also enforces the
+ * per-workspace agent-database-access gate (`RuntimeVaultSettings.agentDatabaseAccessEnabled`):
+ * when the switch is off the whole `db` channel is refused up front with a clear, structured
+ * error, before any connection is read or query is run. The gate is deliberately the only state
+ * consulted — the CLI path is read-only by design, so "may the agent touch the database at all"
+ * is the only question. The human Database UI uses a separate tRPC router and is unaffected.
+ */
 async function resolveDbWorkspace(
 	projectPath: string | undefined,
 	cwd: string,
 ): Promise<{ repoPath: string; client: ReturnType<typeof createRuntimeTrpcClient> }> {
 	const repoPath = await resolveWorkspaceRepoPath(projectPath, cwd);
 	const workspaceId = await ensureRuntimeWorkspace(repoPath);
-	return { repoPath, client: createRuntimeTrpcClient(workspaceId) };
+	const client = createRuntimeTrpcClient(workspaceId);
+	const { settings } = await client.workspace.getVaultSettings.query();
+	if (!settings.agentDatabaseAccessEnabled) {
+		throw new CliError(
+			"database_access_disabled",
+			"Agent database access is disabled for this workspace. An operator can enable it in the " +
+				"Vault settings popover (Agent database access). The CLI database channel is read-only.",
+		);
+	}
+	return { repoPath, client };
 }
 
 async function listConnections(input: { cwd: string; projectPath?: string }): Promise<JsonRecord> {

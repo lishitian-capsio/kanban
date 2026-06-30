@@ -37,6 +37,7 @@ export const CLI_ERROR_CODES = [
 	"validation_failed",
 	"dependency_cycle",
 	"write_not_allowed",
+	"database_access_disabled",
 	"passcode_not_set",
 	"service_unsupported_platform",
 	"internal_error",
@@ -65,6 +66,7 @@ export function exitCodeForErrorCode(code: CliErrorCode): number {
 			return CLI_EXIT_RUNTIME_UNREACHABLE;
 		case "dependency_cycle":
 		case "write_not_allowed":
+		case "database_access_disabled":
 			return CLI_EXIT_CONFLICT;
 		case "invalid_argument":
 		case "validation_failed":

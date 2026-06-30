@@ -5,28 +5,33 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
+import { DatabaseAccessSelect } from "@/components/vault/database-access-select";
 import { VaultModeSelect } from "@/components/vault/vault-mode-select";
 import type { RuntimeVaultMode } from "@/runtime/types";
 
 /**
  * Top-bar Vault control: a split button whose left half toggles the vault surface
  * open/closed (matching its sibling Database button) and whose right half opens a
- * popover hosting the agent vault-management mode picker. Folding the mode picker
- * in here keeps it reachable without first opening the vault and avoids a second,
- * scattered switch entry living down in the vault sidebar.
+ * popover hosting the agent-capability switches — vault-management mode and the
+ * agent database-access gate. Folding these in here keeps them reachable without
+ * first opening the vault and avoids scattered switch entries down in the sidebar.
  */
 export function VaultControlButton({
 	isVaultOpen,
 	onToggleVault,
 	vaultMode,
 	onVaultModeChange,
-	vaultModeDisabled = false,
+	agentDatabaseAccessEnabled,
+	onAgentDatabaseAccessChange,
+	settingsDisabled = false,
 }: {
 	isVaultOpen: boolean;
 	onToggleVault: () => void;
 	vaultMode: RuntimeVaultMode;
 	onVaultModeChange: (next: RuntimeVaultMode) => void;
-	vaultModeDisabled?: boolean;
+	agentDatabaseAccessEnabled: boolean;
+	onAgentDatabaseAccessChange: (next: boolean) => void;
+	settingsDisabled?: boolean;
 }): React.ReactElement {
 	const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 	return (
@@ -59,8 +64,14 @@ export function VaultControlButton({
 						sideOffset={5}
 						align="start"
 					>
-						<div className="min-w-[280px]">
-							<VaultModeSelect mode={vaultMode} onChange={onVaultModeChange} disabled={vaultModeDisabled} />
+						<div className="flex min-w-[280px] flex-col gap-3">
+							<VaultModeSelect mode={vaultMode} onChange={onVaultModeChange} disabled={settingsDisabled} />
+							<div className="h-px bg-border" />
+							<DatabaseAccessSelect
+								enabled={agentDatabaseAccessEnabled}
+								onChange={onAgentDatabaseAccessChange}
+								disabled={settingsDisabled}
+							/>
 						</div>
 					</RadixPopover.Content>
 				</RadixPopover.Portal>
