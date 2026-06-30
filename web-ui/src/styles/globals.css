@@ -322,6 +322,16 @@ body,
 	transition: none !important;
 }
 
+/* While the home chat is fullscreen the board is mounted-but-hidden (visibility:hidden), but
+   @hello-pangea/dnd portals a dragging/auto-moving card to document.body — lifting it out of the
+   hidden subtree, so a programmatic column transition would otherwise paint the card
+   (position:fixed, z-index:5000) on top of the z-40 fullscreen overlay. The portaled card is a
+   direct body child carrying `.kb-board-card-shell`; re-hide it the same way the board is hidden
+   so only the fullscreen workspace (and its column-transition toast) shows. */
+body.kb-home-chat-fullscreen > .kb-board-card-shell {
+	visibility: hidden;
+}
+
 /* -- Scrollbars -- */
 
 * {

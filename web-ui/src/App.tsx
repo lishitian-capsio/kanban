@@ -515,6 +515,21 @@ export default function App(): ReactElement {
 	// flash — the board reflows to full width behind the overlay but never paints — so the
 	// `content-visibility: auto` cards can't repaint before the overlay composites over them.
 	const isHomeChatFullscreen = isHomeChatAvailable && isFullscreen;
+	// The board is mounted-but-hidden (visibility:hidden) while fullscreen, but @hello-pangea/dnd
+	// portals a dragging/auto-moving card to document.body to escape the columns' overflow clipping
+	// — which lifts it OUT of the hidden subtree, so a programmatic column transition would paint
+	// the card (position:fixed, z-index:5000) on top of the z-40 fullscreen overlay. Flag the body
+	// so CSS can re-hide that portaled card (see `.kb-home-chat-fullscreen` rule in globals.css),
+	// mirroring the kb-dependency-link-mode body-class pattern.
+	useEffect(() => {
+		if (typeof document === "undefined") {
+			return;
+		}
+		document.body.classList.toggle("kb-home-chat-fullscreen", isHomeChatFullscreen);
+		return () => {
+			document.body.classList.remove("kb-home-chat-fullscreen");
+		};
+	}, [isHomeChatFullscreen]);
 	const handleToggleHomeChat = useCallback(() => {
 		if (chatDock.open) {
 			chatDock.hide();
