@@ -1,0 +1,20 @@
+{
+  "id": "af945",
+  "title": "修复：全屏 session 下 board 卡片换列动画漏出到全屏之上",
+  "prompt": "Bug：在全屏（session/fullscreen）模式下，board 上的任务卡片在发生列状态流转（backlog→in_progress→review→done，及链接任务自动启动等）时，卡片本体的换列移动/位移动画会显示/闪现在全屏视图之上，这是不期望的。\n\n期望行为：\n- 全屏 session 模式下，board 任务卡片本体（及其换列移动动画）不应出现/漏出在全屏之上。\n- 现有的 toast 式列流转提示浮层（fullscreen-column-flash-overlay.tsx / use-column-transition-flashes.ts）是期望保留的方式 —— 全屏下用它来轻量提示状态流转即可，不要去掉。\n\n很可能的根因方向（请先核实）：\n- 全屏时 board 为了切换流畅是「挂载但隐藏」的（参见之前的 fullscreen 切换卡顿修复 mount-but-hide），隐藏态下卡片的位移/过渡动画可能仍在渲染并从全屏底层「漏」出来（例如 z-index、可见性、transform 动画在 hidden 容器里仍触发，或全屏覆盖层没有完全遮住正在做动画的卡片）。\n- 排查 board 在全屏下的隐藏方式（display/visibility/opacity/pointer-events、是否真正脱离视觉层）以及卡片换列动画的实现，确保动画期间隐藏的 board 不会有任何像素透出到全屏之上。\n\n请先调研全屏 session 视图的组件结构（HomeChatWorkspace 等）、board 在全屏下的挂载/隐藏方式，以及卡片换列动画的触发与渲染路径，再做最小改动修复。修复后验证：全屏下触发卡片换列时，只有 toast 提示出现，board 卡片本体不再露出。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "5fec3500-5c60-4477-8b05-794bc8dd76a7",
+  "baseRef": "main",
+  "createdAt": 1782788903616,
+  "updatedAt": 1782788903616,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
