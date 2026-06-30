@@ -13,8 +13,8 @@
   "originThreadId": "72b6df6d-952c-4f47-a67e-fd9873fde479",
   "baseRef": "main",
   "createdAt": 1782780939414,
-  "updatedAt": 1782780939414,
-  "column": "backlog",
-  "rank": "Zz",
+  "updatedAt": 1782780949240,
+  "column": "in_progress",
+  "rank": "a3",
   "dependsOn": []
 }
