@@ -1,0 +1,20 @@
+{
+  "id": "1c728",
+  "title": "Fix deploy command host binding",
+  "prompt": "Bug: Kanban 的部署命令当前似乎只有回环地址（localhost/127.0.0.1）可以访问，但使用本机局域网地址或本机实际网卡地址无法访问。请排查部署/serve 命令的监听 host、URL 输出、代理/防火墙假设，以及前后端 runtime 是否硬编码 loopback。目标：部署命令默认或通过参数支持可从本机实际地址访问，并在命令输出中清晰展示可用地址；如果出于安全原因默认只监听 loopback，则提供明确的 host 参数（例如 0.0.0.0）和文档/提示。请补充覆盖该行为的测试，遵守 AGENTS.md：不要使用 any，不要 inline import，不要提交 commit。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "codex",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "8b480843-0aa0-47e7-8b2a-8932e524d948",
+  "baseRef": "main",
+  "createdAt": 1782782275014,
+  "updatedAt": 1782782275014,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}

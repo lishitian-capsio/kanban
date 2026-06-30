@@ -153,10 +153,10 @@
     {
       "id": "8b480843-0aa0-47e7-8b2a-8932e524d948",
       "agentId": "codex",
-      "name": "kanban的部署命令除了回环地址可以访问，本机的地址无法访问",
+      "name": "部署地址访问问题",
       "titleSource": "auto",
       "createdAt": 1782782122126,
-      "updatedAt": 1782782122126
+      "updatedAt": 1782782274790
     }
   ],
   "fullscreenTabs": {
@@ -170,6 +170,6 @@
       "1219a752-a9d8-49b6-99aa-3405d222faea",
       "8b480843-0aa0-47e7-8b2a-8932e524d948"
     ],
-    "activeThreadId": "8b480843-0aa0-47e7-8b2a-8932e524d948"
+    "activeThreadId": "e5060a7c-ba48-41e0-b356-495436c7d21d"
   }
 }
