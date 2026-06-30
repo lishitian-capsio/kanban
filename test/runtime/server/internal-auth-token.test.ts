@@ -13,6 +13,7 @@ import {
 	INTERNAL_TOKEN_ENV,
 	isPasscodeEnabled,
 	issueSession,
+	setInternalToken,
 	validateInternalToken,
 	validatePasscode,
 	validateSession,
@@ -112,6 +113,23 @@ describe("Internal CLI auth token", () => {
 		const cur = generateInternalToken();
 		expect(validateInternalToken(old)).toBe(false);
 		expect(validateInternalToken(cur)).toBe(true);
+	});
+
+	it("setInternalToken activates a known (persisted) token in-memory and via env", () => {
+		const known = "c".repeat(64);
+		expect(setInternalToken(known)).toBe(known);
+		expect(getInternalToken()).toBe(known);
+		expect(process.env[INTERNAL_TOKEN_ENV]).toBe(known);
+		expect(validateInternalToken(known)).toBe(true);
+	});
+
+	it("a token set on a simulated restart still validates a child carrying the same value", () => {
+		// The previous runtime persisted+set token T; a restart resolves the same
+		// persisted T and re-activates it. A still-running child carrying T (in its
+		// inherited env) must continue to authenticate against the new instance.
+		const persisted = "d".repeat(64);
+		setInternalToken(persisted);
+		expect(validateInternalToken(persisted)).toBe(true);
 	});
 });
 

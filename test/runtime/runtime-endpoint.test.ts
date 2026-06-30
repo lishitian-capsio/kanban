@@ -1,5 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	buildKanbanRuntimeAccessUrls,
 	buildKanbanRuntimeUrl,
@@ -24,6 +26,8 @@ import {
 	setKanbanRuntimePort,
 	setKanbanRuntimeTls,
 } from "../../src/core/runtime-endpoint";
+import { writePersistedInternalToken } from "../../src/security/internal-token-store";
+import { createTempDir } from "../utilities/temp-dir";
 
 const originalRuntimePort = getKanbanRuntimePort();
 const originalRuntimeHost = getKanbanRuntimeHost();
@@ -35,12 +39,17 @@ const originalEnvNoProxy = process.env.NO_PROXY;
 const originalEnvNoProxyLower = process.env.no_proxy;
 const originalEnvAllowedHosts = process.env.KANBAN_RUNTIME_ALLOWED_HOSTS;
 const originalEnvInternalToken = process.env.KANBAN_INTERNAL_AUTH_TOKEN;
+const originalEnvInternalTokenFile = process.env.KANBAN_INTERNAL_TOKEN_FILE;
 
 beforeEach(() => {
 	setKanbanRuntimeHost("127.0.0.1");
 	setKanbanRuntimePort(originalRuntimePort);
 	clearKanbanRuntimeTls();
 	delete process.env.KANBAN_INTERNAL_AUTH_TOKEN;
+	// Point at a guaranteed-absent path so the persisted-token fallback in
+	// getRuntimeFetch is deterministic regardless of any real token file on
+	// the machine running the suite. Tests that need a token override locally.
+	process.env.KANBAN_INTERNAL_TOKEN_FILE = join(tmpdir(), "kanban-test-no-such-internal-token.json");
 });
 
 afterEach(() => {
@@ -86,6 +95,11 @@ afterEach(() => {
 		delete process.env.KANBAN_INTERNAL_AUTH_TOKEN;
 	} else {
 		process.env.KANBAN_INTERNAL_AUTH_TOKEN = originalEnvInternalToken;
+	}
+	if (originalEnvInternalTokenFile === undefined) {
+		delete process.env.KANBAN_INTERNAL_TOKEN_FILE;
+	} else {
+		process.env.KANBAN_INTERNAL_TOKEN_FILE = originalEnvInternalTokenFile;
 	}
 });
 
@@ -189,6 +203,38 @@ describe("runtime-endpoint", () => {
 			ca: "test-cert",
 		});
 		expect(await getRuntimeFetch()).not.toBe(globalThis.fetch);
+	});
+
+	it("injects the bearer token from the persisted file when no env token is set", async () => {
+		const tmp = createTempDir();
+		const tokenFile = join(tmp.path, "settings", "internal-token.json");
+		const originalTokenFileEnv = process.env.KANBAN_INTERNAL_TOKEN_FILE;
+		try {
+			delete process.env.KANBAN_INTERNAL_AUTH_TOKEN;
+			process.env.KANBAN_INTERNAL_TOKEN_FILE = tokenFile;
+			await writePersistedInternalToken(tokenFile, "f".repeat(64));
+			clearKanbanRuntimeTls(); // reset the memoized fetch so the fallback runs
+
+			let seenAuth: string | null = null;
+			const original = globalThis.fetch;
+			globalThis.fetch = ((_url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+				seenAuth = new Headers(init?.headers).get("Authorization");
+				return Promise.resolve(new Response(null));
+			}) as typeof globalThis.fetch;
+			try {
+				const runtimeFetch = await getRuntimeFetch();
+				expect(runtimeFetch).not.toBe(original);
+				await runtimeFetch("https://example.com/api/trpc");
+				expect(seenAuth).toBe(`Bearer ${"f".repeat(64)}`);
+			} finally {
+				globalThis.fetch = original;
+				clearKanbanRuntimeTls();
+			}
+		} finally {
+			if (originalTokenFileEnv === undefined) delete process.env.KANBAN_INTERNAL_TOKEN_FILE;
+			else process.env.KANBAN_INTERNAL_TOKEN_FILE = originalTokenFileEnv;
+			tmp.cleanup();
+		}
 	});
 });
 

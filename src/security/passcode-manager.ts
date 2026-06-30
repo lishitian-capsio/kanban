@@ -214,16 +214,38 @@ export function clearRateLimit(ip: string): void {
 //   • Never exposed to browser clients.
 
 /**
+ * Generate a fresh internal CLI auth token (32 random bytes, hex-encoded).
+ *
+ * Exported so the persistence layer can use it as the default generator when
+ * resolving the effective token (persisted > generated), mirroring
+ * {@link generateRandomPasscode}.
+ */
+export function generateRandomInternalToken(): string {
+	return randomBytes(32).toString("hex");
+}
+
+/**
  * Generate (or regenerate) the internal CLI auth token.
  * Called by the server at startup when remote-mode passcode is active.
  * The token is stored in-memory and written to `process.env` so that
  * child processes inherit it.
  */
 export function generateInternalToken(): string {
-	const token = randomBytes(32).toString("hex");
-	internalAuthToken = token;
-	process.env[INTERNAL_TOKEN_ENV] = token;
-	return token;
+	return setInternalToken(generateRandomInternalToken());
+}
+
+/**
+ * Activate a known internal token (from a persisted value resolved off-process).
+ * Stores it in-memory AND propagates it via `process.env` so that spawned child
+ * processes inherit it. Unlike {@link generateInternalToken}, this reuses an
+ * existing value instead of rotating — so an OS-service restart no longer
+ * invalidates the tokens still-running agent sessions were spawned with.
+ * Returns the value for symmetry with {@link setPasscode}.
+ */
+export function setInternalToken(value: string): string {
+	internalAuthToken = value;
+	process.env[INTERNAL_TOKEN_ENV] = value;
+	return value;
 }
 
 /**

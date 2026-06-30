@@ -45,7 +45,8 @@ import {
 import { getGiteeAuthService } from "./gitee-auth";
 import { getGitHubAuthService } from "./github-auth";
 import { configureLogging, createLogger } from "./logging";
-import { disablePasscode, generateInternalToken, setPasscode } from "./security/passcode-manager";
+import { resolveAndPersistInternalToken } from "./security/internal-token-store";
+import { disablePasscode, setInternalToken, setPasscode } from "./security/passcode-manager";
 import { getPasscodeFilePath, isPersistedPasscodeDisabled, resolveAndPersistPasscode } from "./security/passcode-store";
 import { startEventLoopStallWatchdog } from "./server/event-loop-stall-watchdog";
 import { terminateProcessForTimeout } from "./server/process-termination";
@@ -672,7 +673,10 @@ async function runMainCommand(options: CliOptions, shouldAutoOpenBrowser: boolea
 			// passcode is printed ONLY here via printLine and never stored in logs.
 			const { value, source } = await resolveAndPersistPasscode({ explicit });
 			setPasscode(value);
-			generateInternalToken();
+			// Reuse the persisted internal token across restarts (parallels the
+			// passcode) so an OS-service restart no longer rotates it and 401s the
+			// hooks of still-running agent sessions / independently-launched CLIs.
+			setInternalToken((await resolveAndPersistInternalToken()).value);
 			const note =
 				source === "persisted"
 					? "reused from previous run"

@@ -2,6 +2,7 @@ import { networkInterfaces } from "node:os";
 import { rootCertificates } from "node:tls";
 import { Agent } from "undici";
 import { LOOPBACK_NO_PROXY_HOSTS, mergeNoProxyEntries } from "../config/proxy-env";
+import { getInternalTokenFilePath, readPersistedInternalToken } from "../security/internal-token-store";
 import { getInternalToken } from "../security/passcode-manager";
 
 export const DEFAULT_KANBAN_RUNTIME_HOST = "127.0.0.1";
@@ -362,9 +363,12 @@ export function getRuntimeFetch(): Promise<typeof globalThis.fetch> {
 				globalThis.fetch(url, { ...init, dispatcher } as RequestInit)) as typeof globalThis.fetch;
 		}
 
-		// Wrap the base fetch to inject the internal CLI auth bearer token
-		// when one is available (propagated via env var from the server process).
-		const internalToken = getInternalToken();
+		// Wrap the base fetch to inject the internal CLI auth bearer token when one
+		// is available. Daemon-spawned children inherit it via the env var; a CLI/
+		// hook process launched independently of the daemon has no env token, so
+		// fall back to the machine-local persisted token (same value the server
+		// reuses across restarts) — without it such a process can never authenticate.
+		const internalToken = getInternalToken() ?? (await readPersistedInternalToken(getInternalTokenFilePath()));
 		if (!internalToken) {
 			return baseFetch;
 		}
