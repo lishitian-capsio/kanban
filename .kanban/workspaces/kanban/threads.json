@@ -158,14 +158,6 @@
       "createdAt": 1782782122126,
       "updatedAt": 1782782274790,
       "pendingNextStep": "Start task 1c728"
-    },
-    {
-      "id": "de09de4d-6d8e-4c1e-8afc-c8d4c59680f1",
-      "agentId": "codex",
-      "name": "codex， 选择了这个agent, 重启后再进入就Agent exited without producing ou…",
-      "titleSource": "auto",
-      "createdAt": 1782783612847,
-      "updatedAt": 1782783612847
     }
   ],
   "fullscreenTabs": {
@@ -176,9 +168,8 @@
       "1219a752-a9d8-49b6-99aa-3405d222faea",
       "8b480843-0aa0-47e7-8b2a-8932e524d948",
       "6588c4a9-28df-4a75-9774-172e2bb7832c",
-      "72b6df6d-952c-4f47-a67e-fd9873fde479",
-      "de09de4d-6d8e-4c1e-8afc-c8d4c59680f1"
+      "72b6df6d-952c-4f47-a67e-fd9873fde479"
     ],
-    "activeThreadId": "de09de4d-6d8e-4c1e-8afc-c8d4c59680f1"
+    "activeThreadId": "8b480843-0aa0-47e7-8b2a-8932e524d948"
   }
 }
