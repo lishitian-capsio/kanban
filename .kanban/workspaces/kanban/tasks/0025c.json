@@ -1,0 +1,20 @@
+{
+  "id": "0025c",
+  "title": "为 kanban agent 开放 database CLI 子命令(连接管理 + 只读查询)",
+  "prompt": "目标:让 kanban agent 能\"管理 database\",但只到\"管连接 + 只读查询\"这一层,写操作仍留给人(沿用现有 Database 视图的 allowWrites + 主键闸门,本任务不放开)。\n\n背景:现在 Database 是面向人的视图,走 tRPC `database` router,底层是 src/db/ 的只读客户端(pg/mysql2/sqlite)。kanban agent 目前只有 Kanban CLI(task / vault doc 等),完全没有操作 database 的通道。本任务给 agent 开一个 CLI 通道,复用现有 router 能力,不要新造一套 DB 访问层。\n\n具体要求:\n1. 新增一个 `database`(或 `db`)CLI 子命令组,包住现有 `database` tRPC router 的【只读】能力:\n   - 列出 / 新增 / 删除 数据库连接配置(连接编排,本身不含数据写)。\n   - 在指定连接上跑只读查询 / 浏览表数据(复用现有只读路径,绝不开放写/DDL)。\n2. 输出沿用现有 CLI 约定:JSON envelope(schemaVersion/ok/command/data|error),与 task/vault 子命令一致;ids 用 positional + 兼容老 flag 的写法(见 CLI redesign P2 的 resolve-inside-handler 约定)。\n3. 凭据/secret 绝不写进 --json stdout,也不落到 <repo>/.kanban(参照 passcode / github-auth 的 machine-local 0600 约定)。\n4. 不要触碰写数据/改 schema 的路径——本任务范围严格只读 + 连接管理。\n\n先在 worktree 里读 src/db/ 和 trpc 里的 `database` router,确认现有只读查询/连接管理的入口和返回类型,再以最小封装暴露成 CLI 子命令(参考现有 task/vault CLI 命令的实现方式)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "72b6df6d-952c-4f47-a67e-fd9873fde479",
+  "baseRef": "main",
+  "createdAt": 1782780939414,
+  "updatedAt": 1782780939414,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
