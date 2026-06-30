@@ -1,7 +1,7 @@
 {
   "id": "59568",
   "title": "全屏 session 模式下闪现 board 任务状态流转动画",
-  "prompt": "在全屏（session/fullscreen）模式下，当看板（board）上某个任务卡片的列状态发生变化时（例如 backlog→in_progress、in_progress→review、review→done，以及链接任务自动启动导致的流转），在全屏视图之上闪现一个轻量的过渡动画，呈现该任务卡片的状态流转，让用户在不退出全屏的情况下也能感知到看板状态的实时变动。\n\n需求要点：\n- 仅在全屏 session 模式下触发，普通看板视图本身已有卡片，无需额外覆盖动画。\n- 动画应是非阻塞的浮层/toast 级别的闪现（出现-停留-淡出），不能遮挡或打断用户在全屏里的当前操作。\n- 触发源是任务卡片的 column 状态转换事件（runtime 已有 task_sessions_updated / workspace_state_updated 广播，前端 runtime store 已按字段粒度分发）。\n- 内容上体现：哪个任务、从哪个状态流转到哪个状态（可用列名 + 卡片标题）。\n- 注意性能：高频状态变动时要做合并/节流，避免动画堆叠把全屏刷爆；订阅应放在展示该浮层的叶子组件里，避免在 App 层订阅高频 slice 导致整树重渲染。\n\n这是一个 web-ui 前端体验改进，主要涉及全屏/session 视图与 runtime 状态流的消费。请先调研全屏 session 模式的组件结构与状态转换事件的现有消费路径，再实现该浮层动画。",
+  "prompt": "在全屏（session/fullscreen）模式下，当看板（board）上某个任务卡片发生列状态流转时（backlog→in_progress→review→done，以及链接任务自动启动导致的流转），在全屏视图之上呈现【该任务卡片本身的换列流转动画】——即让用户看到那张卡片从源列移动/过渡到目标列的真实运动动画，而不是一个纯文字的 toast 提示浮层。\n\n需求要点：\n- 关键区别：要的是 board 任务卡片本体的状态流转动画（卡片在列与列之间移动/位移/过渡的视觉运动），不是文字通知式的 toast 浮层。\n- 仅在全屏 session 模式下触发；普通看板视图本身就能看到卡片移动，无需额外覆盖层。\n- 动画在全屏之上以浮层方式短暂呈现这张卡片的流转运动（出现→运动到目标列→淡出），非阻塞，不打断用户在全屏内的当前操作。\n- 触发源是任务卡片的 column 状态转换事件（runtime 已有 task_sessions_updated / workspace_state_updated 广播，前端 runtime store 已按字段粒度分发；工作区当前已存在 state/column-transition.ts 的 diff/merge 逻辑与 use-column-transition-flashes.ts，可复用其状态转换检测，只是把展示从 toast 升级为真实卡片的位移动画）。\n- 动画内容应能辨认是哪张卡片、从哪一列到哪一列（卡片标题 + 源列/目标列）。\n- 性能：高频流转要合并/节流，避免多张卡片动画同时堆叠刷爆全屏；订阅放在展示该浮层的叶子组件里，避免在 App 层订阅高频 slice 导致整树重渲染。\n\n请先调研现有 fullscreen-column-flash-overlay.tsx / use-column-transition-flashes.ts / state/column-transition.ts 的实现，在其基础上把「文字闪现」改造/扩展为「卡片本体的换列流转动画」。",
   "startInPlanMode": false,
   "autoReviewEnabled": false,
   "autoReviewMode": "commit",
@@ -13,7 +13,7 @@
   "originThreadId": "5fec3500-5c60-4477-8b05-794bc8dd76a7",
   "baseRef": "main",
   "createdAt": 1782781579043,
-  "updatedAt": 1782782487519,
+  "updatedAt": 1782788817050,
   "column": "trash",
   "rank": "aI8",
   "dependsOn": []
