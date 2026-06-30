@@ -1,0 +1,20 @@
+{
+  "id": "5acfa",
+  "title": "回退 Pi 会话收归（恢复 Pi tab）",
+  "prompt": "撤销 commit a328631e `fix(home-chat): consolidate Pi session management into one rail across modes`，把 Pi tab 恢复回来。\n\n背景：\n- a328631e 把 Pi 会话管理从「Pi tab + board 下拉框 + launcher」收归成一条常驻的 PiSessionManager / PiSessionRail，并删除了 Pi 锚点 tab、把 pi 从 tabs/dropdown/launcher 过滤掉、移除了 ?chat=pi。\n- 用户决定回退这次改动，恢复到收归之前的状态：Pi 重新作为锚点 tab 出现（Home → … → File → Pi），恢复旧的入口与 ?chat=pi 路由。\n\n实现要求：\n1. 用 `git revert` 或等效方式回退 a328631e 的全部改动。注意它之后还有 72a722c6（top-bar File 入口）、fec49bc1（vault toggle）、292f3141（移除 voice）等提交，可能与本次回退在 home-chat-workspace.tsx / session-tab-strip.tsx / top-bar.tsx 等文件上冲突——按需手工解决冲突，保留那些后续提交的意图，只回退 Pi 收归相关部分。\n2. 回退后确认：Pi 重新以 tab 形式可见、可点击进入；旧的 Pi 会话入口（如下拉框/launcher）行为恢复；?chat=pi 重新有效；被 a328631e 新增的 PiSessionManager/PiSessionRail 若不再被引用则一并清理，避免死代码。\n3. 保持其余功能不受影响；typecheck 与相关测试通过（注意 a328631e 可能改过 home-chat-workspace.test.tsx，回退后测试要对齐）。\n\n注意：这是 UI 回退，base 为 main。不要改动后端会话契约。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "16d0ae97-5f56-4649-ba14-d0134b8c262e",
+  "baseRef": "main",
+  "createdAt": 1782811012541,
+  "updatedAt": 1782811012541,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
