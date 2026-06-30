@@ -137,6 +137,36 @@ describe("findLatestCodexSessionId", () => {
 		const id = await findLatestCodexSessionId({ sessionsDir: sessionsDir(), cwd: "/repo/worktree-a", sinceMs: 0 });
 		expect(id).toBeNull();
 	});
+
+	it("returns the newest-dated matching rollout across multiple date directories", async () => {
+		// Same cwd, different days. The active session's rollout lives in the newest
+		// day-dir, so date order (not raw mtime) decides across directories — even when
+		// an older-dated rollout happens to carry a higher mtime (a stale resume-reuse).
+		writeRollout({ sessionId: ID_A, cwd: "/repo/worktree-a", date: ["2026", "06", "20"], mtimeMs: 9_000_000 });
+		writeRollout({ sessionId: ID_B, cwd: "/repo/worktree-a", date: ["2026", "06", "22"], mtimeMs: 1_000_000 });
+		const id = await findLatestCodexSessionId({ sessionsDir: sessionsDir(), cwd: "/repo/worktree-a", sinceMs: 0 });
+		expect(id).toBe(ID_B);
+	});
+
+	it("descends across months and years to find the newest-dated match", async () => {
+		writeRollout({ sessionId: ID_A, cwd: "/repo/worktree-a", date: ["2025", "12", "31"] });
+		writeRollout({ sessionId: ID_B, cwd: "/repo/worktree-a", date: ["2026", "01", "02"] });
+		const id = await findLatestCodexSessionId({ sessionsDir: sessionsDir(), cwd: "/repo/worktree-a", sinceMs: 0 });
+		expect(id).toBe(ID_B);
+	});
+
+	it("falls back to an older date dir when the newest has no cwd match (floor honored)", async () => {
+		// Newest day has only another task's rollout; ours is one day older and above
+		// the floor — capture must still find it.
+		writeRollout({ sessionId: ID_A, cwd: "/some/other/repo", date: ["2026", "06", "22"], mtimeMs: 5_000_000 });
+		writeRollout({ sessionId: ID_B, cwd: "/repo/worktree-a", date: ["2026", "06", "21"], mtimeMs: 4_000_000 });
+		const id = await findLatestCodexSessionId({
+			sessionsDir: sessionsDir(),
+			cwd: "/repo/worktree-a",
+			sinceMs: 3_000_000,
+		});
+		expect(id).toBe(ID_B);
+	});
 });
 
 describe("captureCodexSessionId", () => {

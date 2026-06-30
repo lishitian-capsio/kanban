@@ -21,7 +21,7 @@
 // against picking up a stale rollout from a *previous* launch of the same task
 // before the current launch has written anything.
 
-import { createReadStream } from "node:fs";
+import { createReadStream, type Dirent } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -96,31 +96,76 @@ async function readRolloutSessionMeta(file: string): Promise<SessionMeta | null>
 	}
 }
 
-/** Recursively collect every `rollout-*.jsonl` file under a sessions directory. */
-async function collectRolloutFiles(sessionsDir: string): Promise<string[]> {
-	let entries: Array<{ name: string; parentPath?: string; path?: string }>;
+/** True for a Codex rollout transcript filename (`rollout-*.jsonl`). */
+function isRolloutFileName(name: string): boolean {
+	return name.startsWith("rollout-") && name.endsWith(".jsonl");
+}
+
+/** Read a directory's immediate entries, returning `[]` when it can't be read. */
+async function readDirEntriesSafe(dir: string): Promise<Dirent[]> {
 	try {
-		entries = (await readdir(sessionsDir, {
-			recursive: true,
-			withFileTypes: true,
-		})) as unknown as Array<{ name: string; parentPath?: string; path?: string; isFile(): boolean }>;
+		return await readdir(dir, { withFileTypes: true });
 	} catch {
 		return [];
 	}
-	const files: string[] = [];
-	for (const entry of entries as Array<{ name: string; parentPath?: string; path?: string; isFile(): boolean }>) {
-		if (!entry.isFile()) {
-			continue;
+}
+
+/**
+ * Names of a directory's immediate child dirs that look like a zero-padded numeric
+ * date segment (`2026`, `06`, `22`), sorted **descending**. Codex pads every level
+ * to a fixed width, so a lexical descending sort equals a numeric one and a
+ * non-date sibling (e.g. an index dir) is filtered out.
+ */
+function numericChildDirsDescending(entries: Dirent[]): string[] {
+	return entries
+		.filter((entry) => entry.isDirectory() && /^\d+$/.test(entry.name))
+		.map((entry) => entry.name)
+		.sort((left, right) => (left < right ? 1 : left > right ? -1 : 0));
+}
+
+/**
+ * Yield the `<YYYY>/<MM>/<DD>` rollout day-directories under a Codex sessions dir,
+ * **newest date first**. Codex partitions rollouts by creation date, so descending
+ * the numeric year→month→day levels visits the most recent days first. The traversal
+ * is lazy — each level is only read when the consumer pulls past the previous one —
+ * so an early-exiting caller (which is the common case: the active session's rollout
+ * is in one of the newest day-dirs) reads only recent history instead of recursively
+ * stat-ing every rollout the user has ever created (finding T1).
+ */
+async function* iterRolloutDayDirsNewestFirst(sessionsDir: string): AsyncGenerator<string> {
+	for (const year of numericChildDirsDescending(await readDirEntriesSafe(sessionsDir))) {
+		const yearDir = join(sessionsDir, year);
+		for (const month of numericChildDirsDescending(await readDirEntriesSafe(yearDir))) {
+			const monthDir = join(yearDir, month);
+			for (const day of numericChildDirsDescending(await readDirEntriesSafe(monthDir))) {
+				yield join(monthDir, day);
+			}
 		}
-		if (!entry.name.startsWith("rollout-") || !entry.name.endsWith(".jsonl")) {
-			continue;
-		}
-		// `parentPath` (Node 20.12+/Bun) is the directory holding the entry; older
-		// `path` is the same. Fall back to the root when neither is present.
-		const parent = entry.parentPath ?? entry.path ?? sessionsDir;
-		files.push(join(parent, entry.name));
 	}
-	return files;
+}
+
+/**
+ * Among accumulated candidates, return the highest-mtime one whose rollout `cwd`
+ * matches, or null. `session_meta` reads are memoized in `metaCache` so re-scanning
+ * a growing candidate set across day-dirs never re-reads a file's first line.
+ */
+async function resolveHighestMtimeCwdMatch(
+	candidates: Array<{ file: string; mtimeMs: number }>,
+	cwd: string,
+	metaCache: Map<string, SessionMeta | null>,
+): Promise<LatestCodexRollout | null> {
+	const sorted = [...candidates].sort((left, right) => right.mtimeMs - left.mtimeMs);
+	for (const candidate of sorted) {
+		let meta = metaCache.get(candidate.file);
+		if (meta === undefined) {
+			meta = await readRolloutSessionMeta(candidate.file);
+			metaCache.set(candidate.file, meta);
+		}
+		if (meta && meta.cwd === cwd) {
+			return { file: candidate.file, id: meta.id };
+		}
+	}
+	return null;
 }
 
 export interface FindLatestCodexSessionInput {
@@ -140,43 +185,63 @@ export interface LatestCodexRollout {
 }
 
 /**
- * Find the most recently modified rollout under `sessionsDir` whose `cwd` matches
- * and whose mtime is at/after `sinceMs`. Returns its file path + session id, or
- * null when none qualifies. This is the shared cwd-matching locator behind both
- * session-id capture and token-usage reading — the worktree `cwd` disambiguates
- * concurrent sessions sharing a `~/.codex` default login (each task = one cwd).
+ * Find the active rollout under `sessionsDir` whose `cwd` matches and whose mtime is
+ * at/after `sinceMs`. Returns its file path + session id, or null when none qualifies.
+ * This is the shared cwd-matching locator behind both session-id capture and
+ * token-usage reading — the worktree `cwd` disambiguates concurrent sessions sharing
+ * a `~/.codex` default login (each task = one cwd).
+ *
+ * Resolution is **newest-date-dir first, highest-mtime within** (finding T1): the walk
+ * stops at the first `<YYYY>/<MM>/<DD>` dir that yields a cwd match rather than stat-ing
+ * the user's whole history. The only deviation from a strict global-max-mtime scan is
+ * the narrow case where the *same* cwd has rollouts across multiple days and an
+ * older-dated one was resume-appended more recently than a newer-dated one — then the
+ * newer-dated rollout wins. On the capture path the `sinceMs` floor excludes that stale
+ * newer-dated rollout, so capture stays exact; on the usage path (no floor) it self-heals
+ * because the resolved path is dropped and re-resolved on the next launch.
  */
 export async function findLatestCodexRollout(input: FindLatestCodexSessionInput): Promise<LatestCodexRollout | null> {
-	const files = await collectRolloutFiles(input.sessionsDir);
 	const floor = input.sinceMs - MTIME_FLOOR_TOLERANCE_MS;
 
-	// Stat all candidates (cheap), drop those below the mtime floor, then sort by
-	// mtime descending. The active rollout is the most recently written one, so
-	// reading `session_meta` newest-first and returning at the first cwd match means
-	// we usually open exactly one rollout instead of every file whose mtime beat the
-	// running max — turning the per-walk `session_meta` reads from O(files) into ≈1
-	// (finding T1). The cwd disambiguates concurrent sessions sharing `~/.codex`.
+	// Walk day-directories newest-date-first and stop at the first day that yields a
+	// cwd match. The active session's rollout lives in (one of) the most recent
+	// day-dirs, so this reads only recent history instead of stat-ing every rollout
+	// the user has ever created (finding T1) — the win is largest on the launch
+	// capture poll, which repeats this walk up to 30×. Within the accumulated
+	// candidate set we still return the highest-mtime cwd match, so a single day
+	// holding several same-cwd rollouts resolves to the most recently written one,
+	// and a newest day with no match falls through to older days. The `sinceMs` floor
+	// drops rollouts from a previous launch (and, on the capture path, makes the
+	// date-first early-exit exact — a stale newer-dated rollout sits below the floor).
 	const candidates: Array<{ file: string; mtimeMs: number }> = [];
-	for (const file of files) {
-		let mtimeMs: number;
-		try {
-			mtimeMs = (await stat(file)).mtimeMs;
-		} catch {
-			continue;
-		}
-		if (mtimeMs < floor) {
-			continue;
-		}
-		candidates.push({ file, mtimeMs });
-	}
-	candidates.sort((left, right) => right.mtimeMs - left.mtimeMs);
+	const metaCache = new Map<string, SessionMeta | null>();
 
-	for (const candidate of candidates) {
-		const meta = await readRolloutSessionMeta(candidate.file);
-		if (!meta || meta.cwd !== input.cwd) {
+	for await (const dayDir of iterRolloutDayDirsNewestFirst(input.sessionsDir)) {
+		let addedFromThisDay = false;
+		for (const entry of await readDirEntriesSafe(dayDir)) {
+			if (!entry.isFile() || !isRolloutFileName(entry.name)) {
+				continue;
+			}
+			const file = join(dayDir, entry.name);
+			let mtimeMs: number;
+			try {
+				mtimeMs = (await stat(file)).mtimeMs;
+			} catch {
+				continue;
+			}
+			if (mtimeMs < floor) {
+				continue;
+			}
+			candidates.push({ file, mtimeMs });
+			addedFromThisDay = true;
+		}
+		if (!addedFromThisDay) {
 			continue;
 		}
-		return { file: candidate.file, id: meta.id };
+		const match = await resolveHighestMtimeCwdMatch(candidates, input.cwd, metaCache);
+		if (match) {
+			return match;
+		}
 	}
 	return null;
 }
