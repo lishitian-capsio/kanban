@@ -1,0 +1,20 @@
+{
+  "id": "95873",
+  "title": "R2 运行时: pi execute_command/search_files 改异步(去同步冻结)",
+  "prompt": "第二轮性能优化(运行时唯一剩余的同步硬冻结)。先读 .plan/docs/perf-runtime-findings.md 的 P1-A。\n\n【audit-first，强制】第一轮运行时实现任务是 8c1f0。动手前先确认 8c1f0 是否已把这处 execSync 改掉；若已做则标注跳过、本任务关闭即可，不要重复改。\n\n目标(仅当仍未修复)：pi 原生 agent 的 execute_command / search_files 工具在【进程内】用 execSync，会把整个 Bun 运行时阻塞最长 60s/30s。改成异步 execFile/promisify(execFile)(或 Bun.spawn + await .exited)，cwd/timeout/maxBuffer 在异步 API 上都有。\n\n注意：\n- 错误分支读的是 error.stdout/stderr/status；execFile reject 的 error 也带这些字段，但字段名/语义要核对，别破坏既有错误处理与命令审批流程。\n- 顺手埋 markStall(\"pi:exec\", …) 面包屑便于归因(对齐 event-loop-stall-watchdog 思路)。\n- 这是 vendored omp/pi agent-sdk 区域(src/agent-sdk)，注意该层自有 logger，别误用 Kanban facade；改动保持最小，仅 I/O 形态变化，契约不变。\n- 遵守 AGENTS.md；该层 vitest 限制见既有说明，测不到的用 Bun round-trip 验证。\n\n范围仅此一处同步子进程的异步化；不做无关重构。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6a585585-b1b3-41e5-8785-009188294312",
+  "baseRef": "main",
+  "createdAt": 1782780977020,
+  "updatedAt": 1782780977020,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}
