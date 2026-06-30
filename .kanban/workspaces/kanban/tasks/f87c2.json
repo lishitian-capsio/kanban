@@ -1,0 +1,20 @@
+{
+  "id": "f87c2",
+  "title": "全屏 column-flash toast 语义化文案 + 可点击跳转",
+  "prompt": "增强全屏 session 模式下叙述卡片列转换的 toast 浮层（column-flash overlay），让它「更丰富」。范围明确为两点，不要扩散到 agent 头像/模型/token 信息。\n\n相关文件：\n- web-ui/src/components/home-agent/fullscreen-column-flash-overlay.tsx（浮层 UI，含 ColumnPill 与 COLUMN_DISPLAY）\n- web-ui/src/hooks/use-column-transition-flashes.ts（数据/合并/过期 hook）\n- web-ui/src/state/column-transition.ts（ColumnTransition/ColumnFlash 类型 + 纯函数 diff/merge/expire，有对应 .test.ts，改类型/逻辑要同步更新测试）\n- web-ui/src/styles/globals.css 中的 kb-column-flash 动画\n- 浮层挂载在 HomeChatWorkspace（仅 fullscreen 渲染）\n\n需求 1 —— 语义化文案（取代当前裸的「来源列 → 目标列」两个药丸）：\n- 文案/图标/配色按【目标列】定制，而不是单纯展示 from→to。建议：\n  - 目标=review：✅ 类语气，如「已完成，等待 review」（用 status-orange 系）\n  - 目标=in_progress：🚀/Play 类语气，如「开始执行」（用 status-blue 系）\n  - 目标=done(trash)：完成语气，如「已完成」（用 status-green 系）\n  - 目标=backlog：退回语气（用 text-tertiary 系）\n- 仍要保留任务标题。可保留一个简化的来源信息（如仍显示来源列小药丸或「从 X」），但主视觉是语义化的目标状态，不要再是对称的两个 pill。用 lucide-react 图标（CheckCircle2/Play/CircleDashed 等），配色走 globals.css 的 status-* 设计 token。\n\n需求 2 —— 可点击跳转到对应任务：\n- 目前整层是 pointer-events-none 纯展示。改成：层仍不挡用户操作，但每个 flash 卡片本身可点击（pointer-events-auto），点击后打开对应任务。\n- 复用现有「打开任务」通路：参考 fullscreen Task tab 的 onOpenTask（exitFullscreen + setSelectedTaskId）模式，把 onOpenTask 之类的回调从 HomeChatWorkspace 传进 FullscreenColumnFlashOverlay，点击时用 flash.taskId 调用。检索 onOpenTask / setSelectedTaskId 的现有实现，沿用同一套，不要新造一套跳转机制。\n- 注意无障碍：可点击项要有合适的 role/键盘可达性；role=status aria-live 的容器语义保留。\n\n约束：\n- 遵循 AGENTS.md 的 web-ui 规范：Tailwind + 设计 token（status-blue/green/orange、text-* 等）、lucide-react 图标、cn() 拼类名，优先 className 不用内联 style。\n- column-transition.ts 是纯函数且有单测，若需要在 ColumnTransition/ColumnFlash 上加字段（一般不需要，title+toColumnId 已够），必须同步更新 column-transition.test.ts。\n- 跑通 web-ui 的 typecheck 与相关测试。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e5060a7c-ba48-41e0-b356-495436c7d21d",
+  "baseRef": "main",
+  "createdAt": 1782808725197,
+  "updatedAt": 1782808725197,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
