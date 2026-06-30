@@ -1,0 +1,20 @@
+{
+  "id": "59568",
+  "title": "全屏 session 模式下闪现 board 任务状态流转动画",
+  "prompt": "在全屏（session/fullscreen）模式下，当看板（board）上某个任务卡片的列状态发生变化时（例如 backlog→in_progress、in_progress→review、review→done，以及链接任务自动启动导致的流转），在全屏视图之上闪现一个轻量的过渡动画，呈现该任务卡片的状态流转，让用户在不退出全屏的情况下也能感知到看板状态的实时变动。\n\n需求要点：\n- 仅在全屏 session 模式下触发，普通看板视图本身已有卡片，无需额外覆盖动画。\n- 动画应是非阻塞的浮层/toast 级别的闪现（出现-停留-淡出），不能遮挡或打断用户在全屏里的当前操作。\n- 触发源是任务卡片的 column 状态转换事件（runtime 已有 task_sessions_updated / workspace_state_updated 广播，前端 runtime store 已按字段粒度分发）。\n- 内容上体现：哪个任务、从哪个状态流转到哪个状态（可用列名 + 卡片标题）。\n- 注意性能：高频状态变动时要做合并/节流，避免动画堆叠把全屏刷爆；订阅应放在展示该浮层的叶子组件里，避免在 App 层订阅高频 slice 导致整树重渲染。\n\n这是一个 web-ui 前端体验改进，主要涉及全屏/session 视图与 runtime 状态流的消费。请先调研全屏 session 模式的组件结构与状态转换事件的现有消费路径，再实现该浮层动画。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "5fec3500-5c60-4477-8b05-794bc8dd76a7",
+  "baseRef": "main",
+  "createdAt": 1782781579043,
+  "updatedAt": 1782781579043,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}

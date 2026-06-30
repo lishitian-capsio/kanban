@@ -132,6 +132,14 @@
       "createdAt": 1782780592665,
       "updatedAt": 1782780615079,
       "pendingNextStep": "Start task 9e910 now"
+    },
+    {
+      "id": "5fec3500-5c60-4477-8b05-794bc8dd76a7",
+      "agentId": "claude",
+      "name": "进入session模式，board的任务卡片会在状态转化闪现在全屏之上，就是board的任务状态的动画转化",
+      "titleSource": "auto",
+      "createdAt": 1782781545466,
+      "updatedAt": 1782781545466
     }
   ],
   "fullscreenTabs": {
@@ -142,8 +150,9 @@
       "72b6df6d-952c-4f47-a67e-fd9873fde479",
       "6a585585-b1b3-41e5-8785-009188294312",
       "09cbba03-af49-47b6-9e38-85e50946643b",
-      "ab1cbbfe-a5b9-4481-adc1-3325483c72ce"
+      "ab1cbbfe-a5b9-4481-adc1-3325483c72ce",
+      "5fec3500-5c60-4477-8b05-794bc8dd76a7"
     ],
-    "activeThreadId": "ab1cbbfe-a5b9-4481-adc1-3325483c72ce"
+    "activeThreadId": "5fec3500-5c60-4477-8b05-794bc8dd76a7"
   }
 }
