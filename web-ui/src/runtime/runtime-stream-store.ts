@@ -110,29 +110,15 @@ function appendOpsMetricsSample(history: RuntimeOpsMetrics[], sample: RuntimeOps
 	return next;
 }
 
-function mergeTaskSessionSummaries(
-	currentSessions: Record<string, RuntimeTaskSessionSummary>,
-	summaries: RuntimeTaskSessionSummary[],
-): Record<string, RuntimeTaskSessionSummary> {
-	if (summaries.length === 0) {
-		return currentSessions;
-	}
-	const nextSessions = { ...currentSessions };
-	for (const summary of summaries) {
-		const existing = nextSessions[summary.taskId];
-		if (!existing || existing.updatedAt <= summary.updatedAt) {
-			nextSessions[summary.taskId] = summary;
-		}
-	}
-	return nextSessions;
-}
-
-// Merge incoming summaries into the per-task display slice, preferring the
+// Merge incoming summaries into a `taskId → summary` record, preferring the
 // newest by `updatedAt` (the same monotonic rule App's local session state uses
 // — see the "terminal randomly clears out" guard in `use-task-sessions.ts`).
-// Returns the same reference when nothing changed so the store dispatch skips
-// the per-task listener wake.
-function mergeSessionSummaryByTaskId(
+// Crucially this returns the SAME reference when nothing actually changed, so a
+// no-op tick (a re-broadcast, or an older/stale summary) does not churn the
+// reference and wake its listener. This is the policy for the per-task DISPLAY
+// slice (`sessionSummaryByTaskId`): the active card wants every tick (activity,
+// token usage) and only that one card's leaf subscriber wakes.
+function mergeSessionSummariesRecord(
 	current: Record<string, RuntimeTaskSessionSummary>,
 	summaries: RuntimeTaskSessionSummary[],
 ): Record<string, RuntimeTaskSessionSummary> {
@@ -146,6 +132,70 @@ function mergeSessionSummaryByTaskId(
 		if (newest === existing) {
 			continue;
 		}
+		// `newest` is always the incoming `summary` here (the only other case —
+		// `existing` winning — is filtered by the guard above), so this is non-null.
+		if (!next) {
+			next = { ...current };
+		}
+		next[summary.taskId] = summary;
+	}
+	return next ?? current;
+}
+
+// Fields a `task_sessions_updated` tick churns continuously during an active
+// turn (~150ms): token usage, activity/hook timestamps, and the always-bumped
+// `updatedAt`. They drive the per-task card's live display (via the leaf slice)
+// but are irrelevant to the App-level board logic (auto-column-move, persistence)
+// that reads `workspaceState.sessions`. Treating a tick that changes only these
+// as "no App-relevant change" is what stops the high-frequency broadcast from
+// re-rendering the whole App tree.
+function hasAppRelevantSessionChange(
+	previous: RuntimeTaskSessionSummary,
+	next: RuntimeTaskSessionSummary,
+): boolean {
+	return (
+		previous.state !== next.state ||
+		previous.mode !== next.mode ||
+		previous.agentId !== next.agentId ||
+		previous.workspacePath !== next.workspacePath ||
+		previous.pid !== next.pid ||
+		previous.startedAt !== next.startedAt ||
+		previous.reviewReason !== next.reviewReason ||
+		previous.exitCode !== next.exitCode ||
+		previous.warningMessage !== next.warningMessage ||
+		previous.agentSessionId !== next.agentSessionId ||
+		previous.providerId !== next.providerId ||
+		previous.modelId !== next.modelId ||
+		(previous.latestTurnCheckpoint?.commit ?? null) !== (next.latestTurnCheckpoint?.commit ?? null) ||
+		(previous.previousTurnCheckpoint?.commit ?? null) !== (next.previousTurnCheckpoint?.commit ?? null)
+	);
+}
+
+// Merge incoming summaries into the App-subscribed `workspaceState.sessions`
+// record, but ONLY adopt a newer summary when an App-relevant field changed (see
+// hasAppRelevantSessionChange). Pure display churn keeps the existing reference,
+// so the ~150ms session broadcast does not wake the App-level `workspaceState`
+// slice (which would re-render TopBar/sidebar/etc.). A genuine state transition
+// still produces a new reference → App re-renders → the auto-column-move effect
+// runs. Stale (older `updatedAt`) summaries are dropped by the monotonic guard.
+function mergeAppRelevantSessionSummaries(
+	current: Record<string, RuntimeTaskSessionSummary>,
+	summaries: RuntimeTaskSessionSummary[],
+): Record<string, RuntimeTaskSessionSummary> {
+	if (summaries.length === 0) {
+		return current;
+	}
+	let next: Record<string, RuntimeTaskSessionSummary> | null = null;
+	for (const summary of summaries) {
+		const existing = current[summary.taskId] ?? null;
+		const newest = selectNewestTaskSessionSummary(existing, summary);
+		if (newest === existing) {
+			continue;
+		}
+		if (existing && !hasAppRelevantSessionChange(existing, summary)) {
+			continue;
+		}
+		// `newest` is always the incoming `summary` here (see the guard above).
 		if (!next) {
 			next = { ...current };
 		}
@@ -300,7 +350,7 @@ export function runtimeStateStreamReducer(
 		const nextWorkspaceState = action.payload.workspaceState
 			? {
 					...action.payload.workspaceState,
-					sessions: mergeTaskSessionSummaries(
+					sessions: mergeSessionSummariesRecord(
 						state.workspaceState?.sessions ?? {},
 						Object.values(action.payload.workspaceState.sessions ?? {}),
 					),
@@ -313,7 +363,7 @@ export function runtimeStateStreamReducer(
 			workspaceMetadata: action.payload.workspaceMetadata,
 			latestTaskChatMessage: null,
 			taskChatMessagesByTaskId: {},
-			sessionSummaryByTaskId: mergeSessionSummaryByTaskId({}, Object.values(nextWorkspaceState?.sessions ?? {})),
+			sessionSummaryByTaskId: mergeSessionSummariesRecord({}, Object.values(nextWorkspaceState?.sessions ?? {})),
 			latestTaskReadyForReview: state.latestTaskReadyForReview,
 			latestMcpAuthStatuses: state.latestMcpAuthStatuses,
 			kanbanSessionContextVersion: action.payload.kanbanSessionContextVersion,
@@ -407,7 +457,7 @@ export function runtimeStateStreamReducer(
 	if (action.type === "workspace_state_updated") {
 		const mergedWorkspaceState = {
 			...action.workspaceState,
-			sessions: mergeTaskSessionSummaries(
+			sessions: mergeSessionSummariesRecord(
 				state.workspaceState?.sessions ?? {},
 				Object.values(action.workspaceState.sessions ?? {}),
 			),
@@ -421,7 +471,7 @@ export function runtimeStateStreamReducer(
 		return {
 			...state,
 			workspaceState: mergedWorkspaceState,
-			sessionSummaryByTaskId: mergeSessionSummaryByTaskId(
+			sessionSummaryByTaskId: mergeSessionSummariesRecord(
 				state.sessionSummaryByTaskId,
 				Object.values(action.workspaceState.sessions ?? {}),
 			),
@@ -432,21 +482,33 @@ export function runtimeStateStreamReducer(
 	if (action.type === "task_sessions_updated") {
 		// The per-task display slice updates regardless of whether a workspace
 		// snapshot has landed yet — leaf cards read it directly. `workspaceState`
-		// keeps its existing merge (gated on having a snapshot) so App's
-		// auto-column-move effect and persistence are unchanged.
-		const nextSessionSummaryByTaskId = mergeSessionSummaryByTaskId(state.sessionSummaryByTaskId, action.summaries);
-		if (!state.workspaceState) {
-			if (nextSessionSummaryByTaskId === state.sessionSummaryByTaskId) {
-				return state;
-			}
-			return { ...state, sessionSummaryByTaskId: nextSessionSummaryByTaskId };
+		// keeps its merge (gated on having a snapshot) so App's auto-column-move
+		// effect and persistence still see live transitions.
+		//
+		// The leaf display slice takes every change (the active card shows live
+		// activity/usage); the App-subscribed workspaceState.sessions takes only
+		// App-relevant changes (state/column transitions). Both merges are
+		// reference-preserving, so a tick that carries nothing new returns the SAME
+		// store, and a pure display-churn tick keeps `state.workspaceState`
+		// untouched — that is what stops the ~150ms broadcast from re-rendering the
+		// whole App tree. A genuine transition produces a new sessions reference →
+		// new `workspaceState` → App re-renders → the auto-column-move effect fires.
+		const nextSessionSummaryByTaskId = mergeSessionSummariesRecord(state.sessionSummaryByTaskId, action.summaries);
+		const nextWorkspaceSessions = state.workspaceState
+			? mergeAppRelevantSessionSummaries(state.workspaceState.sessions, action.summaries)
+			: null;
+		const workspaceSessionsChanged =
+			state.workspaceState != null && nextWorkspaceSessions !== state.workspaceState.sessions;
+		const sessionSliceChanged = nextSessionSummaryByTaskId !== state.sessionSummaryByTaskId;
+		if (!workspaceSessionsChanged && !sessionSliceChanged) {
+			return state;
 		}
 		return {
 			...state,
-			workspaceState: {
-				...state.workspaceState,
-				sessions: mergeTaskSessionSummaries(state.workspaceState.sessions, action.summaries),
-			},
+			workspaceState:
+				state.workspaceState && workspaceSessionsChanged
+					? { ...state.workspaceState, sessions: nextWorkspaceSessions! }
+					: state.workspaceState,
 			sessionSummaryByTaskId: nextSessionSummaryByTaskId,
 		};
 	}
@@ -604,7 +666,7 @@ export function getRuntimeStreamStore(): RuntimeStateStreamStore {
  */
 export function applyLocalTaskSessionSummary(summary: RuntimeTaskSessionSummary): void {
 	const prev = store;
-	const nextSessionSummaryByTaskId = mergeSessionSummaryByTaskId(prev.sessionSummaryByTaskId, [summary]);
+	const nextSessionSummaryByTaskId = mergeSessionSummariesRecord(prev.sessionSummaryByTaskId, [summary]);
 	if (nextSessionSummaryByTaskId === prev.sessionSummaryByTaskId) {
 		return;
 	}

@@ -58,6 +58,7 @@ function makeSessionSummary(
 	taskId: string,
 	updatedAt: number,
 	state: RuntimeTaskSessionSummary["state"],
+	overrides?: Partial<RuntimeTaskSessionSummary>,
 ): RuntimeTaskSessionSummary {
 	return {
 		taskId,
@@ -73,6 +74,7 @@ function makeSessionSummary(
 		lastHookAt: null,
 		latestHookActivity: null,
 		warningMessage: null,
+		...overrides,
 	};
 }
 
@@ -260,6 +262,88 @@ describe("runtime-stream-store granular subscriptions", () => {
 		expect(renders.sessionB).toBe(baseline.sessionB);
 		expect(renders.workspaceState).toBe(baseline.workspaceState);
 		expect(getRuntimeStreamStore().sessionSummaryByTaskId["task-a"]?.state).toBe("running");
+	});
+
+	it("a display-only session tick wakes only the leaf; a state transition wakes workspaceState (auto-column-move)", () => {
+		const renders = { sessionA: 0, workspaceState: 0 };
+
+		function HarnessSessionA(): null {
+			useTaskSessionSummary("task-a");
+			renders.sessionA += 1;
+			return null;
+		}
+		function HarnessWorkspaceState(): null {
+			useRuntimeWorkspaceState();
+			renders.workspaceState += 1;
+			return null;
+		}
+
+		// Realistic precondition the existing test omits: a workspace snapshot has
+		// landed AND task-a already has a running session (the existing test fires
+		// against a null workspaceState, taking a different reducer branch). A fresh
+		// session appearing is itself an App-relevant change, so seed it first.
+		act(() => {
+			dispatchRuntimeStreamAction({
+				type: "workspace_state_updated",
+				workspaceState: makeWorkspaceState(["task-a", "task-b"]),
+			});
+			dispatchRuntimeStreamAction({
+				type: "task_sessions_updated",
+				summaries: [makeSessionSummary("task-a", 10, "running")],
+			});
+		});
+
+		act(() => {
+			root.render(
+				<>
+					<HarnessSessionA />
+					<HarnessWorkspaceState />
+				</>,
+			);
+		});
+		const baseline = { ...renders };
+
+		// A pure display-churn tick (same state, newer updatedAt + new lastOutputAt /
+		// token usage) is what fires ~every 150ms during an active turn. It must
+		// wake ONLY the leaf card — never the App-level workspaceState slice (which
+		// re-renders TopBar/sidebar/etc.).
+		act(() => {
+			dispatchRuntimeStreamAction({
+				type: "task_sessions_updated",
+				summaries: [makeSessionSummary("task-a", 11, "running", { lastOutputAt: 11 })],
+			});
+		});
+		expect(renders.sessionA).toBe(baseline.sessionA + 1);
+		expect(renders.workspaceState).toBe(baseline.workspaceState);
+
+		// A genuine state transition (running → awaiting_review) MUST wake
+		// workspaceState so App's local sessions update and the auto-column-move
+		// effect moves the card to the review column.
+		const afterDisplay = { ...renders };
+		act(() => {
+			dispatchRuntimeStreamAction({
+				type: "task_sessions_updated",
+				summaries: [makeSessionSummary("task-a", 12, "awaiting_review")],
+			});
+		});
+		expect(renders.sessionA).toBe(afterDisplay.sessionA + 1);
+		expect(renders.workspaceState).toBe(afterDisplay.workspaceState + 1);
+		expect(getRuntimeStreamStore().workspaceState?.sessions["task-a"]?.state).toBe("awaiting_review");
+	});
+
+	it("applies a state transition that ties on updatedAt (does not stick on the old state)", () => {
+		dispatchRuntimeStreamAction({
+			type: "task_sessions_updated",
+			summaries: [makeSessionSummary("task-a", 20, "running")],
+		});
+		// A fast backend transition stamps the same Date.now() millisecond. The new
+		// state must win; today's `>=` monotonic merge keeps the old one → the card
+		// sticks on "running" until a strictly-newer summary or a browser refresh.
+		dispatchRuntimeStreamAction({
+			type: "task_sessions_updated",
+			summaries: [makeSessionSummary("task-a", 20, "awaiting_review")],
+		});
+		expect(getRuntimeStreamStore().sessionSummaryByTaskId["task-a"]?.state).toBe("awaiting_review");
 	});
 
 	it("ignores a stale (older updatedAt) session summary — monotonic merge", () => {

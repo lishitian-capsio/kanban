@@ -40,14 +40,26 @@ function mergeTaskSessionSummaries(
 	currentSessions: Record<string, RuntimeTaskSessionSummary>,
 	nextSessions: Record<string, RuntimeTaskSessionSummary>,
 ): Record<string, RuntimeTaskSessionSummary> {
-	const mergedSessions = { ...currentSessions };
+	// Reference-preserving: return the SAME object when the merge is a no-op so
+	// the `setSessions` updater bails out of a re-render (React skips an update
+	// that returns the previous state). Pairs with the reducer-level guard in
+	// `runtime-stream-store.ts` — together they keep an unchanged session
+	// broadcast from re-rendering App and re-running the auto-column-move effect.
+	let mergedSessions: Record<string, RuntimeTaskSessionSummary> | null = null;
 	for (const [taskId, summary] of Object.entries(nextSessions)) {
-		const newestSummary = selectNewestTaskSessionSummary(mergedSessions[taskId] ?? null, summary);
-		if (newestSummary) {
-			mergedSessions[taskId] = newestSummary;
+		const existing = currentSessions[taskId] ?? null;
+		const newestSummary = selectNewestTaskSessionSummary(existing, summary);
+		if (newestSummary === existing) {
+			continue;
 		}
+		// `newestSummary` is the incoming `summary` here (existing winning is
+		// filtered above), so it is non-null.
+		if (!mergedSessions) {
+			mergedSessions = { ...currentSessions };
+		}
+		mergedSessions[taskId] = summary;
 	}
-	return mergedSessions;
+	return mergedSessions ?? currentSessions;
 }
 
 export function useWorkspaceSync({
