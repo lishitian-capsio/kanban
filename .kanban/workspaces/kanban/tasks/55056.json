@@ -1,0 +1,20 @@
+{
+  "id": "55056",
+  "title": "File 弹窗:加宽 + session 模式入口 + 任务 header 入口",
+  "prompt": "在已落地的 File surface(components/file-surface/,见 .plan/docs/file-surface-migration-design.md 与已实现说明)之上做三条增量。先读现有实现再动手:file-surface-store.ts、file-library-overlay.tsx、components/file-dialog/、top-bar 的 File 按钮(openLibrary)、?files / ?file= 路由(app-utils)。\n\n1) 【弹窗加宽】File 弹窗当前太窄,加宽它。定位实际渲染的 Dialog(file-library-overlay 的 Radix Dialog,以及/或单文件 file-dialog),调大宽度(用项目既有的尺寸约定/设计 token,响应式、别撑破小屏;参考 board 上其它宽弹窗的处理)。查看与编辑都要受益。\n\n2) 【session 模式也能弹窗】现在 File 弹窗基本只从 board 顶栏打开。要让 fullscreen / session 模式(home chat 全屏体验,HomeChatWorkspace / 全屏会话那套)下也能打开 File 弹窗。复用同一个 file-surface store 的 openLibrary()/openPalette() 与 ?files/?file= 路由(弹窗是 portaled overlay,本就该能盖在任何 surface 之上),在 session 模式合适的位置加一个入口(按钮/快捷键),保证 board 不被卸载、行为与 board 下一致。\n\n3) 【任务 header 入口】在任务详情(CardDetailView 等任务卡片/任务 header)的 header 上加一个打开 File 弹窗的入口(按钮 + 图标),点开同一个 File 弹窗。\n\n约束:\n- 复用同一套 file-surface store / overlay / 路由,不要新造第二套弹窗或重复逻辑。\n- 弹窗仍是 portaled overlay,board/当前 surface 不被 unmount;按需 mount、关闭即卸载。\n- 通过 web:typecheck、biome lint、相关测试(file-surface / app-utils / 受影响组件)。\n- 遵循 AGENTS.md 的 web-ui 约定(Tailwind v4 / 设计 token / Radix / lucide 图标 / @/components/ui)。\n- 提交说明写清:加宽改了哪个 Dialog 与宽度值、session 模式入口加在哪、任务 header 入口加在哪。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782787682475,
+  "updatedAt": 1782787682475,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
