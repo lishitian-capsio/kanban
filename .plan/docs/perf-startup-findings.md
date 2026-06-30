@@ -227,3 +227,23 @@
 **置信与下一步:** 结构事实(spawnSync 阻塞、每广播重读、Codex 无界扫、两 builder 双读)均 PROVEN;具体 ms 时延为沿数据流推断(已标注)。在投入 #5/#6/#7 前,建议在受控负载(多项目 + 5–10 并发 task + 大 transcript)下抓一次 `--prof`/`perf` 火焰图与 Bun 事件循环 stall 采样,确认排名 —— 本调研刻意只读、未启动 runtime。
 
 **与 `performance-audit-2026-06.md` 的关系:** 该文聚焦稳态 idle-CPU(metadata 1s git 轮询 L2-4 仍是最大稳态 CPU 项)与 React 重渲染;本文聚焦**启动/打开/连接**一次性 + 广播驱动代价。两文的 board-read 优化(#4/#5)与该文 L3-3 同源但更新了"已并行/已去双 parse"的事实;该文 L3-6 的冷克隆 fetch 担忧已被本文 §0/§6 证实**已修复**(可从其 ROI 退役 #16)。
+
+---
+
+## §8 实施记录 (2026-06-30) — 第二轮后端缓存类 P1 收尾
+
+**Audit-first 结论(动手前核实当前 tree):** brief 设想的"贯穿性根因——按 revision 失效的内存板缓存(board snapshot + workspace git context)"**已在 Wave A (`ef528f54`) 全部落地**,且比当时 `perf-runtime-findings.md §5` 标注的"延迟"更进一步:
+
+- **#5 (F-WS-1) + #4 (F-CONN-1) 已实现,跳过** — `workspace-state.ts` 的 `loadWorkspaceBoardMemoized` 按 `meta.revision` 缓存**已解析的 board promise**(非仅 in-flight 去重):同 revision 的重复广播命中缓存零分片读;首连接两个并发 builder 共享同一 in-flight promise(去双读)。in-process 写 bump revision 自动失效;board-sync pull 经 `runtime-server.ts` 包裹 `invalidateWorkspaceBoardCache` 显式失效。测试 `test/state/workspace-board-cache.test.ts`(5 例:同 revision 1 读 / 跨 builder 共享 / 并发去重 / save 后重读 / 失效后重读)。
+- **#6 (F-WS-2) 已实现,跳过** — `detectGitRepositoryInfo` 3s 单飞 TTL 缓存(`workspace-state.ts:1338`),`invalidateGitRepositoryInfoCache()` 在 checkout 成功后失效(`workspace-api.ts:285`)。每广播 ~5 git spawn → 命中 0。
+- **#1/#2/#8 已实现,跳过** — directory-picker 异步、`hasGitRepository`→async `isGitRepository`、`readWorkspaceIndex` stat-signature 缓存,均在 Wave A。
+- **运行时 P1-B 已实现,跳过** — `refreshProjectTaskCountsIfChanged` + `projectTaskCountsEqual` 门控 projects 广播(`394705d3`)。
+
+**✅ 本轮唯一缺口 — #3 (F-CONN-2) 冷首连接整盘 fan-out。** board 缓存让**稳态**重复 projects_updated 变 O(1)(同 revision 命中),但**冷进程首连接**仍为算列计数对**每个**项目读整盘,且连接路径 `Promise.all([buildProjectsPayload, snapshot])` **在发 snapshot 前 await 全部 M 个盘**,直接拖慢 time-to-interactive(多项目 P0)。
+
+- **方案选择:** 否决 doc 原"优先方案"(计数持久化进 `board.json`/`counts.json`)——它会让每次 task move/create/delete 重写一个**已提交**文件,重新引入分片本要消除的 git 合并冲突,违反"不破坏分片合并友好性"约束。改用**延迟计算 (deferred-compute)**:零持久化、零漂移(计数恒由权威盘读得出,仅延后)、wire contract 不变、前端零改动。
+- **实现:** `workspace-registry.ts` 新增 `buildProjectsPayloadFast(preferredCurrentProjectId)` —— 仅读**当前**项目盘(snapshot 本就要读它),其余项目用 `projectTaskCountsByWorkspaceId` 的最近一次缓存计数(进程冷启时为空)。纯函数 `resolveFastProjectTaskCounts(ids, currentId, currentCounts, cached)` 做"当前→新鲜 / 其余→缓存或空"的逐项选择(导出+单测)。连接路径(`runtime-state-hub.ts`)两分支均改用 fast 版;发完 snapshot 后**在关键路径外** `void broadcastRuntimeProjectsUpdated(currentId)` 跑一次完整重算,经既有 `projects_updated` 通道把非当前项目的计数纠正为权威值。单项目安装不触发后台重算(`projects.length > 1` 门控),零额外开销。
+- **可测量收益:** `test/server/projects-payload-fast.test.ts` 用 `getWorkspaceBoardReadCountForTests` 证明——**fast 路径整盘读 = 1**(仅当前项目),完整 `buildProjectsPayload` = 2(两项目;一般 = M)。即从连接关键路径移除 (M−1) 次整盘 fan-out,M 个项目时 time-to-interactive 不再被其余 (M−1) 个盘的 read+Zod 阻塞,也不再与 active board 读抢同一 48 fd 预算。纯逻辑 `resolveFastProjectTaskCounts` 6 例覆盖(当前用新鲜值 / 非当前用缓存 / 非当前无缓存→空 / 无当前项目 / 当前读不可用→缓存或空 / 逐项一对一)。
+- **未做(超范围,记录):** F-WS-3/F-WS-4(sessions.json/index 缓存,#9/已部分)、F-SESS-1/2(Codex rollout 扫描收窄,#7/#12)、F-CONN-3/F-BWT-1(snapshot 图片字节懒取、冷克隆 fetch 预算,#10/#11)、运行时 P2-C(save 路径复用 ranks)——均非本任务"已确认且未实现的后端缓存类 P1",留作独立任务。
+
+`tsc` 净增 0 错误(基线 ~122 个 vendored-omp,本轮 0 命中我方文件);biome clean;`test/server` + `test/state/workspace-board-cache` 全绿(`runtime-state-stream.integration` 在 `npx vitest`/Node 下因 server 子进程 `bun:` ESM 失败,系既有环境限制,与本轮无关——已 stash 对比基线证实同样失败)。

@@ -93,6 +93,15 @@ export interface WorkspaceRegistry {
 		currentProjectId: string | null;
 		projects: RuntimeProjectSummary[];
 	}>;
+	/**
+	 * Connect-critical-path variant of {@link buildProjectsPayload} that reads only
+	 * the current project's board and reuses cached counts for the rest. See the
+	 * implementation for the F-CONN-2 deferred-compute rationale.
+	 */
+	buildProjectsPayloadFast: (preferredCurrentProjectId: string | null) => Promise<{
+		currentProjectId: string | null;
+		projects: RuntimeProjectSummary[];
+	}>;
 	resolveWorkspaceForStream: (
 		requestedWorkspaceId: string | null,
 		options?: {
@@ -122,6 +131,35 @@ function createEmptyProjectTaskCounts(): RuntimeProjectTaskCounts {
  */
 export function projectTaskCountsEqual(a: RuntimeProjectTaskCounts, b: RuntimeProjectTaskCounts): boolean {
 	return a.backlog === b.backlog && a.in_progress === b.in_progress && a.review === b.review && a.trash === b.trash;
+}
+
+/**
+ * Connect fast path (F-CONN-2): pick each project's task counts WITHOUT reading
+ * any non-current project's board. The current project — whose board the connect
+ * snapshot reads anyway — uses its freshly-read counts; every other project
+ * reuses its last-known cached counts, or empty when this process has never read
+ * its board. The background full {@link WorkspaceRegistry.buildProjectsPayload}
+ * the hub fires right after the snapshot corrects any stale/empty entry via the
+ * `projects_updated` broadcast.
+ *
+ * Pure (no I/O): `currentCounts` is the freshly-read counts for `currentProjectId`
+ * (or null when there is no resolved current project / its read was unavailable).
+ */
+export function resolveFastProjectTaskCounts(
+	projectIds: readonly string[],
+	currentProjectId: string | null,
+	currentCounts: RuntimeProjectTaskCounts | null,
+	cachedCountsByWorkspaceId: ReadonlyMap<string, RuntimeProjectTaskCounts>,
+): Map<string, RuntimeProjectTaskCounts> {
+	const result = new Map<string, RuntimeProjectTaskCounts>();
+	for (const id of projectIds) {
+		if (id === currentProjectId && currentCounts) {
+			result.set(id, currentCounts);
+			continue;
+		}
+		result.set(id, cachedCountsByWorkspaceId.get(id) ?? createEmptyProjectTaskCounts());
+	}
+	return result;
 }
 
 function countTasksByColumn(board: RuntimeBoardData): RuntimeProjectTaskCounts {
@@ -376,18 +414,26 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 		return response;
 	};
 
-	const buildProjectsPayload = async (preferredCurrentProjectId: string | null) => {
-		markStall("projects:build");
-		const projects = await listWorkspaceIndexEntries();
+	const resolveCurrentProjectId = (
+		projects: RuntimeWorkspaceIndexEntry[],
+		preferredCurrentProjectId: string | null,
+	): string | null => {
 		const fallbackProjectId =
 			projects.find((project) => project.workspaceId === activeWorkspaceId)?.workspaceId ??
 			projects[0]?.workspaceId ??
 			null;
-		const resolvedCurrentProjectId =
+		return (
 			(preferredCurrentProjectId &&
 				projects.some((project) => project.workspaceId === preferredCurrentProjectId) &&
 				preferredCurrentProjectId) ||
-			fallbackProjectId;
+			fallbackProjectId
+		);
+	};
+
+	const buildProjectsPayload = async (preferredCurrentProjectId: string | null) => {
+		markStall("projects:build");
+		const projects = await listWorkspaceIndexEntries();
+		const resolvedCurrentProjectId = resolveCurrentProjectId(projects, preferredCurrentProjectId);
 		const projectSummaries = await Promise.all(
 			projects.map(async (project) => {
 				const taskCounts = await summarizeProjectTaskCounts(project.workspaceId, project.repoPath);
@@ -396,6 +442,44 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 					repoPath: project.repoPath,
 					taskCounts,
 				});
+			}),
+		);
+		return {
+			currentProjectId: resolvedCurrentProjectId,
+			projects: projectSummaries,
+		};
+	};
+
+	/**
+	 * Connect-critical-path variant of {@link buildProjectsPayload}: reads ONLY the
+	 * current project's board (the snapshot needs it anyway) and reuses last-known
+	 * cached counts for every other project, so a cold first-connect no longer
+	 * fans out an O(M × T) shard read across all projects before the snapshot is
+	 * sent. The hub fires a full {@link buildProjectsPayload} off the critical path
+	 * right after to correct any stale/empty non-current counts (F-CONN-2).
+	 */
+	const buildProjectsPayloadFast = async (preferredCurrentProjectId: string | null) => {
+		markStall("projects:build-fast");
+		const projects = await listWorkspaceIndexEntries();
+		const resolvedCurrentProjectId = resolveCurrentProjectId(projects, preferredCurrentProjectId);
+		const currentRepoPath = resolvedCurrentProjectId
+			? (projects.find((project) => project.workspaceId === resolvedCurrentProjectId)?.repoPath ?? "")
+			: null;
+		const currentCounts =
+			resolvedCurrentProjectId && currentRepoPath !== null
+				? await summarizeProjectTaskCounts(resolvedCurrentProjectId, currentRepoPath)
+				: null;
+		const countsByWorkspaceId = resolveFastProjectTaskCounts(
+			projects.map((project) => project.workspaceId),
+			resolvedCurrentProjectId,
+			currentCounts,
+			projectTaskCountsByWorkspaceId,
+		);
+		const projectSummaries = projects.map((project) =>
+			toProjectSummary({
+				workspaceId: project.workspaceId,
+				repoPath: project.repoPath,
+				taskCounts: countsByWorkspaceId.get(project.workspaceId) ?? createEmptyProjectTaskCounts(),
 			}),
 		);
 		return {
@@ -517,6 +601,7 @@ export async function createWorkspaceRegistry(deps: CreateWorkspaceRegistryDepen
 		createProjectSummary: toProjectSummary,
 		buildWorkspaceStateSnapshot,
 		buildProjectsPayload,
+		buildProjectsPayloadFast,
 		resolveWorkspaceForStream,
 		listManagedWorkspaces: () => {
 			return Array.from(terminalManagersByWorkspaceId.entries()).map(([workspaceId, terminalManager]) => ({

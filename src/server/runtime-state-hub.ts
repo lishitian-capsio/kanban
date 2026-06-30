@@ -49,6 +49,7 @@ export interface CreateRuntimeStateHubDependencies {
 		WorkspaceRegistry,
 		| "resolveWorkspaceForStream"
 		| "buildProjectsPayload"
+		| "buildProjectsPayloadFast"
 		| "buildWorkspaceStateSnapshot"
 		| "refreshProjectTaskCountsIfChanged"
 	>;
@@ -518,8 +519,13 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 				let workspaceMetadata: RuntimeStateStreamSnapshotMessage["workspaceMetadata"];
 				if (workspace.workspaceId && workspace.workspacePath) {
 					monitorWorkspaceId = workspace.workspaceId;
+					// Fast path: build the projects payload reading only the current project's
+					// board (the snapshot reads it anyway). Non-current counts come from the
+					// last-known cache; a full recompute is fired off the critical path below
+					// to correct them, so a cold first-connect no longer blocks the snapshot on
+					// an all-projects shard fan-out (F-CONN-2).
 					[projectsPayload, workspaceState] = await Promise.all([
-						deps.workspaceRegistry.buildProjectsPayload(workspace.workspaceId),
+						deps.workspaceRegistry.buildProjectsPayloadFast(workspace.workspaceId),
 						deps.workspaceRegistry.buildWorkspaceStateSnapshot(workspace.workspaceId, workspace.workspacePath),
 					]);
 					workspaceMetadata = await workspaceMetadataMonitor.connectWorkspace({
@@ -529,7 +535,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 					});
 					didConnectWorkspaceMonitor = true;
 				} else {
-					projectsPayload = await deps.workspaceRegistry.buildProjectsPayload(null);
+					projectsPayload = await deps.workspaceRegistry.buildProjectsPayloadFast(null);
 					workspaceState = null;
 					workspaceMetadata = null;
 				}
@@ -576,8 +582,13 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 						message: `Project no longer exists on disk and was removed: ${workspace.removedRequestedWorkspacePath}`,
 					} satisfies RuntimeStateStreamErrorMessage);
 				}
-				if (workspace.didPruneProjects) {
-					void broadcastRuntimeProjectsUpdated(workspace.workspaceId);
+				// Correct the fast snapshot's non-current project counts off the connect
+				// critical path: a full recompute reads every project's board and
+				// broadcasts the authoritative counts via projects_updated. Skip when only
+				// one project exists (the fast path already read it fresh) unless a prune
+				// changed the project list and the client needs the refreshed roster.
+				if (workspace.didPruneProjects || projectsPayload.projects.length > 1) {
+					void broadcastRuntimeProjectsUpdated(projectsPayload.currentProjectId);
 				}
 			} catch (error) {
 				if (didConnectWorkspaceMonitor && monitorWorkspaceId) {
