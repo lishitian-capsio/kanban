@@ -1,0 +1,20 @@
+{
+  "id": "0ddba",
+  "title": "Vault/Database 开关简化为开关 + DB 能力注入 prompt",
+  "prompt": "统一并简化 Settings 里 Vault 和 Database 的 agent 访问开关,并让\"数据库可用\"这件事对 agent 可发现(注入到 prompt)。\n\n== 现状(已调研) ==\n- Vault 后端很可能已从 4 档 vaultMode 迁移为布尔 agentVaultManagementEnabled(见 src/vault/vault-settings-store.ts 的 migrateRawVaultSettings:managed→true,其余→false)。请先确认后端是否已布尔化。\n- Vault 的注入逻辑在 src/prompts/append-system-prompt.ts:agentVaultManagementEnabled 为 true 时注入 vault 介绍 + 文档类型轻量索引 + CLI 参考 + 主动管理指令;为 false 时这些块全渲染成空串。\n- Database 开关(agentDatabaseAccessEnabled)目前**纯 CLI 层 gate**(src/commands/db.ts 的 resolveDbWorkspace,关时抛 database_access_disabled),**不注入任何 prompt**。这导致 agent 根本不知道该 workspace 有数据库可查——能力对它不可发现。\n\n== 目标 ==\n1. 开关简化为开/关二态:\n   - Vault:若后端仍残留 4 档,收敛为布尔(managed→开,其余→关,做好旧值兼容迁移);若已布尔化,则只需处理 UI。前端 Settings 用一个 Radix Switch(设计 token,暗色主题)。\n   - Database:确认已是开/关,把 UI 控件样式/文案与 Vault 开关统一成同款 Switch。\n2. **让 Database 能力可发现(核心新增)**:在 append-system-prompt.ts 里,当 agentDatabaseAccessEnabled 为 true 时,注入一段简短告知,大意:\"本 workspace 允许你通过 `kanban db`(只读)查询数据库;需要了解表结构或取数据时可以使用它\"(参考 vault 块的注入写法与文案风格,给出可用子命令的极简提示即可,不要长篇)。为 false 时不注入。\n   - **底层 CLI gate 必须保留**:prompt 只负责\"告知能力\",db.ts 的 resolveDbWorkspace 拦截仍是真正的安全边界(prompt 不注入 + 工具仍拦截 = 双保险)。\n   - 注意注入范围:与 vault 一致,只在 home/侧边栏会话(isHomeAgentSessionId)注入,跑任务的 agent 不注入。DB 设置的读取方式参考 vault 的 loadVaultManagementEnabledForHomeSession(同一个 VaultSettingsStore)。\n\n== 要求 ==\n- 向后兼容:旧持久化设置平滑迁移,不丢失、不报错。\n- 遵循 AGENTS.md web-ui 规范(Tailwind v4 + Radix + lucide-react,复用 src/components/ui 原语与设计 token)。\n- 同步改干净相关 CLI / tRPC / 契约(api-contract 的 RuntimeVaultSettings 等),保持类型通过。\n- 跑通 typecheck(含 web:typecheck)与相关单测。\n\n遵循 YAGNI,不要过度设计。先简述你确认到的现状(后端是否已布尔化、DB 注入接入点),再实施。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e211cecb-0eda-4458-ba46-1fbc486d4e40",
+  "baseRef": "main",
+  "createdAt": 1782892313551,
+  "updatedAt": 1782892313551,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}
