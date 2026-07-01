@@ -72,6 +72,33 @@ describe("runGitSyncAction mirror push", () => {
 		expect(result.output).toContain("2/2");
 	});
 
+	it("still mirrors when the primary push is a no-op (Everything up-to-date)", async () => {
+		// Regression guard for the reported bug: when the primary remote is already
+		// current, `git push` prints "Everything up-to-date" and exits 0. That success
+		// must NOT be misread as "nothing changed, skip mirrors" — each mirror is
+		// evaluated independently by git (ff / up-to-date / reject), so a mirror that is
+		// behind the current branch still gets the branch pushed. The mirror stage is
+		// gated only on the primary push *succeeding*, never on it transferring commits.
+		runGitMock.mockImplementation(async (_cwd, args) => {
+			// Primary push (no refspec) is a no-op success.
+			if (args[0] === "push" && args.length === 1) return gitOk("Everything up-to-date");
+			// Mirrors are behind, so their pushes actually transfer commits.
+			if (args[0] === "push" && args.length > 1) return gitOk("abc123..def456  main -> main");
+			return defaultDispatch(args);
+		});
+
+		const result = await runGitSyncAction({ cwd: "/repo-noop", action: "push", mirrorRemotes: mirrors });
+
+		expect(result.ok).toBe(true);
+		expect(result.output).toContain("Everything up-to-date");
+		// Both mirrors are pushed the current branch despite the primary being a no-op.
+		expect(mirrorPushCalls()).toEqual([
+			["push", "https://gitee.com/o/r.git", "main:main"],
+			["push", "https://example.com/o/r.git", "main:main"],
+		]);
+		expect(result.output).toContain("2/2");
+	});
+
 	it("keeps ok=true and reports the failure when a mirror push fails", async () => {
 		runGitMock.mockImplementation(async (_cwd, args) => {
 			if (args[0] === "push" && args[1] === "https://gitee.com/o/r.git") {
