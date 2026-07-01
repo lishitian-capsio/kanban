@@ -167,7 +167,8 @@
       "name": "Fix board terminal claude hook error",
       "titleSource": "auto",
       "createdAt": 1782896909465,
-      "updatedAt": 1782896934947
+      "updatedAt": 1782896934947,
+      "pendingNextStep": "启动任务 2fff2 开始修复这个 hook 报错"
     }
   ],
   "fullscreenTabs": {
