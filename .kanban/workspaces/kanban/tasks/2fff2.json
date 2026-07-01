@@ -1,0 +1,20 @@
+{
+  "id": "2fff2",
+  "title": "修复 board 终端 claude 的 UserPromptSubmit hook 报错（缺少 KANBAN_SESSION_TASK_ID）",
+  "prompt": "## 现象\n\n在 board（看板）模式下打开一个终端，选用 claude 作为 agent。第一次提交 prompt 时，claude 会打印如下 UserPromptSubmit hook 报错：\n\n```\n❯ ok\nUserPromptSubmit hook error\nFailed with non-blocking status code: kanban hooks ingest: Missing required environment variable: KANBAN_SESSION_TASK_ID\n```\n\n即：Kanban 注入到 claude 的 UserPromptSubmit hook 在执行 `kanban hooks ingest` 时，读不到必需的环境变量 `KANBAN_SESSION_TASK_ID`，导致 hook 以非阻塞错误状态失败。\n\n## 分析方向（供参考，请自行核实）\n\n- 这类从 board 直接打开的终端很可能是 home/sidebar 风格的会话，使用的是合成 home session id（`src/core/home-agent-session.ts`，形如 `__home_agent__:<workspaceId>:<agentId>[:<threadId>]`），而不是真正的 task id。\n- Kanban 为 claude 注入 hook 的地方会设置一批 `KANBAN_SESSION_*` 环境变量（含 `KANBAN_SESSION_TASK_ID`）；对普通 task 会话有 taskId，但对 home/board 终端会话可能没有真正的 taskId，因此该环境变量缺失。\n- hook ingest 的实现在 `src/commands/hooks.ts`（`kanban hooks ingest`），它把 `KANBAN_SESSION_TASK_ID` 当作 required 变量，缺失就抛错。\n- 相关背景：hook wire-protocol 的 stdout/stderr 是 raw 协议；home 会话的 taskId 使用合成 session id。\n\n## 期望\n\n在 board/home 终端里运行 claude 时不应再出现这个 hook 报错。请排查环境变量注入链路与 `kanban hooks ingest` 对 `KANBAN_SESSION_TASK_ID` 的处理：要么在 home/board 终端会话里正确注入合成 session id 作为该变量，要么让 ingest 对 home 会话优雅处理（不报错、正确归属到对应 home thread 的 transcript）。\n\n## 验收\n\n- 复现步骤：board 模式打开终端 → 选 claude → 提交一条消息 → 不再出现 'UserPromptSubmit hook error / Missing required environment variable: KANBAN_SESSION_TASK_ID'。\n- 普通 task 会话的 hook ingest 行为不回归。\n- 补充/更新相关单测。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
+  "baseRef": "main",
+  "createdAt": 1782896948459,
+  "updatedAt": 1782896948459,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}

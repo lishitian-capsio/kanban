@@ -162,22 +162,19 @@
       "pendingNextStep": "开始 T1(a73ca)存储/schema/迁移这个地基任务"
     },
     {
-      "id": "14e8de0b-57a7-40b9-bfbf-08f26171787d",
+      "id": "e60ea195-0a08-4edf-a21a-f47e5911b442",
       "agentId": "claude",
-      "name": "终端做成固定tab的可行性",
+      "name": "Fix board terminal claude hook error",
       "titleSource": "auto",
-      "createdAt": 1782894338072,
-      "updatedAt": 1782894612016,
-      "pendingNextStep": "按'当前选中 task 的终端'这个方向,创建一个把终端做成固定 tab 的任务"
+      "createdAt": 1782896909465,
+      "updatedAt": 1782896934947
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "6588c4a9-28df-4a75-9774-172e2bb7832c",
-      "98d352bf-cb23-490b-8d5d-8945798a7371",
-      "14e8de0b-57a7-40b9-bfbf-08f26171787d",
-      "3e599da8-ac7b-4c0a-b7bb-48bd0e7c10aa"
+      "3e599da8-ac7b-4c0a-b7bb-48bd0e7c10aa",
+      "e60ea195-0a08-4edf-a21a-f47e5911b442"
     ],
-    "activeThreadId": "3e599da8-ac7b-4c0a-b7bb-48bd0e7c10aa"
+    "activeThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442"
   }
 }
