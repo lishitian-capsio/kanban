@@ -136,10 +136,10 @@
     {
       "id": "5fec3500-5c60-4477-8b05-794bc8dd76a7",
       "agentId": "claude",
-      "name": "Board 终端 hook 报错诊断",
+      "name": "Move database toggle next to button",
       "titleSource": "auto",
       "createdAt": 1782781545466,
-      "updatedAt": 1782796091361,
+      "updatedAt": 1782884324858,
       "pendingNextStep": "建个任务：让 kanban hooks ingest 在缺少 KANBAN_SESSION_TASK_ID 时静默退出（exit 0），不再刷屏报错"
     },
     {
@@ -164,8 +164,9 @@
   "fullscreenTabs": {
     "openThreadIds": [
       "16d0ae97-5f56-4649-ba14-d0134b8c262e",
-      "6588c4a9-28df-4a75-9774-172e2bb7832c"
+      "6588c4a9-28df-4a75-9774-172e2bb7832c",
+      "5fec3500-5c60-4477-8b05-794bc8dd76a7"
     ],
-    "activeThreadId": "16d0ae97-5f56-4649-ba14-d0134b8c262e"
+    "activeThreadId": "5fec3500-5c60-4477-8b05-794bc8dd76a7"
   }
 }

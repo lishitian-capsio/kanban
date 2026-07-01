@@ -1,0 +1,20 @@
+{
+  "id": "3c969",
+  "title": "database 开关放到按钮旁边（对齐 vault 开关）",
+  "prompt": "把 database 的开关（每工作区 database access 的 off/on 门控开关）放到按钮旁边，位置与摆放方式对齐现有的 vault 开关。\n\n现状：vault 开关目前就摆在按钮旁边（参考 vault 的 toggle 实现与它在 UI 中的落位方式）；database 的开关目前不在同一处/摆放方式不同。目标是让 database 开关和 vault 开关一样，紧挨按钮显示，视觉与交互一致。\n\n要做：\n1. 先在 web-ui 里定位 vault 开关组件及其挂载点（它挨着哪个按钮、怎么布局的），以及 database access 门控开关当前的组件与落位。\n2. 把 database 开关改为与 vault 开关相同的摆放：放在同一个按钮旁边，采用一致的样式/间距/交互（Radix switch + Tailwind，遵循 AGENTS.md 的 web-ui 规范与 design tokens）。\n3. 复用现有 database access 门控的状态与 tRPC（per-workspace off/on，见 database access gate 相关实现），不要新造后端。只调整前端摆放与呈现。\n4. 保持 vault 开关行为不变；只是让 database 开关与之并列/一致。\n5. web:typecheck 通过；相关测试通过。\n\n约束：base=main；不改后端门控语义，只做前端 UI 落位；遵循 web-ui 规范（Tailwind + Radix + lucide-react，granular runtime store 在 leaf fiber 订阅）。\n\n先简述实现方案（涉及哪些文件、开关现在在哪、改到哪），再动手。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "5fec3500-5c60-4477-8b05-794bc8dd76a7",
+  "baseRef": "main",
+  "createdAt": 1782884346853,
+  "updatedAt": 1782884346853,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
