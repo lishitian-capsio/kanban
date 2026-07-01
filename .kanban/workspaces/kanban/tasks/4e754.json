@@ -1,0 +1,20 @@
+{
+  "id": "4e754",
+  "title": "File 完善②:上传本地文件进文件系统目录",
+  "prompt": "给「文件系统」块加「把本地文件上传/拖进目标目录」的能力(现在树里只能新建空文件、内部拖拽移动,不能从 OS 拖入外部文件)。先读 web-ui/src/components/file-surface/filesystem/(file-tree.tsx 拖拽逻辑、use-fs-mutations.ts)、src/trpc/app-router.ts workspaceFs、①任务落地的字节通道。\n\n要做:\n- 后端:workspaceFs 增【二进制安全写入/上传】到指定目录(路径安全、限制仓库根内、防越界与软链逃逸、size cap;同名冲突给明确语义:提示覆盖或自动改名,按设计定并确认)。若①已加通用字节写入可复用。\n- 前端:文件树支持从 OS 拖入外部文件到某个目录节点(与现有内部 move 拖拽区分好:外部文件 = 上传,内部条目 = 移动),以及一个「上传到当前目录」按钮/右键项。上传后局部刷新该目录层。多文件一次拖入要支持。\n- 危险/覆盖操作确认。\n\n完成:web:typecheck + 后端 typecheck + lint + 相关测试(含路径安全 + 同名冲突用例)通过。遵循 AGENTS.md。提交说明写清:上传契约、拖入 vs 内部移动的区分、同名冲突策略。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782891036246,
+  "updatedAt": 1782891036246,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}

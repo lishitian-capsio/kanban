@@ -1,0 +1,20 @@
+{
+  "id": "f42c7",
+  "title": "File 完善③:Quick Open 按路径模糊找文件",
+  "prompt": "给「文件系统」块加 VS Code 式 Quick Open(⌘P 按路径模糊找文件并打开),大仓库不用手点树。先读 web-ui/src/components/file-surface/file-quick-open.tsx(现有文档 palette 模式,复用其交互/键位框架)、filesystem/ 的 use-open-file / use-fs-file / file-system-explorer.tsx、src/trpc/app-router.ts workspaceFs。\n\n要做:\n- 后端:workspaceFs 增一条【工作区文件路径清单/搜索】通道:遍历工作区文件路径(遵循 .gitignore、隐藏 .git/.kanban),结果上限(cap,超限提示已截断,别静默截断——见 AGENTS.md no-silent-caps),避免同步 subprocess 热路径、避免无界 readdir 递归导致 EMFILE(见 large-workspace-emfile-fix)。可考虑复用 git ls-files 之类的高效来源。\n- 前端:文件系统 tab 内一个 Quick Open palette(⌘P;快捷键作用域仅在文件系统 tab/overlay 打开时,避免与文档 palette 的 ⌘K 冲突),对路径做模糊匹配,选中即在右侧打开(复用 use-open-file)。\n\n完成:web:typecheck + 后端 typecheck + lint + 相关测试通过。遵循 AGENTS.md。提交说明写清:路径清单/搜索通道契约与上限策略、palette 快捷键作用域、与文档 palette 的关系。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782891037628,
+  "updatedAt": 1782891037628,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}

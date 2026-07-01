@@ -1,0 +1,20 @@
+{
+  "id": "4b9e8",
+  "title": "File 完善①:下载(文件系统 + 上传库)",
+  "prompt": "给 File 加「下载到本地」能力。文件系统块和上传库都没有下载,这条两处一起补。先读现状:web-ui/src/components/file-surface/filesystem/(file-tree.tsx / file-viewer-pane.tsx / use-fs-mutations.ts)、web-ui/src/components/files/(files-view.tsx / file-detail-panel.tsx / use-file-bytes.ts)、src/trpc/app-router.ts 的 workspaceFs(api ~677 / router ~1272)与 exportDocument(下载先例,~1155)。\n\n要做:\n- 后端:workspaceFs 增一条【原始字节】读取/下载通道(二进制安全,不要走文本 readFile),路径安全、限制仓库根内、size cap。参考现有 exportDocument 的字节返回方式;注意 dual-lib Blob 类型坑(用 new Uint8Array(len) 拷贝,见 AGENTS.md dual-lib typecheck)。\n- 前端·文件系统:树右键菜单 + 查看面板加「下载」;单文件直接下载;文件夹「下载为 zip」(复用已有 jszip 依赖,见 vault-doc-export 先例)。\n- 前端·上传库:文件列表/详情加「下载」按钮(可直接复用 use-file-bytes 已有字节)。\n- 浏览器下载走 Blob + a[download],注意 LAN/HTTP 非安全上下文(参考 osc52 clipboard secure-context 的降级思路,别用只在安全上下文可用的 API)。\n\n完成:web:typecheck + 后端 typecheck + lint + 相关测试通过。遵循 AGENTS.md。提交说明写清:字节通道契约、文件系统与上传库各自的下载入口、zip 打包方式。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782891034791,
+  "updatedAt": 1782891034791,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
