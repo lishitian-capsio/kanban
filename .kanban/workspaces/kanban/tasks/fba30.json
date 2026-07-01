@@ -1,0 +1,20 @@
+{
+  "id": "fba30",
+  "title": "Board 感知开关:让 sidebar agent 的 board 感知可开关(对齐 Vault/Database)",
+  "prompt": "目标:把 sidebar agent 的「board 感知」从硬编码常开,改造成一个 per-workspace 的开关,和现有的 Vault/Database agent 感知开关完全对齐。让四个 surface(Board/Vault/Database/File)在架构上一致:sidebar agent 不再被硬绑死在 board 上,而是一个工作区 agent,通过开关决定是否感知/管理 board。\n\n本任务只做 Board(File 的开关留作后续独立任务,因为 sidebar agent 目前明确禁止改文件,File 感知语义需另行定义)。\n\n== 已定的设计决策(请遵循)==\n1. 门控类型 = Vault 式的「system prompt 注入门控」,不是 DB 式的 CLI 拦截。board 靠 CLI 参考自描述,关掉注入即可,不要去拦 `kanban task` CLI。\n2. 关闭时行为 = 抑制 board 管理指令 + task CLI 参考,保留一个最小的通用 sidebar 身份(agent 仍能聊天、仍能管理已开启的 vault 等 surface)。把当前那段硬编码的 board 身份块重构成受开关门控的 section,照搬 vault 的写法。\n3. 默认值 = ON(true)。这是刻意和 vault/db 的默认 false 不同:board 目前是常开的核心身份,默认关会静默废掉所有现有用户的 sidebar agent。必须默认 true 保持现状。\n\n== 参考现有 Vault 开关的实现,照葫芦画瓢 ==\n- Schema: src/core/api-contract.ts 约 1012-1025 行,RuntimeVaultSettings 里 agentVaultManagementEnabled / agentDatabaseAccessEnabled。新增 agentBoardManagementEnabled: z.boolean().default(true)。\n- 迁移: src/vault/vault-settings-store.ts 的 migrateRawVaultSettings(约 33-46 行)—— 老 settings 没有这个字段时要 default 成 true(保持现状),不要 default false。\n- 存储: VaultSettingsStore(vault-settings-store.ts,存 <repo>/.kanban/files/settings.json,已提交)。get()/set()/update() 已支持 partial update,无需改存储机制。\n- Prompt 注入门控: src/prompts/append-system-prompt.ts。参考 vault 的门控路径:option(约 55-56)、条件段(约 247-256)、render 函数(约 364-376)、loader loadVaultManagementEnabledForHomeSession(约 586-600)。当前 board 身份是硬编码在约 383-400 行(“You are the Kanban sidebar agent…” + task 生命周期 CLI 参考 + linking 教学)。把这块抽成一个受 agentBoardManagementEnabled 门控的 render section,并加一个 loadBoardManagementEnabledForHomeSession(taskId) loader,和 vault 的加载方式一致。关闭时注入最小通用 sidebar 身份(一两句:你是这个工作区的 sidebar 助手;board 管理当前已关闭)。\n- Home agent prompt builder: src/trpc/runtime-api.ts 约 148-153 行(resolveHomeAgentAppendSystemPrompt 组装处),把新 flag 一起读出来传进 renderAppendSystemPrompt()。\n- tRPC: src/trpc/app-router.ts / workspace-api.ts 的 workspace.getVaultSettings / updateVaultSettings 已经走 RuntimeVaultSettings 整体,加了 schema 字段后应自动带上;确认 update 的 partial patch 能单独写这个字段。\n\n== UI ==\n- 参考 web-ui/src/components/vault-control-button.tsx 和 web-ui/src/components/database/database-control-button.tsx(两者布局完全一致:split button + popover + 共享的 AgentAccessSwitch)。\n- 新增一个 Board 的顶栏控件(或在现有 board 相关按钮上挂 split),弹层里放 AgentAccessSwitch(web-ui/src/components/ui/agent-access-switch.tsx),label 类似「Allow the agent to manage the Kanban board」,description 说明关闭后 agent 不再感知/管理看板。\n- 复用 web-ui/src/components/vault/data/use-vault-settings.ts 的 tRPC hook(getVaultSettings/updateVaultSettings),字段换成 agentBoardManagementEnabled。\n\n== 验收 ==\n- 开关默认 ON,现有行为不变(sidebar agent 完整 board 感知)。\n- 关闭后:新开的 home/sidebar 会话的 system prompt 不再包含 board 管理指令和 task CLI 参考,只剩最小通用身份;vault/db 若开启仍照常注入。\n- 重开开关后恢复。\n- 遵循仓库 TypeScript / web-ui 规范(Tailwind、复用 AgentAccessSwitch、无 any)。\n- 加/更新相应测试(参考 vault settings 相关测试)。\n- typecheck(含 web:typecheck,注意 RuntimeVaultSettings 是 router-reachable 契约,双 lib 都要过)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "98d352bf-cb23-490b-8d5d-8945798a7371",
+  "baseRef": "main",
+  "createdAt": 1782891128973,
+  "updatedAt": 1782891128973,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}
