@@ -151,6 +151,14 @@
       "createdAt": 1782801665092,
       "updatedAt": 1782801686932,
       "pendingNextStep": "启动任务 2ddde"
+    },
+    {
+      "id": "98d352bf-cb23-490b-8d5d-8945798a7371",
+      "agentId": "claude",
+      "name": "我想把board模式改为像Board、Vault、Database、File，kanban agent通过开关来开启感知",
+      "titleSource": "auto",
+      "createdAt": 1782885250920,
+      "updatedAt": 1782885250920
     }
   ],
   "fullscreenTabs": {
