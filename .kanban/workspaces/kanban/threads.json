@@ -140,7 +140,7 @@
       "titleSource": "auto",
       "createdAt": 1782781545466,
       "updatedAt": 1782884324858,
-      "pendingNextStep": "建个任务：让 kanban hooks ingest 在缺少 KANBAN_SESSION_TASK_ID 时静默退出（exit 0），不再刷屏报错"
+      "pendingNextStep": "启动任务 3c969"
     },
     {
       "id": "e5060a7c-ba48-41e0-b356-495436c7d21d",
