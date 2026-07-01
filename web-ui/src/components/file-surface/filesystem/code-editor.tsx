@@ -39,14 +39,19 @@ interface CodeEditorProps {
 	value: string;
 	/** File name (drives the extension → language mapping). */
 	fileName: string;
+	/** When false (default) the editor is a read-only viewer. */
+	editable?: boolean;
+	/** Called on every edit when `editable`. */
+	onChange?: (next: string) => void;
 }
 
 /**
- * Read-only (P1) CodeMirror 6 viewer. The language extension is resolved from the
+ * CodeMirror 6 code viewer/editor. The language extension is resolved from the
  * file name and dynamically imported so only the needed syntax package loads.
- * Editing (P2) will lift `editable`/`onChange` here — the shell stays the same.
+ * `editable` flips it between the P1 read-only viewer and the P2 editor; `onChange`
+ * streams edits back to the owning draft buffer.
  */
-export function CodeEditor({ value, fileName }: CodeEditorProps): React.ReactElement {
+export function CodeEditor({ value, fileName, editable = false, onChange }: CodeEditorProps): React.ReactElement {
 	const [languageExtension, setLanguageExtension] = useState<Extension[]>([]);
 
 	useEffect(() => {
@@ -75,8 +80,9 @@ export function CodeEditor({ value, fileName }: CodeEditorProps): React.ReactEle
 	return (
 		<CodeMirror
 			value={value}
-			readOnly
-			editable={false}
+			readOnly={!editable}
+			editable={editable}
+			onChange={editable ? onChange : undefined}
 			theme={kanbanDarkTheme}
 			height="100%"
 			style={{ height: "100%" }}
@@ -84,11 +90,11 @@ export function CodeEditor({ value, fileName }: CodeEditorProps): React.ReactEle
 			basicSetup={{
 				lineNumbers: true,
 				foldGutter: false,
-				highlightActiveLine: false,
+				highlightActiveLine: editable,
 				highlightActiveLineGutter: false,
 				autocompletion: false,
-				searchKeymap: false,
-				closeBrackets: false,
+				searchKeymap: editable,
+				closeBrackets: editable,
 			}}
 		/>
 	);

@@ -14,6 +14,8 @@ const CodeEditor = lazy(() => import("./code-editor").then((m) => ({ default: m.
 interface CodeEditorLazyProps {
 	value: string;
 	fileName: string;
+	editable?: boolean;
+	onChange?: (next: string) => void;
 }
 
 export function CodeEditorLazy(props: CodeEditorLazyProps): React.ReactElement {

@@ -1,12 +1,12 @@
 import { ChevronRight, FileWarning } from "lucide-react";
 import type React from "react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 
 import { formatFileSize } from "@/components/files/file-meta";
 import { Spinner } from "@/components/ui/spinner";
-import { DocPreview } from "@/components/vault/editor/doc-preview";
+import type { RuntimeFsReadFileResponse } from "@/runtime/types";
 
-import { CodeEditorLazy } from "./code-editor-lazy";
+import { FsFileEditor } from "./fs-file-editor";
 import { resolveMediaMime, resolveViewerKind } from "./fs-language-map";
 import { useFsFile } from "./use-fs-file";
 
@@ -14,6 +14,8 @@ interface FileViewerPaneProps {
 	workspaceId: string | null;
 	/** Repo-relative POSIX path of the selected file, or null when none is open. */
 	path: string | null;
+	/** Report the open file's unsaved-changes state so navigation away can be guarded. */
+	onDirtyChange: (dirty: boolean) => void;
 }
 
 function baseName(path: string): string {
@@ -35,8 +37,18 @@ function Placeholder({ children }: { children: React.ReactNode }): React.ReactEl
  * vault preview, text/code via lazy CodeMirror, images/audio/video inline, and a
  * metadata card for oversized or opaque-binary files.
  */
-export function FileViewerPane({ workspaceId, path }: FileViewerPaneProps): React.ReactElement {
-	const { data, isLoading, errorMessage } = useFsFile(workspaceId, path);
+export function FileViewerPane({ workspaceId, path, onDirtyChange }: FileViewerPaneProps): React.ReactElement {
+	const { data, isLoading, errorMessage, refetch } = useFsFile(workspaceId, path);
+
+	// A read-only view (no path, loading, error, oversized, or a media/binary file)
+	// has no draft, so it can never be dirty — clear any latched flag from a prior
+	// editable file that this render is replacing.
+	const editable = Boolean(data?.ok && !data.tooLarge && path && !data.binary);
+	useEffect(() => {
+		if (!editable) {
+			onDirtyChange(false);
+		}
+	}, [editable, onDirtyChange]);
 
 	const segments = useMemo(() => (path ? path.split("/").filter((part) => part.length > 0) : []), [path]);
 
@@ -97,7 +109,16 @@ export function FileViewerPane({ workspaceId, path }: FileViewerPaneProps): Reac
 						</span>
 					</Placeholder>
 				) : (
-					<ViewerBody name={name} data={data} mediaSrc={mediaSrc} />
+					<ViewerBody
+						key={path}
+						workspaceId={workspaceId}
+						path={path}
+						name={name}
+						data={data}
+						mediaSrc={mediaSrc}
+						refetch={refetch}
+						onDirtyChange={onDirtyChange}
+					/>
 				)}
 			</div>
 		</div>
@@ -105,22 +126,40 @@ export function FileViewerPane({ workspaceId, path }: FileViewerPaneProps): Reac
 }
 
 function ViewerBody({
+	workspaceId,
+	path,
 	name,
 	data,
 	mediaSrc,
+	refetch,
+	onDirtyChange,
 }: {
+	workspaceId: string | null;
+	path: string;
 	name: string;
-	data: { content?: string; binary: boolean };
+	data: RuntimeFsReadFileResponse;
 	mediaSrc: string | null;
+	refetch: () => Promise<RuntimeFsReadFileResponse | null>;
+	onDirtyChange: (dirty: boolean) => void;
 }): React.ReactElement {
 	const kind = resolveViewerKind(name, data.binary);
 	const content = data.content ?? "";
 
-	if (kind === "markdown") {
+	// Text/markdown files are editable (design §5.1); the editor owns the draft +
+	// save + mtime-conflict handling. FsFileEditor is remounted per path by the
+	// `key` on this component, so its buffers reset cleanly when the file switches.
+	if (kind === "markdown" || kind === "code") {
 		return (
-			<div className="h-full overflow-auto px-4 py-3">
-				<DocPreview body={content} />
-			</div>
+			<FsFileEditor
+				workspaceId={workspaceId}
+				path={path}
+				name={name}
+				kind={kind}
+				initialContent={content}
+				initialMtimeMs={data.mtimeMs}
+				refetch={refetch}
+				onDirtyChange={onDirtyChange}
+			/>
 		);
 	}
 	if (kind === "image" && mediaSrc) {
@@ -145,9 +184,6 @@ function ViewerBody({
 				<video src={mediaSrc} controls className="max-h-full max-w-full" />
 			</div>
 		);
-	}
-	if (kind === "code") {
-		return <CodeEditorLazy value={content} fileName={name} />;
 	}
 	return (
 		<Placeholder>

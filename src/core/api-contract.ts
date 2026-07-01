@@ -1852,6 +1852,37 @@ export const runtimeFsStatRequestSchema = z.object({
 });
 export type RuntimeFsStatRequest = z.infer<typeof runtimeFsStatRequestSchema>;
 
+// --- writeFile (P2): edit + save with optimistic-concurrency (mtime) check -----
+// The client records the `mtimeMs` it read the file at and passes it back as
+// `expectedMtimeMs`. If the file's current mtime differs (an external edit since
+// it was opened), the write is REFUSED with `conflict: true` and nothing is
+// written — the UI then offers overwrite (re-send without `expectedMtimeMs`) or
+// reload. Omitting `expectedMtimeMs` is a forced overwrite. The file must already
+// exist (this surface edits opened files; creation is `createEntry`).
+export const runtimeFsWriteFileRequestSchema = z.object({
+	// Repo-root-relative POSIX path of the existing file to overwrite.
+	path: z.string(),
+	// New file contents, interpreted per `encoding` (default "utf8").
+	content: z.string(),
+	encoding: z.enum(["utf8", "base64"]).optional(),
+	// Concurrency baseline: the mtime the client last read. When present and it no
+	// longer matches on disk, the write is refused (`conflict: true`). Omit to force.
+	expectedMtimeMs: z.number().optional(),
+});
+export type RuntimeFsWriteFileRequest = z.infer<typeof runtimeFsWriteFileRequestSchema>;
+
+export const runtimeFsWriteFileResponseSchema = z.object({
+	ok: z.boolean(),
+	// The file's mtime after a successful write — the client adopts it as the new
+	// concurrency baseline so a subsequent save doesn't false-positive as a conflict.
+	mtimeMs: z.number().optional(),
+	// True when the write was refused because the file changed on disk since it was
+	// opened (mtime drift). No bytes were written.
+	conflict: z.boolean().optional(),
+	error: z.string().optional(),
+});
+export type RuntimeFsWriteFileResponse = z.infer<typeof runtimeFsWriteFileResponseSchema>;
+
 export const runtimeFsStatResponseSchema = z.object({
 	ok: z.boolean(),
 	entry: runtimeFsEntrySchema.nullable(),

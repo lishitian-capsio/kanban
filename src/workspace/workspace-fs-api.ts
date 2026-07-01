@@ -33,6 +33,8 @@ import type {
 	RuntimeFsRenameRequest,
 	RuntimeFsStatRequest,
 	RuntimeFsStatResponse,
+	RuntimeFsWriteFileRequest,
+	RuntimeFsWriteFileResponse,
 } from "../core/api-contract";
 import { createGitProcessEnv } from "../core/git-process-env";
 import { classifyFileCategory, detectMimeType } from "../files/file-mime";
@@ -680,6 +682,76 @@ export async function fsStat(root: string, input: RuntimeFsStatRequest): Promise
 }
 
 // -----------------------------------------------------------------------------
+// writeFile (P2) — edit + save with optimistic-concurrency (mtime) check.
+//
+// Runs the same path-safety pipeline as the mutations (reserved-dir guard →
+// string sandbox → symlink-real guard) and additionally refuses to touch the
+// repository root. The file must already EXIST (this surface edits opened files;
+// creation is `createEntry`). When `expectedMtimeMs` is supplied it is compared
+// against the current on-disk mtime and a mismatch — or a file that vanished —
+// yields `{ ok: false, conflict: true }` WITHOUT writing, so the UI can offer
+// overwrite/reload. Omitting `expectedMtimeMs` forces the write.
+// -----------------------------------------------------------------------------
+
+export async function fsWriteFile(root: string, input: RuntimeFsWriteFileRequest): Promise<RuntimeFsWriteFileResponse> {
+	let absolute: string;
+	try {
+		assertNotReservedPath(input.path);
+		absolute = resolveWithinRoot(root, input.path);
+	} catch (error) {
+		return { ok: false, error: mutationErrorMessage(error, "Invalid path.") };
+	}
+	if (!toPosixRelative(root, absolute)) {
+		return { ok: false, error: "Cannot write to the repository root." };
+	}
+
+	// The target must exist and stay within the real root (no symlink escape).
+	let info: Awaited<ReturnType<typeof stat>>;
+	try {
+		await assertRealWithinRoot(root, absolute);
+		info = await stat(absolute);
+	} catch (error) {
+		if (error instanceof OutsideRootError) {
+			return { ok: false, error: error.message };
+		}
+		// The file is gone. When the client had a baseline this is a lost-update
+		// race, so surface it as a conflict (offer reload); otherwise a plain miss.
+		if (input.expectedMtimeMs !== undefined) {
+			return { ok: false, conflict: true, error: "The file no longer exists." };
+		}
+		return { ok: false, error: "File not found." };
+	}
+	if (info.isDirectory()) {
+		return { ok: false, error: "Path is a directory." };
+	}
+
+	// Optimistic concurrency: refuse when the file changed since it was read.
+	if (input.expectedMtimeMs !== undefined && info.mtimeMs !== input.expectedMtimeMs) {
+		return { ok: false, conflict: true, error: "The file was modified outside the editor." };
+	}
+
+	const encoding = input.encoding ?? "utf8";
+	const buffer = Buffer.from(input.content, encoding === "base64" ? "base64" : "utf8");
+	if (buffer.byteLength > FS_EDIT_MAX_BYTES) {
+		return { ok: false, error: "File is too large to save." };
+	}
+
+	try {
+		await writeFile(absolute, buffer);
+	} catch (error) {
+		return { ok: false, error: fsSystemErrorMessage(error, "Failed to save the file.") };
+	}
+
+	let mtimeMs = 0;
+	try {
+		mtimeMs = (await stat(absolute)).mtimeMs;
+	} catch {
+		// The write succeeded; a failing post-stat only costs the fresh baseline.
+	}
+	return { ok: true, mtimeMs };
+}
+
+// -----------------------------------------------------------------------------
 // Mutations (P3): createEntry / rename / move / deleteEntry.
 //
 // Every mutation re-runs the full path-safety pipeline before any fs write:
@@ -846,6 +918,10 @@ export async function fsDeleteEntry(
 export interface WorkspaceFsApi {
 	listDir: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsListDirRequest) => Promise<RuntimeFsListDirResponse>;
 	readFile: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsReadFileRequest) => Promise<RuntimeFsReadFileResponse>;
+	writeFile: (
+		scope: RuntimeTrpcWorkspaceScope,
+		input: RuntimeFsWriteFileRequest,
+	) => Promise<RuntimeFsWriteFileResponse>;
 	stat: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsStatRequest) => Promise<RuntimeFsStatResponse>;
 	createEntry: (
 		scope: RuntimeTrpcWorkspaceScope,
@@ -863,6 +939,7 @@ export function createWorkspaceFsApi(): WorkspaceFsApi {
 	return {
 		listDir: (scope, input) => fsListDir(scope.workspacePath, input),
 		readFile: (scope, input) => fsReadFile(scope.workspacePath, input),
+		writeFile: (scope, input) => fsWriteFile(scope.workspacePath, input),
 		stat: (scope, input) => fsStat(scope.workspacePath, input),
 		createEntry: (scope, input) => fsCreateEntry(scope.workspacePath, input),
 		rename: (scope, input) => fsRename(scope.workspacePath, input),

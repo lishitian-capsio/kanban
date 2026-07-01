@@ -72,6 +72,8 @@ import type {
 	RuntimeFsRenameRequest,
 	RuntimeFsStatRequest,
 	RuntimeFsStatResponse,
+	RuntimeFsWriteFileRequest,
+	RuntimeFsWriteFileResponse,
 	RuntimeGitCheckoutRequest,
 	RuntimeGitCheckoutResponse,
 	RuntimeGitCommitDiffRequest,
@@ -264,6 +266,8 @@ import {
 	runtimeFsRenameRequestSchema,
 	runtimeFsStatRequestSchema,
 	runtimeFsStatResponseSchema,
+	runtimeFsWriteFileRequestSchema,
+	runtimeFsWriteFileResponseSchema,
 	runtimeGitCheckoutRequestSchema,
 	runtimeGitCheckoutResponseSchema,
 	runtimeGitCommitDiffRequestSchema,
@@ -676,6 +680,10 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeFsReadFileRequest,
 		) => Promise<RuntimeFsReadFileResponse>;
+		writeFile: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeFsWriteFileRequest,
+		) => Promise<RuntimeFsWriteFileResponse>;
 		stat: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsStatRequest) => Promise<RuntimeFsStatResponse>;
 		createEntry: (
 			scope: RuntimeTrpcWorkspaceScope,
@@ -1273,6 +1281,12 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeFsReadFileResponseSchema)
 			.query(async ({ ctx, input }) => {
 				return await ctx.workspaceFsApi.readFile(ctx.workspaceScope, input);
+			}),
+		writeFile: workspaceProcedure
+			.input(runtimeFsWriteFileRequestSchema)
+			.output(runtimeFsWriteFileResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceFsApi.writeFile(ctx.workspaceScope, input);
 			}),
 		stat: workspaceProcedure
 			.input(runtimeFsStatRequestSchema)

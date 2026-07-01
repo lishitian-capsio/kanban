@@ -33,6 +33,13 @@ interface FileSystemExplorerProps {
 	fsPath: string | null;
 	/** Open a path in the right pane, or clear it with `null` (writes `?fsPath`). */
 	onOpenPath: (path: string | null) => void;
+	/** Report the open file's unsaved-changes state up to the overlay's dirty guard. */
+	onDirtyChange: (dirty: boolean) => void;
+	/**
+	 * Run a navigation-away action through the overlay's unsaved-changes guard.
+	 * When the open file is clean it runs immediately; when dirty it prompts first.
+	 */
+	guardNavigation: (proceed: () => void) => void;
 }
 
 /** Repo-relative ancestor directories of a path, root-first: "a/b/c" → ["a","a/b"]. */
@@ -75,7 +82,13 @@ type PromptState =
  * refresh is manual + on window focus. Mutations refresh only the affected
  * directory layer(s), never the whole tree.
  */
-export function FileSystemExplorer({ workspaceId, fsPath, onOpenPath }: FileSystemExplorerProps): React.ReactElement {
+export function FileSystemExplorer({
+	workspaceId,
+	fsPath,
+	onOpenPath,
+	onDirtyChange,
+	guardNavigation,
+}: FileSystemExplorerProps): React.ReactElement {
 	const [showHidden, setShowHidden] = useState(false);
 	const tree = useFsTree(workspaceId, showHidden);
 	const { expandDir, reloadDir, reload } = tree;
@@ -259,7 +272,7 @@ export function FileSystemExplorer({ workspaceId, fsPath, onOpenPath }: FileSyst
 							loadingDirs={tree.loadingDirs}
 							selectedPath={fsPath}
 							onToggleDir={tree.toggleDir}
-							onSelectFile={onOpenPath}
+							onSelectFile={(path) => guardNavigation(() => onOpenPath(path))}
 							onRequestCreate={(parentDir, kind) =>
 								setPrompt({ kind: kind === "dir" ? "create-folder" : "create-file", parentDir })
 							}
@@ -270,7 +283,7 @@ export function FileSystemExplorer({ workspaceId, fsPath, onOpenPath }: FileSyst
 					)}
 				</div>
 			</div>
-			<FileViewerPane workspaceId={workspaceId} path={fsPath} />
+			<FileViewerPane workspaceId={workspaceId} path={fsPath} onDirtyChange={onDirtyChange} />
 
 			{prompt ? (
 				<FsNamePromptDialog

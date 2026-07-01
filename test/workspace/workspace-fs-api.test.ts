@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -11,6 +11,7 @@ import {
 	fsReadFile,
 	fsRename,
 	fsStat,
+	fsWriteFile,
 } from "../../src/workspace/workspace-fs-api";
 import { createTempDir } from "../utilities/temp-dir";
 
@@ -162,6 +163,111 @@ describe("workspace-fs-api", () => {
 		it("errors when the path is a directory", async () => {
 			const result = await fsReadFile(repo.path, { path: "src" });
 			expect(result.ok).toBe(false);
+		});
+	});
+
+	describe("writeFile", () => {
+		it("overwrites a text file and returns the new mtime", async () => {
+			const result = await fsWriteFile(repo.path, { path: "app.ts", content: "export const x = 2;\n" });
+			expect(result.ok).toBe(true);
+			expect(result.conflict).toBeUndefined();
+			expect(result.mtimeMs).toBeGreaterThan(0);
+			expect(readFileSync(join(repo.path, "app.ts"), "utf8")).toBe("export const x = 2;\n");
+		});
+
+		it("writes when expectedMtimeMs matches the current file (no external change)", async () => {
+			const baseline = await fsReadFile(repo.path, { path: "readme.md" });
+			const result = await fsWriteFile(repo.path, {
+				path: "readme.md",
+				content: "# edited\n",
+				expectedMtimeMs: baseline.mtimeMs,
+			});
+			expect(result.ok).toBe(true);
+			expect(readFileSync(join(repo.path, "readme.md"), "utf8")).toBe("# edited\n");
+		});
+
+		it("refuses with conflict when the file changed on disk since it was read", async () => {
+			const baseline = await fsReadFile(repo.path, { path: "app.ts" });
+			// Simulate an external edit and force a distinct mtime (fs resolution is coarse).
+			writeFileSync(join(repo.path, "app.ts"), "// changed externally\n");
+			const bumped = baseline.mtimeMs / 1000 + 5;
+			utimesSync(join(repo.path, "app.ts"), bumped, bumped);
+
+			const result = await fsWriteFile(repo.path, {
+				path: "app.ts",
+				content: "my edit\n",
+				expectedMtimeMs: baseline.mtimeMs,
+			});
+			expect(result.ok).toBe(false);
+			expect(result.conflict).toBe(true);
+			// The external content is left untouched — the conflicting write did not land.
+			expect(readFileSync(join(repo.path, "app.ts"), "utf8")).toBe("// changed externally\n");
+		});
+
+		it("force-overwrites (no expectedMtimeMs) after a conflict", async () => {
+			writeFileSync(join(repo.path, "app.ts"), "// changed externally\n");
+			const result = await fsWriteFile(repo.path, { path: "app.ts", content: "forced\n" });
+			expect(result.ok).toBe(true);
+			expect(readFileSync(join(repo.path, "app.ts"), "utf8")).toBe("forced\n");
+		});
+
+		it("reports conflict when expectedMtimeMs is set but the file was deleted", async () => {
+			const baseline = await fsReadFile(repo.path, { path: "app.ts" });
+			const result = await fsWriteFile(repo.path, {
+				path: "does-not-exist.ts",
+				content: "x\n",
+				expectedMtimeMs: baseline.mtimeMs,
+			});
+			expect(result.ok).toBe(false);
+			expect(result.conflict).toBe(true);
+		});
+
+		it("writes base64-decoded content", async () => {
+			const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]);
+			writeFileSync(join(repo.path, "pixel.png"), Buffer.from([0x00]));
+			const result = await fsWriteFile(repo.path, {
+				path: "pixel.png",
+				content: bytes.toString("base64"),
+				encoding: "base64",
+			});
+			expect(result.ok).toBe(true);
+			expect(readFileSync(join(repo.path, "pixel.png")).equals(bytes)).toBe(true);
+		});
+
+		it("rejects a `..` escape without writing", async () => {
+			writeFileSync(join(outside.path, "target.txt"), "keep\n");
+			const result = await fsWriteFile(repo.path, { path: "../target.txt", content: "leak\n" });
+			expect(result.ok).toBe(false);
+			expect(result.error).toMatch(/outside/i);
+			expect(readFileSync(join(outside.path, "target.txt"), "utf8")).toBe("keep\n");
+		});
+
+		it("rejects writing through a symlink that escapes the root", async () => {
+			writeFileSync(join(outside.path, "secret.txt"), "keep\n");
+			symlinkSync(join(outside.path, "secret.txt"), join(repo.path, "leak-link"));
+			const result = await fsWriteFile(repo.path, { path: "leak-link", content: "leak\n" });
+			expect(result.ok).toBe(false);
+			expect(result.error).toMatch(/outside/i);
+			expect(readFileSync(join(outside.path, "secret.txt"), "utf8")).toBe("keep\n");
+		});
+
+		it("refuses to write inside .kanban", async () => {
+			const before = readFileSync(join(repo.path, ".kanban", "meta.json"), "utf8");
+			const result = await fsWriteFile(repo.path, { path: ".kanban/meta.json", content: '{"evil":1}\n' });
+			expect(result.ok).toBe(false);
+			expect(readFileSync(join(repo.path, ".kanban", "meta.json"), "utf8")).toBe(before);
+		});
+
+		it("errors when the target is a directory", async () => {
+			const result = await fsWriteFile(repo.path, { path: "src", content: "x\n" });
+			expect(result.ok).toBe(false);
+			expect(statSync(join(repo.path, "src")).isDirectory()).toBe(true);
+		});
+
+		it("errors when the file does not exist (never creates)", async () => {
+			const result = await fsWriteFile(repo.path, { path: "src/brand-new.ts", content: "x\n" });
+			expect(result.ok).toBe(false);
+			expect(existsSync(join(repo.path, "src", "brand-new.ts"))).toBe(false);
 		});
 	});
 
