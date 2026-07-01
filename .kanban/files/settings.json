@@ -2,7 +2,7 @@
   "agentVaultManagementEnabled": true,
   "extraPushRemotes": [
     {
-      "name": "main",
+      "name": "github",
       "url": "https://github.com/lishitian-capsio/kanban.git"
     }
   ],
