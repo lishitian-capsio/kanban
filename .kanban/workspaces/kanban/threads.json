@@ -158,7 +158,8 @@
       "name": "Board 作为可感知开关的surface",
       "titleSource": "auto",
       "createdAt": 1782885250920,
-      "updatedAt": 1782890675786
+      "updatedAt": 1782890675786,
+      "pendingNextStep": "开始 T1(a73ca)存储/schema/迁移这个地基任务"
     },
     {
       "id": "14e8de0b-57a7-40b9-bfbf-08f26171787d",
@@ -174,8 +175,9 @@
     "openThreadIds": [
       "6588c4a9-28df-4a75-9774-172e2bb7832c",
       "98d352bf-cb23-490b-8d5d-8945798a7371",
-      "14e8de0b-57a7-40b9-bfbf-08f26171787d"
+      "14e8de0b-57a7-40b9-bfbf-08f26171787d",
+      "3e599da8-ac7b-4c0a-b7bb-48bd0e7c10aa"
     ],
-    "activeThreadId": "14e8de0b-57a7-40b9-bfbf-08f26171787d"
+    "activeThreadId": "3e599da8-ac7b-4c0a-b7bb-48bd0e7c10aa"
   }
 }
