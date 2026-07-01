@@ -1,0 +1,20 @@
+{
+  "id": "58e3b",
+  "title": "设计:File『文件系统』块(仓库工作区资源管理器)",
+  "prompt": "设计 File surface 新增的「文件系统」块并产出正式设计文档(.plan/docs/ 下 markdown)。本任务不写实现代码。\n\n== 已锁定的决策(严格据此设计)==\n1. File surface 顶部分两个子 tab:「文件系统」/「上传」。「上传」= 沿用现有二进制文件库(components/files / RuntimeFileItem / .kanban/files git LFS),本次不动。「文件系统」= 全新块。\n2. 「文件系统」= VS Code 式资源管理器,操作【当前项目主工作区】的真实仓库文件树(源码+文档)。根 = 仓库根,仅此一棵,不含任务 worktree、不含其它 workspace。\n3. 全功能:浏览/打开/编辑/保存 + 新建/重命名/删除/移动(文件与文件夹)。\n4. 显示过滤:遵循 .gitignore(用 ignore 库或 git check-ignore),始终隐藏 .git 与 .kanban(引擎/运行期目录);提供「显示隐藏/忽略项」开关。\n5. 编辑器:CodeMirror 6(懒加载/代码分割,按扩展名语言高亮);markdown 复用现有 md 编辑器;图片/二进制→预览(复用 FileThumbnail);超大文件(如 >1MB)只读或拒开。\n6. 形态仍是 overlay:盖在 board 之上,board 不 unmount、按需 mount、关闭即卸载(勿重蹈 vault/database 整页慢;见 fullscreen-toggle-slow-board-unmount-fix)。\n\n== 架构方向 ==\n- 后端:新增专用、路径安全的工作区文件 tRPC(如 workspaceFs):listDir / readFile / writeFile / create / rename / delete / move。全部限制在仓库根内(解析后校验不越界、防 .. 与软链逃逸),懒加载一次只列一层目录,绝不递归全盘走。遵循 AGENTS.md「No sync subprocess on hot paths」,契约同时更新 api-contract / tRPC。\n- 前端(文件系统 tab 内):左=懒加载文件树(点开目录才拉该层、大目录虚拟化、右键+拖拽做增删改移),右=CodeMirror/预览+面包屑+保存态。复用现有 file-surface store/overlay/路由(?file= 等),不新造第二套弹窗。\n- 并发覆盖:打开时记 mtime,保存前比对,外部已改则提示是否覆盖。\n- 安全:路径穿越/软链/二进制识别后端兜底。\n- v1 不做文件监听(手动刷新+聚焦刷新),监听留后续。\n\n== 设计文档需覆盖 ==\n- 两 tab 布局与路由接线;文件系统 tab 的组件边界(树/编辑器/文件操作/store 切片)。\n- workspaceFs tRPC 契约与安全/性能(懒列、size cap、gitignore 实现选型)。\n- 编辑器选型接线(CodeMirror6 懒加载、语言映射、md/图片分流)。\n- 并发与错误处理。\n- 分期:P1 后端 list/read + 左树懒加载 + 右侧只读查看;P2 编辑+保存(mtime 并发校验);P3 新建/重命名/删除/移动+拖拽。每期的验收点。\n\n先调研现有实现(file-surface store/overlay/路由、components/files、TopBar File 入口、fullscreen File tab、vault tRPC、pi-tools 文件读写作参考)再下笔。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782872544694,
+  "updatedAt": 1782872544694,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
