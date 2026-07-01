@@ -1777,6 +1777,88 @@ export const runtimeDirectoryListResponseSchema = z.object({
 });
 export type RuntimeDirectoryListResponse = z.infer<typeof runtimeDirectoryListResponseSchema>;
 
+// ---------------------------------------------------------------------------
+// workspaceFs — VS Code–style repository working-tree explorer.
+//
+// A read/browse surface over the CURRENT project's main workspace repo root
+// (`scope.workspacePath`), distinct from the binary file library (`workspace.*File*`,
+// which lives under `.kanban/files`). Paths are ALWAYS repo-root-relative and
+// POSIX-separated ("src/foo.ts"); the empty string "" (or ".") denotes the root.
+// The backend never trusts the client: it re-resolves + sandboxes every path,
+// refuses `..`/absolute escapes and symlinks that leave the root, and always
+// hides `.git`/`.kanban`. See `.plan/docs/file-surface-filesystem-explorer-design.md`.
+// ---------------------------------------------------------------------------
+
+export const runtimeFsEntrySchema = z.object({
+	name: z.string(),
+	// Repo-root-relative, POSIX-separated path.
+	path: z.string(),
+	kind: z.enum(["file", "dir"]),
+	size: z.number().int().nonnegative(),
+	mtimeMs: z.number(),
+	isSymlink: z.boolean(),
+	// True when git would ignore this entry (badge / default-hidden). Always
+	// false in a non-git working tree.
+	gitIgnored: z.boolean(),
+});
+export type RuntimeFsEntry = z.infer<typeof runtimeFsEntrySchema>;
+
+export const runtimeFsListDirRequestSchema = z.object({
+	// Repo-root-relative POSIX path. Empty string / omitted = repo root.
+	path: z.string().optional(),
+	// When true, gitignored entries (and, in a non-git tree, dotfiles) are
+	// included; `.git`/`.kanban` remain hidden regardless.
+	showHidden: z.boolean().optional(),
+});
+export type RuntimeFsListDirRequest = z.infer<typeof runtimeFsListDirRequestSchema>;
+
+export const runtimeFsListDirResponseSchema = z.object({
+	ok: z.boolean(),
+	// Echo of the resolved directory (repo-relative POSIX; "" for root).
+	path: z.string(),
+	entries: z.array(runtimeFsEntrySchema),
+	// True when the working tree is a git repository (drives the gitignore path).
+	isGitRepository: z.boolean(),
+	error: z.string().optional(),
+});
+export type RuntimeFsListDirResponse = z.infer<typeof runtimeFsListDirResponseSchema>;
+
+export const runtimeFsReadFileRequestSchema = z.object({
+	path: z.string(),
+});
+export type RuntimeFsReadFileRequest = z.infer<typeof runtimeFsReadFileRequestSchema>;
+
+export const runtimeFsReadFileResponseSchema = z.object({
+	ok: z.boolean(),
+	path: z.string(),
+	// "utf8" for text, "base64" for binary/preview payloads.
+	encoding: z.enum(["utf8", "base64"]),
+	// Omitted when `tooLarge` (never sent over the wire) or on error.
+	content: z.string().optional(),
+	size: z.number().int().nonnegative(),
+	mtimeMs: z.number(),
+	// True when the content is (or would be) a binary payload, not editable text.
+	binary: z.boolean(),
+	// True when the file exceeds the size cap; `content` is withheld.
+	tooLarge: z.boolean(),
+	// Reserved: true when `content` was clipped (P1 never truncates).
+	truncated: z.boolean(),
+	error: z.string().optional(),
+});
+export type RuntimeFsReadFileResponse = z.infer<typeof runtimeFsReadFileResponseSchema>;
+
+export const runtimeFsStatRequestSchema = z.object({
+	path: z.string(),
+});
+export type RuntimeFsStatRequest = z.infer<typeof runtimeFsStatRequestSchema>;
+
+export const runtimeFsStatResponseSchema = z.object({
+	ok: z.boolean(),
+	entry: runtimeFsEntrySchema.nullable(),
+	error: z.string().optional(),
+});
+export type RuntimeFsStatResponse = z.infer<typeof runtimeFsStatResponseSchema>;
+
 export const runtimeProjectRemoveRequestSchema = z.object({
 	projectId: z.string(),
 });

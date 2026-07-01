@@ -8,9 +8,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeVaultSearchResult } from "@/runtime/types";
 import { useDebouncedEffect } from "@/utils/react-use";
-
-import type { OpenFile } from "./use-open-file";
 import type { FileRecent } from "./use-file-recents";
+import type { OpenFile } from "./use-open-file";
 
 const SEARCH_LIMIT = 20;
 
@@ -193,9 +192,7 @@ export function FileQuickOpen({
 								{row.isRecent ? <Clock size={15} /> : <FileText size={15} />}
 							</span>
 							<span className="min-w-0 flex-1">
-								<span className="block truncate text-[13px] font-medium text-text-primary">
-									{row.title}
-								</span>
+								<span className="block truncate text-[13px] font-medium text-text-primary">{row.title}</span>
 								{row.hint ? (
 									<span className="block truncate text-xs text-text-tertiary">{row.hint}</span>
 								) : null}

@@ -1,9 +1,9 @@
 import type React from "react";
-import { type ReactNode, lazy, Suspense, useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { lazy, type ReactNode, Suspense, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 import { fileSurfaceStore } from "./file-surface-store";
-import { FileSurfaceContext, type OpenFile } from "./use-open-file";
 import { useFileRecents } from "./use-file-recents";
+import { FileSurfaceContext, type OpenFile } from "./use-open-file";
 
 // Code-split the overlay (and, through it, the heavy `@uiw/react-md-editor`) and
 // the palette so neither is in first paint — they load on first open
@@ -83,6 +83,14 @@ export function FileSurfaceProvider({
 		fileSurfaceStore.openPalette();
 	}, []);
 
+	const handleSelectFilesTab = useCallback((tab: Parameters<typeof fileSurfaceStore.setFilesTab>[0]) => {
+		fileSurfaceStore.setFilesTab(tab);
+	}, []);
+
+	const handleOpenFsPath = useCallback((path: string) => {
+		fileSurfaceStore.openFsPath(path);
+	}, []);
+
 	return (
 		<FileSurfaceContext.Provider value={openFile}>
 			{children}
@@ -113,8 +121,12 @@ export function FileSurfaceProvider({
 					<FileLibraryOverlay
 						open
 						workspaceId={snapshot.workspaceId ?? workspaceId}
+						filesTab={snapshot.filesTab}
+						fsPath={snapshot.fsPath}
 						onClose={handleCloseLibrary}
 						onOpenPalette={handleOpenPalette}
+						onSelectTab={handleSelectFilesTab}
+						onOpenFsPath={handleOpenFsPath}
 					/>
 				</Suspense>
 			) : null}

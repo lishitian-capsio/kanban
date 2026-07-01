@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type FileRecent, FILE_RECENTS_LIMIT, normalizeRecents, pushRecent } from "./use-file-recents";
+import { FILE_RECENTS_LIMIT, type FileRecent, normalizeRecents, pushRecent } from "./use-file-recents";
 
 const recent = (id: string, title = `Title ${id}`): FileRecent => ({ id, title });
 

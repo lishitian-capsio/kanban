@@ -14,10 +14,16 @@ const FULLSCREEN_CHAT_QUERY_PARAM = "chat";
 // overlay is open; the value is the vault document `id`. Independent of
 // `?task=`/`?chat=` — the overlay layers above whatever is behind it.
 const FILE_QUERY_PARAM = "file";
-// The File surface's binary-library mode (the file browser rehomed out of Vault).
-// A valueless flag (`?files`) — its presence means the library overlay is open.
-// Independent of `?file=`/`?task=`/`?chat=`; lets the library survive refresh.
+// The File surface's library overlay. Its PRESENCE (`?files`) means the overlay is
+// open; the value selects the sub-tab: "" / "fs" (default) = the filesystem
+// explorer, "uploads" = the binary upload library. The valueless form is kept for
+// backward compat (old `?files` links open the default tab). Independent of
+// `?file=`/`?task=`/`?chat=`; lets the library survive refresh.
 const FILES_LIBRARY_QUERY_PARAM = "files";
+// The filesystem-explorer sub-tab's currently-open repo-relative path (deep link).
+const FS_PATH_QUERY_PARAM = "fsPath";
+
+export type FilesSurfaceTab = "fs" | "uploads";
 
 export function normalizeStoredTaskAutoReviewMode(value: string): TaskAutoReviewMode | null {
 	if (value === "commit" || value === "pr") {
@@ -134,12 +140,7 @@ export function parseFileIdFromSearch(search: string): string | null {
 	return fileId ? fileId : null;
 }
 
-export function buildFileUrl(input: {
-	pathname: string;
-	search: string;
-	hash: string;
-	fileId: string | null;
-}): string {
+export function buildFileUrl(input: { pathname: string; search: string; hash: string; fileId: string | null }): string {
 	const params = new URLSearchParams(input.search);
 	if (input.fileId) {
 		params.set(FILE_QUERY_PARAM, input.fileId);
@@ -155,18 +156,60 @@ export function parseFilesLibraryFromSearch(search: string): boolean {
 	return params.has(FILES_LIBRARY_QUERY_PARAM);
 }
 
+/**
+ * The active File-surface sub-tab, or null when the overlay is closed. A present
+ * but empty / unrecognized value resolves to the default "fs" tab (so the legacy
+ * valueless `?files` link opens the filesystem explorer).
+ */
+export function parseFilesTabFromSearch(search: string): FilesSurfaceTab | null {
+	const params = new URLSearchParams(search);
+	if (!params.has(FILES_LIBRARY_QUERY_PARAM)) {
+		return null;
+	}
+	return params.get(FILES_LIBRARY_QUERY_PARAM) === "uploads" ? "uploads" : "fs";
+}
+
 export function buildFilesLibraryUrl(input: {
 	pathname: string;
 	search: string;
 	hash: string;
 	open: boolean;
+	tab?: FilesSurfaceTab;
 }): string {
 	const params = new URLSearchParams(input.search);
 	if (input.open) {
-		// Valueless flag — set to empty string so it renders as `?files`.
-		params.set(FILES_LIBRARY_QUERY_PARAM, "");
+		// "uploads" is encoded explicitly; the default "fs" tab stays valueless
+		// (`?files`) for backward compatibility with pre-tab links.
+		if (input.tab === "uploads") {
+			params.set(FILES_LIBRARY_QUERY_PARAM, "uploads");
+		} else {
+			params.set(FILES_LIBRARY_QUERY_PARAM, "");
+		}
 	} else {
 		params.delete(FILES_LIBRARY_QUERY_PARAM);
+		params.delete(FS_PATH_QUERY_PARAM);
+	}
+	const nextSearch = params.toString();
+	return `${input.pathname}${nextSearch ? `?${nextSearch}` : ""}${input.hash}`;
+}
+
+export function parseFsPathFromSearch(search: string): string | null {
+	const params = new URLSearchParams(search);
+	const value = params.get(FS_PATH_QUERY_PARAM)?.trim();
+	return value ? value : null;
+}
+
+export function buildFsPathUrl(input: {
+	pathname: string;
+	search: string;
+	hash: string;
+	fsPath: string | null;
+}): string {
+	const params = new URLSearchParams(input.search);
+	if (input.fsPath) {
+		params.set(FS_PATH_QUERY_PARAM, input.fsPath);
+	} else {
+		params.delete(FS_PATH_QUERY_PARAM);
 	}
 	const nextSearch = params.toString();
 	return `${input.pathname}${nextSearch ? `?${nextSearch}` : ""}${input.hash}`;

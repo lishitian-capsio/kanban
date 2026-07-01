@@ -60,6 +60,12 @@ import type {
 	RuntimeFilesListResponse,
 	RuntimeFileUpdateRequest,
 	RuntimeFileUpdateResponse,
+	RuntimeFsListDirRequest,
+	RuntimeFsListDirResponse,
+	RuntimeFsReadFileRequest,
+	RuntimeFsReadFileResponse,
+	RuntimeFsStatRequest,
+	RuntimeFsStatResponse,
 	RuntimeGitCheckoutRequest,
 	RuntimeGitCheckoutResponse,
 	RuntimeGitCommitDiffRequest,
@@ -240,6 +246,12 @@ import {
 	runtimeFilesListResponseSchema,
 	runtimeFileUpdateRequestSchema,
 	runtimeFileUpdateResponseSchema,
+	runtimeFsListDirRequestSchema,
+	runtimeFsListDirResponseSchema,
+	runtimeFsReadFileRequestSchema,
+	runtimeFsReadFileResponseSchema,
+	runtimeFsStatRequestSchema,
+	runtimeFsStatResponseSchema,
 	runtimeGitCheckoutRequestSchema,
 	runtimeGitCheckoutResponseSchema,
 	runtimeGitCommitDiffRequestSchema,
@@ -646,6 +658,14 @@ export interface RuntimeTrpcContext {
 			input: RuntimeGitCommitDiffRequest,
 		) => Promise<RuntimeGitCommitDiffResponse>;
 	} & WorkspaceDbApi;
+	workspaceFsApi: {
+		listDir: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsListDirRequest) => Promise<RuntimeFsListDirResponse>;
+		readFile: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeFsReadFileRequest,
+		) => Promise<RuntimeFsReadFileResponse>;
+		stat: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsStatRequest) => Promise<RuntimeFsStatResponse>;
+	};
 	dbApi: {
 		listConnections: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeDbConnectionListResponse>;
 		addConnection: (
@@ -1214,6 +1234,26 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeGitCommitDiffResponseSchema)
 			.query(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.loadCommitDiff(ctx.workspaceScope, input);
+			}),
+	}),
+	workspaceFs: t.router({
+		listDir: workspaceProcedure
+			.input(runtimeFsListDirRequestSchema)
+			.output(runtimeFsListDirResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceFsApi.listDir(ctx.workspaceScope, input);
+			}),
+		readFile: workspaceProcedure
+			.input(runtimeFsReadFileRequestSchema)
+			.output(runtimeFsReadFileResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceFsApi.readFile(ctx.workspaceScope, input);
+			}),
+		stat: workspaceProcedure
+			.input(runtimeFsStatRequestSchema)
+			.output(runtimeFsStatResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceFsApi.stat(ctx.workspaceScope, input);
 			}),
 	}),
 	db: t.router({

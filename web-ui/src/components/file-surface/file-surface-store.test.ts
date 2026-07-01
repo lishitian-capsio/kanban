@@ -140,4 +140,45 @@ describe("fileSurfaceStore", () => {
 		window.dispatchEvent(new PopStateEvent("popstate"));
 		expect(mod.fileSurfaceStore.getSnapshot().fileId).toBeNull();
 	});
+
+	it("defaults the sub-tab to fs for a legacy valueless ?files link", async () => {
+		vi.resetModules();
+		window.history.replaceState(null, "", "/project-1?files");
+		const seeded = await import("./file-surface-store");
+		expect(seeded.fileSurfaceStore.getSnapshot().filesTab).toBe("fs");
+	});
+
+	it("seeds the uploads sub-tab from ?files=uploads", async () => {
+		vi.resetModules();
+		window.history.replaceState(null, "", "/project-1?files=uploads");
+		const seeded = await import("./file-surface-store");
+		expect(seeded.fileSurfaceStore.getSnapshot().libraryOpen).toBe(true);
+		expect(seeded.fileSurfaceStore.getSnapshot().filesTab).toBe("uploads");
+	});
+
+	it("setFilesTab switches to uploads and writes ?files=uploads (replace)", () => {
+		mod.fileSurfaceStore.openLibrary();
+		mod.fileSurfaceStore.setFilesTab("uploads");
+		expect(mod.fileSurfaceStore.getSnapshot().filesTab).toBe("uploads");
+		expect(window.location.search).toBe("?files=uploads");
+	});
+
+	it("openFsPath deep-links a path, forces the fs tab, and writes ?fsPath", () => {
+		mod.fileSurfaceStore.setDefaultWorkspace("ws-1");
+		mod.fileSurfaceStore.openFsPath("src/index.ts");
+		const snapshot = mod.fileSurfaceStore.getSnapshot();
+		expect(snapshot.libraryOpen).toBe(true);
+		expect(snapshot.filesTab).toBe("fs");
+		expect(snapshot.fsPath).toBe("src/index.ts");
+		expect(window.location.search).toContain("fsPath=src%2Findex.ts");
+	});
+
+	it("seeds ?fsPath on load and clears it when the overlay closes", async () => {
+		vi.resetModules();
+		window.history.replaceState(null, "", "/project-1?files=fs&fsPath=app.ts");
+		const seeded = await import("./file-surface-store");
+		expect(seeded.fileSurfaceStore.getSnapshot().fsPath).toBe("app.ts");
+		seeded.fileSurfaceStore.closeLibrary();
+		expect(window.location.search).toBe("");
+	});
 });

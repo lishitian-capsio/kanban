@@ -54,6 +54,7 @@ import { createProjectsApi } from "../trpc/projects-api";
 import { createRuntimeApi } from "../trpc/runtime-api";
 import { type BoardSyncApi, createWorkspaceApi } from "../trpc/workspace-api";
 import { type BoardSyncService, createBoardSyncService } from "../workspace/board-sync";
+import { createWorkspaceFsApi } from "../workspace/workspace-fs-api";
 import { getWebUiDir, normalizeRequestPath, readAsset } from "./assets";
 import { markStall } from "./event-loop-stall-watchdog";
 import { handleHttpRequest, handleSocketUpgrade } from "./middleware";
@@ -290,6 +291,9 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 	// per request (createTrpcContext runs per request). Its methods take the workspace
 	// scope explicitly and hold no per-request state, so a single instance is reused.
 	const dbApi = createDbApi();
+	// Repo working-tree explorer (workspaceFs). Stateless aside from an internal
+	// short-TTL gitignore cache, so a single instance is reused across requests.
+	const workspaceFsApi = createWorkspaceFsApi();
 
 	const prepareForStateReset = async (): Promise<void> => {
 		const workspaceIds = new Set<string>();
@@ -344,6 +348,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				buildWorkspaceStateSnapshot: deps.workspaceRegistry.buildWorkspaceStateSnapshot,
 				boardSync: boardSyncApi,
 			}),
+			workspaceFsApi,
 			dbApi,
 			projectsApi: createProjectsApi({
 				getActiveWorkspacePath: deps.workspaceRegistry.getActiveWorkspacePath,

@@ -1,8 +1,12 @@
 import {
-	buildFileUrl,
 	buildFilesLibraryUrl,
+	buildFileUrl,
+	buildFsPathUrl,
+	type FilesSurfaceTab,
 	parseFileIdFromSearch,
 	parseFilesLibraryFromSearch,
+	parseFilesTabFromSearch,
+	parseFsPathFromSearch,
 } from "@/hooks/app-utils";
 
 /**
@@ -32,11 +36,21 @@ export interface FileSurfaceState {
 	/** Whether the quick-open palette ("pick a file") is showing. Not URL-routed. */
 	paletteOpen: boolean;
 	/**
-	 * Whether the binary-library overlay (the file browser rehomed out of Vault)
-	 * is showing. URL-routed via `?files` so it survives refresh. Independent of
+	 * Whether the library overlay (filesystem explorer + upload library) is
+	 * showing. URL-routed via `?files` so it survives refresh. Independent of
 	 * `fileId` — the single-doc overlay can layer above the library.
 	 */
 	libraryOpen: boolean;
+	/**
+	 * The active sub-tab within the library overlay. Seeded from `?files=<v>`
+	 * (default "fs"). Meaningful only while `libraryOpen`.
+	 */
+	filesTab: FilesSurfaceTab;
+	/**
+	 * The filesystem explorer's currently-open repo-relative path (deep link via
+	 * `?fsPath`). File → opened in the right pane; directory → revealed/expanded.
+	 */
+	fsPath: string | null;
 }
 
 export interface OpenFileOptions {
@@ -58,6 +72,20 @@ function readLibraryFromLocation(): boolean {
 	return parseFilesLibraryFromSearch(window.location.search);
 }
 
+function readFilesTabFromLocation(): FilesSurfaceTab {
+	if (typeof window === "undefined") {
+		return "fs";
+	}
+	return parseFilesTabFromSearch(window.location.search) ?? "fs";
+}
+
+function readFsPathFromLocation(): string | null {
+	if (typeof window === "undefined") {
+		return null;
+	}
+	return parseFsPathFromSearch(window.location.search);
+}
+
 // Seed synchronously from the URL so a deep link / refresh to `?file=<id>` or
 // `?files` opens the corresponding overlay on first paint with no flash.
 // `workspaceId` is back-filled by the provider (the workspace isn't encoded in
@@ -67,6 +95,8 @@ let state: FileSurfaceState = {
 	workspaceId: null,
 	paletteOpen: false,
 	libraryOpen: readLibraryFromLocation(),
+	filesTab: readFilesTabFromLocation(),
+	fsPath: readFsPathFromLocation(),
 };
 
 // The provider's current workspace, used as the default when a file is opened
@@ -87,7 +117,9 @@ function setState(next: FileSurfaceState): void {
 		next.fileId === state.fileId &&
 		next.workspaceId === state.workspaceId &&
 		next.paletteOpen === state.paletteOpen &&
-		next.libraryOpen === state.libraryOpen
+		next.libraryOpen === state.libraryOpen &&
+		next.filesTab === state.filesTab &&
+		next.fsPath === state.fsPath
 	) {
 		return;
 	}
@@ -117,12 +149,14 @@ function writeUrl(fileId: string | null, mode: "push" | "replace"): void {
 	}
 }
 
-function writeLibraryUrl(open: boolean, mode: "push" | "replace"): void {
+function writeLibraryUrl(open: boolean, tab: FilesSurfaceTab, mode: "push" | "replace"): void {
 	if (typeof window === "undefined") {
 		return;
 	}
 	const currentUrl = new URL(window.location.href);
-	if (parseFilesLibraryFromSearch(currentUrl.search) === open) {
+	const currentOpen = parseFilesLibraryFromSearch(currentUrl.search);
+	const currentTab = parseFilesTabFromSearch(currentUrl.search) ?? "fs";
+	if (currentOpen === open && (!open || currentTab === tab)) {
 		// Already at the target — never add a duplicate history entry.
 		return;
 	}
@@ -131,6 +165,28 @@ function writeLibraryUrl(open: boolean, mode: "push" | "replace"): void {
 		search: currentUrl.search,
 		hash: currentUrl.hash,
 		open,
+		tab,
+	});
+	if (mode === "push") {
+		window.history.pushState(window.history.state, "", nextUrl);
+	} else {
+		window.history.replaceState(window.history.state, "", nextUrl);
+	}
+}
+
+function writeFsPathUrl(fsPath: string | null, mode: "push" | "replace"): void {
+	if (typeof window === "undefined") {
+		return;
+	}
+	const currentUrl = new URL(window.location.href);
+	if (parseFsPathFromSearch(currentUrl.search) === fsPath) {
+		return;
+	}
+	const nextUrl = buildFsPathUrl({
+		pathname: currentUrl.pathname,
+		search: currentUrl.search,
+		hash: currentUrl.hash,
+		fsPath,
 	});
 	if (mode === "push") {
 		window.history.pushState(window.history.state, "", nextUrl);
@@ -147,6 +203,8 @@ function handlePopState(): void {
 		workspaceId: fileId || libraryOpen ? (state.workspaceId ?? defaultWorkspaceId) : null,
 		paletteOpen: false,
 		libraryOpen,
+		filesTab: readFilesTabFromLocation(),
+		fsPath: readFsPathFromLocation(),
 	});
 }
 
@@ -203,13 +261,18 @@ export const fileSurfaceStore = {
 		setState({ ...state, paletteOpen: false });
 	},
 
-	/** Open the binary-library overlay (the file browser rehomed out of Vault). */
-	openLibrary(): void {
-		writeLibraryUrl(true, "push");
+	/**
+	 * Open the library overlay. Opens on the last-selected sub-tab (default the
+	 * filesystem explorer). An explicit `tab` forces that tab.
+	 */
+	openLibrary(tab?: FilesSurfaceTab): void {
+		const nextTab = tab ?? state.filesTab;
+		writeLibraryUrl(true, nextTab, "push");
 		setState({
 			...state,
 			workspaceId: state.workspaceId ?? defaultWorkspaceId,
 			libraryOpen: true,
+			filesTab: nextTab,
 			paletteOpen: false,
 		});
 	},
@@ -218,8 +281,27 @@ export const fileSurfaceStore = {
 		if (!state.libraryOpen) {
 			return;
 		}
-		writeLibraryUrl(false, "push");
+		writeLibraryUrl(false, state.filesTab, "push");
 		setState({ ...state, libraryOpen: false });
+	},
+
+	/** Switch the active sub-tab (does not push a history entry). */
+	setFilesTab(tab: FilesSurfaceTab): void {
+		if (state.filesTab === tab && state.libraryOpen) {
+			return;
+		}
+		writeLibraryUrl(true, tab, "replace");
+		setState({ ...state, libraryOpen: true, filesTab: tab });
+	},
+
+	/**
+	 * Open (deep-link) a repo-relative path in the filesystem explorer. Pushes a
+	 * history entry so back/forward navigates opened files. `null` clears the
+	 * selection (e.g. the open file was deleted).
+	 */
+	openFsPath(path: string | null): void {
+		writeFsPathUrl(path, "push");
+		setState({ ...state, libraryOpen: true, filesTab: "fs", fsPath: path });
 	},
 };
 

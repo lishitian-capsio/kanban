@@ -20,8 +20,8 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 
 import { DocEditor } from "../vault/editor/doc-editor";
-import type { FileRecent } from "./use-file-recents";
 import { useFileDoc } from "./use-file-doc";
+import type { FileRecent } from "./use-file-recents";
 
 interface FileOverlayProps {
 	open: boolean;
