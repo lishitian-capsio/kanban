@@ -1,0 +1,20 @@
+{
+  "id": "2ddde",
+  "title": "把 Pi 重塑为单一内嵌对话区（collab-web 式，X1）",
+  "prompt": "按已接受的 vault 决策 647ea「Model Pi as one embedded conversation surface (collab-web style), not process-per-session like CLI agents」实现。先读该决策文档（vault doc show --id 647ea）再动手。\n\n核心模型：\n- CLI agent = 进程/会话（保留 session tab/卡片/终端，不动）。\n- Pi = 内嵌、单进程；只有【一个】对话面；并发靠 subagents rail，不是多个平级 Pi 会话。参照 oh-my-pi 的 packages/collab-web（一条 transcript + composer + subagents rail，无 tab/切换器）。\n\n要做（X1，最纯粹）：\n1. 【不要盲目 revert a328631e】保留它对的一半：Pi 已从 CLI session tab / board 下拉框 / launcher 里拿掉——这部分保留。替换掉它错的一半：那条【可切换的多会话 Pi rail】。\n2. 把 Pi 做成一个独立对话区域（自己的锚点/入口），collab-web 式：header（标题/模型/context）→ 单条 transcript → composer → subagents rail（main + 各 subagent，状态/token，可下钻看子 agent transcript）。\n3. board 模式与全屏模式共用【同一个 Pi 区域、同一份状态源】，从结构上消除会话随模式漂移；board 下的孤立 default Pi 会话随之消失。\n4. 删除【多个平级 Pi 会话】概念：砍掉 home 多 thread 里的 Pi 用法 + 全屏多 Pi session（6f839）。注意这是破坏性改动，仅针对 Pi；CLI agent 的多会话/多 tab 不受影响。\n5. subagents rail：Pi 的并发要靠它承载。若 pi 适配层（src/agent-sdk/kanban/）还没把 subagents 端到端暴露到前端，则一并补上（后端契约 + 前端呈现）。参照 collab-web 的 AgentsPanel/AgentDrawer 呈现。\n6. 清理不再引用的 PiSessionManager / PiSessionRail 等死代码；对齐相关测试；web:typecheck + 相关测试通过。\n\n约束：base=main；遵循 web-ui 规范（Tailwind + Radix + lucide-react，granular runtime store 在 leaf fiber 订阅）；Pi 保持内嵌结构化（不要把 Pi 改成终端进程——那是被否掉的方案 Z）；不改动其它 agent 行为。\n\n先出实现方案（涉及哪些文件、怎么分步、破坏性改动如何收敛），我 review 后再执行。",
+  "startInPlanMode": true,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "16d0ae97-5f56-4649-ba14-d0134b8c262e",
+  "baseRef": "main",
+  "createdAt": 1782876801928,
+  "updatedAt": 1782876801928,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}
