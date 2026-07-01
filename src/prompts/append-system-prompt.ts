@@ -54,6 +54,16 @@ export interface RenderAppendSystemPromptOptions {
 	 * directive. When `false` (the default), no vault content is injected at all.
 	 */
 	agentVaultManagementEnabled?: boolean;
+	/**
+	 * The workspace's agent database-access gate (see
+	 * `RuntimeVaultSettings.agentDatabaseAccessEnabled`), a plain on/off boolean. When
+	 * `true`, a short block is injected telling the agent it can query the workspace's
+	 * databases read-only via the `kanban db` CLI, so the capability is discoverable.
+	 * When `false` (the default), nothing is injected. This only advertises the
+	 * capability — the real security boundary stays the CLI gate in `db.ts`, which
+	 * refuses every `db` subcommand when the switch is off.
+	 */
+	agentDatabaseAccessEnabled?: boolean;
 }
 
 const APPEND_PROMPT_AGENT_IDS: readonly RuntimeAgentId[] = [
@@ -275,6 +285,28 @@ Do not invent a fixed routine. Let each document type govern what you write: bef
 }
 
 /**
+ * Render the "database access" block injected only when the workspace's agent
+ * database-access gate is ON. It makes the read-only `kanban db` capability
+ * discoverable — otherwise the agent has no way to know the workspace even has a
+ * database it may query. Deliberately terse (a peer of the vault block, but far
+ * shorter): a one-line framing plus the minimal set of subcommands. The actual
+ * security boundary is NOT this prompt — it's the CLI gate in `db.ts`, which refuses
+ * every `db` subcommand when the switch is off, so the two combine as belt-and-suspenders.
+ * Pure and side-effect-free.
+ */
+function renderDatabaseAccessSection(kanbanCommand: string): string {
+	return `# Database access (read-only)
+
+This workspace has one or more databases you can query **read-only** via the \`${kanbanCommand} db\` CLI. When answering the user would benefit from the schema or live data, use it. Minimal commands:
+- \`${kanbanCommand} db connection list\` — list the available connections (get a connection id).
+- \`${kanbanCommand} db tables --connection <id>\` — list tables/views.
+- \`${kanbanCommand} db describe <table> --connection <id>\` — show a table's columns.
+- \`${kanbanCommand} db query "<sql>" --connection <id>\` — run a read-only SQL query.
+
+The channel is strictly read-only: writes and DDL are refused even on a writable connection. Do not attempt data modifications; row edits go through the human Database view.`;
+}
+
+/**
  * Render the thread self-titling directive: the conversational agent itself (no separate
  * summarizer) names its own thread early and keeps it current, while respecting a manual
  * rename. Injected only for created (non-default) home threads. Pure/side-effect-free.
@@ -375,6 +407,8 @@ export function renderAppendSystemPrompt(commandPrefix: string, options: RenderA
 	const vaultIntroBlock = vaultIntroAndManaged ? `\n${vaultIntroAndManaged}\n` : "";
 	const vaultCliReference = vaultManagementEnabled ? renderVaultCliReference(kanbanCommand) : "";
 	const vaultCliReferenceBlock = vaultCliReference ? `${vaultCliReference}\n\n` : "";
+	const databaseAccessEnabled = options.agentDatabaseAccessEnabled ?? false;
+	const databaseAccessBlock = databaseAccessEnabled ? `\n${renderDatabaseAccessSection(kanbanCommand)}\n` : "";
 	const selfTitleBlock = options.selfTitleDirective ? `\n${renderSelfTitleDirective(kanbanCommand)}\n` : "";
 	const suggestNextStepBlock = options.suggestNextStepDirective
 		? `\n${renderSuggestNextStepDirective(kanbanCommand)}\n`
@@ -399,7 +433,7 @@ If the user asks you to write code, fix a bug, implement a feature, refactor, or
 - Tasks can also enable automatic review actions: auto-commit or auto-open-pr once completed, which then moves the task to done and kicks off any linked tasks. Combining auto-review with linking is how you can set up fully autonomous pipelines when the user wants it. For example, enabling auto-commit on each task in a chain: task A finishes, auto-commits and is moved to done, task B auto-starts from backlog, auto-commits and is moved to done, task C auto-starts, and so on.
 - If your current working directory is inside \`.kanban/worktrees/\`, you are inside a Kanban task worktree. In that case, create or manage tasks against the main workspace path, not the task worktree path. Pass the main workspace with \`--project-path\`.
 - If a task command fails because the runtime is unavailable, tell the user to start Kanban in that workspace first with \`${kanbanCommand}\`, then retry the task command.
-${selfTitleBlock}${suggestNextStepBlock}${vaultIntroBlock}
+${selfTitleBlock}${suggestNextStepBlock}${vaultIntroBlock}${databaseAccessBlock}
 # Command Prefix
 
 Use this prefix for every Kanban command in this session:
@@ -578,24 +612,33 @@ async function loadVaultTypesForHomeSession(taskId: string): Promise<readonly Va
 }
 
 /**
- * Load the workspace's vault-takeover switch for the home session encoded in
- * `taskId`. Mirrors {@link loadVaultTypesForHomeSession}: resolves the repo path
- * from the parsed workspace id and degrades to `false` — never throws — when the
- * workspace is unknown or the read fails, so prompt rendering always succeeds.
+ * Load the workspace's two agent-access gates for the home session encoded in
+ * `taskId` — the vault-takeover switch and the database-access gate — in a single
+ * read of the shared {@link VaultSettingsStore}. Mirrors
+ * {@link loadVaultTypesForHomeSession}: resolves the repo path from the parsed
+ * workspace id and degrades to both-off — never throws — when the workspace is
+ * unknown or the read fails, so prompt rendering always succeeds.
  */
-async function loadVaultManagementEnabledForHomeSession(taskId: string): Promise<boolean> {
+async function loadAgentAccessGatesForHomeSession(
+	taskId: string,
+): Promise<{ agentVaultManagementEnabled: boolean; agentDatabaseAccessEnabled: boolean }> {
+	const bothOff = { agentVaultManagementEnabled: false, agentDatabaseAccessEnabled: false };
 	const parts = parseHomeAgentSessionId(taskId);
 	if (!parts) {
-		return false;
+		return bothOff;
 	}
 	try {
 		const repoPath = await resolveRepoPathForWorkspaceId(parts.workspaceId);
 		if (!repoPath) {
-			return false;
+			return bothOff;
 		}
-		return (await new VaultSettingsStore(repoPath).get()).agentVaultManagementEnabled;
+		const settings = await new VaultSettingsStore(repoPath).get();
+		return {
+			agentVaultManagementEnabled: settings.agentVaultManagementEnabled,
+			agentDatabaseAccessEnabled: settings.agentDatabaseAccessEnabled,
+		};
 	} catch {
-		return false;
+		return bothOff;
 	}
 }
 
@@ -606,9 +649,9 @@ export async function resolveHomeAgentAppendSystemPrompt(
 	if (!isHomeAgentSessionId(taskId)) {
 		return null;
 	}
-	const [vaultTypes, agentVaultManagementEnabled] = await Promise.all([
+	const [vaultTypes, { agentVaultManagementEnabled, agentDatabaseAccessEnabled }] = await Promise.all([
 		loadVaultTypesForHomeSession(taskId),
-		loadVaultManagementEnabledForHomeSession(taskId),
+		loadAgentAccessGatesForHomeSession(taskId),
 	]);
 	// Self-titling is per-thread: the synthetic default thread keeps its fixed "Default"
 	// label (it is not a registry entry), so only created (non-default) threads get the
@@ -621,5 +664,6 @@ export async function resolveHomeAgentAppendSystemPrompt(
 		suggestNextStepDirective: isNonDefaultThread,
 		vaultTypes,
 		agentVaultManagementEnabled,
+		agentDatabaseAccessEnabled,
 	});
 }

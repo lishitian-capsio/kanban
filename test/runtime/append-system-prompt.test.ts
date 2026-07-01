@@ -199,6 +199,40 @@ describe("renderAppendSystemPrompt", () => {
 
 		expect(rendered).toContain("- `note`. Create with `kanban vault doc create --type note`.");
 	});
+
+	it("does not mention database access by default", () => {
+		const rendered = renderAppendSystemPrompt("kanban");
+		expect(rendered).not.toContain("# Database access (read-only)");
+		expect(rendered).not.toContain("kanban db connection list");
+	});
+
+	it("injects the read-only database access block when database access is enabled", () => {
+		const rendered = renderAppendSystemPrompt("kanban", { agentDatabaseAccessEnabled: true });
+		expect(rendered).toContain("# Database access (read-only)");
+		expect(rendered).toContain("one or more databases you can query");
+		// The minimal subcommand set is advertised with the resolved command prefix.
+		expect(rendered).toContain("kanban db connection list");
+		expect(rendered).toContain("kanban db tables --connection <id>");
+		expect(rendered).toContain("kanban db describe <table> --connection <id>");
+		expect(rendered).toContain('kanban db query "<sql>" --connection <id>');
+		// Read-only posture is stated.
+		expect(rendered).toContain("writes and DDL are refused");
+	});
+
+	it("uses the resolved command prefix in the database access block", () => {
+		const rendered = renderAppendSystemPrompt("npx -y kanban", { agentDatabaseAccessEnabled: true });
+		expect(rendered).toContain("npx -y kanban db connection list");
+	});
+
+	it("keeps the vault and database gates independent", () => {
+		const dbOnly = renderAppendSystemPrompt("kanban", { agentDatabaseAccessEnabled: true });
+		expect(dbOnly).toContain("# Database access (read-only)");
+		expect(dbOnly).not.toContain("# Knowledge vault documents");
+
+		const vaultOnly = renderAppendSystemPrompt("kanban", { agentVaultManagementEnabled: true });
+		expect(vaultOnly).toContain("# Knowledge vault documents");
+		expect(vaultOnly).not.toContain("# Database access (read-only)");
+	});
 });
 
 describe("resolveHomeAgentAppendSystemPrompt", () => {
