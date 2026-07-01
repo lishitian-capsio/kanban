@@ -9,7 +9,7 @@ import { buildKanbanCommandParts } from "../core/kanban-command";
 import { getMachineKanbanHomePath } from "../state/workspace-state";
 import { buildKanbanRuntimeUrl, getRuntimeFetch } from "../core/runtime-endpoint";
 import { buildWindowsCmdArgsArray, resolveWindowsComSpec, shouldUseWindowsCmdLaunch } from "../core/windows-cmd-launch";
-import { parseHookRuntimeContextFromEnv } from "../terminal/hook-runtime-context";
+import { tryParseHookRuntimeContextFromEnv } from "../terminal/hook-runtime-context";
 import type { RuntimeAppRouter } from "../trpc/app-router";
 import {
 	type CodexMappedHookEvent,
@@ -355,13 +355,27 @@ function normalizeHookMetadata(
 	return merged;
 }
 
-function parseHooksIngestArgs(
+/**
+ * Builds the ingest args from the environment, or returns `null` when the Kanban
+ * session context is absent.
+ *
+ * Claude's hook commands are merged into the *global* `~/.claude/settings.json`, so
+ * they fire for every `claude` run on the machine — Kanban agent sessions, the
+ * workspace shell terminal (which injects no hook env), and claude used entirely
+ * outside Kanban. Only Kanban-managed agent sessions carry the per-spawn
+ * `KANBAN_SESSION_TASK_ID` / `KANBAN_SESSION_WORKSPACE_ID` env. When they are absent
+ * we must silently no-op rather than surface a visible "UserPromptSubmit hook error".
+ */
+export function parseHooksIngestArgs(
 	event: RuntimeHookEvent,
 	options: HookCommandMetadataOptionValues,
 	payloadArg: string | undefined,
 	stdinPayload: string,
-): HooksIngestArgs {
-	const context = parseHookRuntimeContextFromEnv();
+): HooksIngestArgs | null {
+	const context = tryParseHookRuntimeContextFromEnv();
+	if (!context) {
+		return null;
+	}
 	const flagMetadata = parseMetadataFromOptions(options);
 	const payloadFromBase64 = parseMetadataFromBase64(options.metadataBase64);
 	const payloadFromStdin = parseJsonObject(stdinPayload.trim());
@@ -500,6 +514,9 @@ async function runHooksNotify(
 	try {
 		const stdinPayload = await readStdinText();
 		const parsedArgs = parseHooksIngestArgs(event, options, payloadArg, stdinPayload);
+		if (!parsedArgs) {
+			return;
+		}
 		const codexEnrichedArgs = await enrichCodexReviewMetadata(parsedArgs, process.cwd());
 		const args = await enrichDroidReviewMetadata(codexEnrichedArgs);
 		await ingestHookEvent(args);
@@ -549,6 +566,9 @@ async function runCodexHookSubcommand(
 
 	try {
 		const parsedArgs = parseHooksIngestArgs(event, options, payloadArg, payload);
+		if (!parsedArgs) {
+			return;
+		}
 		const codexEnrichedArgs = await enrichCodexReviewMetadata(parsedArgs, process.cwd());
 		await ingestHookEvent(codexEnrichedArgs);
 	} catch {
@@ -622,13 +642,7 @@ async function runCodexWrapperSubcommand(wrapperArgs: CodexWrapperArgs): Promise
 	let stopWatcher: () => Promise<void> = async () => {};
 	let watcherStartPromise: Promise<void> | null = null;
 
-	let shouldWatchSessionLog = false;
-	try {
-		parseHookRuntimeContextFromEnv(childEnv);
-		shouldWatchSessionLog = true;
-	} catch {
-		shouldWatchSessionLog = false;
-	}
+	const shouldWatchSessionLog = tryParseHookRuntimeContextFromEnv(childEnv) !== null;
 
 	if (shouldWatchSessionLog) {
 		childEnv.CODEX_TUI_RECORD_SESSION = "1";
@@ -722,6 +736,12 @@ async function runHooksIngest(
 	try {
 		const stdinPayload = await readStdinText();
 		const parsedArgs = parseHooksIngestArgs(event, options, payloadArg, stdinPayload);
+		if (!parsedArgs) {
+			// No Kanban session context — the stale global hook config (e.g. in
+			// ~/.claude/settings.json) fired for a claude run outside a Kanban agent
+			// session. Silently no-op so the agent never sees a hook error.
+			return;
+		}
 		const codexEnrichedArgs = await enrichCodexReviewMetadata(parsedArgs, process.cwd());
 		args = await enrichDroidReviewMetadata(codexEnrichedArgs);
 	} catch (error) {
