@@ -1500,6 +1500,36 @@ export const runtimeTaskSessionUsageSchema = z.object({
 });
 export type RuntimeTaskSessionUsage = z.infer<typeof runtimeTaskSessionUsageSchema>;
 
+/**
+ * A subagent spawned by an in-process Pi session (the `task` tool → a child Agent run).
+ * Pi's concurrency is a main agent + subagents (never multiple peer Pi sessions), so
+ * subagents are projected onto the PARENT session summary as `subagents[]` rather than
+ * appearing as their own top-level sessions. Each subagent's transcript rides the existing
+ * per-taskId chat channel under its own composite `sessionId` (backend-minted), so the UI
+ * drills into it with `useTaskChatMessages(sessionId)` — no separate endpoint. Non-sensitive.
+ */
+export const runtimeTaskSubagentStatusSchema = z.enum(["idle", "running", "done", "failed"]);
+export type RuntimeTaskSubagentStatus = z.infer<typeof runtimeTaskSubagentStatusSchema>;
+
+export const runtimeTaskSubagentSchema = z.object({
+	/** Stable id of this subagent within its parent session. */
+	subagentId: z.string(),
+	/** The parent Pi session's taskId. */
+	parentTaskId: z.string(),
+	/** Composite transcript id for drill-in (`useTaskChatMessages(sessionId)`). */
+	sessionId: z.string(),
+	/** Short human label (the `task` tool's `description` arg). */
+	label: z.string(),
+	status: runtimeTaskSubagentStatusSchema,
+	/** Resolved model id the subagent ran on; null when inherited/unknown. */
+	modelId: z.string().nullable().optional(),
+	/** The subagent's own cumulative token usage; null when unknown. */
+	usage: runtimeTaskSessionUsageSchema.nullable().optional(),
+	startedAt: z.number(),
+	updatedAt: z.number(),
+});
+export type RuntimeTaskSubagent = z.infer<typeof runtimeTaskSubagentSchema>;
+
 export const runtimeTaskSessionSummarySchema = z.object({
 	taskId: z.string(),
 	state: runtimeTaskSessionStateSchema,
@@ -1532,6 +1562,12 @@ export const runtimeTaskSessionSummarySchema = z.object({
 	modelId: z.string().nullable().optional(),
 	/** Cumulative token usage; null when the agent has no token telemetry (CLI). */
 	usage: runtimeTaskSessionUsageSchema.nullable().optional(),
+	/**
+	 * Subagents spawned by this (Pi) session, projected onto the parent summary so the Pi
+	 * area's subagents rail renders them. Null/absent for CLI agents and Pi sessions with
+	 * no subagents. See {@link runtimeTaskSubagentSchema}.
+	 */
+	subagents: z.array(runtimeTaskSubagentSchema).nullable().optional(),
 });
 export type RuntimeTaskSessionSummary = z.infer<typeof runtimeTaskSessionSummarySchema>;
 

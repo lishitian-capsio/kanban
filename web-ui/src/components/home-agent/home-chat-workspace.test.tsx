@@ -24,6 +24,14 @@ vi.mock("@/components/home-agent/home-agent-conversation", () => ({
 	),
 }));
 
+// The single Pi area (PiConversationSurface) subscribes the runtime store + mounts the chat
+// panel; stub it so this suite covers the Pi tab wiring, not the Pi surface internals.
+vi.mock("@/components/home-agent/pi-conversation-surface", () => ({
+	PiConversationSurface: ({ orientation }: { orientation: string }) => (
+		<div data-testid="pi-surface">pi-surface:{orientation}</div>
+	),
+}));
+
 import { HomeChatWorkspace } from "@/components/home-agent/home-chat-workspace";
 
 const WORKSPACE_ID = "ws1";
@@ -274,12 +282,11 @@ describe("HomeChatWorkspace", () => {
 		expect(onReplaceFullscreenTab).toHaveBeenCalledWith("home");
 	});
 
-	it("opens the Pi tab as a pi-scoped session workspace (created pi threads only, no default)", () => {
+	it("renders the single Pi conversation surface when the Pi tab is active (decision 647ea / X1)", () => {
+		// Pi is one embedded area, not a switchable multi-session workspace. Whatever threads
+		// exist, the Pi tab shows exactly one Pi surface — no session rail, no launcher add-card.
 		const threads = [
-			// The workspace-global default is claude here; the Pi tab no longer pins a base — it
-			// lists only created pi threads and excludes the synthetic default entirely.
 			makeThread(DEFAULT_HOME_THREAD_ID, "Default", "claude", true),
-			makeThread("pi-1", "Fix tests", "pi", false),
 			makeThread("claude-1", "Other agent", "claude", false),
 		];
 		render({ homeThreads: makeHomeThreads(threads), fullscreenChatTab: "pi" });
@@ -287,37 +294,10 @@ describe("HomeChatWorkspace", () => {
 			(tab) => tab.textContent === "Pi",
 		) as HTMLButtonElement;
 		expect(piTab.getAttribute("aria-selected")).toBe("true");
-		// The first created pi session is active in the conversation (never the default thread id).
-		expect(container.querySelector('[data-testid="conversation"]')?.textContent).toBe("conversation:pi-1");
-		// The rail lists pi sessions only — the created pi thread, never the claude one.
-		expect(container.textContent).toContain("Fix tests");
-		expect(container.textContent).not.toContain("Other agent");
-		// The Home launcher add-card is gone while the Pi tab is active.
-		expect(container.querySelector('[aria-label="New chat session"]')).toBeNull();
-	});
-
-	it("shows the Pi tab empty state when there are no created pi sessions", () => {
-		const threads = [
-			makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true),
-			makeThread("claude-1", "Other agent", "claude", false),
-		];
-		render({ homeThreads: makeHomeThreads(threads), fullscreenChatTab: "pi" });
-		expect(container.textContent).toContain("No pi sessions yet");
-		// No conversation mounts while the Pi tab is empty.
+		expect(container.querySelector('[data-testid="pi-surface"]')?.textContent).toBe("pi-surface:fullscreen");
+		// No CLI conversation body and no launcher add-card while the Pi tab is active.
 		expect(container.querySelector('[data-testid="conversation"]')).toBeNull();
-	});
-
-	it("creates a blank pi session from the Pi tab empty state (name-only, no kickoff prompt)", async () => {
-		const createThread = vi.fn().mockResolvedValue(null);
-		const threads = [makeThread(DEFAULT_HOME_THREAD_ID, "Default", "pi", true)];
-		render({ homeThreads: makeHomeThreads(threads, { createThread }), fullscreenChatTab: "pi" });
-		const newButton = [...container.querySelectorAll("button")].find(
-			(button) => button.textContent === "New session",
-		) as HTMLButtonElement;
-		await act(async () => {
-			newButton.click();
-		});
-		expect(createThread).toHaveBeenCalledWith({ name: "New session", agentId: "pi" });
+		expect(container.querySelector('[aria-label="New chat session"]')).toBeNull();
 	});
 
 	it("renders nothing without a project or config", () => {

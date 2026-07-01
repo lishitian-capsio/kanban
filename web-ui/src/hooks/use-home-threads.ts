@@ -26,6 +26,7 @@ import {
 	reconcileOnEnterFullscreen,
 	setActiveSessionTab as setActiveSessionTabOp,
 } from "@/components/home-agent/home-fullscreen-tabs";
+import { isNativeAgentSelected } from "@/runtime/native-agent";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeAgentId, RuntimeConfigResponse, RuntimeHomeChatThread } from "@/runtime/types";
 
@@ -193,15 +194,23 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		};
 	}, [currentProjectId, runtimeProjectConfig, loadRetryNonce]);
 
+	// The thread list is CLI-agent only (decision 647ea / X1): Pi is not a switchable
+	// "thread" — it is its own single embedded area (PiConversationSurface), so it never
+	// appears here. Two consequences: (a) the synthetic default thread is only synthesized
+	// when the workspace-global agent is a CLI agent (when it is Pi, the Sessions side has no
+	// default — the Pi area covers it); (b) any legacy pi-bound registry thread (4-segment id
+	// created by the retired multi-Pi-session UI) is filtered out. Its transcript remains on
+	// disk, just unsurfaced.
 	const threads = useMemo<HomeThread[]>(() => {
 		if (!currentProjectId || !selectedAgentId) {
 			return [];
 		}
 		const registry = registryThreadsByWorkspace[currentProjectId] ?? [];
 		const nonDefault = registry
-			.filter((thread) => thread.id !== DEFAULT_HOME_THREAD_ID)
+			.filter((thread) => thread.id !== DEFAULT_HOME_THREAD_ID && !isNativeAgentSelected(thread.agentId))
 			.map<HomeThread>((thread) => ({ ...thread, isDefault: false }));
-		return [buildDefaultThread(selectedAgentId), ...nonDefault];
+		const withoutDefault = isNativeAgentSelected(selectedAgentId);
+		return withoutDefault ? nonDefault : [buildDefaultThread(selectedAgentId), ...nonDefault];
 	}, [currentProjectId, registryThreadsByWorkspace, selectedAgentId]);
 
 	const activeThreadId = currentProjectId

@@ -10,13 +10,19 @@
 // — the kanban session-context version (for thread-list refresh) and, inside the
 // conversation, chat tokens — live in its own fiber and don't re-render App.
 import type { ReactElement } from "react";
+import { useState } from "react";
 
 import { HomeAgentConversation } from "@/components/home-agent/home-agent-conversation";
 import { HomeThreadBar } from "@/components/home-agent/home-thread-bar";
+import { PiConversationSurface } from "@/components/home-agent/pi-conversation-surface";
+import { getActiveHighlightClass } from "@/components/home-agent/session-active-highlight";
+import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
 import type { UseHomeThreadsResult } from "@/hooks/use-home-threads";
 import { useRefreshHomeThreadsOnSessionContextBump } from "@/hooks/use-refresh-home-threads-on-context-bump";
 import type { RuntimeConfigResponse, RuntimeGitRepositoryInfo, RuntimeTaskSessionSummary } from "@/runtime/types";
+
+type DockedSide = "pi" | "sessions";
 
 interface HomeSidebarAgentPanelProps {
 	currentProjectId: string | null;
@@ -41,6 +47,11 @@ export function HomeSidebarAgentPanel({
 	// refetch out of App's render path.
 	useRefreshHomeThreadsOnSessionContextBump(homeThreads.refresh);
 
+	// Pi is its own dedicated area (decision 647ea / X1), separated from the CLI-agent thread
+	// switcher. The docked sidebar reaches it via a top toggle; "Sessions" is the CLI thread bar
+	// (which never lists Pi). Default to Pi — it is the native, always-present agent.
+	const [dockedSide, setDockedSide] = useState<DockedSide>("pi");
+
 	if (hasNoProjects || !currentProjectId) {
 		return null;
 	}
@@ -55,32 +66,62 @@ export function HomeSidebarAgentPanel({
 
 	return (
 		<div className="flex h-full w-full min-h-0 flex-col gap-2">
-			<div className="flex items-stretch gap-1">
-				<div className="min-w-0 flex-1">
-					<HomeThreadBar
-						threads={homeThreads.threads}
-						activeThreadId={homeThreads.activeThreadId}
-						agents={runtimeProjectConfig.agents}
-						defaultAgentId={runtimeProjectConfig.selectedAgentId}
+			<div className="flex shrink-0 items-stretch gap-1" role="tablist" aria-label="Home agent surface">
+				{(["pi", "sessions"] as const).map((side) => (
+					<button
+						key={side}
+						type="button"
+						role="tab"
+						aria-selected={dockedSide === side}
+						onClick={() => setDockedSide(side)}
+						className={cn(
+							"rounded-md px-3 py-1 text-[13px] font-medium",
+							getActiveHighlightClass("tab", dockedSide === side),
+						)}
+					>
+						{side === "pi" ? "Pi" : "Sessions"}
+					</button>
+				))}
+			</div>
+			{dockedSide === "pi" ? (
+				<div className="flex min-h-0 flex-1 [&>*]:w-full [&>*]:self-stretch">
+					<PiConversationSurface
 						currentProjectId={currentProjectId}
-						taskSessions={taskSessions}
-						onSelectThread={homeThreads.setActiveThread}
-						onCreateThread={homeThreads.createThread}
-						onRenameThread={homeThreads.renameThread}
-						onCloseThread={homeThreads.closeThread}
+						runtimeProjectConfig={runtimeProjectConfig}
+						workspaceGit={workspaceGit}
+						orientation="docked"
 					/>
 				</div>
-			</div>
-			<div className="flex min-h-0 flex-1 [&>*]:w-full [&>*]:self-stretch">
-				<HomeAgentConversation
-					activeThread={homeThreads.activeThread}
-					currentProjectId={currentProjectId}
-					runtimeProjectConfig={runtimeProjectConfig}
-					taskSessions={taskSessions}
-					workspaceGit={workspaceGit}
-					onClearNextStep={homeThreads.clearNextStep}
-				/>
-			</div>
+			) : (
+				<>
+					<div className="flex items-stretch gap-1">
+						<div className="min-w-0 flex-1">
+							<HomeThreadBar
+								threads={homeThreads.threads}
+								activeThreadId={homeThreads.activeThreadId}
+								agents={runtimeProjectConfig.agents}
+								defaultAgentId={runtimeProjectConfig.selectedAgentId}
+								currentProjectId={currentProjectId}
+								taskSessions={taskSessions}
+								onSelectThread={homeThreads.setActiveThread}
+								onCreateThread={homeThreads.createThread}
+								onRenameThread={homeThreads.renameThread}
+								onCloseThread={homeThreads.closeThread}
+							/>
+						</div>
+					</div>
+					<div className="flex min-h-0 flex-1 [&>*]:w-full [&>*]:self-stretch">
+						<HomeAgentConversation
+							activeThread={homeThreads.activeThread}
+							currentProjectId={currentProjectId}
+							runtimeProjectConfig={runtimeProjectConfig}
+							taskSessions={taskSessions}
+							workspaceGit={workspaceGit}
+							onClearNextStep={homeThreads.clearNextStep}
+						/>
+					</div>
+				</>
+			)}
 		</div>
 	);
 }

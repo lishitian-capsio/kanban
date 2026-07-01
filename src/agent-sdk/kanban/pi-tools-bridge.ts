@@ -2,6 +2,7 @@
 // Provides built-in coding tools (read/write/list/search files, execute command)
 // and integrates MCP tools as extra tools.
 import { exec } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -28,15 +29,38 @@ export interface PiToolApprovalResult {
 	reason?: string;
 }
 
+/** A subagent spawn request issued by the `task` tool (parentTaskId is bound by the runtime). */
+export interface SpawnSubagentRequest {
+	subagentId: string;
+	label: string;
+	prompt: string;
+	modelOverride?: string;
+	signal?: AbortSignal;
+}
+
+export interface SpawnSubagentResult {
+	finalText: string;
+	isError: boolean;
+}
+
+export type SpawnSubagentFn = (request: SpawnSubagentRequest) => Promise<SpawnSubagentResult>;
+
 export interface BuildPiToolSetOptions {
 	cwd: string;
 	extraTools?: AgentTool<any>[];
 	onToolApproval?: (request: PiToolApprovalRequest) => Promise<PiToolApprovalResult>;
+	/**
+	 * When set, adds the `task` tool that lets the agent delegate an independent sub-task to a
+	 * fresh subagent (a child Agent run). Omitted for child agents themselves, so subagents
+	 * cannot recursively fan out (depth-1, matching omp's own multiagent constraint).
+	 */
+	spawnSubagent?: SpawnSubagentFn;
 }
 
 /**
  * Build the full tool set for a pi agent session.
- * Includes 5 built-in coding tools plus any extra tools (e.g. MCP).
+ * Includes 5 built-in coding tools, an optional `task` (subagent) tool, plus any extra
+ * tools (e.g. MCP).
  */
 export function buildPiToolSet(options: BuildPiToolSetOptions): AgentTool<any>[] {
 	const { cwd } = options;
@@ -51,11 +75,52 @@ export function buildPiToolSet(options: BuildPiToolSetOptions): AgentTool<any>[]
 		createExecuteCommandTool(cwd, z),
 	];
 
+	if (options.spawnSubagent) {
+		tools.push(createTaskTool(z, options.spawnSubagent));
+	}
+
 	if (options.extraTools && options.extraTools.length > 0) {
 		tools.push(...options.extraTools);
 	}
 
 	return tools;
+}
+
+/** Mint a filesystem/id-safe subagent id (`[A-Za-z0-9]`, so the composite session id is greppable). */
+function mintSubagentId(): string {
+	return randomUUID().replace(/-/g, "").slice(0, 12);
+}
+
+function createTaskTool(z: any, spawnSubagent: SpawnSubagentFn): AgentTool<any> {
+	return {
+		name: "task",
+		label: "Delegate to Subagent",
+		description:
+			"Delegate an independent, well-scoped sub-task to a fresh subagent with its own context " +
+			"window. Use for parallel or independent workstreams and focused deep-dives. The subagent " +
+			"returns only its final text; it does not share your conversation and cannot spawn further " +
+			"subagents.",
+		parameters: z.object({
+			description: z.string().describe("Short 3-5 word label for the subagent's task"),
+			prompt: z.string().describe("The complete, self-contained instruction for the subagent"),
+			model: z.string().optional().describe("Optional model id override; defaults to the parent's model"),
+		}),
+		approval: "exec",
+		async execute(
+			_toolCallId: string,
+			params: { description: string; prompt: string; model?: string },
+			signal?: AbortSignal,
+		): Promise<AgentToolResult> {
+			const result = await spawnSubagent({
+				subagentId: mintSubagentId(),
+				label: params.description,
+				prompt: params.prompt,
+				modelOverride: params.model,
+				signal,
+			});
+			return { content: [{ type: "text", text: result.finalText || "(subagent returned no text)" }], isError: result.isError };
+		},
+	};
 }
 
 /**

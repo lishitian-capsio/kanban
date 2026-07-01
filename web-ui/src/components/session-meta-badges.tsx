@@ -21,7 +21,7 @@ interface SessionMetaBadgesProps {
 }
 
 /** 1234 → "1.2k", 1_200_000 → "1.2M". Keeps the chip narrow on a dense card. */
-function formatTokenCount(value: number): string {
+export function formatTokenCount(value: number): string {
 	if (value < 1000) {
 		return String(value);
 	}

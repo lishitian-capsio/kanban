@@ -31,7 +31,9 @@ vi.mock("@/components/app-toaster", () => ({
 
 function createRuntimeConfig(overrides: Partial<RuntimeConfigResponse> = {}): RuntimeConfigResponse {
 	return {
-		selectedAgentId: "pi",
+		// A CLI global agent by default: Pi is its own area (decision 647ea / X1), so the
+		// synthetic default thread only exists when the global agent is a CLI agent.
+		selectedAgentId: "claude",
 		selectedShortcutLabel: null,
 		agentAutonomousModeEnabled: true,
 		effectiveCommand: "pi",
@@ -139,7 +141,7 @@ describe("useHomeThreads", () => {
 		}
 	});
 
-	it("always prepends a synthetic default thread following the global agent", async () => {
+	it("prepends a synthetic default thread following a CLI global agent", async () => {
 		listHomeThreadsQueryMock.mockResolvedValue({ ok: true, threads: [createThread()] });
 		let latest: UseHomeThreadsResult | null = null;
 
@@ -156,9 +158,65 @@ describe("useHomeThreads", () => {
 
 		const result = latest as unknown as UseHomeThreadsResult;
 		expect(result.threads).toHaveLength(2);
-		expect(result.threads[0]).toMatchObject({ id: DEFAULT_HOME_THREAD_ID, agentId: "pi", isDefault: true });
+		expect(result.threads[0]).toMatchObject({ id: DEFAULT_HOME_THREAD_ID, agentId: "claude", isDefault: true });
 		expect(result.threads[1]).toMatchObject({ id: "thread-1", agentId: "claude", isDefault: false });
 		expect(result.activeThreadId).toBe(DEFAULT_HOME_THREAD_ID);
+	});
+
+	it("omits the synthetic default thread when the global agent is Pi (decision 647ea / X1)", async () => {
+		// Pi is its own always-present area, not a thread. With a Pi global agent there is no
+		// CLI default thread — and any legacy pi-bound registry thread is filtered out too.
+		listHomeThreadsQueryMock.mockResolvedValue({
+			ok: true,
+			threads: [createThread({ id: "pi-legacy", agentId: "pi" }), createThread({ id: "claude-1", agentId: "claude" })],
+		});
+		let latest: UseHomeThreadsResult | null = null;
+
+		function PiHarness({ onResult }: { onResult: (result: UseHomeThreadsResult) => void }): null {
+			const config = useMemo(() => createRuntimeConfig({ selectedAgentId: "pi" }), []);
+			const result = useHomeThreads({ currentProjectId: "workspace-1", runtimeProjectConfig: config });
+			useEffect(() => {
+				onResult(result);
+			});
+			return null;
+		}
+
+		await act(async () => {
+			root.render(
+				<PiHarness
+					onResult={(result) => {
+						latest = result;
+					}}
+				/>,
+			);
+			await flushPromises();
+		});
+
+		const result = latest as unknown as UseHomeThreadsResult;
+		// No synthetic default, and the legacy pi thread is filtered — only the CLI thread remains.
+		expect(result.threads.map((thread) => thread.id)).toEqual(["claude-1"]);
+	});
+
+	it("filters legacy pi-bound registry threads out of the CLI thread list", async () => {
+		listHomeThreadsQueryMock.mockResolvedValue({
+			ok: true,
+			threads: [createThread({ id: "pi-legacy", agentId: "pi" }), createThread({ id: "claude-1", agentId: "claude" })],
+		});
+		let latest: UseHomeThreadsResult | null = null;
+
+		await act(async () => {
+			root.render(
+				<Harness
+					onResult={(result) => {
+						latest = result;
+					}}
+				/>,
+			);
+			await flushPromises();
+		});
+
+		const result = latest as unknown as UseHomeThreadsResult;
+		expect(result.threads.map((thread) => thread.id)).toEqual([DEFAULT_HOME_THREAD_ID, "claude-1"]);
 	});
 
 	it("recovers persisted threads after a transient first-load failure (no permanent poisoning)", async () => {

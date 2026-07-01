@@ -19,6 +19,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useMemo, useRef } from "react";
 
 import { notifyError } from "@/components/app-toaster";
+import { useReloadPiSessionOnContextBump } from "@/hooks/use-reload-pi-session-on-context-bump";
 import { isNativeAgentSelected } from "@/runtime/native-agent";
 import { estimateTaskSessionGeometry } from "@/runtime/task-session-geometry";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
@@ -92,7 +93,6 @@ export function useHomeAgentSession({
 	const startedSessionKeysRef = useRef(new Set<string>());
 	const failedSessionKeysRef = useRef(new Set<string>());
 	const pendingStartRequestIdsRef = useRef(new Map<string, number>());
-	const previousKanbanSessionContextVersionByWorkspaceRef = useRef(new Map<string, number>());
 	const lastDefaultTaskIdByWorkspaceRef = useRef(new Map<string, string>());
 	const nextStartRequestIdRef = useRef(0);
 	const disposedRef = useRef(false);
@@ -122,8 +122,13 @@ export function useHomeAgentSession({
 	// Rotate the default thread: when the workspace-global agent changes, the
 	// default thread's session identity changes. Stop the previous default session
 	// and drop its cached summary so it does not linger as an orphan.
+	//
+	// Pi is deliberately excluded (decision 647ea / X1): Pi is its own always-present
+	// area (PiConversationSurface), not the default thread, so a Pi global-agent
+	// selection must NOT be tracked here — otherwise switching the global agent away
+	// from Pi would stop the persistent Pi area session.
 	const defaultThreadTaskId =
-		currentProjectId && runtimeProjectConfig
+		currentProjectId && runtimeProjectConfig && !isNativeAgentSelected(runtimeProjectConfig.selectedAgentId)
 			? createHomeAgentSessionId(currentProjectId, runtimeProjectConfig.selectedAgentId, DEFAULT_HOME_THREAD_ID)
 			: null;
 	useEffect(() => {
@@ -158,48 +163,18 @@ export function useHomeAgentSession({
 		void stopHomeAgentSession({ workspaceId: currentProjectId, taskId: previousDefaultTaskId });
 	}, [currentProjectId, defaultThreadTaskId, setSessionSummaries]);
 
-	// When MCP settings or auth change, the runtime bumps the Kanban session
-	// context version. Reload the active pi chat in place so it keeps the same
-	// task id and messages but restarts with a fresh MCP tool bundle.
-	useEffect(() => {
-		if (!currentProjectId || panelMode !== "chat" || !taskId) {
-			return;
-		}
-
-		const previousVersion = previousKanbanSessionContextVersionByWorkspaceRef.current.get(currentProjectId);
-		previousKanbanSessionContextVersionByWorkspaceRef.current.set(currentProjectId, kanbanSessionContextVersion);
-
-		if (previousVersion === undefined || previousVersion === kanbanSessionContextVersion) {
-			return;
-		}
-
-		if (!sessionSummaries[taskId]) {
-			return;
-		}
-
-		let cancelled = false;
-		void getRuntimeTrpcClient(currentProjectId)
-			.runtime.reloadTaskChatSession.mutate({ taskId })
-			.then((response) => {
-				if (cancelled || disposedRef.current) {
-					return;
-				}
-				if (!response.ok || !response.summary) {
-					throw new Error(response.error ?? "Could not reload home agent session.");
-				}
-				upsertSessionSummary(response.summary);
-			})
-			.catch((error) => {
-				if (cancelled || disposedRef.current) {
-					return;
-				}
-				notifyError(error instanceof Error ? error.message : String(error));
-			});
-
-		return () => {
-			cancelled = true;
-		};
-	}, [kanbanSessionContextVersion, currentProjectId, panelMode, taskId, sessionSummaries, upsertSessionSummary]);
+	// When MCP settings or auth change, the runtime bumps the Kanban session context
+	// version; reload the active pi chat in place. Pi normally lives in its own area
+	// (PiConversationSurface, which runs the same hook), so `active` here is only true
+	// in the defensive case where a pi thread somehow reaches this CLI-focused hook.
+	useReloadPiSessionOnContextBump({
+		workspaceId: currentProjectId,
+		taskId,
+		active: panelMode === "chat",
+		hasSession: !!(taskId && sessionSummaries[taskId]),
+		kanbanSessionContextVersion,
+		onSummary: upsertSessionSummary,
+	});
 
 	// Lazily start the active terminal thread's session. Background terminal
 	// threads keep running, so a started session is never stopped on switch — the
@@ -290,7 +265,6 @@ export function useHomeAgentSession({
 			startedSessionKeysRef.current.clear();
 			failedSessionKeysRef.current.clear();
 			pendingStartRequestIdsRef.current.clear();
-			previousKanbanSessionContextVersionByWorkspaceRef.current.clear();
 			lastDefaultTaskIdByWorkspaceRef.current.clear();
 		};
 	}, []);

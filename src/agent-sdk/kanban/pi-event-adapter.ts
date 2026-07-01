@@ -173,7 +173,7 @@ function handleAgentEnd(input: ApplyPiAgentEventInput, event: Extract<AgentEvent
  * the prior total unchanged when this run carried no telemetry, and `undefined`
  * when there is nothing to record yet (so callers can omit the field).
  */
-function accumulateUsage(
+export function accumulateUsage(
 	prev: RuntimeTaskSessionSummary["usage"],
 	telemetry: Extract<AgentEvent, { type: "agent_end" }>["telemetry"],
 ): RuntimeTaskSessionUsage | undefined {
@@ -432,7 +432,11 @@ function extractFinalText(messages: AgentMessage[]): string | null {
 	return null;
 }
 
-function extractErrorFromMessages(messages: AgentMessage[]): string | null {
+export function extractFinalAssistantText(messages: AgentMessage[]): string | null {
+	return extractFinalText(messages);
+}
+
+export function extractErrorFromMessages(messages: AgentMessage[]): string | null {
 	// Check if any message in the event has an errorMessage field (error from agent)
 	for (const msg of messages) {
 		if (msg && typeof msg === "object" && "errorMessage" in msg) {

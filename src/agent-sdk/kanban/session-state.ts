@@ -62,6 +62,7 @@ export function cloneSummary(summary: RuntimeTaskSessionSummary): RuntimeTaskSes
 		latestHookActivity: summary.latestHookActivity ? { ...summary.latestHookActivity } : null,
 		latestTurnCheckpoint: summary.latestTurnCheckpoint ? { ...summary.latestTurnCheckpoint } : null,
 		previousTurnCheckpoint: summary.previousTurnCheckpoint ? { ...summary.previousTurnCheckpoint } : null,
+		subagents: summary.subagents ? summary.subagents.map((subagent) => ({ ...subagent })) : summary.subagents,
 	};
 }
 
@@ -86,6 +87,7 @@ export function createDefaultSummary(taskId: string): RuntimeTaskSessionSummary 
 		providerId: null,
 		modelId: null,
 		usage: null,
+		subagents: null,
 	};
 }
 

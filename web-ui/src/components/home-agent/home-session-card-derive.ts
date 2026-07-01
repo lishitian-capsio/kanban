@@ -6,7 +6,12 @@
 // so the card adds no data model (see the "drive the home agent chat layout by
 // panel size" decision). Keeping the derivation pure makes the status semantics
 // unit-testable and decoupled from React.
-import type { RuntimeTaskChatMessage, RuntimeTaskSessionState, RuntimeTaskSessionSummary } from "@/runtime/types";
+import type {
+	RuntimeTaskChatMessage,
+	RuntimeTaskSessionState,
+	RuntimeTaskSessionSummary,
+	RuntimeTaskSubagentStatus,
+} from "@/runtime/types";
 import { isCardCreditLimitError } from "@/utils/session-activity";
 
 /**
@@ -101,6 +106,32 @@ function deriveBaseStatus(state: RuntimeTaskSessionState | null): HomeSessionCar
 			return {
 				status: "error",
 				label: "Interrupted",
+				marker: "alert-circle",
+				markerClassName: "text-status-red",
+				pulse: false,
+			};
+		default:
+			return { status: "idle", label: "Idle", marker: "dot", markerClassName: "bg-text-tertiary", pulse: false };
+	}
+}
+
+/**
+ * Map a Pi subagent's lifecycle status to the same status descriptor the session
+ * surfaces use, so the subagents rail renders with the identical marker vocabulary
+ * as the cards/tabs. A subagent has its own `idle|running|done|failed` enum (it is a
+ * spawn-and-forget child run, not a reviewable session): `done` is a settled success
+ * (a green dot, distinct from the gray idle dot), `failed` a red alert.
+ */
+export function deriveSubagentStatus(status: RuntimeTaskSubagentStatus): HomeSessionCardStatusDescriptor {
+	switch (status) {
+		case "running":
+			return { status: "running", label: "Running", marker: "spinner", markerClassName: "", pulse: false };
+		case "done":
+			return { status: "idle", label: "Done", marker: "dot", markerClassName: "bg-status-green", pulse: false };
+		case "failed":
+			return {
+				status: "error",
+				label: "Failed",
 				marker: "alert-circle",
 				markerClassName: "text-status-red",
 				pulse: false,

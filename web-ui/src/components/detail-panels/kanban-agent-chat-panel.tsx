@@ -85,6 +85,12 @@ export interface KanbanAgentChatPanelProps {
 	defaultMode?: RuntimeTaskSessionMode;
 	composerPlaceholder?: string;
 	showComposerModeToggle?: boolean;
+	/**
+	 * Render a historical transcript with no composer or action footer. Used for a Pi
+	 * subagent's drill-in view — subagents are spawn-and-forget child runs, so their
+	 * transcript is read-only.
+	 */
+	readOnly?: boolean;
 	workspaceId?: string | null;
 	runtimeConfig?: RuntimeConfigResponse | null;
 	// When set, replaces the composer's bare model selector with a richer control
@@ -132,6 +138,7 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 			defaultMode = "act",
 			composerPlaceholder = "Ask Kanban to add, edit, start, or link tasks",
 			showComposerModeToggle = true,
+			readOnly = false,
 			workspaceId = null,
 			runtimeConfig = null,
 			modelControlSlot = null,
@@ -432,6 +439,7 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 					</div>
 				) : null}
 				{suggestionSlot ? <div className="px-2 pt-2">{suggestionSlot}</div> : null}
+				{readOnly ? null : (
 				<div className="px-2 py-3">
 					<KanbanChatComposer
 						taskId={taskId}
@@ -466,7 +474,8 @@ export const KanbanAgentChatPanel = React.forwardRef<KanbanAgentChatPanelHandle,
 						modelControlSlot={modelControlSlot}
 					/>
 				</div>
-				{showActionFooter ? (
+				)}
+				{!readOnly && showActionFooter ? (
 					<div className="flex flex-col gap-2 px-3 pb-3">
 						{showReviewActions ? (
 							<div className="flex gap-2">

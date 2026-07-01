@@ -25,7 +25,7 @@ import { fileSurfaceStore } from "@/components/file-surface";
 import { HomeAddSessionCard } from "@/components/home-agent/home-add-session-card";
 import { HomeAgentConversation } from "@/components/home-agent/home-agent-conversation";
 import { HomeSessionCard } from "@/components/home-agent/home-session-card";
-import { PiTabPanel } from "@/components/home-agent/pi-tab-panel";
+import { PiConversationSurface } from "@/components/home-agent/pi-conversation-surface";
 import { SessionTabStrip } from "@/components/home-agent/session-tab-strip";
 import type { UseHomeThreadsResult } from "@/hooks/use-home-threads";
 import { useRefreshHomeThreadsOnSessionContextBump } from "@/hooks/use-refresh-home-threads-on-context-bump";
@@ -228,13 +228,14 @@ export function HomeChatWorkspace({
 			/>
 
 			{piTabActive ? (
-				<PiTabPanel
-					currentProjectId={currentProjectId}
-					runtimeProjectConfig={runtimeProjectConfig}
-					homeThreads={homeThreads}
-					taskSessions={taskSessions}
-					workspaceGit={workspaceGit}
-				/>
+				<div className="flex min-h-0 flex-1 [&>*]:w-full [&>*]:self-stretch">
+					<PiConversationSurface
+						currentProjectId={currentProjectId}
+						runtimeProjectConfig={runtimeProjectConfig}
+						workspaceGit={workspaceGit}
+						orientation="fullscreen"
+					/>
+				</div>
 			) : showHomeTab ? (
 				<div className="flex min-h-0 flex-1 flex-col">
 					<div className="shrink-0 px-1 pb-3">

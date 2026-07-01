@@ -19,10 +19,12 @@ import {
 	type CreatePiAgentRuntimeOptions,
 	createInMemoryPiAgentRuntime,
 	type PiAgentRuntime,
+	type PiSubagentEventInfo,
 	type StartPiSessionRequest,
 } from "./pi-agent-runtime";
-import { applyPiAgentEvent } from "./pi-event-adapter";
+import { accumulateUsage, applyPiAgentEvent } from "./pi-event-adapter";
 import { PI_DEFAULT_MODEL_ID, PI_DEFAULT_PROVIDER_ID } from "./pi-provider-config";
+import { applySubagentLifecycle } from "./pi-subagent-adapter";
 import {
 	cloneSummary,
 	createDefaultSummary,
@@ -95,6 +97,10 @@ export interface CreatePiTaskSessionServiceOptions {
  */
 class PiMessageStore {
 	private entries = new Map<string, KanbanTaskSessionEntry>();
+	// Subagent transcripts live in a SEPARATE map, NOT in `entries`, so they never leak into
+	// `listSummaries()` (→ sessions.json / phantom board sessions). Their status/tokens are
+	// projected onto the PARENT summary's `subagents[]` instead. Keyed by composite session id.
+	private subagentBuffers = new Map<string, KanbanTaskSessionEntry>();
 	private summaryListeners = new Set<(summary: RuntimeTaskSessionSummary) => void>();
 	private messageListeners = new Set<(taskId: string, message: SessionMessage) => void>();
 	private readonly mergeCache = new SessionMessageMergeCache();
@@ -109,6 +115,29 @@ class PiMessageStore {
 		this.entries.set(taskId, entry);
 	}
 
+	/** Get (or lazily create) the transcript buffer for a subagent's composite session id. */
+	getOrCreateSubagentEntry(compositeId: string): KanbanTaskSessionEntry {
+		let entry = this.subagentBuffers.get(compositeId);
+		if (!entry) {
+			// The summary here is a throwaway — subagents have no top-level summary; it exists only
+			// because the shared event adapter mutates entry.summary (we swallow those emits).
+			entry = createKanbanTaskSessionEntry(createDefaultSummary(compositeId));
+			this.subagentBuffers.set(compositeId, entry);
+		}
+		return entry;
+	}
+
+	dropSubagentBuffer(compositeId: string): void {
+		this.subagentBuffers.delete(compositeId);
+		this.mergeCache.invalidate(compositeId);
+	}
+
+	/** Drop a subagent transcript from memory AND disk (its own composite-id journal dir). */
+	async clearSubagentTranscript(compositeId: string): Promise<void> {
+		this.dropSubagentBuffer(compositeId);
+		await this.journal.clear(compositeId);
+	}
+
 	getSummary(taskId: string): RuntimeTaskSessionSummary | null {
 		return this.entries.get(taskId)?.summary ?? null;
 	}
@@ -118,7 +147,8 @@ class PiMessageStore {
 	}
 
 	listMessages(taskId: string): SessionMessage[] {
-		return this.entries.get(taskId)?.messages.slice() ?? [];
+		const entry = this.entries.get(taskId) ?? this.subagentBuffers.get(taskId);
+		return entry?.messages.slice() ?? [];
 	}
 
 	emitSummary(summary: RuntimeTaskSessionSummary): void {
@@ -176,6 +206,7 @@ class PiMessageStore {
 		this.summaryListeners.clear();
 		this.messageListeners.clear();
 		this.entries.clear();
+		this.subagentBuffers.clear();
 		await this.journal.dispose();
 	}
 }
@@ -201,6 +232,9 @@ function buildPiStartPrompt(prompt: string, startInPlanMode?: boolean): string {
 
 export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 	private readonly pendingTurnCancelTaskIds = new Set<string>();
+	// Subagents have no per-turn cancel of their own (they are aborted with the parent), so their
+	// event stream always uses an empty cancel set — the adapter's "turn canceled" path never fires.
+	private readonly noSubagentTurnCancel = new Set<string>();
 	private readonly agentRuntime: PiAgentRuntime;
 	private readonly messageStore: PiMessageStore;
 
@@ -210,6 +244,9 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 		this.agentRuntime = createAgentRuntime({
 			onTaskEvent: (taskId: string, event: AgentEvent) => {
 				this.handleTaskEvent(taskId, event);
+			},
+			onSubagentEvent: (info: PiSubagentEventInfo, event: AgentEvent) => {
+				this.handleSubagentEvent(info, event);
 			},
 		});
 	}
@@ -448,6 +485,7 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 		const existingEntry = this.messageStore.getTaskEntry(taskId);
 		this.pendingTurnCancelTaskIds.delete(taskId);
 		await this.agentRuntime.clearSessions(taskId).catch(() => undefined);
+		await this.clearSubagentTranscripts(existingEntry);
 		this.messageStore.clearTaskMessages(taskId);
 		if (!existingEntry) return null;
 
@@ -463,9 +501,20 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 
 	async closeTaskSession(taskId: string): Promise<void> {
 		this.pendingTurnCancelTaskIds.delete(taskId);
+		const existingEntry = this.messageStore.getTaskEntry(taskId);
 		await this.stopTaskSession(taskId).catch(() => null);
 		await this.agentRuntime.clearSessions(taskId).catch(() => undefined);
+		await this.clearSubagentTranscripts(existingEntry);
 		await this.messageStore.deleteTaskEntry(taskId);
+	}
+
+	/** Drop every subagent transcript (memory + disk) belonging to a parent session. */
+	private async clearSubagentTranscripts(parentEntry: KanbanTaskSessionEntry | undefined): Promise<void> {
+		const subagents = parentEntry?.summary.subagents;
+		if (!subagents || subagents.length === 0) return;
+		await Promise.all(
+			subagents.map((subagent) => this.messageStore.clearSubagentTranscript(subagent.sessionId).catch(() => undefined)),
+		);
 	}
 
 	async rebindPersistedTaskSession(taskId: string): Promise<RuntimeTaskSessionSummary | null> {
@@ -564,6 +613,46 @@ export class InMemoryPiTaskSessionService implements PiTaskSessionService {
 				this.messageStore.emitMessage(eventTaskId, message);
 			},
 		});
+	}
+
+	/**
+	 * Fold a child (subagent) Agent event into (a) the subagent's own transcript — on a buffer
+	 * keyed by the composite session id, reachable via `useTaskChatMessages(compositeId)` — and
+	 * (b) the parent summary's `subagents[]` projection (status/tokens). The parent summary re-emit
+	 * rides the normal broadcast path, so no new wire is needed.
+	 */
+	private handleSubagentEvent(info: PiSubagentEventInfo, event: AgentEvent): void {
+		// (a) Per-subagent transcript on its own (summary-less) buffer.
+		const subEntry = this.messageStore.getOrCreateSubagentEntry(info.compositeId);
+		applyPiAgentEvent({
+			event,
+			taskId: info.compositeId,
+			entry: subEntry,
+			pendingTurnCancelTaskIds: this.noSubagentTurnCancel,
+			// Subagents own no top-level summary — swallow the summary emits (the projection below
+			// is what the rail reads); still broadcast the transcript messages.
+			emitSummary: () => {},
+			emitMessage: (eventTaskId: string, message: SessionMessage) => {
+				this.messageStore.emitMessage(eventTaskId, message);
+			},
+		});
+
+		// (b) Project status/tokens onto the parent summary.
+		const parentEntry = this.messageStore.getTaskEntry(info.parentTaskId);
+		if (!parentEntry) return;
+		const subagents = applySubagentLifecycle(parentEntry.summary, info.subagentId, event, {
+			compositeId: info.compositeId,
+			label: info.label,
+			modelId: info.modelId,
+		});
+		// Roll a finished subagent's tokens up into the parent's cumulative usage (the parent's own
+		// agent_end telemetry covers only the parent model's calls, not the children's).
+		const rolledUsage =
+			event.type === "agent_end"
+				? (accumulateUsage(parentEntry.summary.usage, event.telemetry) ?? parentEntry.summary.usage)
+				: parentEntry.summary.usage;
+		const summary = updateSummary(parentEntry, { subagents, usage: rolledUsage });
+		this.messageStore.emitSummary(summary);
 	}
 }
 
