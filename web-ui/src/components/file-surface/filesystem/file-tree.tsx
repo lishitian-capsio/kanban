@@ -13,11 +13,13 @@ import {
 	Image as ImageIcon,
 	Pencil,
 	Trash2,
+	Upload,
 } from "lucide-react";
 import type React from "react";
 import { useMemo, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 
+import { collectFilesFromDataTransfer } from "@/components/files/file-upload-utils";
 import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
 import type { RuntimeFsEntry } from "@/runtime/types";
@@ -31,6 +33,15 @@ interface FlatRow {
 
 /** DataTransfer type carrying the dragged entry's repo-relative path. */
 const DRAG_MIME = "application/x-kb-fs-path";
+
+/**
+ * True when a drag carries OS files (an external upload) rather than an internal
+ * entry move. Browsers expose external files as the `"Files"` type on the drag's
+ * DataTransfer; our internal drags carry {@link DRAG_MIME} instead.
+ */
+function dragHasFiles(event: React.DragEvent): boolean {
+	return Array.from(event.dataTransfer.types).includes("Files");
+}
 
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "avif", "svg"]);
 
@@ -64,6 +75,10 @@ interface FileTreeProps {
 	onRequestDownload: (entry: RuntimeFsEntry) => void;
 	/** Move `fromPath` into directory `toDir` ("" = root). */
 	onMove: (fromPath: string, toDir: string) => void;
+	/** Upload OS files dragged in from outside into directory `toDir` ("" = root). */
+	onUploadFiles: (files: File[], toDir: string) => void;
+	/** Open the file picker to upload into directory `dir` ("" = root). */
+	onRequestUpload: (dir: string) => void;
 }
 
 function MenuContent({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -122,6 +137,8 @@ export function FileTree({
 	onRequestDelete,
 	onRequestDownload,
 	onMove,
+	onUploadFiles,
+	onRequestUpload,
 }: FileTreeProps): React.ReactElement {
 	// The current drop target: null = none, "" = repo root, else a directory path.
 	const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -145,8 +162,18 @@ export function FileTree({
 	}, [childrenByDir, expandedDirs]);
 
 	const handleDrop = (event: React.DragEvent, toDir: string): void => {
-		const fromPath = event.dataTransfer.getData(DRAG_MIME);
+		// Prevent the browser's default "open the dropped file" navigation.
+		event.preventDefault();
 		setDropTarget(null);
+		// External OS files → upload; must read the DataTransfer synchronously here
+		// (browsers clear it after the event dispatch window). Internal drags carry
+		// no files and instead expose the dragged entry's path under DRAG_MIME.
+		const files = collectFilesFromDataTransfer(event.dataTransfer);
+		if (files.length > 0) {
+			onUploadFiles(files, toDir);
+			return;
+		}
+		const fromPath = event.dataTransfer.getData(DRAG_MIME);
 		if (fromPath) {
 			onMove(fromPath, toDir);
 		}
@@ -176,7 +203,7 @@ export function FileTree({
 								? (event) => {
 										event.preventDefault();
 										event.stopPropagation();
-										event.dataTransfer.dropEffect = "move";
+										event.dataTransfer.dropEffect = dragHasFiles(event) ? "copy" : "move";
 										setDropTarget(entry.path);
 									}
 								: // Files are not drop targets: swallow the event so it neither
@@ -231,6 +258,11 @@ export function FileTree({
 								label="New Folder"
 								onSelect={() => onRequestCreate(entry.path, "dir")}
 							/>
+							<MenuItem
+								icon={<Upload size={14} />}
+								label="Upload Files…"
+								onSelect={() => onRequestUpload(entry.path)}
+							/>
 							<ContextMenu.Separator className="my-1 h-px bg-border" />
 						</>
 					) : null}
@@ -252,7 +284,7 @@ export function FileTree({
 			className={cn("h-full", dropTarget === "" && "bg-accent/10 ring-1 ring-inset ring-accent/50")}
 			onDragOver={(event) => {
 				event.preventDefault();
-				event.dataTransfer.dropEffect = "move";
+				event.dataTransfer.dropEffect = dragHasFiles(event) ? "copy" : "move";
 				setDropTarget("");
 			}}
 			onDragLeave={(event) => {

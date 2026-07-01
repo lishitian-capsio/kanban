@@ -1,9 +1,9 @@
 import * as Switch from "@radix-ui/react-switch";
-import { FilePlus, FolderPlus, RefreshCw } from "lucide-react";
+import { FilePlus, FolderPlus, RefreshCw, Upload } from "lucide-react";
 import type React from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { notifyError } from "@/components/app-toaster";
+import { notifyError, showAppToast } from "@/components/app-toaster";
 import { Button } from "@/components/ui/button";
 import {
 	AlertDialog,
@@ -27,6 +27,7 @@ import { isPathInside, posixBaseName, posixDirName, posixJoin } from "./fs-path"
 import { useFsDownload } from "./use-fs-download";
 import { useFsMutations } from "./use-fs-mutations";
 import { useFsTree } from "./use-fs-tree";
+import { type FsUploadConflictMode, useFsUpload } from "./use-fs-upload";
 
 interface FileSystemExplorerProps {
 	workspaceId: string | null;
@@ -95,10 +96,18 @@ export function FileSystemExplorer({
 	const { expandDir, reloadDir, reload } = tree;
 	const mutations = useFsMutations(workspaceId);
 	const { downloadEntry, isDownloading } = useFsDownload(workspaceId);
+	const upload = useFsUpload(workspaceId);
 
 	const [prompt, setPrompt] = useState<PromptState>(null);
 	const [deleteTarget, setDeleteTarget] = useState<RuntimeFsEntry | null>(null);
 	const [deleting, setDeleting] = useState(false);
+
+	// Hidden file input for the "Upload files" button / context-menu item, plus the
+	// directory the next picker result should land in (set right before `.click()`).
+	const fileInputRef = useRef<HTMLInputElement | null>(null);
+	const pickerDirRef = useRef<string>("");
+	// Files that hit an existing name (mode "error"); the dialog confirms how to resolve.
+	const [conflicts, setConflicts] = useState<{ dir: string; files: File[] } | null>(null);
 
 	// Reveal a deep-linked / newly-opened path by expanding (and loading) its
 	// ancestor directories so it becomes visible in the tree.
@@ -124,6 +133,54 @@ export function FileSystemExplorer({
 			reloadDir(dir);
 		},
 		[expandDir, reloadDir],
+	);
+
+	// Upload a batch into `dir`, refresh that layer, and toast the outcome. In the
+	// default "error" mode, same-name collisions come back as `conflicts` and open
+	// the confirm dialog (overwrite / keep-both) rather than being written silently.
+	const runUpload = useCallback(
+		async (dir: string, files: File[], mode: FsUploadConflictMode): Promise<void> => {
+			const result = await upload.uploadFiles(dir, files, mode);
+			refreshDir(dir);
+			if (result.succeeded.length > 0) {
+				showAppToast(
+					{
+						intent: "success",
+						icon: "upload",
+						message:
+							result.succeeded.length === 1
+								? `Uploaded “${result.succeeded[0]?.name}”.`
+								: `Uploaded ${result.succeeded.length} files.`,
+						timeout: 2500,
+					},
+					"fs-upload-success",
+				);
+			}
+			for (const failure of result.failed) {
+				notifyError(`${failure.name}: ${failure.error}`);
+			}
+			if (result.conflicts.length > 0) {
+				setConflicts({ dir, files: result.conflicts });
+			}
+		},
+		[upload, refreshDir],
+	);
+
+	// Open the OS file picker; its result uploads into `dir` (remembered via ref).
+	const openFilePicker = useCallback((dir: string) => {
+		pickerDirRef.current = dir;
+		fileInputRef.current?.click();
+	}, []);
+
+	const onFileInputChange = useCallback(
+		(event: React.ChangeEvent<HTMLInputElement>) => {
+			const files = event.target.files ? Array.from(event.target.files) : [];
+			event.target.value = ""; // Allow re-picking the same file(s) next time.
+			if (files.length > 0) {
+				void runUpload(pickerDirRef.current, files, "error");
+			}
+		},
+		[runUpload],
 	);
 
 	const handleMove = useCallback(
@@ -250,6 +307,16 @@ export function FileSystemExplorer({
 							aria-label="New folder"
 						/>
 					</Tooltip>
+					<Tooltip content="Upload files to root">
+						<Button
+							variant="ghost"
+							size="sm"
+							icon={<Upload size={13} />}
+							onClick={() => openFilePicker("")}
+							disabled={upload.isUploading}
+							aria-label="Upload files"
+						/>
+					</Tooltip>
 					<Tooltip content="Refresh">
 						<Button
 							variant="ghost"
@@ -284,6 +351,10 @@ export function FileSystemExplorer({
 								void downloadEntry(entry.path);
 							}}
 							onMove={handleMove}
+							onUploadFiles={(files, toDir) => {
+								void runUpload(toDir, files, "error");
+							}}
+							onRequestUpload={openFilePicker}
 						/>
 					)}
 				</div>
@@ -297,6 +368,9 @@ export function FileSystemExplorer({
 				}}
 				isDownloading={isDownloading}
 			/>
+
+			{/* Hidden picker backing the "Upload files" button + context-menu item. */}
+			<input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFileInputChange} tabIndex={-1} />
 
 			{prompt ? (
 				<FsNamePromptDialog
@@ -350,6 +424,57 @@ export function FileSystemExplorer({
 					</AlertDialogAction>
 				</AlertDialogFooter>
 			</AlertDialog>
+
+			{conflicts ? (
+				<AlertDialog open onOpenChange={(open) => (open ? undefined : setConflicts(null))}>
+					<AlertDialogHeader>
+						<AlertDialogTitle>
+							{conflicts.files.length === 1 ? "A file already exists" : "Files already exist"}
+						</AlertDialogTitle>
+					</AlertDialogHeader>
+					<AlertDialogBody>
+						<AlertDialogDescription>
+							{conflicts.files.length === 1 ? "1 file" : `${conflicts.files.length} files`} already exist in{" "}
+							<span className="font-medium text-text-primary">{conflicts.dir || "the repo root"}</span>.{" "}
+							<span className="font-medium text-text-primary">Keep both</span> uploads under a new name;{" "}
+							<span className="font-medium text-text-primary">Overwrite</span> replaces the existing file(s).
+						</AlertDialogDescription>
+					</AlertDialogBody>
+					<AlertDialogFooter>
+						<AlertDialogCancel asChild>
+							<Button variant="ghost" size="sm">
+								Cancel
+							</Button>
+						</AlertDialogCancel>
+						<AlertDialogAction asChild>
+							<Button
+								variant="default"
+								size="sm"
+								onClick={() => {
+									const pending = conflicts;
+									setConflicts(null);
+									void runUpload(pending.dir, pending.files, "rename");
+								}}
+							>
+								Keep both
+							</Button>
+						</AlertDialogAction>
+						<AlertDialogAction asChild>
+							<Button
+								variant="danger"
+								size="sm"
+								onClick={() => {
+									const pending = conflicts;
+									setConflicts(null);
+									void runUpload(pending.dir, pending.files, "overwrite");
+								}}
+							>
+								Overwrite
+							</Button>
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialog>
+			) : null}
 		</div>
 	);
 }

@@ -2010,6 +2010,40 @@ export const runtimeFsDeleteEntryResponseSchema = z.object({
 });
 export type RuntimeFsDeleteEntryResponse = z.infer<typeof runtimeFsDeleteEntryResponseSchema>;
 
+// --- uploadFile: binary-safe write of an OS file into a target directory --------
+// Distinct from `createEntry` (makes an EMPTY file/dir) and `writeFile` (overwrites
+// an EXISTING opened file): this writes fresh bytes from an uploaded/dragged-in OS
+// file into an existing directory. Same path-safety pipeline as the mutations
+// (reserved-dir guard → string sandbox → symlink-real guard on the target dir), and
+// a symlink target is never overwritten (no write-through escape). `onConflict`
+// decides same-name behavior: "error" (default) refuses with `conflict: true` and
+// writes nothing so the UI can confirm; "overwrite" replaces the existing file
+// (never a directory / symlink); "rename" writes to the next free "name (n).ext".
+// The payload is capped; over the cap → `{ ok: false, error }`.
+export const runtimeFsUploadFileRequestSchema = z.object({
+	// Target directory (repo-relative POSIX; "" = root). Must already exist.
+	dir: z.string(),
+	// Bare filename (no path separators, not "."/".."/reserved).
+	name: z.string(),
+	// Base64-encoded file contents.
+	data: z.string(),
+	// Same-name policy. Default "error" (refuse + `conflict: true`, no write).
+	onConflict: z.enum(["error", "overwrite", "rename"]).optional(),
+});
+export type RuntimeFsUploadFileRequest = z.infer<typeof runtimeFsUploadFileRequestSchema>;
+
+export const runtimeFsUploadFileResponseSchema = z.object({
+	ok: z.boolean(),
+	// The written entry on success; its `name` may differ from the request when
+	// `onConflict: "rename"` picked the next free "name (n).ext".
+	entry: runtimeFsEntrySchema.optional(),
+	// True when `onConflict: "error"` and an entry with that name already exists —
+	// nothing was written; the UI offers overwrite / keep-both.
+	conflict: z.boolean().optional(),
+	error: z.string().optional(),
+});
+export type RuntimeFsUploadFileResponse = z.infer<typeof runtimeFsUploadFileResponseSchema>;
+
 export const runtimeProjectRemoveRequestSchema = z.object({
 	projectId: z.string(),
 });

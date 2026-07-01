@@ -13,6 +13,7 @@ import {
 	fsReadFile,
 	fsRename,
 	fsStat,
+	fsUploadFile,
 	fsWriteFile,
 } from "../../src/workspace/workspace-fs-api";
 import { createTempDir } from "../utilities/temp-dir";
@@ -496,6 +497,122 @@ describe("workspace-fs-api", () => {
 			const result = await fsDeleteEntry(repo.path, { path: ".kanban" });
 			expect(result.ok).toBe(false);
 			expect(existsSync(join(repo.path, ".kanban"))).toBe(true);
+		});
+	});
+
+	describe("uploadFile", () => {
+		const b64 = (text: string): string => Buffer.from(text, "utf8").toString("base64");
+
+		it("uploads a new file into a subdirectory (binary-safe)", async () => {
+			const bytes = Buffer.from([0x00, 0x01, 0xfe, 0xff, 0x00, 0x42]);
+			const result = await fsUploadFile(repo.path, {
+				dir: "src",
+				name: "blob.bin",
+				data: bytes.toString("base64"),
+			});
+			expect(result.ok).toBe(true);
+			expect(result.entry?.path).toBe("src/blob.bin");
+			expect(readFileSync(join(repo.path, "src", "blob.bin"))).toEqual(bytes);
+		});
+
+		it("uploads into the repo root when dir is empty", async () => {
+			const result = await fsUploadFile(repo.path, { dir: "", name: "new.txt", data: b64("hi\n") });
+			expect(result.ok).toBe(true);
+			expect(readFileSync(join(repo.path, "new.txt"), "utf8")).toBe("hi\n");
+		});
+
+		it("refuses a same-name collision by default (no write, conflict flag)", async () => {
+			const result = await fsUploadFile(repo.path, { dir: "", name: "app.ts", data: b64("overwritten") });
+			expect(result.ok).toBe(false);
+			expect(result.conflict).toBe(true);
+			// Original untouched.
+			expect(readFileSync(join(repo.path, "app.ts"), "utf8")).toBe("export const x = 1;\n");
+		});
+
+		it("overwrites an existing file when onConflict is overwrite", async () => {
+			const result = await fsUploadFile(repo.path, {
+				dir: "",
+				name: "app.ts",
+				data: b64("replaced\n"),
+				onConflict: "overwrite",
+			});
+			expect(result.ok).toBe(true);
+			expect(readFileSync(join(repo.path, "app.ts"), "utf8")).toBe("replaced\n");
+		});
+
+		it("auto-renames to `name (n).ext` when onConflict is rename", async () => {
+			const first = await fsUploadFile(repo.path, {
+				dir: "",
+				name: "app.ts",
+				data: b64("copy1"),
+				onConflict: "rename",
+			});
+			expect(first.ok).toBe(true);
+			expect(first.entry?.name).toBe("app (1).ts");
+			const second = await fsUploadFile(repo.path, {
+				dir: "",
+				name: "app.ts",
+				data: b64("copy2"),
+				onConflict: "rename",
+			});
+			expect(second.entry?.name).toBe("app (2).ts");
+			// Original preserved.
+			expect(readFileSync(join(repo.path, "app.ts"), "utf8")).toBe("export const x = 1;\n");
+		});
+
+		it("refuses to overwrite an existing directory", async () => {
+			const result = await fsUploadFile(repo.path, {
+				dir: "",
+				name: "src",
+				data: b64("x"),
+				onConflict: "overwrite",
+			});
+			expect(result.ok).toBe(false);
+			expect(statSync(join(repo.path, "src")).isDirectory()).toBe(true);
+		});
+
+		it("rejects a bare name that is not bare (path separator)", async () => {
+			const result = await fsUploadFile(repo.path, { dir: "src", name: "../escape.txt", data: b64("x") });
+			expect(result.ok).toBe(false);
+			expect(existsSync(join(repo.path, "escape.txt"))).toBe(false);
+		});
+
+		it("rejects a `..` escape in the target directory", async () => {
+			const result = await fsUploadFile(repo.path, { dir: "../", name: "escape.txt", data: b64("x") });
+			expect(result.ok).toBe(false);
+			expect(result.error).toMatch(/outside/i);
+			expect(existsSync(join(outside.path, "escape.txt"))).toBe(false);
+		});
+
+		it("refuses to upload into .kanban", async () => {
+			const result = await fsUploadFile(repo.path, { dir: ".kanban", name: "sneak.json", data: b64("{}") });
+			expect(result.ok).toBe(false);
+			expect(existsSync(join(repo.path, ".kanban", "sneak.json"))).toBe(false);
+		});
+
+		it("refuses a reserved bare name (.git)", async () => {
+			const result = await fsUploadFile(repo.path, { dir: "", name: ".git", data: b64("x") });
+			expect(result.ok).toBe(false);
+		});
+
+		it("refuses to overwrite through a symlink (no write-through escape)", async () => {
+			const secret = join(outside.path, "secret.txt");
+			writeFileSync(secret, "top-secret\n");
+			symlinkSync(secret, join(repo.path, "link.txt"));
+			const result = await fsUploadFile(repo.path, {
+				dir: "",
+				name: "link.txt",
+				data: b64("pwned"),
+				onConflict: "overwrite",
+			});
+			expect(result.ok).toBe(false);
+			// The out-of-root target was never written through the link.
+			expect(readFileSync(secret, "utf8")).toBe("top-secret\n");
+		});
+
+		it("fails when the target directory does not exist", async () => {
+			const result = await fsUploadFile(repo.path, { dir: "nope", name: "a.txt", data: b64("x") });
+			expect(result.ok).toBe(false);
 		});
 	});
 });

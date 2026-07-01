@@ -37,6 +37,8 @@ import type {
 	RuntimeFsRenameRequest,
 	RuntimeFsStatRequest,
 	RuntimeFsStatResponse,
+	RuntimeFsUploadFileRequest,
+	RuntimeFsUploadFileResponse,
 	RuntimeFsWriteFileRequest,
 	RuntimeFsWriteFileResponse,
 } from "../core/api-contract";
@@ -55,6 +57,9 @@ const FS_PREVIEW_MAX_BYTES = 8 * 1024 * 1024; // 8 MB
 // Download payload cap (a single file's bytes, or a directory zip's total
 // uncompressed bytes). Bounds the in-memory base64 held for a download response.
 const FS_DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
+// Upload payload cap (a single uploaded file's decoded bytes). Bounds the
+// in-memory buffer decoded from the base64 upload request.
+const FS_UPLOAD_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
 // Bytes sniffed from a file's head to decide binary-vs-text when the mime is unknown.
 const BINARY_SNIFF_BYTES = 8192;
 
@@ -880,6 +885,124 @@ export async function fsWriteFile(root: string, input: RuntimeFsWriteFileRequest
 }
 
 // -----------------------------------------------------------------------------
+// uploadFile — binary-safe write of an uploaded/dragged-in OS file into a dir.
+//
+// Runs the same path-safety pipeline as the mutations (reserved-dir guard →
+// string sandbox → symlink-real guard on the target dir). The target directory
+// must already exist. On a same-name collision the behavior follows `onConflict`:
+// "error" (default) refuses without writing so the UI can confirm; "overwrite"
+// replaces the existing FILE (never a directory, and never a symlink — writing
+// through a link could escape the root); "rename" writes to the next free
+// "name (n).ext". The decoded payload is capped by {@link FS_UPLOAD_MAX_BYTES}.
+// -----------------------------------------------------------------------------
+
+/**
+ * Split a bare filename into `[base, ext]` for auto-rename, where `ext` includes
+ * its leading dot. A leading-dot dotfile (".env") has no extension: `[".env", ""]`.
+ */
+function splitNameForRename(name: string): [string, string] {
+	const dot = name.lastIndexOf(".");
+	if (dot <= 0) {
+		return [name, ""];
+	}
+	return [name.slice(0, dot), name.slice(dot)];
+}
+
+/** Find the next free "name (n).ext" in `dirAbs`, or null if none within 1000. */
+async function findAvailableName(dirAbs: string, name: string): Promise<string | null> {
+	const [base, ext] = splitNameForRename(name);
+	for (let n = 1; n <= 1000; n += 1) {
+		const candidate = `${base} (${n})${ext}`;
+		try {
+			await lstat(joinNative(dirAbs, candidate));
+		} catch {
+			return candidate;
+		}
+	}
+	return null;
+}
+
+export async function fsUploadFile(
+	root: string,
+	input: RuntimeFsUploadFileRequest,
+): Promise<RuntimeFsUploadFileResponse> {
+	const nameError = validateBareName(input.name);
+	if (nameError) {
+		return { ok: false, error: nameError };
+	}
+	const name = input.name.trim();
+
+	let dirAbs: string;
+	try {
+		assertNotReservedPath(input.dir);
+		assertNotReservedPath(name);
+		dirAbs = resolveWithinRoot(root, input.dir);
+		await assertRealWithinRoot(root, dirAbs);
+	} catch (error) {
+		return { ok: false, error: mutationErrorMessage(error, "Invalid path.") };
+	}
+
+	let dirInfo: Awaited<ReturnType<typeof stat>>;
+	try {
+		dirInfo = await stat(dirAbs);
+	} catch {
+		return { ok: false, error: "The target directory does not exist." };
+	}
+	if (!dirInfo.isDirectory()) {
+		return { ok: false, error: "The target is not a directory." };
+	}
+
+	const buffer = Buffer.from(input.data, "base64");
+	if (buffer.byteLength > FS_UPLOAD_MAX_BYTES) {
+		return { ok: false, error: "File is too large to upload." };
+	}
+
+	let targetAbs = joinNative(dirAbs, name);
+	// Symlink-escape guard on the target's parent (the dir must resolve inside root).
+	try {
+		await assertRealParentWithinRoot(root, targetAbs);
+	} catch (error) {
+		return { ok: false, error: mutationErrorMessage(error, "Invalid path.") };
+	}
+
+	const mode = input.onConflict ?? "error";
+	let existing: Awaited<ReturnType<typeof lstat>> | null = null;
+	try {
+		existing = await lstat(targetAbs);
+	} catch {
+		// Expected: no collision.
+	}
+	if (existing) {
+		if (mode === "error") {
+			return { ok: false, conflict: true, error: "An entry with that name already exists." };
+		}
+		if (mode === "rename") {
+			const renamed = await findAvailableName(dirAbs, name);
+			if (!renamed) {
+				return { ok: false, error: "Could not find an available name." };
+			}
+			targetAbs = joinNative(dirAbs, renamed);
+		} else {
+			// overwrite: never replace a directory, and never write through a symlink
+			// (that would follow the link and could escape the root).
+			if (existing.isDirectory()) {
+				return { ok: false, error: "A directory with that name already exists." };
+			}
+			if (existing.isSymbolicLink()) {
+				return { ok: false, error: "Refusing to overwrite a symlink." };
+			}
+		}
+	}
+
+	try {
+		await writeFile(targetAbs, buffer);
+	} catch (error) {
+		return { ok: false, error: fsSystemErrorMessage(error, "Failed to upload the file.") };
+	}
+	return { ok: true, entry: await buildEntryWithGitignore(root, targetAbs) };
+}
+
+// -----------------------------------------------------------------------------
 // Mutations (P3): createEntry / rename / move / deleteEntry.
 //
 // Every mutation re-runs the full path-safety pipeline before any fs write:
@@ -1054,6 +1177,10 @@ export interface WorkspaceFsApi {
 		scope: RuntimeTrpcWorkspaceScope,
 		input: RuntimeFsWriteFileRequest,
 	) => Promise<RuntimeFsWriteFileResponse>;
+	uploadFile: (
+		scope: RuntimeTrpcWorkspaceScope,
+		input: RuntimeFsUploadFileRequest,
+	) => Promise<RuntimeFsUploadFileResponse>;
 	stat: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsStatRequest) => Promise<RuntimeFsStatResponse>;
 	createEntry: (
 		scope: RuntimeTrpcWorkspaceScope,
@@ -1073,6 +1200,7 @@ export function createWorkspaceFsApi(): WorkspaceFsApi {
 		readFile: (scope, input) => fsReadFile(scope.workspacePath, input),
 		downloadEntry: (scope, input) => fsDownloadEntry(scope.workspacePath, input),
 		writeFile: (scope, input) => fsWriteFile(scope.workspacePath, input),
+		uploadFile: (scope, input) => fsUploadFile(scope.workspacePath, input),
 		stat: (scope, input) => fsStat(scope.workspacePath, input),
 		createEntry: (scope, input) => fsCreateEntry(scope.workspacePath, input),
 		rename: (scope, input) => fsRename(scope.workspacePath, input),

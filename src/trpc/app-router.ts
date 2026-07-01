@@ -74,6 +74,8 @@ import type {
 	RuntimeFsRenameRequest,
 	RuntimeFsStatRequest,
 	RuntimeFsStatResponse,
+	RuntimeFsUploadFileRequest,
+	RuntimeFsUploadFileResponse,
 	RuntimeFsWriteFileRequest,
 	RuntimeFsWriteFileResponse,
 	RuntimeGitCheckoutRequest,
@@ -270,6 +272,8 @@ import {
 	runtimeFsRenameRequestSchema,
 	runtimeFsStatRequestSchema,
 	runtimeFsStatResponseSchema,
+	runtimeFsUploadFileRequestSchema,
+	runtimeFsUploadFileResponseSchema,
 	runtimeFsWriteFileRequestSchema,
 	runtimeFsWriteFileResponseSchema,
 	runtimeGitCheckoutRequestSchema,
@@ -692,6 +696,10 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeFsWriteFileRequest,
 		) => Promise<RuntimeFsWriteFileResponse>;
+		uploadFile: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeFsUploadFileRequest,
+		) => Promise<RuntimeFsUploadFileResponse>;
 		stat: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsStatRequest) => Promise<RuntimeFsStatResponse>;
 		createEntry: (
 			scope: RuntimeTrpcWorkspaceScope,
@@ -1301,6 +1309,12 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeFsWriteFileResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.workspaceFsApi.writeFile(ctx.workspaceScope, input);
+			}),
+		uploadFile: workspaceProcedure
+			.input(runtimeFsUploadFileRequestSchema)
+			.output(runtimeFsUploadFileResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceFsApi.uploadFile(ctx.workspaceScope, input);
 			}),
 		stat: workspaceProcedure
 			.input(runtimeFsStatRequestSchema)
