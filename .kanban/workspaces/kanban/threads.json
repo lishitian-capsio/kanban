@@ -1,15 +1,6 @@
 {
   "threads": [
     {
-      "id": "3434ae10-5e66-420a-8e03-7b70b3d73379",
-      "agentId": "claude",
-      "name": "Per-provider 代理直连",
-      "titleSource": "auto",
-      "createdAt": 1782639747391,
-      "updatedAt": 1782742739408,
-      "pendingNextStep": "启动任务 e7e57"
-    },
-    {
       "id": "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
       "agentId": "claude",
       "name": "Fix board cards flashing in fullscreen",
@@ -70,15 +61,6 @@
       "titleSource": "auto",
       "createdAt": 1782702981036,
       "updatedAt": 1782702981036
-    },
-    {
-      "id": "3e599da8-ac7b-4c0a-b7bb-48bd0e7c10aa",
-      "agentId": "claude",
-      "name": "多 remote push 支持",
-      "titleSource": "auto",
-      "createdAt": 1782703239868,
-      "updatedAt": 1782703803131,
-      "pendingNextStep": "开始任务 90622（仓库代码多 remote push）"
     },
     {
       "id": "6a585585-b1b3-41e5-8785-009188294312",
@@ -172,10 +154,7 @@
     }
   ],
   "fullscreenTabs": {
-    "openThreadIds": [
-      "3e599da8-ac7b-4c0a-b7bb-48bd0e7c10aa",
-      "e60ea195-0a08-4edf-a21a-f47e5911b442"
-    ],
-    "activeThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442"
+    "openThreadIds": [],
+    "activeThreadId": null
   }
 }
