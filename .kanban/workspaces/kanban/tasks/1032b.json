@@ -1,0 +1,20 @@
+{
+  "id": "1032b",
+  "title": "免拉取感知:把开启 surface 的紧凑状态快照内联进 agent context(封顶、每轮刷新)",
+  "prompt": "这是「Kanban 三平权 surface 感知」重构的 T3。依赖 T2(能力块结构已就位)。本任务解决\"感知靠主动拉、冷启动瞎、状态会过期\"的摩擦:让深度 ≥ 只读的 surface,把当前状态的紧凑快照直接内联进 agent 的 context,agent 睁眼就见,不必先跑 CLI。CLI 退化成\"深挖细节 + 写操作\"。\n\n== 要做的 ==\n1) 为每个 surface 写一个紧凑 digest 构造器(纯函数、可单测):\n   - Tasks:看板摘要 —— 各列 + 每列任务(id、标题、column/state、依赖)。数据源用现成的 sharded task-shard-store 组装出的 board。\n   - Vault:文档索引 —— 每篇 title + type + status(现有 doc-type index 是雏形,复用/扩展)。\n   - Database:schema 摘要 —— 表 + 字段(只读、便宜)。\n2) 封顶与降级(务必):快照必须紧凑且有大小上限。看板/文档多了就退化成\"每列/每类计数 + 前 N 条标题\",而不是全量塞。参考既有教训:home 首绘有 64KB/msg cap,别把过期大 JSON 推进 context。给一个明确的字符/条目上限常量 + 降级策略,单测覆盖\"超限走摘要\"。\n3) 注入:快照由深度派生 —— depth>=read 才注入,不新增独立开关。挂在 T2 的对应能力块里(只读块就带快照)。位置:append-system-prompt.ts 的各 surface capability section + runtime-api.ts resolveHomeAgentAppendSystemPrompt 处提供构造快照所需的数据读取。\n4) 新鲜度:home/sidebar agent 的 append prompt 每轮/每次开会话重建 → 快照随之刷新,保证不过期。确认 home 路径确实每轮重建(若不是,给出让快照每轮刷新的最小改动)。CLI 任务 agent 是启动时定死,可接受(任务局部)。\n\n== 不做 ==\n- 不做\"状态变更 websocket 推流进 agent\"这类实时机制(YAGNI);每轮重建刷新即可。\n- 不加\"要不要快照\"的独立设置项(由深度派生)。\n\n== 验收 ==\n- 三个 digest 构造器有单测:正常给全量摘要;超限走计数+前 N 条降级;空 surface 给合理空态。\n- depth=off 不注入快照;read/readwrite 注入;快照内容随底层数据变化。\n- 大看板(造 N 百任务)不会撑爆 context —— 有上限断言。\n- 默认态下 sidebar agent 现在能\"睁眼看见\"当前看板摘要,无需先 task list。\n- typecheck 含 web:typecheck。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "98d352bf-cb23-490b-8d5d-8945798a7371",
+  "baseRef": "main",
+  "createdAt": 1782895094476,
+  "updatedAt": 1782895094476,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}
