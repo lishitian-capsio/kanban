@@ -13,8 +13,8 @@ import { cn } from "@/components/ui/cn";
  * popover hosting the agent vault-management on/off switch. Folding it in here keeps
  * it reachable without first opening the vault. The switch is the shared
  * {@link AgentAccessSwitch}, so it matches the Database access toggle exactly. (The
- * agent database-access gate itself lives in the Database view, next to the surface
- * it governs.)
+ * agent database-access gate lives in the sibling Database control button, mirroring
+ * this same split-button + popover layout.)
  */
 export function VaultControlButton({
 	isVaultOpen,

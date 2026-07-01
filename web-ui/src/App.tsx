@@ -1018,6 +1018,11 @@ export default function App(): ReactElement {
 								vaultSettingsDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
 								onToggleDatabase={hasNoProjects || selectedCard ? undefined : handleToggleDatabase}
 								isDatabaseOpen={isDatabaseOpen}
+								agentDatabaseAccessEnabled={vaultSettings.agentDatabaseAccessEnabled}
+								onAgentDatabaseAccessChange={(next) =>
+									void vaultSettings.setAgentDatabaseAccessEnabled(next)
+								}
+								databaseSettingsDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
 								onOpenFile={hasNoProjects ? undefined : () => fileSurfaceStore.openLibrary()}
 								onToggleHomeChat={isHomeChatAvailable ? handleToggleHomeChat : undefined}
 								isHomeChatOpen={chatDock.open}

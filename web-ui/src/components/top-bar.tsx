@@ -9,7 +9,6 @@ import {
 	ChevronDown,
 	CircleArrowDown,
 	Command,
-	Database,
 	FileText,
 	GitBranch,
 	Menu,
@@ -20,6 +19,7 @@ import {
 	User,
 } from "lucide-react";
 import { useState } from "react";
+import { DatabaseControlButton } from "@/components/database/database-control-button";
 import { HomeBoardSyncControl } from "@/components/home-board-sync-control";
 import { OpenWorkspaceButton } from "@/components/open-workspace-button";
 import {
@@ -328,6 +328,9 @@ export function TopBar({
 	vaultSettingsDisabled,
 	onToggleDatabase,
 	isDatabaseOpen,
+	agentDatabaseAccessEnabled,
+	onAgentDatabaseAccessChange,
+	databaseSettingsDisabled,
 	onOpenFile,
 	onToggleHomeChat,
 	isHomeChatOpen,
@@ -380,6 +383,9 @@ export function TopBar({
 	vaultSettingsDisabled?: boolean;
 	onToggleDatabase?: () => void;
 	isDatabaseOpen?: boolean;
+	agentDatabaseAccessEnabled?: boolean;
+	onAgentDatabaseAccessChange?: (next: boolean) => void;
+	databaseSettingsDisabled?: boolean;
 	/** Open the File surface (the binary file library; quick-open is reachable within). */
 	onOpenFile?: () => void;
 	onToggleHomeChat?: () => void;
@@ -582,16 +588,13 @@ export function TopBar({
 								/>
 							) : null}
 							{!hideProjectDependentActions && onToggleDatabase ? (
-								<Button
-									variant={isDatabaseOpen ? "primary" : "default"}
-									size="sm"
-									icon={<Database size={14} />}
-									onClick={onToggleDatabase}
-									className={cn("shrink-0", isDatabaseOpen ? "ring-1 ring-accent" : "kb-navbar-btn")}
-									title="Database"
-								>
-									Database
-								</Button>
+								<DatabaseControlButton
+									isDatabaseOpen={isDatabaseOpen === true}
+									onToggleDatabase={onToggleDatabase}
+									agentDatabaseAccessEnabled={agentDatabaseAccessEnabled ?? false}
+									onAgentDatabaseAccessChange={onAgentDatabaseAccessChange ?? (() => {})}
+									settingsDisabled={databaseSettingsDisabled}
+								/>
 							) : null}
 							{!hideProjectDependentActions && onOpenFile ? (
 								<Button
