@@ -1,0 +1,20 @@
+{
+  "id": "88b11",
+  "title": "开发 P2:文件系统块 编辑 + 保存(mtime 并发校验)",
+  "prompt": "按设计文档实现 P2(在 P1 之上)。先读设计文档与 P1 已落地代码。\n\nP2 范围:\n- 后端 workspaceFs 增 writeFile(路径安全、限制仓库根内)。返回/校验 mtime 用于并发。\n- 前端:右侧编辑器从只读转可编辑+保存(CodeMirror6 源码、md 编辑器);打开时记录文件 mtime,保存前比对,外部已改则弹确认「是否覆盖」。保存态/脏标记。\n- 不做新建/删除/重命名/移动(留 P3)。\n\n完成:web:typecheck + 后端 typecheck + lint + 相关测试(含并发覆盖用例)通过。遵循 AGENTS.md。提交说明写清:writeFile 契约、mtime 并发策略、编辑器接线。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782872603410,
+  "updatedAt": 1782872603410,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}

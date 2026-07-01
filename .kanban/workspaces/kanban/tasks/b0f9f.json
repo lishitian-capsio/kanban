@@ -1,0 +1,20 @@
+{
+  "id": "b0f9f",
+  "title": "开发 P1:文件系统块 后端 list/read + 懒加载树 + 只读查看",
+  "prompt": "按设计任务(.plan/docs/ 下 File『文件系统』块设计文档)实现 P1。先完整读设计文档,严格据其组件边界/契约/安全性能落实;冲突以实际代码为准并在提交说明指出。\n\nP1 范围:\n- 后端:新增路径安全的 workspaceFs tRPC 的 listDir / readFile(限制在仓库根内、防 .. 与软链逃逸、懒加载一次一层、遵循 .gitignore 并隐藏 .git/.kanban、size cap、二进制识别)。契约更新 api-contract / tRPC。遵循「No sync subprocess on hot paths」。\n- 前端:File 顶部两个子 tab「文件系统/上传」(上传沿用现有库不动);文件系统 tab 内左侧懒加载文件树(点开目录才拉该层、大目录虚拟化)+「显示隐藏项」开关;右侧只读查看:CodeMirror 6(懒加载、按扩展名高亮)/ markdown 复用现有 md 编辑器只读 / 图片预览复用 FileThumbnail / 超大文件只读或拒开。面包屑。\n- 仍是 overlay,board 不 unmount;复用 file-surface store/overlay/路由,不新造第二套弹窗。\n- 本期只读,不做写入/增删改移(留 P2/P3)。\n\n完成:web:typecheck + 后端 typecheck + lint + 相关测试通过(含 workspaceFs 安全用例:越界/软链/gitignore 过滤)。遵循 AGENTS.md web-ui 约定。提交说明写清:workspaceFs 契约、两 tab 接线、树/查看组件位置。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782872602034,
+  "updatedAt": 1782872602034,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}

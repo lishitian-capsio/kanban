@@ -1,0 +1,20 @@
+{
+  "id": "33608",
+  "title": "开发 P3:文件系统块 新建/重命名/删除/移动 + 拖拽",
+  "prompt": "按设计文档实现 P3(在 P1/P2 之上)。先读设计文档与已落地代码。\n\nP3 范围:\n- 后端 workspaceFs 增 create(文件/文件夹)/ rename / delete / move,全部路径安全、限制仓库根内、防越界与软链逃逸;删除给明确语义(移入回收站或直接删,按设计定,并有确认)。\n- 前端:文件树右键菜单(新建文件/新建文件夹/重命名/删除)+ 拖拽移动;操作后局部刷新对应目录层,不整树重拉。危险操作(删除/覆盖)确认。\n\n完成:web:typecheck + 后端 typecheck + lint + 相关测试(含各操作安全用例)通过。遵循 AGENTS.md。提交说明写清:各操作契约与安全校验、删除语义、拖拽移动实现。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": true,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c",
+  "baseRef": "main",
+  "createdAt": 1782872604831,
+  "updatedAt": 1782872604831,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}
