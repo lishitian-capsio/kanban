@@ -68,6 +68,8 @@ import type {
 	RuntimeFsEntryMutationResponse,
 	RuntimeFsListDirRequest,
 	RuntimeFsListDirResponse,
+	RuntimeFsListPathsRequest,
+	RuntimeFsListPathsResponse,
 	RuntimeFsMoveRequest,
 	RuntimeFsReadFileRequest,
 	RuntimeFsReadFileResponse,
@@ -266,6 +268,8 @@ import {
 	runtimeFsEntryMutationResponseSchema,
 	runtimeFsListDirRequestSchema,
 	runtimeFsListDirResponseSchema,
+	runtimeFsListPathsRequestSchema,
+	runtimeFsListPathsResponseSchema,
 	runtimeFsMoveRequestSchema,
 	runtimeFsReadFileRequestSchema,
 	runtimeFsReadFileResponseSchema,
@@ -684,6 +688,10 @@ export interface RuntimeTrpcContext {
 	} & WorkspaceDbApi;
 	workspaceFsApi: {
 		listDir: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsListDirRequest) => Promise<RuntimeFsListDirResponse>;
+		listPaths: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeFsListPathsRequest,
+		) => Promise<RuntimeFsListPathsResponse>;
 		readFile: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeFsReadFileRequest,
@@ -1291,6 +1299,12 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeFsListDirResponseSchema)
 			.query(async ({ ctx, input }) => {
 				return await ctx.workspaceFsApi.listDir(ctx.workspaceScope, input);
+			}),
+		listPaths: workspaceProcedure
+			.input(runtimeFsListPathsRequestSchema)
+			.output(runtimeFsListPathsResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceFsApi.listPaths(ctx.workspaceScope, input);
 			}),
 		readFile: workspaceProcedure
 			.input(runtimeFsReadFileRequestSchema)

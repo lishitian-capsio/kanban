@@ -9,6 +9,7 @@ import {
 	fsDeleteEntry,
 	fsDownloadEntry,
 	fsListDir,
+	fsListPaths,
 	fsMove,
 	fsReadFile,
 	fsRename,
@@ -613,6 +614,68 @@ describe("workspace-fs-api", () => {
 		it("fails when the target directory does not exist", async () => {
 			const result = await fsUploadFile(repo.path, { dir: "nope", name: "a.txt", data: b64("x") });
 			expect(result.ok).toBe(false);
+		});
+	});
+
+	describe("listPaths", () => {
+		it("lists non-ignored file paths via git ls-files, excluding .git/.kanban and gitignored files", async () => {
+			const result = await fsListPaths(repo.path, {});
+			expect(result.ok).toBe(true);
+			expect(result.isGitRepository).toBe(true);
+			expect(result.truncated).toBe(false);
+			expect(result.paths).toContain("readme.md");
+			expect(result.paths).toContain("app.ts");
+			expect(result.paths).toContain("src/index.ts");
+			// gitignored files and the always-hidden engine dirs never appear.
+			expect(result.paths).not.toContain("ignored.log");
+			expect(result.paths.some((p) => p.startsWith("node_modules/"))).toBe(false);
+			expect(result.paths.some((p) => p.startsWith(".kanban/"))).toBe(false);
+			expect(result.paths.some((p) => p.startsWith(".git/"))).toBe(false);
+			// Directories are excluded — files only.
+			expect(result.paths).not.toContain("src");
+		});
+
+		it("includes untracked-but-not-ignored files (git ls-files --others)", async () => {
+			writeFileSync(join(repo.path, "fresh.ts"), "export const y = 2;\n");
+			const result = await fsListPaths(repo.path, {});
+			expect(result.paths).toContain("fresh.ts");
+		});
+
+		it("excludes a tracked .kanban/board-ref (ls-files would otherwise surface it)", async () => {
+			// The board-ref is the one .kanban file the code branch tracks; it must
+			// never leak into the file index.
+			writeFileSync(join(repo.path, ".kanban", "board-ref"), '{"version":1,"branch":"kanban/board"}\n');
+			execFileSync("git", ["add", "-f", ".kanban/board-ref"], { cwd: repo.path });
+			const result = await fsListPaths(repo.path, {});
+			expect(result.paths.some((p) => p.startsWith(".kanban"))).toBe(false);
+		});
+
+		it("caps the result and reports truncation (no silent cut)", async () => {
+			for (let i = 0; i < 20; i += 1) {
+				writeFileSync(join(repo.path, `f${i}.txt`), "x\n");
+			}
+			const result = await fsListPaths(repo.path, { limit: 5 });
+			expect(result.ok).toBe(true);
+			expect(result.paths.length).toBe(5);
+			expect(result.truncated).toBe(true);
+		});
+
+		it("falls back to a bounded walk in a non-git working tree, hiding dotfiles", async () => {
+			const plain = createTempDir("kanban-fs-plain-");
+			try {
+				writeFileSync(join(plain.path, "a.txt"), "a\n");
+				mkdirSync(join(plain.path, "sub"));
+				writeFileSync(join(plain.path, "sub", "b.txt"), "b\n");
+				writeFileSync(join(plain.path, ".secret"), "s\n");
+				const result = await fsListPaths(plain.path, {});
+				expect(result.ok).toBe(true);
+				expect(result.isGitRepository).toBe(false);
+				expect(result.paths).toContain("a.txt");
+				expect(result.paths).toContain("sub/b.txt");
+				expect(result.paths).not.toContain(".secret");
+			} finally {
+				plain.cleanup();
+			}
 		});
 	});
 });

@@ -1859,6 +1859,36 @@ export const runtimeFsListDirResponseSchema = z.object({
 });
 export type RuntimeFsListDirResponse = z.infer<typeof runtimeFsListDirResponseSchema>;
 
+// --- listPaths: flat working-tree FILE path index for Quick Open (⌘P) ----------
+// A query-free, one-shot channel that returns repo-root-relative POSIX paths of
+// every FILE in the working tree that git would NOT ignore — sourced from a single
+// `git ls-files` (tracked + untracked-minus-ignored), falling back to a bounded,
+// dotfile-hiding walk in a non-git tree. `.git`/`.kanban` are excluded at any
+// depth (the board-ref file is tracked, so ls-files would otherwise surface it).
+// The list is CAPPED: when the tree has more files than the cap, `paths` holds the
+// first `cap` and `truncated: true` is set so the UI can say so — never a silent
+// cut (AGENTS.md: no-silent-caps). Directories are excluded (Quick Open opens
+// files); fuzzy matching happens client-side (fzf), so no query is sent.
+export const runtimeFsListPathsRequestSchema = z.object({
+	// Max paths to return. Clamped server-side to a hard ceiling; a default applies
+	// when omitted.
+	limit: z.number().int().positive().optional(),
+});
+export type RuntimeFsListPathsRequest = z.infer<typeof runtimeFsListPathsRequestSchema>;
+
+export const runtimeFsListPathsResponseSchema = z.object({
+	ok: z.boolean(),
+	// Repo-root-relative POSIX file paths (files only; directories excluded).
+	paths: z.array(z.string()),
+	// True when the working tree has more files than the cap; `paths` holds the
+	// first `cap` and the UI shows a "results truncated" hint.
+	truncated: z.boolean(),
+	// True when the working tree is a git repository (the ls-files fast path ran).
+	isGitRepository: z.boolean(),
+	error: z.string().optional(),
+});
+export type RuntimeFsListPathsResponse = z.infer<typeof runtimeFsListPathsResponseSchema>;
+
 export const runtimeFsReadFileRequestSchema = z.object({
 	path: z.string(),
 });

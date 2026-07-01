@@ -1,7 +1,8 @@
 import * as Switch from "@radix-ui/react-switch";
-import { FilePlus, FolderPlus, RefreshCw, Upload } from "lucide-react";
+import { FilePlus, FolderPlus, FolderSearch, RefreshCw, Upload } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 
 import { notifyError, showAppToast } from "@/components/app-toaster";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "@/components/ui/dialog";
+import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { RuntimeFsEntry } from "@/runtime/types";
@@ -24,6 +26,7 @@ import { FileTree } from "./file-tree";
 import { FileViewerPane } from "./file-viewer-pane";
 import { FsNamePromptDialog } from "./fs-name-prompt-dialog";
 import { isPathInside, posixBaseName, posixDirName, posixJoin } from "./fs-path";
+import { FsQuickOpen } from "./fs-quick-open";
 import { useFsDownload } from "./use-fs-download";
 import { useFsMutations } from "./use-fs-mutations";
 import { useFsTree } from "./use-fs-tree";
@@ -33,6 +36,13 @@ interface FileSystemExplorerProps {
 	workspaceId: string | null;
 	/** Currently-open path (mirrors the store's `fsPath`). */
 	fsPath: string | null;
+	/**
+	 * Whether this explorer is the currently-visible surface (its tab is active and
+	 * the overlay is open). Scopes the ⌘P Quick Open hotkey so it fires only here —
+	 * the explorer stays mounted (hidden) behind the uploads tab, so mount alone
+	 * can't gate the shortcut.
+	 */
+	active: boolean;
 	/** Open a path in the right pane, or clear it with `null` (writes `?fsPath`). */
 	onOpenPath: (path: string | null) => void;
 	/** Report the open file's unsaved-changes state up to the overlay's dirty guard. */
@@ -87,11 +97,13 @@ type PromptState =
 export function FileSystemExplorer({
 	workspaceId,
 	fsPath,
+	active,
 	onOpenPath,
 	onDirtyChange,
 	guardNavigation,
 }: FileSystemExplorerProps): React.ReactElement {
 	const [showHidden, setShowHidden] = useState(false);
+	const [quickOpenOpen, setQuickOpenOpen] = useState(false);
 	const tree = useFsTree(workspaceId, showHidden);
 	const { expandDir, reloadDir, reload } = tree;
 	const mutations = useFsMutations(workspaceId);
@@ -125,6 +137,24 @@ export function FileSystemExplorer({
 		"focus",
 		useCallback(() => reload(), [reload]),
 	);
+
+	// ⌘/Ctrl+P opens Quick Open (VS Code's "Go to File"). Scoped to `active` so it
+	// fires only while THIS tab is the visible surface — never while the uploads tab
+	// is up (the explorer stays mounted behind it) — and can't collide with the
+	// document palette's ⌘K. `preventDefault` swallows the browser Print shortcut.
+	useHotkeys(
+		"mod+p",
+		() => setQuickOpenOpen(true),
+		{ enabled: active, enableOnFormTags: true, enableOnContentEditable: true, preventDefault: true },
+		[active],
+	);
+
+	// Never leave the palette open once this surface is hidden (tab switch / close).
+	useEffect(() => {
+		if (!active) {
+			setQuickOpenOpen(false);
+		}
+	}, [active]);
 
 	// After a mutation, refresh a directory in place and make sure it is visible.
 	const refreshDir = useCallback(
@@ -289,6 +319,22 @@ export function FileSystemExplorer({
 						</Switch.Root>
 						Hidden
 					</span>
+					<Tooltip
+						content={
+							<span className="flex items-center gap-1.5">
+								Go to file
+								<Kbd>⌘P</Kbd>
+							</span>
+						}
+					>
+						<Button
+							variant="ghost"
+							size="sm"
+							icon={<FolderSearch size={13} />}
+							onClick={() => setQuickOpenOpen(true)}
+							aria-label="Go to file"
+						/>
+					</Tooltip>
 					<Tooltip content="New file">
 						<Button
 							variant="ghost"
@@ -371,6 +417,17 @@ export function FileSystemExplorer({
 
 			{/* Hidden picker backing the "Upload files" button + context-menu item. */}
 			<input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFileInputChange} tabIndex={-1} />
+
+			{/* ⌘P Quick Open — routes the open through the dirty guard, exactly like a
+			    tree click, so an unsaved edit is confirmed before navigating away. */}
+			{quickOpenOpen ? (
+				<FsQuickOpen
+					open
+					workspaceId={workspaceId}
+					onOpenPath={(path) => guardNavigation(() => onOpenPath(path))}
+					onClose={() => setQuickOpenOpen(false)}
+				/>
+			) : null}
 
 			{prompt ? (
 				<FsNamePromptDialog

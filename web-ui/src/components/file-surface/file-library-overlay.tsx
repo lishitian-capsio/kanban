@@ -161,6 +161,7 @@ export function FileLibraryOverlay({
 						<FileSystemExplorer
 							workspaceId={workspaceId}
 							fsPath={fsPath}
+							active={open && filesTab === "fs"}
 							onOpenPath={onOpenFsPath}
 							onDirtyChange={setDirty}
 							guardNavigation={guard}

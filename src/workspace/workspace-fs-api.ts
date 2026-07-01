@@ -31,6 +31,8 @@ import type {
 	RuntimeFsEntryMutationResponse,
 	RuntimeFsListDirRequest,
 	RuntimeFsListDirResponse,
+	RuntimeFsListPathsRequest,
+	RuntimeFsListPathsResponse,
 	RuntimeFsMoveRequest,
 	RuntimeFsReadFileRequest,
 	RuntimeFsReadFileResponse,
@@ -62,6 +64,16 @@ const FS_DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
 const FS_UPLOAD_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
 // Bytes sniffed from a file's head to decide binary-vs-text when the mime is unknown.
 const BINARY_SNIFF_BYTES = 8192;
+
+// Quick Open (`listPaths`) result caps: default when the client omits `limit`,
+// and a hard ceiling it is clamped to. Bounds both the payload size and the
+// client-side fzf index; over the cap the response is `truncated` (never silent).
+const FS_LIST_PATHS_DEFAULT_CAP = 10000;
+const FS_LIST_PATHS_MAX_CAP = 50000;
+// `git ls-files` can emit the whole tree's path list at once; give it plenty of
+// room (a path list is small per-entry but a monorepo has many). On overflow the
+// spawn errors and we degrade to the bounded walk, which stops at the cap.
+const LS_FILES_MAX_BUFFER = 64 * 1024 * 1024;
 
 // Directory names that are ALWAYS hidden regardless of `showHidden` — the git
 // metadata dir and Kanban's own runtime/board home. Hidden at every depth.
@@ -571,6 +583,120 @@ export async function fsListDir(root: string, input: RuntimeFsListDirRequest): P
 	});
 
 	return { ok: true, path: dirRel, entries, isGitRepository: probe.isGitRepository };
+}
+
+// -----------------------------------------------------------------------------
+// listPaths — flat FILE path index for Quick Open (⌘P).
+//
+// Fast path: one `git ls-files -z --cached --others --exclude-standard` yields
+// tracked + untracked-minus-ignored files in a single subprocess (gitignore for
+// free). Fallback (non-git tree, or git unavailable/overflowing): a bounded,
+// sequential BFS walk that hides dotfiles and stops at the cap — sequential
+// readdir (never a recursive fan-out) so a huge tree can't exhaust file handles
+// (AGENTS.md: large-workspace EMFILE). `.git`/`.kanban` are excluded at any depth.
+// -----------------------------------------------------------------------------
+
+/** True when any path segment is an always-hidden engine dir (`.git`/`.kanban`). */
+function isReservedRelPath(rel: string): boolean {
+	return rel.split("/").some((segment) => ALWAYS_HIDDEN_NAMES.has(segment));
+}
+
+/**
+ * Run `git ls-files` for the working tree's non-ignored file paths. Returns the
+ * repo-relative POSIX paths (engine dirs filtered out), or `null` when this is
+ * not a git repository / git is unavailable / its output overflowed the buffer —
+ * in which case the caller falls back to {@link walkFilePaths}.
+ */
+function runLsFiles(root: string): Promise<string[] | null> {
+	return new Promise<string[] | null>((resolvePromise) => {
+		const child = execFile(
+			"git",
+			["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+			{ cwd: root, timeout: GIT_TIMEOUT_MS, maxBuffer: LS_FILES_MAX_BUFFER, env: createGitProcessEnv() },
+			(error, stdout) => {
+				if (error) {
+					// Not a git repo (128), git missing, timeout, or maxBuffer overflow:
+					// degrade to the bounded walk.
+					resolvePromise(null);
+					return;
+				}
+				const paths: string[] = [];
+				for (const line of (stdout ?? "").split("\0")) {
+					const value = line.replace(/\\/g, "/");
+					if (value && !isReservedRelPath(value)) {
+						paths.push(value);
+					}
+				}
+				resolvePromise(paths);
+			},
+		);
+		child.on("error", () => resolvePromise(null));
+	});
+}
+
+/**
+ * Bounded, sequential working-tree walk yielding repo-relative POSIX file paths,
+ * hiding dotfiles and the engine dirs and never following symlinks. Walks one
+ * directory at a time (BFS) and stops as soon as it has `cap + 1` files, so a
+ * giant tree neither exhausts file handles nor over-collects: `truncated` is then
+ * true and the extra sentinel file is dropped.
+ */
+async function walkFilePaths(root: string, cap: number): Promise<{ paths: string[]; truncated: boolean }> {
+	const hardStop = cap + 1;
+	const paths: string[] = [];
+	const queue: string[] = [""];
+	while (queue.length > 0 && paths.length < hardStop) {
+		const dir = queue.shift() as string;
+		let dirents: Dirent[];
+		try {
+			dirents = await readdir(joinNative(root, dir), { withFileTypes: true });
+		} catch {
+			continue; // A racing delete / unreadable dir: skip it.
+		}
+		dirents.sort((a, b) => a.name.localeCompare(b.name));
+		for (const dirent of dirents) {
+			const name = dirent.name;
+			if (ALWAYS_HIDDEN_NAMES.has(name) || name.startsWith(".") || dirent.isSymbolicLink()) {
+				continue;
+			}
+			const rel = dir ? `${dir}/${name}` : name;
+			if (dirent.isDirectory()) {
+				queue.push(rel);
+			} else if (dirent.isFile()) {
+				paths.push(rel);
+				if (paths.length >= hardStop) {
+					break;
+				}
+			}
+		}
+	}
+	return { paths: paths.slice(0, cap), truncated: paths.length > cap };
+}
+
+export async function fsListPaths(
+	root: string,
+	input: RuntimeFsListPathsRequest,
+): Promise<RuntimeFsListPathsResponse> {
+	const cap = Math.min(Math.max(input.limit ?? FS_LIST_PATHS_DEFAULT_CAP, 1), FS_LIST_PATHS_MAX_CAP);
+
+	const gitPaths = await runLsFiles(root);
+	if (gitPaths) {
+		const truncated = gitPaths.length > cap;
+		return {
+			ok: true,
+			paths: truncated ? gitPaths.slice(0, cap) : gitPaths,
+			truncated,
+			isGitRepository: true,
+		};
+	}
+
+	try {
+		const { paths, truncated } = await walkFilePaths(root, cap);
+		return { ok: true, paths, truncated, isGitRepository: false };
+	} catch (error) {
+		log.debug("listPaths walk failed", { error });
+		return { ok: false, paths: [], truncated: false, isGitRepository: false, error: "Failed to list files." };
+	}
 }
 
 // -----------------------------------------------------------------------------
@@ -1168,6 +1294,10 @@ export async function fsDeleteEntry(
 
 export interface WorkspaceFsApi {
 	listDir: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsListDirRequest) => Promise<RuntimeFsListDirResponse>;
+	listPaths: (
+		scope: RuntimeTrpcWorkspaceScope,
+		input: RuntimeFsListPathsRequest,
+	) => Promise<RuntimeFsListPathsResponse>;
 	readFile: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsReadFileRequest) => Promise<RuntimeFsReadFileResponse>;
 	downloadEntry: (
 		scope: RuntimeTrpcWorkspaceScope,
@@ -1197,6 +1327,7 @@ export interface WorkspaceFsApi {
 export function createWorkspaceFsApi(): WorkspaceFsApi {
 	return {
 		listDir: (scope, input) => fsListDir(scope.workspacePath, input),
+		listPaths: (scope, input) => fsListPaths(scope.workspacePath, input),
 		readFile: (scope, input) => fsReadFile(scope.workspacePath, input),
 		downloadEntry: (scope, input) => fsDownloadEntry(scope.workspacePath, input),
 		writeFile: (scope, input) => fsWriteFile(scope.workspacePath, input),
