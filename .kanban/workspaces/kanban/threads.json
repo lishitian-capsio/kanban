@@ -162,7 +162,9 @@
     }
   ],
   "fullscreenTabs": {
-    "openThreadIds": [],
-    "activeThreadId": null
+    "openThreadIds": [
+      "6588c4a9-28df-4a75-9774-172e2bb7832c"
+    ],
+    "activeThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c"
   }
 }
