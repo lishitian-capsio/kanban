@@ -2,6 +2,7 @@ import * as ContextMenu from "@radix-ui/react-context-menu";
 import type { LucideIcon } from "lucide-react";
 import {
 	ChevronRight,
+	Download,
 	File,
 	FileCode,
 	FilePlus,
@@ -59,6 +60,8 @@ interface FileTreeProps {
 	onRequestCreate: (parentDir: string, kind: "file" | "dir") => void;
 	onRequestRename: (entry: RuntimeFsEntry) => void;
 	onRequestDelete: (entry: RuntimeFsEntry) => void;
+	/** Download an entry: a file directly, a directory as a zip. */
+	onRequestDownload: (entry: RuntimeFsEntry) => void;
 	/** Move `fromPath` into directory `toDir` ("" = root). */
 	onMove: (fromPath: string, toDir: string) => void;
 }
@@ -117,6 +120,7 @@ export function FileTree({
 	onRequestCreate,
 	onRequestRename,
 	onRequestDelete,
+	onRequestDownload,
 	onMove,
 }: FileTreeProps): React.ReactElement {
 	// The current drop target: null = none, "" = repo root, else a directory path.
@@ -230,6 +234,12 @@ export function FileTree({
 							<ContextMenu.Separator className="my-1 h-px bg-border" />
 						</>
 					) : null}
+					<MenuItem
+						icon={<Download size={14} />}
+						label={isDir ? "Download as ZIP" : "Download"}
+						onSelect={() => onRequestDownload(entry)}
+					/>
+					<ContextMenu.Separator className="my-1 h-px bg-border" />
 					<MenuItem icon={<Pencil size={14} />} label="Rename" onSelect={() => onRequestRename(entry)} />
 					<MenuItem icon={<Trash2 size={14} />} label="Delete" danger onSelect={() => onRequestDelete(entry)} />
 				</MenuContent>

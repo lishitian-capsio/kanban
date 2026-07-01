@@ -1,4 +1,4 @@
-import { Check, ClipboardCopy, Trash2 } from "lucide-react";
+import { Check, ClipboardCopy, Download, Trash2 } from "lucide-react";
 import type React from "react";
 import { useEffect, useState } from "react";
 
@@ -21,6 +21,7 @@ import { useCopyToClipboard } from "@/utils/react-use";
 
 import { CATEGORY_SINGULAR_LABELS, FileCategoryIcon, formatAddedAt, formatFileSize } from "./file-meta";
 import { useFileBytes } from "./use-file-bytes";
+import { useFileDownload } from "./use-file-download";
 
 interface FileDetailPanelProps {
 	workspaceId: string | null;
@@ -86,6 +87,7 @@ export function FileDetailPanel({ workspaceId, file, onRename, onDelete }: FileD
 	const [isDeleteOpen, setIsDeleteOpen] = useState(false);
 	const [copiedPath, setCopiedPath] = useState(false);
 	const [, copyToClipboard] = useCopyToClipboard();
+	const { downloadFile, isDownloading } = useFileDownload(workspaceId);
 
 	// Re-seed the local edit buffer when a different file is selected.
 	useEffect(() => {
@@ -137,6 +139,18 @@ export function FileDetailPanel({ workspaceId, file, onRename, onDelete }: FileD
 							aria-label="Copy repo-relative path"
 							onClick={() => {
 								void handleCopyPath();
+							}}
+						/>
+					</Tooltip>
+					<Tooltip content="Download file">
+						<Button
+							variant="default"
+							size="sm"
+							icon={<Download size={14} />}
+							aria-label="Download file"
+							disabled={isDownloading}
+							onClick={() => {
+								void downloadFile(file.id, file.name);
 							}}
 						/>
 					</Tooltip>

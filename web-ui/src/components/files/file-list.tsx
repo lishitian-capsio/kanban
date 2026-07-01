@@ -1,11 +1,15 @@
+import { Download } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
 
+import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
+import { Tooltip } from "@/components/ui/tooltip";
 import type { RuntimeFileItem } from "@/runtime/types";
 
 import { formatFileSize, groupFilesByCategory } from "./file-meta";
 import { FileThumbnail } from "./file-thumbnail";
+import { useFileDownload } from "./use-file-download";
 
 interface FileListProps {
 	workspaceId: string | null;
@@ -16,6 +20,7 @@ interface FileListProps {
 
 export function FileList({ workspaceId, files, selectedId, onSelect }: FileListProps): React.ReactElement {
 	const groups = useMemo(() => groupFilesByCategory(files), [files]);
+	const { downloadFile, isDownloading } = useFileDownload(workspaceId);
 
 	if (files.length === 0) {
 		return (
@@ -36,30 +41,50 @@ export function FileList({ workspaceId, files, selectedId, onSelect }: FileListP
 					{group.files.map((file) => {
 						const isSelected = file.id === selectedId;
 						return (
-							<button
+							<div
 								key={file.id}
-								type="button"
-								onClick={() => onSelect(file.id)}
 								className={cn(
-									"flex w-full items-center gap-3 border-b border-border px-4 py-2.5 text-left outline-none",
+									"group relative flex items-center border-b border-border",
 									isSelected ? "bg-surface-3" : "hover:bg-surface-2",
 								)}
 							>
-								<FileThumbnail workspaceId={workspaceId} file={file} size={36} />
-								<div className="flex min-w-0 flex-1 flex-col">
-									<span
+								<button
+									type="button"
+									onClick={() => onSelect(file.id)}
+									className="flex min-w-0 flex-1 items-center gap-3 px-4 py-2.5 text-left outline-none"
+								>
+									<FileThumbnail workspaceId={workspaceId} file={file} size={36} />
+									<div className="flex min-w-0 flex-1 flex-col">
+										<span
+											className={cn(
+												"truncate text-[13px]",
+												isSelected ? "text-text-primary" : "text-text-secondary",
+											)}
+										>
+											{file.name}
+										</span>
+										<span className="truncate text-[11px] text-text-tertiary">
+											{formatFileSize(file.size)} · {file.mime || "unknown type"}
+										</span>
+									</div>
+								</button>
+								<Tooltip content="Download file">
+									<Button
+										variant="ghost"
+										size="sm"
+										icon={<Download size={14} />}
+										aria-label={`Download ${file.name}`}
+										disabled={isDownloading}
 										className={cn(
-											"truncate text-[13px]",
-											isSelected ? "text-text-primary" : "text-text-secondary",
+											"mr-2 shrink-0 opacity-0 focus-visible:opacity-100 group-hover:opacity-100",
+											isSelected && "opacity-100",
 										)}
-									>
-										{file.name}
-									</span>
-									<span className="truncate text-[11px] text-text-tertiary">
-										{formatFileSize(file.size)} · {file.mime || "unknown type"}
-									</span>
-								</div>
-							</button>
+										onClick={() => {
+											void downloadFile(file.id, file.name);
+										}}
+									/>
+								</Tooltip>
+							</div>
 						);
 					})}
 				</div>

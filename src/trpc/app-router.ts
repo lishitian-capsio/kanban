@@ -63,6 +63,8 @@ import type {
 	RuntimeFsCreateEntryRequest,
 	RuntimeFsDeleteEntryRequest,
 	RuntimeFsDeleteEntryResponse,
+	RuntimeFsDownloadEntryRequest,
+	RuntimeFsDownloadEntryResponse,
 	RuntimeFsEntryMutationResponse,
 	RuntimeFsListDirRequest,
 	RuntimeFsListDirResponse,
@@ -257,6 +259,8 @@ import {
 	runtimeFsCreateEntryRequestSchema,
 	runtimeFsDeleteEntryRequestSchema,
 	runtimeFsDeleteEntryResponseSchema,
+	runtimeFsDownloadEntryRequestSchema,
+	runtimeFsDownloadEntryResponseSchema,
 	runtimeFsEntryMutationResponseSchema,
 	runtimeFsListDirRequestSchema,
 	runtimeFsListDirResponseSchema,
@@ -680,6 +684,10 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeFsReadFileRequest,
 		) => Promise<RuntimeFsReadFileResponse>;
+		downloadEntry: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeFsDownloadEntryRequest,
+		) => Promise<RuntimeFsDownloadEntryResponse>;
 		writeFile: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeFsWriteFileRequest,
@@ -1281,6 +1289,12 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeFsReadFileResponseSchema)
 			.query(async ({ ctx, input }) => {
 				return await ctx.workspaceFsApi.readFile(ctx.workspaceScope, input);
+			}),
+		downloadEntry: workspaceProcedure
+			.input(runtimeFsDownloadEntryRequestSchema)
+			.output(runtimeFsDownloadEntryResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceFsApi.downloadEntry(ctx.workspaceScope, input);
 			}),
 		writeFile: workspaceProcedure
 			.input(runtimeFsWriteFileRequestSchema)

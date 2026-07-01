@@ -2,10 +2,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import JSZip from "jszip";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	fsCreateEntry,
 	fsDeleteEntry,
+	fsDownloadEntry,
 	fsListDir,
 	fsMove,
 	fsReadFile,
@@ -162,6 +164,72 @@ describe("workspace-fs-api", () => {
 
 		it("errors when the path is a directory", async () => {
 			const result = await fsReadFile(repo.path, { path: "src" });
+			expect(result.ok).toBe(false);
+		});
+	});
+
+	describe("downloadEntry", () => {
+		it("returns a file's exact bytes as base64 with its detected mime", async () => {
+			const result = await fsDownloadEntry(repo.path, { path: "app.ts" });
+			expect(result.ok).toBe(true);
+			expect(result.isDirectory).toBe(false);
+			expect(result.tooLarge).toBe(false);
+			expect(result.fileName).toBe("app.ts");
+			expect(result.data).toBeDefined();
+			expect(Buffer.from(result.data ?? "", "base64").toString("utf8")).toBe("export const x = 1;\n");
+		});
+
+		it("preserves binary bytes round-trip", async () => {
+			const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0xff]);
+			writeFileSync(join(repo.path, "blob.bin"), bytes);
+			const result = await fsDownloadEntry(repo.path, { path: "blob.bin" });
+			expect(result.ok).toBe(true);
+			expect(Buffer.from(result.data ?? "", "base64").equals(bytes)).toBe(true);
+		});
+
+		it("zips a directory under a top-level folder and excludes .git/.kanban", async () => {
+			const result = await fsDownloadEntry(repo.path, { path: "src" });
+			expect(result.ok).toBe(true);
+			expect(result.isDirectory).toBe(true);
+			expect(result.fileName).toBe("src.zip");
+			expect(result.mimeType).toBe("application/zip");
+			const zip = await JSZip.loadAsync(Buffer.from(result.data ?? "", "base64"));
+			expect(Object.keys(zip.files)).toContain("src/index.ts");
+			expect(await zip.files["src/index.ts"]?.async("string")).toBe("console.log(1);\n");
+		});
+
+		it("zips the repo root and never packs the engine dirs", async () => {
+			const result = await fsDownloadEntry(repo.path, { path: "" });
+			expect(result.ok).toBe(true);
+			expect(result.isDirectory).toBe(true);
+			const zip = await JSZip.loadAsync(Buffer.from(result.data ?? "", "base64"));
+			const names = Object.keys(zip.files);
+			expect(names.some((name) => name.includes(".kanban/"))).toBe(false);
+			expect(names.some((name) => name.includes(".git/"))).toBe(false);
+			expect(names.some((name) => name.endsWith("/readme.md"))).toBe(true);
+		});
+
+		it("does not follow a symlink escaping the root when zipping", async () => {
+			writeFileSync(join(outside.path, "secret.txt"), "leak\n");
+			mkdirSync(join(repo.path, "bundle"));
+			writeFileSync(join(repo.path, "bundle", "kept.txt"), "ok\n");
+			symlinkSync(outside.path, join(repo.path, "bundle", "escape-link"));
+			const result = await fsDownloadEntry(repo.path, { path: "bundle" });
+			expect(result.ok).toBe(true);
+			const zip = await JSZip.loadAsync(Buffer.from(result.data ?? "", "base64"));
+			const names = Object.keys(zip.files);
+			expect(names).toContain("bundle/kept.txt");
+			expect(names.some((name) => name.includes("secret.txt"))).toBe(false);
+		});
+
+		it("rejects a `..` traversal path", async () => {
+			const result = await fsDownloadEntry(repo.path, { path: "../" });
+			expect(result.ok).toBe(false);
+			expect(result.error).toMatch(/outside/i);
+		});
+
+		it("errors on a missing path", async () => {
+			const result = await fsDownloadEntry(repo.path, { path: "nope.txt" });
 			expect(result.ok).toBe(false);
 		});
 	});

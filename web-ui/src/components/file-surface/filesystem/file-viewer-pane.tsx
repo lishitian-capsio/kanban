@@ -1,9 +1,11 @@
-import { ChevronRight, FileWarning } from "lucide-react";
+import { ChevronRight, Download, FileWarning } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo } from "react";
 
 import { formatFileSize } from "@/components/files/file-meta";
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip } from "@/components/ui/tooltip";
 import type { RuntimeFsReadFileResponse } from "@/runtime/types";
 
 import { FsFileEditor } from "./fs-file-editor";
@@ -16,6 +18,10 @@ interface FileViewerPaneProps {
 	path: string | null;
 	/** Report the open file's unsaved-changes state so navigation away can be guarded. */
 	onDirtyChange: (dirty: boolean) => void;
+	/** Download the open file's raw bytes (independent of the preview/edit channel). */
+	onDownload: (path: string) => void;
+	/** True while a download payload is being fetched (disables the download button). */
+	isDownloading: boolean;
 }
 
 function baseName(path: string): string {
@@ -37,7 +43,13 @@ function Placeholder({ children }: { children: React.ReactNode }): React.ReactEl
  * vault preview, text/code via lazy CodeMirror, images/audio/video inline, and a
  * metadata card for oversized or opaque-binary files.
  */
-export function FileViewerPane({ workspaceId, path, onDirtyChange }: FileViewerPaneProps): React.ReactElement {
+export function FileViewerPane({
+	workspaceId,
+	path,
+	onDirtyChange,
+	onDownload,
+	isDownloading,
+}: FileViewerPaneProps): React.ReactElement {
 	const { data, isLoading, errorMessage, refetch } = useFsFile(workspaceId, path);
 
 	// A read-only view (no path, loading, error, oversized, or a media/binary file)
@@ -83,6 +95,17 @@ export function FileViewerPane({ workspaceId, path, onDirtyChange }: FileViewerP
 				{data && !data.tooLarge ? (
 					<span className="ml-auto shrink-0 pl-3 text-text-tertiary">{formatFileSize(data.size)}</span>
 				) : null}
+				<Tooltip content="Download file">
+					<Button
+						variant="ghost"
+						size="sm"
+						className={data && !data.tooLarge ? "ml-2" : "ml-auto"}
+						icon={<Download size={14} />}
+						aria-label="Download file"
+						disabled={isDownloading}
+						onClick={() => onDownload(path)}
+					/>
+				</Tooltip>
 			</div>
 
 			<div className="min-h-0 flex-1 overflow-hidden">

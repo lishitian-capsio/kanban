@@ -19,10 +19,14 @@ import {
 	resolve,
 } from "node:path";
 
+import JSZip from "jszip";
+
 import type {
 	RuntimeFsCreateEntryRequest,
 	RuntimeFsDeleteEntryRequest,
 	RuntimeFsDeleteEntryResponse,
+	RuntimeFsDownloadEntryRequest,
+	RuntimeFsDownloadEntryResponse,
 	RuntimeFsEntry,
 	RuntimeFsEntryMutationResponse,
 	RuntimeFsListDirRequest,
@@ -48,6 +52,9 @@ const log = createLogger("workspace-fs");
 const FS_EDIT_MAX_BYTES = 1024 * 1024; // 1 MB
 // Binary/preview payloads (base64) above this are not sent; the UI shows metadata only.
 const FS_PREVIEW_MAX_BYTES = 8 * 1024 * 1024; // 8 MB
+// Download payload cap (a single file's bytes, or a directory zip's total
+// uncompressed bytes). Bounds the in-memory base64 held for a download response.
+const FS_DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
 // Bytes sniffed from a file's head to decide binary-vs-text when the mime is unknown.
 const BINARY_SNIFF_BYTES = 8192;
 
@@ -658,6 +665,127 @@ export async function fsReadFile(root: string, input: RuntimeFsReadFileRequest):
 }
 
 // -----------------------------------------------------------------------------
+// downloadEntry — binary-safe raw-byte download (file) / zip bundle (directory).
+//
+// Distinct from `readFile` (editable text / size-capped preview): this returns
+// EXACT on-disk bytes for a browser download. A file → its bytes + detected mime;
+// a directory → a base64 zip mirroring the on-disk tree under a `<dir>/` top
+// folder. `.git`/`.kanban` and symlinks are always excluded (symlinks are never
+// followed, so a link can't smuggle bytes in from outside the root or loop). The
+// payload is capped by {@link FS_DOWNLOAD_MAX_BYTES}; over it → `tooLarge`.
+// -----------------------------------------------------------------------------
+
+/** Thrown mid-walk when a directory's accumulated bytes exceed the download cap. */
+class DownloadTooLargeError extends Error {
+	constructor() {
+		super("The directory is too large to download.");
+		this.name = "DownloadTooLargeError";
+	}
+}
+
+/**
+ * Recursively add a directory's files to `zip` under `prefix` (a trailing-slashed
+ * archive path). Skips the always-hidden engine dirs and every symlink, and
+ * throws {@link DownloadTooLargeError} once the running total exceeds the cap.
+ * Returns the accumulated uncompressed byte count.
+ */
+async function addDirToZip(dirAbs: string, zip: JSZip, prefix: string, runningTotal: number): Promise<number> {
+	let total = runningTotal;
+	const dirents = await readdir(dirAbs, { withFileTypes: true });
+	for (const dirent of dirents) {
+		if (ALWAYS_HIDDEN_NAMES.has(dirent.name) || dirent.isSymbolicLink()) {
+			continue;
+		}
+		const childAbs = joinNative(dirAbs, dirent.name);
+		if (dirent.isDirectory()) {
+			total = await addDirToZip(childAbs, zip, `${prefix}${dirent.name}/`, total);
+		} else if (dirent.isFile()) {
+			let fileSize = 0;
+			try {
+				fileSize = (await stat(childAbs)).size;
+			} catch {
+				// A racing delete mid-walk: skip the vanished file.
+				continue;
+			}
+			total += fileSize;
+			if (total > FS_DOWNLOAD_MAX_BYTES) {
+				throw new DownloadTooLargeError();
+			}
+			try {
+				zip.file(`${prefix}${dirent.name}`, await readFileBytes(childAbs));
+			} catch {
+				// Unreadable/vanished mid-read: drop it, keep the rest of the bundle.
+				total -= fileSize;
+			}
+		}
+	}
+	return total;
+}
+
+export async function fsDownloadEntry(
+	root: string,
+	input: RuntimeFsDownloadEntryRequest,
+): Promise<RuntimeFsDownloadEntryResponse> {
+	const failure = (error: string): RuntimeFsDownloadEntryResponse => ({
+		ok: false,
+		fileName: "",
+		mimeType: "application/octet-stream",
+		isDirectory: false,
+		tooLarge: false,
+		error,
+	});
+
+	let absolute: string;
+	try {
+		absolute = resolveWithinRoot(root, input.path);
+		await assertRealWithinRoot(root, absolute);
+	} catch (error) {
+		if (error instanceof OutsideRootError) {
+			return failure(error.message);
+		}
+		return failure("File not found.");
+	}
+
+	let info: Awaited<ReturnType<typeof stat>>;
+	try {
+		info = await stat(absolute);
+	} catch {
+		return failure("File not found.");
+	}
+
+	// Root resolves to the repo dir itself, so its basename is the repo folder name;
+	// the `|| "archive"` only guards a pathological empty basename (e.g. "/").
+	const baseName = absolute.split(/[\\/]/g).pop() || "archive";
+
+	if (info.isDirectory()) {
+		const zip = new JSZip();
+		try {
+			await addDirToZip(absolute, zip, `${baseName}/`, 0);
+		} catch (error) {
+			if (error instanceof DownloadTooLargeError) {
+				return { ok: true, fileName: `${baseName}.zip`, mimeType: "application/zip", isDirectory: true, tooLarge: true };
+			}
+			return failure("Failed to read the directory.");
+		}
+		const data = await zip.generateAsync({ type: "base64" });
+		return { ok: true, fileName: `${baseName}.zip`, mimeType: "application/zip", data, isDirectory: true, tooLarge: false };
+	}
+
+	const mimeType = detectMimeType(baseName);
+	if (info.size > FS_DOWNLOAD_MAX_BYTES) {
+		return { ok: true, fileName: baseName, mimeType, isDirectory: false, tooLarge: true };
+	}
+
+	let buffer: Buffer;
+	try {
+		buffer = await readFileBytes(absolute);
+	} catch {
+		return failure("File not found.");
+	}
+	return { ok: true, fileName: baseName, mimeType, data: buffer.toString("base64"), isDirectory: false, tooLarge: false };
+}
+
+// -----------------------------------------------------------------------------
 // stat
 // -----------------------------------------------------------------------------
 
@@ -918,6 +1046,10 @@ export async function fsDeleteEntry(
 export interface WorkspaceFsApi {
 	listDir: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsListDirRequest) => Promise<RuntimeFsListDirResponse>;
 	readFile: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsReadFileRequest) => Promise<RuntimeFsReadFileResponse>;
+	downloadEntry: (
+		scope: RuntimeTrpcWorkspaceScope,
+		input: RuntimeFsDownloadEntryRequest,
+	) => Promise<RuntimeFsDownloadEntryResponse>;
 	writeFile: (
 		scope: RuntimeTrpcWorkspaceScope,
 		input: RuntimeFsWriteFileRequest,
@@ -939,6 +1071,7 @@ export function createWorkspaceFsApi(): WorkspaceFsApi {
 	return {
 		listDir: (scope, input) => fsListDir(scope.workspacePath, input),
 		readFile: (scope, input) => fsReadFile(scope.workspacePath, input),
+		downloadEntry: (scope, input) => fsDownloadEntry(scope.workspacePath, input),
 		writeFile: (scope, input) => fsWriteFile(scope.workspacePath, input),
 		stat: (scope, input) => fsStat(scope.workspacePath, input),
 		createEntry: (scope, input) => fsCreateEntry(scope.workspacePath, input),

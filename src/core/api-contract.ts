@@ -1883,6 +1883,35 @@ export const runtimeFsReadFileResponseSchema = z.object({
 });
 export type RuntimeFsReadFileResponse = z.infer<typeof runtimeFsReadFileResponseSchema>;
 
+// --- downloadEntry: raw-byte download channel (binary-safe) -----------------
+// Unlike `readFile` (which yields editable UTF-8 text or a size-capped preview),
+// this returns the EXACT on-disk bytes, base64-encoded, for a browser download.
+// A file yields its own bytes + detected mime; a directory yields a base64 zip of
+// its contents (mirroring the on-disk tree under a top-level `<dir>/` folder).
+// `.git`/`.kanban` and symlinks are always excluded. `data` is withheld when the
+// payload (a file's bytes, or a directory's total uncompressed bytes) exceeds the
+// download cap — the response then carries `tooLarge: true`.
+export const runtimeFsDownloadEntryRequestSchema = z.object({
+	path: z.string(),
+});
+export type RuntimeFsDownloadEntryRequest = z.infer<typeof runtimeFsDownloadEntryRequestSchema>;
+
+export const runtimeFsDownloadEntryResponseSchema = z.object({
+	ok: z.boolean(),
+	// Suggested download filename: the file's basename, or "<dir>.zip" for a directory.
+	fileName: z.string(),
+	// The file's detected mime (falls back to application/octet-stream); "application/zip" for a directory.
+	mimeType: z.string(),
+	// Base64 payload. Omitted when `tooLarge` or on error.
+	data: z.string().optional(),
+	// True when the target is a directory packaged as a zip; false for a single file.
+	isDirectory: z.boolean(),
+	// True when the payload exceeds the download size cap; `data` is withheld.
+	tooLarge: z.boolean(),
+	error: z.string().optional(),
+});
+export type RuntimeFsDownloadEntryResponse = z.infer<typeof runtimeFsDownloadEntryResponseSchema>;
+
 export const runtimeFsStatRequestSchema = z.object({
 	path: z.string(),
 });

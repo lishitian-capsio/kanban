@@ -24,6 +24,7 @@ import { FileTree } from "./file-tree";
 import { FileViewerPane } from "./file-viewer-pane";
 import { FsNamePromptDialog } from "./fs-name-prompt-dialog";
 import { isPathInside, posixBaseName, posixDirName, posixJoin } from "./fs-path";
+import { useFsDownload } from "./use-fs-download";
 import { useFsMutations } from "./use-fs-mutations";
 import { useFsTree } from "./use-fs-tree";
 
@@ -93,6 +94,7 @@ export function FileSystemExplorer({
 	const tree = useFsTree(workspaceId, showHidden);
 	const { expandDir, reloadDir, reload } = tree;
 	const mutations = useFsMutations(workspaceId);
+	const { downloadEntry, isDownloading } = useFsDownload(workspaceId);
 
 	const [prompt, setPrompt] = useState<PromptState>(null);
 	const [deleteTarget, setDeleteTarget] = useState<RuntimeFsEntry | null>(null);
@@ -278,12 +280,23 @@ export function FileSystemExplorer({
 							}
 							onRequestRename={(entry) => setPrompt({ kind: "rename", entry })}
 							onRequestDelete={(entry) => setDeleteTarget(entry)}
+							onRequestDownload={(entry) => {
+								void downloadEntry(entry.path);
+							}}
 							onMove={handleMove}
 						/>
 					)}
 				</div>
 			</div>
-			<FileViewerPane workspaceId={workspaceId} path={fsPath} onDirtyChange={onDirtyChange} />
+			<FileViewerPane
+				workspaceId={workspaceId}
+				path={fsPath}
+				onDirtyChange={onDirtyChange}
+				onDownload={(path) => {
+					void downloadEntry(path);
+				}}
+				isDownloading={isDownloading}
+			/>
 
 			{prompt ? (
 				<FsNamePromptDialog
