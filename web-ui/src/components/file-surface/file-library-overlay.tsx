@@ -24,8 +24,8 @@ interface FileLibraryOverlayProps {
 	onOpenPalette: () => void;
 	/** Switch the active sub-tab. */
 	onSelectTab: (tab: FilesSurfaceTab) => void;
-	/** Open a repo path in the filesystem explorer. */
-	onOpenFsPath: (path: string) => void;
+	/** Open a repo path in the filesystem explorer (`null` clears the selection). */
+	onOpenFsPath: (path: string | null) => void;
 }
 
 const TABS: { id: FilesSurfaceTab; label: string }[] = [

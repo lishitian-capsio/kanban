@@ -87,7 +87,7 @@ export function FileSurfaceProvider({
 		fileSurfaceStore.setFilesTab(tab);
 	}, []);
 
-	const handleOpenFsPath = useCallback((path: string) => {
+	const handleOpenFsPath = useCallback((path: string | null) => {
 		fileSurfaceStore.openFsPath(path);
 	}, []);
 

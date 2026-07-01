@@ -1,14 +1,36 @@
 import { execFile } from "node:child_process";
 import type { Dirent } from "node:fs";
-import { lstat, readdir, readFile as readFileBytes, realpath, stat } from "node:fs/promises";
-import { isAbsolute as isAbsoluteNative, join as joinNative, relative as relativeNative, resolve } from "node:path";
+import {
+	lstat,
+	mkdir,
+	readdir,
+	readFile as readFileBytes,
+	realpath,
+	rename,
+	rm,
+	stat,
+	writeFile,
+} from "node:fs/promises";
+import {
+	dirname as dirnameNative,
+	isAbsolute as isAbsoluteNative,
+	join as joinNative,
+	relative as relativeNative,
+	resolve,
+} from "node:path";
 
 import type {
+	RuntimeFsCreateEntryRequest,
+	RuntimeFsDeleteEntryRequest,
+	RuntimeFsDeleteEntryResponse,
 	RuntimeFsEntry,
+	RuntimeFsEntryMutationResponse,
 	RuntimeFsListDirRequest,
 	RuntimeFsListDirResponse,
+	RuntimeFsMoveRequest,
 	RuntimeFsReadFileRequest,
 	RuntimeFsReadFileResponse,
+	RuntimeFsRenameRequest,
 	RuntimeFsStatRequest,
 	RuntimeFsStatResponse,
 } from "../core/api-contract";
@@ -179,6 +201,91 @@ class OutsideRootError extends Error {
 	constructor(message = "Path resolves outside the workspace root.") {
 		super(message);
 		this.name = "OutsideRootError";
+	}
+}
+
+/**
+ * Signals a mutation whose target touches an always-hidden engine directory
+ * (`.git`/`.kanban`) at any depth. The explorer never lets these be created,
+ * renamed, moved, or deleted through this surface.
+ */
+class ReservedPathError extends Error {
+	constructor(message = "Cannot modify the .git or .kanban directory.") {
+		super(message);
+		this.name = "ReservedPathError";
+	}
+}
+
+/** Map a path-safety rejection to its friendly message; otherwise a fallback. */
+function mutationErrorMessage(error: unknown, fallback: string): string {
+	if (error instanceof OutsideRootError || error instanceof ReservedPathError) {
+		return error.message;
+	}
+	return fallback;
+}
+
+/** Map a Node fs error code to a friendly message; otherwise a fallback. */
+function fsSystemErrorMessage(error: unknown, fallback: string): string {
+	const code = (error as NodeJS.ErrnoException | undefined)?.code;
+	switch (code) {
+		case "ENOENT":
+			return "The parent directory does not exist.";
+		case "EEXIST":
+			return "An entry with that name already exists.";
+		case "ENOTEMPTY":
+			return "Directory is not empty.";
+		case "EACCES":
+		case "EPERM":
+			return "Permission denied.";
+		default:
+			return fallback;
+	}
+}
+
+/**
+ * Refuse any path whose components include an always-hidden engine dir at ANY
+ * depth. Mutations must never create/rename/move/delete inside `.git`/`.kanban`.
+ */
+function assertNotReservedPath(inputPath: string | undefined): void {
+	const normalized = (inputPath ?? "").replace(/\\/g, "/");
+	const segments = normalized.split("/").filter((segment) => segment.length > 0);
+	if (segments.some((segment) => ALWAYS_HIDDEN_NAMES.has(segment))) {
+		throw new ReservedPathError();
+	}
+}
+
+/**
+ * Validate a bare entry name (for `rename`): non-empty, not `.`/`..`, no path
+ * separators (so it can only land in the same directory), not a reserved dir.
+ * Returns an error message, or `null` when the name is acceptable.
+ */
+function validateBareName(name: string): string | null {
+	const trimmed = name.trim();
+	if (trimmed === "") {
+		return "Name cannot be empty.";
+	}
+	if (trimmed === "." || trimmed === "..") {
+		return "That name is not allowed.";
+	}
+	if (/[\\/]/.test(trimmed)) {
+		return "Name cannot contain a path separator.";
+	}
+	if (ALWAYS_HIDDEN_NAMES.has(trimmed)) {
+		return "That name is reserved.";
+	}
+	return null;
+}
+
+/**
+ * Symlink-escape guard for a target that does NOT yet exist (create/move dest):
+ * resolve the real path of the target's PARENT and confirm it stays inside the
+ * real root, so a symlinked parent can't be used to write outside the workspace.
+ */
+async function assertRealParentWithinRoot(root: string, target: string): Promise<void> {
+	const realRoot = await realpath(root);
+	const realParent = await realpath(dirnameNative(target));
+	if (!isPathWithinRoot(realRoot, realParent)) {
+		throw new OutsideRootError();
 	}
 }
 
@@ -364,6 +471,24 @@ async function buildEntry(root: string, absolute: string, name: string, gitIgnor
 	};
 }
 
+/**
+ * Build an entry for a single known-good path, resolving its gitIgnored flag via
+ * one `git check-ignore`. Used by `stat` and by the mutations to echo the
+ * resulting entry for incremental tree refresh.
+ */
+async function buildEntryWithGitignore(root: string, absolute: string): Promise<RuntimeFsEntry> {
+	const name = absolute.split(/[\\/]/g).pop() ?? "";
+	const rel = toPosixRelative(root, absolute);
+	let gitIgnored = false;
+	try {
+		const probe = await runCheckIgnore(root, [rel || name]);
+		gitIgnored = probe.ignored.has(rel);
+	} catch {
+		gitIgnored = false;
+	}
+	return buildEntry(root, absolute, name, gitIgnored);
+}
+
 // -----------------------------------------------------------------------------
 // listDir
 // -----------------------------------------------------------------------------
@@ -546,16 +671,172 @@ export async function fsStat(root: string, input: RuntimeFsStatRequest): Promise
 		return { ok: true, entry: null };
 	}
 
-	const name = absolute.split(/[\\/]/g).pop() ?? "";
-	const rel = toPosixRelative(root, absolute);
 	try {
-		const probe = await runCheckIgnore(root, [rel || name]);
-		const gitIgnored = probe.ignored.has(rel);
-		const entry = await buildEntry(root, absolute, name, gitIgnored);
+		const entry = await buildEntryWithGitignore(root, absolute);
 		return { ok: true, entry };
 	} catch {
 		return { ok: true, entry: null };
 	}
+}
+
+// -----------------------------------------------------------------------------
+// Mutations (P3): createEntry / rename / move / deleteEntry.
+//
+// Every mutation re-runs the full path-safety pipeline before any fs write:
+// reserved-dir guard (§4.3.4) → string sandbox (no `..`/absolute) → symlink-real
+// guard on the target (or its parent, for not-yet-existing targets). Failures
+// return `{ ok: false, error }` rather than throwing, so the UI can toast them.
+// -----------------------------------------------------------------------------
+
+export async function fsCreateEntry(
+	root: string,
+	input: RuntimeFsCreateEntryRequest,
+): Promise<RuntimeFsEntryMutationResponse> {
+	let absolute: string;
+	try {
+		assertNotReservedPath(input.path);
+		absolute = resolveWithinRoot(root, input.path);
+		await assertRealParentWithinRoot(root, absolute);
+	} catch (error) {
+		return { ok: false, error: mutationErrorMessage(error, "Invalid path.") };
+	}
+	if (!toPosixRelative(root, absolute)) {
+		return { ok: false, error: "A name is required." };
+	}
+	try {
+		await lstat(absolute);
+		return { ok: false, error: "An entry with that name already exists." };
+	} catch {
+		// Expected: the target must not already exist.
+	}
+	try {
+		if (input.kind === "dir") {
+			// Non-recursive: the parent directory must already exist.
+			await mkdir(absolute);
+		} else {
+			await writeFile(absolute, "", { flag: "wx" });
+		}
+	} catch (error) {
+		return { ok: false, error: fsSystemErrorMessage(error, "Failed to create the entry.") };
+	}
+	return { ok: true, entry: await buildEntryWithGitignore(root, absolute) };
+}
+
+export async function fsRename(root: string, input: RuntimeFsRenameRequest): Promise<RuntimeFsEntryMutationResponse> {
+	const nameError = validateBareName(input.newName);
+	if (nameError) {
+		return { ok: false, error: nameError };
+	}
+	const newName = input.newName.trim();
+	let sourceAbs: string;
+	try {
+		assertNotReservedPath(input.path);
+		sourceAbs = resolveWithinRoot(root, input.path);
+		await assertRealWithinRoot(root, sourceAbs);
+	} catch (error) {
+		return { ok: false, error: mutationErrorMessage(error, "File not found.") };
+	}
+	if (!toPosixRelative(root, sourceAbs)) {
+		return { ok: false, error: "Cannot rename the repository root." };
+	}
+	const targetAbs = joinNative(dirnameNative(sourceAbs), newName);
+	try {
+		await lstat(targetAbs);
+		return { ok: false, error: "An entry with that name already exists." };
+	} catch {
+		// Expected: no existing entry at the new name.
+	}
+	try {
+		await rename(sourceAbs, targetAbs);
+	} catch (error) {
+		return { ok: false, error: fsSystemErrorMessage(error, "Failed to rename the entry.") };
+	}
+	return { ok: true, entry: await buildEntryWithGitignore(root, targetAbs) };
+}
+
+export async function fsMove(root: string, input: RuntimeFsMoveRequest): Promise<RuntimeFsEntryMutationResponse> {
+	let fromAbs: string;
+	let toAbs: string;
+	try {
+		assertNotReservedPath(input.fromPath);
+		assertNotReservedPath(input.toPath);
+		fromAbs = resolveWithinRoot(root, input.fromPath);
+		await assertRealWithinRoot(root, fromAbs);
+		toAbs = resolveWithinRoot(root, input.toPath);
+		await assertRealParentWithinRoot(root, toAbs);
+	} catch (error) {
+		return { ok: false, error: mutationErrorMessage(error, "File not found.") };
+	}
+	const fromRel = toPosixRelative(root, fromAbs);
+	const toRel = toPosixRelative(root, toAbs);
+	if (!fromRel) {
+		return { ok: false, error: "Cannot move the repository root." };
+	}
+	if (!toRel) {
+		return { ok: false, error: "Invalid destination." };
+	}
+	if (toRel === fromRel) {
+		return { ok: false, error: "The source and destination are the same." };
+	}
+	// A directory cannot be moved inside itself or one of its descendants.
+	if (toRel.startsWith(`${fromRel}/`)) {
+		return { ok: false, error: "Cannot move a directory into itself." };
+	}
+	try {
+		await lstat(toAbs);
+		return { ok: false, error: "An entry already exists at the destination." };
+	} catch {
+		// Expected: the destination must be free.
+	}
+	try {
+		await rename(fromAbs, toAbs);
+	} catch (error) {
+		return { ok: false, error: fsSystemErrorMessage(error, "Failed to move the entry.") };
+	}
+	return { ok: true, entry: await buildEntryWithGitignore(root, toAbs) };
+}
+
+export async function fsDeleteEntry(
+	root: string,
+	input: RuntimeFsDeleteEntryRequest,
+): Promise<RuntimeFsDeleteEntryResponse> {
+	let absolute: string;
+	try {
+		assertNotReservedPath(input.path);
+		absolute = resolveWithinRoot(root, input.path);
+		await assertRealWithinRoot(root, absolute);
+	} catch (error) {
+		return { ok: false, error: mutationErrorMessage(error, "File not found.") };
+	}
+	if (!toPosixRelative(root, absolute)) {
+		return { ok: false, error: "Refusing to delete the repository root." };
+	}
+	let info: Awaited<ReturnType<typeof lstat>>;
+	try {
+		info = await lstat(absolute);
+	} catch {
+		return { ok: false, error: "File not found." };
+	}
+	if (info.isDirectory()) {
+		if (input.recursive !== true) {
+			const contents = await readdir(absolute);
+			if (contents.length > 0) {
+				return { ok: false, error: "Directory is not empty. Confirm a recursive delete." };
+			}
+		}
+		try {
+			await rm(absolute, { recursive: true, force: false });
+		} catch (error) {
+			return { ok: false, error: fsSystemErrorMessage(error, "Failed to delete the directory.") };
+		}
+	} else {
+		try {
+			await rm(absolute, { force: false });
+		} catch (error) {
+			return { ok: false, error: fsSystemErrorMessage(error, "Failed to delete the file.") };
+		}
+	}
+	return { ok: true };
 }
 
 // -----------------------------------------------------------------------------
@@ -566,6 +847,16 @@ export interface WorkspaceFsApi {
 	listDir: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsListDirRequest) => Promise<RuntimeFsListDirResponse>;
 	readFile: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsReadFileRequest) => Promise<RuntimeFsReadFileResponse>;
 	stat: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsStatRequest) => Promise<RuntimeFsStatResponse>;
+	createEntry: (
+		scope: RuntimeTrpcWorkspaceScope,
+		input: RuntimeFsCreateEntryRequest,
+	) => Promise<RuntimeFsEntryMutationResponse>;
+	rename: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsRenameRequest) => Promise<RuntimeFsEntryMutationResponse>;
+	move: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsMoveRequest) => Promise<RuntimeFsEntryMutationResponse>;
+	deleteEntry: (
+		scope: RuntimeTrpcWorkspaceScope,
+		input: RuntimeFsDeleteEntryRequest,
+	) => Promise<RuntimeFsDeleteEntryResponse>;
 }
 
 export function createWorkspaceFsApi(): WorkspaceFsApi {
@@ -573,5 +864,9 @@ export function createWorkspaceFsApi(): WorkspaceFsApi {
 		listDir: (scope, input) => fsListDir(scope.workspacePath, input),
 		readFile: (scope, input) => fsReadFile(scope.workspacePath, input),
 		stat: (scope, input) => fsStat(scope.workspacePath, input),
+		createEntry: (scope, input) => fsCreateEntry(scope.workspacePath, input),
+		rename: (scope, input) => fsRename(scope.workspacePath, input),
+		move: (scope, input) => fsMove(scope.workspacePath, input),
+		deleteEntry: (scope, input) => fsDeleteEntry(scope.workspacePath, input),
 	};
 }

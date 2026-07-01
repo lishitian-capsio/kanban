@@ -1,9 +1,17 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { fsListDir, fsReadFile, fsStat } from "../../src/workspace/workspace-fs-api";
+import {
+	fsCreateEntry,
+	fsDeleteEntry,
+	fsListDir,
+	fsMove,
+	fsReadFile,
+	fsRename,
+	fsStat,
+} from "../../src/workspace/workspace-fs-api";
 import { createTempDir } from "../utilities/temp-dir";
 
 function initGitRepo(root: string): void {
@@ -175,6 +183,145 @@ describe("workspace-fs-api", () => {
 			const result = await fsStat(repo.path, { path: "../../etc/passwd" });
 			expect(result.ok).toBe(false);
 			expect(result.error).toMatch(/outside/i);
+		});
+	});
+
+	describe("createEntry", () => {
+		it("creates an empty file and returns its entry", async () => {
+			const result = await fsCreateEntry(repo.path, { path: "src/new.ts", kind: "file" });
+			expect(result.ok).toBe(true);
+			expect(result.entry?.kind).toBe("file");
+			expect(result.entry?.path).toBe("src/new.ts");
+			expect(readFileSync(join(repo.path, "src", "new.ts"), "utf8")).toBe("");
+		});
+
+		it("creates a directory", async () => {
+			const result = await fsCreateEntry(repo.path, { path: "src/nested", kind: "dir" });
+			expect(result.ok).toBe(true);
+			expect(result.entry?.kind).toBe("dir");
+			expect(existsSync(join(repo.path, "src", "nested"))).toBe(true);
+		});
+
+		it("refuses to overwrite an existing entry", async () => {
+			const result = await fsCreateEntry(repo.path, { path: "app.ts", kind: "file" });
+			expect(result.ok).toBe(false);
+			expect(result.error).toMatch(/exist/i);
+			// The original content is untouched.
+			expect(readFileSync(join(repo.path, "app.ts"), "utf8")).toBe("export const x = 1;\n");
+		});
+
+		it("fails when the parent directory does not exist", async () => {
+			const result = await fsCreateEntry(repo.path, { path: "no-such-dir/file.ts", kind: "file" });
+			expect(result.ok).toBe(false);
+		});
+
+		it("rejects a `..` escape", async () => {
+			const result = await fsCreateEntry(repo.path, { path: "../evil.ts", kind: "file" });
+			expect(result.ok).toBe(false);
+			expect(result.error).toMatch(/outside/i);
+			expect(existsSync(join(outside.path, "..", "evil.ts"))).toBe(false);
+		});
+
+		it("refuses to create inside .kanban", async () => {
+			const result = await fsCreateEntry(repo.path, { path: ".kanban/evil.json", kind: "file" });
+			expect(result.ok).toBe(false);
+			expect(existsSync(join(repo.path, ".kanban", "evil.json"))).toBe(false);
+		});
+	});
+
+	describe("rename", () => {
+		it("renames a file within its directory", async () => {
+			const result = await fsRename(repo.path, { path: "src/index.ts", newName: "main.ts" });
+			expect(result.ok).toBe(true);
+			expect(result.entry?.path).toBe("src/main.ts");
+			expect(existsSync(join(repo.path, "src", "index.ts"))).toBe(false);
+			expect(existsSync(join(repo.path, "src", "main.ts"))).toBe(true);
+		});
+
+		it("rejects a newName containing a path separator", async () => {
+			const result = await fsRename(repo.path, { path: "app.ts", newName: "../app.ts" });
+			expect(result.ok).toBe(false);
+			expect(existsSync(join(repo.path, "app.ts"))).toBe(true);
+		});
+
+		it("rejects renaming onto an existing name", async () => {
+			const result = await fsRename(repo.path, { path: "src/index.ts", newName: "index.ts" });
+			expect(result.ok).toBe(false);
+		});
+
+		it("rejects an out-of-root source", async () => {
+			const result = await fsRename(repo.path, { path: "../secret.txt", newName: "x.txt" });
+			expect(result.ok).toBe(false);
+			expect(result.error).toMatch(/outside/i);
+		});
+	});
+
+	describe("move", () => {
+		it("moves a file into another directory", async () => {
+			const result = await fsMove(repo.path, { fromPath: "app.ts", toPath: "src/app.ts" });
+			expect(result.ok).toBe(true);
+			expect(result.entry?.path).toBe("src/app.ts");
+			expect(existsSync(join(repo.path, "app.ts"))).toBe(false);
+			expect(readFileSync(join(repo.path, "src", "app.ts"), "utf8")).toBe("export const x = 1;\n");
+		});
+
+		it("rejects when the destination already exists", async () => {
+			const result = await fsMove(repo.path, { fromPath: "app.ts", toPath: "src/index.ts" });
+			expect(result.ok).toBe(false);
+			expect(existsSync(join(repo.path, "app.ts"))).toBe(true);
+		});
+
+		it("refuses to move a directory into its own descendant", async () => {
+			mkdirSync(join(repo.path, "src", "deep"));
+			const result = await fsMove(repo.path, { fromPath: "src", toPath: "src/deep/src" });
+			expect(result.ok).toBe(false);
+		});
+
+		it("rejects an out-of-root destination", async () => {
+			const result = await fsMove(repo.path, { fromPath: "app.ts", toPath: "../app.ts" });
+			expect(result.ok).toBe(false);
+			expect(result.error).toMatch(/outside/i);
+			expect(existsSync(join(repo.path, "app.ts"))).toBe(true);
+		});
+	});
+
+	describe("deleteEntry", () => {
+		it("deletes a file", async () => {
+			const result = await fsDeleteEntry(repo.path, { path: "app.ts" });
+			expect(result.ok).toBe(true);
+			expect(existsSync(join(repo.path, "app.ts"))).toBe(false);
+		});
+
+		it("refuses a non-empty directory without recursive", async () => {
+			const result = await fsDeleteEntry(repo.path, { path: "src" });
+			expect(result.ok).toBe(false);
+			expect(existsSync(join(repo.path, "src"))).toBe(true);
+		});
+
+		it("deletes a non-empty directory with recursive", async () => {
+			const result = await fsDeleteEntry(repo.path, { path: "src", recursive: true });
+			expect(result.ok).toBe(true);
+			expect(existsSync(join(repo.path, "src"))).toBe(false);
+		});
+
+		it("refuses to delete the repository root", async () => {
+			const result = await fsDeleteEntry(repo.path, { path: "" });
+			expect(result.ok).toBe(false);
+			expect(existsSync(repo.path)).toBe(true);
+		});
+
+		it("rejects a `..` escape", async () => {
+			writeFileSync(join(outside.path, "keep.txt"), "keep\n");
+			const result = await fsDeleteEntry(repo.path, { path: "../keep.txt" });
+			expect(result.ok).toBe(false);
+			expect(result.error).toMatch(/outside/i);
+			expect(existsSync(join(outside.path, "keep.txt"))).toBe(true);
+		});
+
+		it("refuses to delete .kanban", async () => {
+			const result = await fsDeleteEntry(repo.path, { path: ".kanban" });
+			expect(result.ok).toBe(false);
+			expect(existsSync(join(repo.path, ".kanban"))).toBe(true);
 		});
 	});
 });

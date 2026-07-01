@@ -1859,6 +1859,61 @@ export const runtimeFsStatResponseSchema = z.object({
 });
 export type RuntimeFsStatResponse = z.infer<typeof runtimeFsStatResponseSchema>;
 
+// --- mutations (P3): create / rename / move / delete ------------------------
+// Every mutation re-resolves + sandboxes its path(s) server-side (`..`/absolute
+// escapes and symlinks that leave the root are refused), and refuses to touch
+// `.git`/`.kanban` at any depth. Delete is a HARD delete of the working-tree
+// entry (the UI confirms first); a non-empty directory requires `recursive`.
+// A successful create/rename/move echoes the resulting entry so the tree can be
+// refreshed incrementally.
+
+// Shared success/failure envelope for a mutation that yields one entry.
+export const runtimeFsEntryMutationResponseSchema = z.object({
+	ok: z.boolean(),
+	// The resulting entry on success; omitted on failure.
+	entry: runtimeFsEntrySchema.optional(),
+	error: z.string().optional(),
+});
+export type RuntimeFsEntryMutationResponse = z.infer<typeof runtimeFsEntryMutationResponseSchema>;
+
+export const runtimeFsCreateEntryRequestSchema = z.object({
+	// Repo-root-relative POSIX path of the new file/dir. Its parent must exist.
+	path: z.string(),
+	kind: z.enum(["file", "dir"]),
+});
+export type RuntimeFsCreateEntryRequest = z.infer<typeof runtimeFsCreateEntryRequestSchema>;
+
+export const runtimeFsRenameRequestSchema = z.object({
+	// Existing entry to rename (repo-relative POSIX).
+	path: z.string(),
+	// New bare name (no path separators, not "."/".."/reserved). Renames within
+	// the same parent directory.
+	newName: z.string(),
+});
+export type RuntimeFsRenameRequest = z.infer<typeof runtimeFsRenameRequestSchema>;
+
+export const runtimeFsMoveRequestSchema = z.object({
+	// Source entry (repo-relative POSIX).
+	fromPath: z.string(),
+	// Full destination path (repo-relative POSIX). Its parent must exist and it
+	// must not already exist; a directory cannot move into its own descendant.
+	toPath: z.string(),
+});
+export type RuntimeFsMoveRequest = z.infer<typeof runtimeFsMoveRequestSchema>;
+
+export const runtimeFsDeleteEntryRequestSchema = z.object({
+	path: z.string(),
+	// Required to delete a non-empty directory; ignored for files.
+	recursive: z.boolean().optional(),
+});
+export type RuntimeFsDeleteEntryRequest = z.infer<typeof runtimeFsDeleteEntryRequestSchema>;
+
+export const runtimeFsDeleteEntryResponseSchema = z.object({
+	ok: z.boolean(),
+	error: z.string().optional(),
+});
+export type RuntimeFsDeleteEntryResponse = z.infer<typeof runtimeFsDeleteEntryResponseSchema>;
+
 export const runtimeProjectRemoveRequestSchema = z.object({
 	projectId: z.string(),
 });

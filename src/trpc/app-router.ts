@@ -60,10 +60,16 @@ import type {
 	RuntimeFilesListResponse,
 	RuntimeFileUpdateRequest,
 	RuntimeFileUpdateResponse,
+	RuntimeFsCreateEntryRequest,
+	RuntimeFsDeleteEntryRequest,
+	RuntimeFsDeleteEntryResponse,
+	RuntimeFsEntryMutationResponse,
 	RuntimeFsListDirRequest,
 	RuntimeFsListDirResponse,
+	RuntimeFsMoveRequest,
 	RuntimeFsReadFileRequest,
 	RuntimeFsReadFileResponse,
+	RuntimeFsRenameRequest,
 	RuntimeFsStatRequest,
 	RuntimeFsStatResponse,
 	RuntimeGitCheckoutRequest,
@@ -246,10 +252,16 @@ import {
 	runtimeFilesListResponseSchema,
 	runtimeFileUpdateRequestSchema,
 	runtimeFileUpdateResponseSchema,
+	runtimeFsCreateEntryRequestSchema,
+	runtimeFsDeleteEntryRequestSchema,
+	runtimeFsDeleteEntryResponseSchema,
+	runtimeFsEntryMutationResponseSchema,
 	runtimeFsListDirRequestSchema,
 	runtimeFsListDirResponseSchema,
+	runtimeFsMoveRequestSchema,
 	runtimeFsReadFileRequestSchema,
 	runtimeFsReadFileResponseSchema,
+	runtimeFsRenameRequestSchema,
 	runtimeFsStatRequestSchema,
 	runtimeFsStatResponseSchema,
 	runtimeGitCheckoutRequestSchema,
@@ -665,6 +677,19 @@ export interface RuntimeTrpcContext {
 			input: RuntimeFsReadFileRequest,
 		) => Promise<RuntimeFsReadFileResponse>;
 		stat: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsStatRequest) => Promise<RuntimeFsStatResponse>;
+		createEntry: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeFsCreateEntryRequest,
+		) => Promise<RuntimeFsEntryMutationResponse>;
+		rename: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeFsRenameRequest,
+		) => Promise<RuntimeFsEntryMutationResponse>;
+		move: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsMoveRequest) => Promise<RuntimeFsEntryMutationResponse>;
+		deleteEntry: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeFsDeleteEntryRequest,
+		) => Promise<RuntimeFsDeleteEntryResponse>;
 	};
 	dbApi: {
 		listConnections: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeDbConnectionListResponse>;
@@ -1254,6 +1279,30 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeFsStatResponseSchema)
 			.query(async ({ ctx, input }) => {
 				return await ctx.workspaceFsApi.stat(ctx.workspaceScope, input);
+			}),
+		createEntry: workspaceProcedure
+			.input(runtimeFsCreateEntryRequestSchema)
+			.output(runtimeFsEntryMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceFsApi.createEntry(ctx.workspaceScope, input);
+			}),
+		rename: workspaceProcedure
+			.input(runtimeFsRenameRequestSchema)
+			.output(runtimeFsEntryMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceFsApi.rename(ctx.workspaceScope, input);
+			}),
+		move: workspaceProcedure
+			.input(runtimeFsMoveRequestSchema)
+			.output(runtimeFsEntryMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceFsApi.move(ctx.workspaceScope, input);
+			}),
+		deleteEntry: workspaceProcedure
+			.input(runtimeFsDeleteEntryRequestSchema)
+			.output(runtimeFsDeleteEntryResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceFsApi.deleteEntry(ctx.workspaceScope, input);
 			}),
 	}),
 	db: t.router({

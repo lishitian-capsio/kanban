@@ -18,6 +18,8 @@ export interface UseFsTreeResult {
 	toggleDir: (path: string) => void;
 	/** Ensure a directory is expanded and loaded (used to reveal a deep-linked path). */
 	expandDir: (path: string) => void;
+	/** Reload a single directory's children in place (incremental refresh after a mutation). */
+	reloadDir: (path: string) => void;
 	/** Force a full reload of the root and every currently-expanded directory. */
 	reload: () => void;
 }
@@ -139,6 +141,18 @@ export function useFsTree(workspaceId: string | null, showHidden: boolean): UseF
 		[loadDir],
 	);
 
+	// Incrementally refresh one directory in place (after a create/rename/move/
+	// delete). Only re-fetches a directory whose children were already loaded —
+	// an unloaded dir has nothing to reconcile and will load lazily on expand.
+	const reloadDir = useCallback(
+		(path: string) => {
+			if (childrenByDirRef.current.has(path)) {
+				void loadDir(path);
+			}
+		},
+		[loadDir],
+	);
+
 	const reload = useCallback(() => {
 		setRefreshToken((token) => token + 1);
 	}, []);
@@ -151,6 +165,7 @@ export function useFsTree(workspaceId: string | null, showHidden: boolean): UseF
 		isGitRepository,
 		toggleDir,
 		expandDir,
+		reloadDir,
 		reload,
 	};
 }
