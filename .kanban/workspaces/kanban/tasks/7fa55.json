@@ -1,0 +1,20 @@
+{
+  "id": "7fa55",
+  "title": "Bug: 主 push 为 no-op 时额外 remote 镜像被跳过",
+  "prompt": "Bug（Extra push remotes 功能，来自任务 90622）：当主 remote 的 push 是空操作（Everything up-to-date）时，额外 remote 的镜像推送被短路跳过，导致落后的镜像 remote 收不到当前分支。\n\n实测复现（已确认）：\n- 主 remote origin = Capsio-Technology/kanban.git，本地 main 与 origin/main 完全一致（811913a，领先0落后0），所以主 push 结果是「Everything up-to-date」。\n- 额外 remote 配的是 lishitian-capsio/kanban.git，其 main 停在旧 commit cb1bf3d。\n- cb1bf3d 是 811913a 的祖先 → 镜像本可直接 fast-forward，无冲突、是用户自己的仓库、有 push 权限。\n- 用户在 UI 点 push：主 push 空操作成功，但镜像 remote 始终没更新（ls-remote 确认仍是 cb1bf3d）。\n\n期望行为：\n- 镜像推送应当对每个额外 remote「独立评估各自是否落后」并推送当前分支，而不是被主 push 是否有新内容所左右。哪怕主 push 是 no-op（Everything up-to-date），只要某个额外 remote 落后于当前分支，就应把当前分支推过去。\n- 单个镜像失败仍只报告、不阻塞（现有约定不变）。\n\n根因方向（自行核实）：\n- 找到 90622 落地的镜像推送逻辑（主 push 成功后循环推额外 remote 的那段）。检查它是否用「主 push 是否 transferred / 是否 up-to-date」作为触发镜像的门槛——如果是，就是这个门槛把 no-op 情况短路了。\n- 正确做法：主 push 只要没失败（包括 up-to-date 这种成功态）就进入镜像阶段；镜像阶段对每个额外 remote 直接执行 push（git 自己会判断 up-to-date / fast-forward / 拒绝），各自独立成败。\n- 确认 no-op 的判定不要误当成失败而整体 return。\n\n注意：本任务只针对仓库代码的额外 remote 镜像，不动 board-sync。合理处补单元测试（镜像触发条件、主 push no-op 仍触发镜像、单 remote 失败降级为纯逻辑，重点测）。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "3e599da8-ac7b-4c0a-b7bb-48bd0e7c10aa",
+  "baseRef": "main",
+  "createdAt": 1782896357976,
+  "updatedAt": 1782896357976,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
