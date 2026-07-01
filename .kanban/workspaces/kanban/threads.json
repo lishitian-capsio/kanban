@@ -117,14 +117,6 @@
       "pendingNextStep": "启动任务 687cc 开始实现"
     },
     {
-      "id": "1219a752-a9d8-49b6-99aa-3405d222faea",
-      "agentId": "claude",
-      "name": "端到端需求专家 Agent 链路",
-      "titleSource": "auto",
-      "createdAt": 1782721339135,
-      "updatedAt": 1782721365233
-    },
-    {
       "id": "ab1cbbfe-a5b9-4481-adc1-3325483c72ce",
       "agentId": "claude",
       "name": "修复语音输入报错",
