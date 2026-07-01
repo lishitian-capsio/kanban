@@ -163,10 +163,11 @@
     {
       "id": "14e8de0b-57a7-40b9-bfbf-08f26171787d",
       "agentId": "claude",
-      "name": "在session模式下，终端能力是否也能成为一个固定tab",
+      "name": "终端做成固定tab的可行性",
       "titleSource": "auto",
       "createdAt": 1782894338072,
-      "updatedAt": 1782894338072
+      "updatedAt": 1782894612016,
+      "pendingNextStep": "按'当前选中 task 的终端'这个方向,创建一个把终端做成固定 tab 的任务"
     }
   ],
   "fullscreenTabs": {
