@@ -162,14 +162,7 @@
     }
   ],
   "fullscreenTabs": {
-    "openThreadIds": [
-      "16d0ae97-5f56-4649-ba14-d0134b8c262e",
-      "6588c4a9-28df-4a75-9774-172e2bb7832c",
-      "ab1cbbfe-a5b9-4481-adc1-3325483c72ce",
-      "e211cecb-0eda-4458-ba46-1fbc486d4e40",
-      "e5060a7c-ba48-41e0-b356-495436c7d21d",
-      "815c2d5d-1b77-4ef2-99bb-d5c73582390c"
-    ],
-    "activeThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c"
+    "openThreadIds": [],
+    "activeThreadId": null
   }
 }
