@@ -163,8 +163,9 @@
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "16d0ae97-5f56-4649-ba14-d0134b8c262e"
+      "16d0ae97-5f56-4649-ba14-d0134b8c262e",
+      "6588c4a9-28df-4a75-9774-172e2bb7832c"
     ],
-    "activeThreadId": "16d0ae97-5f56-4649-ba14-d0134b8c262e"
+    "activeThreadId": "6588c4a9-28df-4a75-9774-172e2bb7832c"
   }
 }
