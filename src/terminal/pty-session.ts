@@ -1,3 +1,4 @@
+import type { IExitEvent, IPty, IPtyForkOptions } from "bun-pty";
 import {
 	buildWindowsCmdArgsArray,
 	resolveWindowsComSpec,
@@ -27,7 +28,8 @@ export interface SpawnPtySessionRequest {
 // Two consumers rely on this: the protocol filter returns subarray views onto
 // this Buffer, and the headless mirror retains those views until a deferred
 // batched flush (see terminal-state-mirror.ts).
-//   - string (Bun without a binary frame): Buffer.from copies into fresh owned memory.
+//   - string (Bun without a binary frame, and every bun-pty chunk): Buffer.from
+//     copies into fresh owned memory.
 //   - Uint8Array (Bun terminal): Buffer.from copies out of Bun's reused frame buffer.
 function normalizeOutputChunk(data: string | Uint8Array): Buffer {
 	if (typeof data === "string") {
@@ -63,7 +65,7 @@ function isIgnorablePtyResizeError(error: unknown): boolean {
 	return msg.includes("already exited") || msg.includes("ebadf") || msg.includes("eio");
 }
 
-// Map a POSIX signal name (Bun exposes the killing signal as `signalCode`) to
+// Map a POSIX signal name (both backends expose the killing signal as a name) to
 // its numeric value, matching the `PtyExitEvent.signal` contract.
 const SIGNAL_NUMBERS: Record<string, number> = {
 	SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGILL: 4,
@@ -78,10 +80,11 @@ const SIGNAL_NUMBERS: Record<string, number> = {
 
 // Windows cannot directly spawn the `.cmd`/`.bat` shims npm installs for the CLI
 // agents (claude/codex/droid/gemini/opencode); they must run through the command
-// processor. This rewrites a launch into a `cmd.exe /d /s /c "<command>"`
-// invocation when needed, returning the full argv (executable followed by its
-// arguments) to hand to `Bun.spawn`, or null when no wrapping applies
-// (non-Windows, or a directly-spawnable .exe/.com).
+// processor. This applies to BOTH Windows backends — bun-pty's ConPTY spawn uses
+// CreateProcess, which has the same limitation as Bun's own spawn. This rewrites a
+// launch into a `cmd.exe /d /s /c "<command>"` invocation when needed, returning
+// the full argv (executable followed by its arguments) to hand to the backend, or
+// null when no wrapping applies (non-Windows, or a directly-spawnable .exe/.com).
 function resolveWindowsCmdArgv(
 	binary: string,
 	args: string[],
@@ -94,7 +97,34 @@ function resolveWindowsCmdArgv(
 }
 
 // ---------------------------------------------------------------------------
-// Bun native PTY backend
+// Backend abstraction
+// ---------------------------------------------------------------------------
+
+// The normalized process every backend produces. PtySession holds only this — it
+// never touches a backend's native handle directly, so its write/resize/kill/exit
+// logic is backend-agnostic.
+interface NormalizedPtyProcess {
+	readonly pid: number;
+	write(data: string | Buffer): void;
+	resize(cols: number, rows: number): void;
+	kill(signal?: number | string): void;
+	onExit(callback: (event: PtyExitEvent) => void): void;
+	// POSIX-only: whether stop() may additionally signal the child's process
+	// group via `process.kill(-pid)`. Windows has no process groups.
+	readonly supportsProcessGroupKill: boolean;
+}
+
+interface BackendSpawnInput {
+	spawnArgv: string[];
+	cwd: string;
+	env: Record<string, string>;
+	cols: number;
+	rows: number;
+	onData?: (chunk: Buffer) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Bun native PTY backend (POSIX)
 // ---------------------------------------------------------------------------
 
 function isBunRuntime(): boolean {
@@ -136,26 +166,191 @@ function checkBunTerminalAvailable(): boolean {
 	return _bunTerminalAvailable;
 }
 
+function createBunTerminalProcess(input: BackendSpawnInput): NormalizedPtyProcess {
+	const bunProc = (globalThis as { Bun: { spawn: Function } }).Bun.spawn(input.spawnArgv, {
+		cwd: input.cwd,
+		env: input.env,
+		terminal: {
+			cols: input.cols,
+			rows: input.rows,
+			data(_terminal: unknown, data: string | Uint8Array) {
+				input.onData?.(normalizeOutputChunk(data));
+			},
+		},
+	}) as BunTerminalProcess;
+
+	return {
+		get pid() {
+			return bunProc.pid ?? -1;
+		},
+		write(data) {
+			bunProc.terminal.write(data);
+		},
+		resize(cols, rows) {
+			// Bun's Terminal API takes cell dimensions only; pixel dimensions (used
+			// by node-pty for SIGWINCH ioctl) have no equivalent and are ignored.
+			bunProc.terminal.resize(cols, rows);
+		},
+		kill(signal) {
+			bunProc.kill(signal);
+		},
+		onExit(callback) {
+			bunProc.exited.then((exitCode) => {
+				const signalCode = bunProc.signalCode;
+				callback({ exitCode, signal: signalCode ? SIGNAL_NUMBERS[signalCode] : undefined });
+			});
+		},
+		supportsProcessGroupKill: process.platform !== "win32",
+	};
+}
+
+// ---------------------------------------------------------------------------
+// bun-pty backend (Windows / ConPTY)
+// ---------------------------------------------------------------------------
+
+// Bun's native Terminal API is POSIX-only (oven-sh/bun#25593). On Windows the PTY
+// backend is `bun-pty` (Rust `portable-pty` → ConPTY, loaded via bun:ffi). It is
+// an *optional* dependency that loads a prebuilt native library at import time, so
+// it MUST NOT be imported on POSIX or under Node/CI. The module is loaded once at
+// startup (preloadWindowsBackend) and cached here, keeping PtySession.spawn
+// synchronous for all callers.
+type BunPtyModule = {
+	spawn(file: string, args: string[], options: IPtyForkOptions): IPty;
+};
+
+let _windowsPtyModule: BunPtyModule | null = null;
+
+/**
+ * Test seam: synchronously inject (or clear) the Windows PTY backend module so
+ * unit tests exercise the bun-pty path without loading the real native FFI
+ * dependency (which is Bun-only and absent under `npx vitest` on Node/CI).
+ */
+export function __setWindowsPtyModuleForTest(module: BunPtyModule | null): void {
+	_windowsPtyModule = module;
+}
+
+function isWindowsPtyBackendLoaded(): boolean {
+	return _windowsPtyModule !== null;
+}
+
+function normalizeBunPtyExitEvent(event: IExitEvent): PtyExitEvent {
+	const { exitCode, signal } = event;
+	if (typeof signal === "number") {
+		return { exitCode, signal };
+	}
+	if (typeof signal === "string") {
+		return { exitCode, signal: SIGNAL_NUMBERS[signal] };
+	}
+	return { exitCode };
+}
+
+function createBunPtyProcess(input: BackendSpawnInput): NormalizedPtyProcess {
+	const module = _windowsPtyModule;
+	if (!module) {
+		throw new Error(
+			"bun-pty backend not loaded — call PtySession.preloadWindowsBackend() before spawning on Windows.",
+		);
+	}
+
+	const [file, ...args] = input.spawnArgv;
+	const pty = module.spawn(file, args, {
+		name: "xterm-256color",
+		cols: input.cols,
+		rows: input.rows,
+		cwd: input.cwd,
+		env: input.env,
+	});
+
+	// bun-pty decodes output to UTF-8 strings before emitting; normalizeOutputChunk
+	// copies into fresh owned memory, honoring the retainable-Buffer contract above.
+	pty.onData((data: string) => {
+		input.onData?.(normalizeOutputChunk(data));
+	});
+
+	return {
+		get pid() {
+			return pty.pid ?? -1;
+		},
+		write(data) {
+			// bun-pty accepts strings only; terminal input is UTF-8 text.
+			pty.write(typeof data === "string" ? data : data.toString("utf8"));
+		},
+		resize(cols, rows) {
+			pty.resize(cols, rows);
+		},
+		kill(signal) {
+			// bun-pty's kill takes a signal *name*; numeric signals (unused on the
+			// stop() path, which passes none) fall back to its default (SIGTERM).
+			pty.kill(typeof signal === "string" ? signal : undefined);
+		},
+		onExit(callback) {
+			pty.onExit((event: IExitEvent) => callback(normalizeBunPtyExitEvent(event)));
+		},
+		supportsProcessGroupKill: false,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Backend selection
+// ---------------------------------------------------------------------------
+
+function createBackendProcess(input: BackendSpawnInput): NormalizedPtyProcess {
+	// On Windows, prefer the loaded bun-pty backend. It degrades to the Bun native
+	// backend when bun-pty is not loaded (e.g. a future Bun with Windows Terminal
+	// support, or unit tests that don't inject the fake module).
+	if (process.platform === "win32" && isWindowsPtyBackendLoaded()) {
+		return createBunPtyProcess(input);
+	}
+	if (checkBunTerminalAvailable()) {
+		return createBunTerminalProcess(input);
+	}
+	if (process.platform === "win32") {
+		throw new Error(
+			"No PTY backend available on Windows — the `bun-pty` optional dependency failed to load. " +
+				"Ensure `bun-pty` is installed (it ships the ConPTY native library) and Kanban runs under Bun.",
+		);
+	}
+	throw new Error(
+		"Bun native Terminal API is unavailable — Kanban must run under Bun (bun >= 1.3.14) to spawn terminal/agent sessions.",
+	);
+}
+
 // ---------------------------------------------------------------------------
 // PtySession
 // ---------------------------------------------------------------------------
 
 export class PtySession {
-	private readonly bunProc: BunTerminalProcess;
+	private readonly proc: NormalizedPtyProcess;
 	private interrupted = false;
 	private exited = false;
 
 	private constructor(
-		proc: BunTerminalProcess,
+		proc: NormalizedPtyProcess,
 		private readonly onExitCallback?: (event: PtyExitEvent) => void,
 	) {
-		this.bunProc = proc;
-		this.bunProc.exited.then((exitCode) => {
+		this.proc = proc;
+		this.proc.onExit((event) => {
 			this.exited = true;
-			const signalCode = this.bunProc.signalCode;
-			const signal = signalCode ? SIGNAL_NUMBERS[signalCode] : undefined;
-			this.onExitCallback?.({ exitCode, signal });
+			this.onExitCallback?.(event);
 		});
+	}
+
+	/**
+	 * Load the Windows PTY backend (`bun-pty`). No-op on POSIX and when already
+	 * loaded. Call once during server startup on Windows so PtySession.spawn stays
+	 * synchronous. This is the single deliberate dynamic import in the runtime: the
+	 * `bun-pty` optional dependency loads a native FFI library at import time and
+	 * must never be imported on POSIX or under Node/CI.
+	 */
+	static async preloadWindowsBackend(): Promise<void> {
+		if (process.platform !== "win32") {
+			return;
+		}
+		if (_windowsPtyModule) {
+			return;
+		}
+		const module = await import("bun-pty");
+		_windowsPtyModule = { spawn: module.spawn };
 	}
 
 	static spawn({ binary, args = [], cwd, env, cols, rows, onData, onExit }: SpawnPtySessionRequest): PtySession {
@@ -168,33 +363,21 @@ export class PtySession {
 			}
 		}
 
-		// Bun's native Terminal API is the only PTY backend. The runtime ships on
-		// Bun (`#!/usr/bin/env bun`); there is no node-pty fallback, so fail loudly
-		// if the API is missing rather than silently spawning nothing.
-		if (!checkBunTerminalAvailable()) {
-			throw new Error(
-				"Bun native Terminal API is unavailable — Kanban must run under Bun (bun >= 1.3.14) to spawn terminal/agent sessions.",
-			);
-		}
-
 		const windowsArgv = resolveWindowsCmdArgv(binary, normalizedArgs, launchEnv);
 		const spawnArgv = windowsArgv ?? [binary, ...normalizedArgs];
-		const bunProc = (globalThis as { Bun: { spawn: Function } }).Bun.spawn(spawnArgv, {
+		const proc = createBackendProcess({
+			spawnArgv,
 			cwd,
 			env: sanitizedEnv,
-			terminal: {
-				cols,
-				rows,
-				data(_terminal: unknown, data: string | Uint8Array) {
-					onData?.(normalizeOutputChunk(data));
-				},
-			},
-		}) as BunTerminalProcess;
-		return new PtySession(bunProc, onExit);
+			cols,
+			rows,
+			onData,
+		});
+		return new PtySession(proc, onExit);
 	}
 
 	get pid(): number {
-		return this.bunProc.pid ?? -1;
+		return this.proc.pid;
 	}
 
 	write(data: string | Buffer): void {
@@ -202,7 +385,7 @@ export class PtySession {
 			return;
 		}
 		try {
-			this.bunProc.terminal.write(data);
+			this.proc.write(data);
 		} catch (error) {
 			if (isIgnorablePtyWriteError(error)) {
 				return;
@@ -215,10 +398,8 @@ export class PtySession {
 		if (this.exited) {
 			return;
 		}
-		// Bun's Terminal API takes cell dimensions only; pixel dimensions (used by
-		// node-pty for SIGWINCH ioctl) have no equivalent and are ignored.
 		try {
-			this.bunProc.terminal.resize(cols, rows);
+			this.proc.resize(cols, rows);
 		} catch (error) {
 			if (isIgnorablePtyResizeError(error)) {
 				this.exited = true;
@@ -229,20 +410,20 @@ export class PtySession {
 	}
 
 	pause(): void {
-		// Bun Terminal has no flow-control pause equivalent — no-op.
+		// Neither backend has a flow-control pause equivalent — no-op.
 	}
 
 	resume(): void {
-		// Bun Terminal has no flow-control resume equivalent — no-op.
+		// Neither backend has a flow-control resume equivalent — no-op.
 	}
 
 	stop(options?: { interrupted?: boolean }): void {
 		if (options?.interrupted) {
 			this.interrupted = true;
 		}
-		const pid = this.bunProc.pid;
-		this.bunProc.kill();
-		if (process.platform !== "win32" && Number.isFinite(pid) && pid > 0) {
+		const pid = this.proc.pid;
+		this.proc.kill();
+		if (this.proc.supportsProcessGroupKill && Number.isFinite(pid) && pid > 0) {
 			try {
 				process.kill(-pid, "SIGTERM");
 			} catch {

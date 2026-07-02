@@ -96,7 +96,8 @@
     "@biomejs/cli-linux-x64-musl": "2.3.5",
     "@biomejs/cli-win32-arm64": "2.3.5",
     "@biomejs/cli-win32-x64": "2.3.5",
-    "@rolldown/binding-linux-x64-gnu": "1.0.0-rc.9"
+    "@rolldown/binding-linux-x64-gnu": "1.0.0-rc.9",
+    "bun-pty": "^0.4.10"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

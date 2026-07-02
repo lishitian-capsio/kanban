@@ -54,6 +54,7 @@ import { startRuntimeOpsMetricsSampler } from "./server/runtime-ops-metrics";
 import type { RuntimeStateHub } from "./server/runtime-state-hub";
 import { isGitRepository } from "./state/git-repository-check";
 import { captureNodeException, flushNodeTelemetry } from "./telemetry/sentry-node.js";
+import { PtySession } from "./terminal/pty-session";
 import type { TerminalSessionManager } from "./terminal/session-manager";
 import { runOnDemandUpdate } from "./update/update";
 import { registerGitCredentialInjector } from "./workspace/git-utils";
@@ -433,6 +434,16 @@ async function startServer(): Promise<{
 	// coexist cleanly so a repo with both github.com and gitee.com remotes authenticates each.
 	registerGitCredentialInjector("github", () => getGitHubAuthService().getGitInjection());
 	registerGitCredentialInjector("gitee", () => getGiteeAuthService().getGitInjection());
+
+	// Load the Windows PTY backend (`bun-pty`, ConPTY) once, up front, so that
+	// PtySession.spawn stays synchronous for terminal/agent sessions. No-op on
+	// POSIX, where Bun's native Terminal API is the backend. A failure here is
+	// non-fatal: spawn later throws a clear error rather than blocking startup.
+	try {
+		await PtySession.preloadWindowsBackend();
+	} catch (error) {
+		createLogger("pty-session").warn("failed to preload Windows PTY backend", { error });
+	}
 
 	// Start the event-loop stall watchdog before the server stack loads so a
 	// synchronous hang anywhere in the runtime (e.g. the move-to-done freeze under

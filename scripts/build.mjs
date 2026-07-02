@@ -5,8 +5,13 @@ import * as esbuild from "esbuild";
  * - `ws` is externalised because Bun's `node:http` upgrade handling does not
  *   work with esbuild's CJS-wrapped `ws` package (WebSocket upgrades hang).
  * - `bun:sqlite` and `bun` are Bun-specific and cannot be bundled.
+ * - `bun-pty` (Windows-only PTY backend) loads a prebuilt native FFI library
+ *   (`rust-pty/target/release/rust_pty.dll`) via a path resolved *relative to its
+ *   own module location* in node_modules. Bundling it would break that relative
+ *   resolution, so it must stay external and be loaded from node_modules at
+ *   runtime. It is only dynamically imported on win32 (see pty-session.ts).
  */
-const external = ["bun:sqlite", "bun", "ws"];
+const external = ["bun:sqlite", "bun", "ws", "bun-pty"];
 
 /** Bake OTEL telemetry env vars into the bundle at build time. */
 const define = {
