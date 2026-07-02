@@ -183,7 +183,8 @@
       "name": "Fix CI: bun not installed",
       "titleSource": "auto",
       "createdAt": 1782982535028,
-      "updatedAt": 1782982578985
+      "updatedAt": 1782982578985,
+      "pendingNextStep": "Start task 3a676 to fix the CI Bun setup"
     }
   ],
   "fullscreenTabs": {
