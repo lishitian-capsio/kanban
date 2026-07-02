@@ -241,7 +241,7 @@ export class RedisDriver implements DatabaseDriver, KeyspaceBrowser {
 				}
 				case "set": {
 					const reply = await this.send("SSCAN", [key, "0", "COUNT", String(limit)]);
-					const members = Array.isArray(reply) && Array.isArray(reply[1]) ? (reply[1] as unknown[]).map(asString) : [];
+					const members = (Array.isArray(reply) && Array.isArray(reply[1]) ? (reply[1] as unknown[]).map(asString) : []).slice(0, limit);
 					return this.compact(members, limit);
 				}
 				case "zset": {

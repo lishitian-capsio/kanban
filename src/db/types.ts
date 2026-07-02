@@ -60,8 +60,9 @@ export interface QueryResult {
 	durationMs: number;
 	/**
 	 * Engine-native continuation token (Redis SCAN cursor). "0" means the scan is complete.
-	 * Present only for engines that page natively; SQL drivers leave it undefined and the
-	 * executor falls back to the +1-probe-row heuristic.
+	 * Set only by the Redis keyspace-browse path (`browseKeyspace`/`runRedisBrowse`); SQL
+	 * drivers and the plain Redis `query()` path leave it undefined (a plain `SCAN 0` command
+	 * via `db query` returns rows without a resume token).
 	 */
 	scanCursor?: string;
 }
