@@ -55,16 +55,16 @@ async function hasStoredCredential(connId: string): Promise<boolean> {
 }
 
 export interface WorkspaceStorageApi {
-	listConnections: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeStorageConnectionsListResponse>;
-	upsertConnection: (
+	listStorageConnections: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeStorageConnectionsListResponse>;
+	upsertStorageConnection: (
 		scope: RuntimeTrpcWorkspaceScope,
 		input: RuntimeStorageUpsertConnectionRequest,
 	) => Promise<RuntimeStorageUpsertConnectionResponse>;
-	deleteConnection: (
+	deleteStorageConnection: (
 		scope: RuntimeTrpcWorkspaceScope,
 		input: RuntimeStorageDeleteConnectionRequest,
 	) => Promise<RuntimeStorageDeleteConnectionResponse>;
-	testConnection: (
+	testStorageConnection: (
 		scope: RuntimeTrpcWorkspaceScope,
 		input: RuntimeStorageTestConnectionRequest,
 	) => Promise<RuntimeStorageTestConnectionResponse>;
@@ -79,7 +79,7 @@ export interface WorkspaceStorageApi {
 
 export function createWorkspaceStorageApi(): WorkspaceStorageApi {
 	return {
-		async listConnections(scope) {
+		async listStorageConnections(scope) {
 			const records = await loadWorkspaceStorageConnections(scope.workspaceId);
 			const connections = await Promise.all(
 				records.map(async (record) => toRuntimeStorageConnection(record, await hasStoredCredential(record.connId))),
@@ -87,7 +87,7 @@ export function createWorkspaceStorageApi(): WorkspaceStorageApi {
 			return { connections };
 		},
 
-		async upsertConnection(scope, input) {
+		async upsertStorageConnection(scope, input) {
 			const connId = normalizeConnId(input.connId ?? safeRandomUUID());
 			const records = await mutateWorkspaceStorageConnections(scope.workspaceId, (current) => {
 				const existing = current.find((r) => normalizeConnId(r.connId) === connId);
@@ -132,7 +132,7 @@ export function createWorkspaceStorageApi(): WorkspaceStorageApi {
 			return { connection: toRuntimeStorageConnection(saved, await hasStoredCredential(connId)) };
 		},
 
-		async deleteConnection(scope, input) {
+		async deleteStorageConnection(scope, input) {
 			const connId = normalizeConnId(input.connId);
 			let deleted = false;
 			await mutateWorkspaceStorageConnections(scope.workspaceId, (current) => {
@@ -147,7 +147,7 @@ export function createWorkspaceStorageApi(): WorkspaceStorageApi {
 			return { deleted };
 		},
 
-		async testConnection(scope, input) {
+		async testStorageConnection(scope, input) {
 			return await getWorkspaceStorageService(scope.workspaceId).testConnection(input.connId);
 		},
 

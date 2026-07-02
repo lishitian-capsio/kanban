@@ -98,7 +98,7 @@ async function captureMerge(
 		},
 	);
 
-	await createWorkspaceStorageApi().upsertConnection(SCOPE, input);
+	await createWorkspaceStorageApi().upsertStorageConnection(SCOPE, input);
 
 	if (!captured) {
 		return "NOT_CALLED";
@@ -118,7 +118,7 @@ describe("upsertConnection credential merge", () => {
 		stateMocks.loadStorageCredential.mockResolvedValue(undefined);
 		stateMocks.mutateStorageCredential.mockResolvedValue(undefined);
 
-		await createWorkspaceStorageApi().upsertConnection(SCOPE, {
+		await createWorkspaceStorageApi().upsertStorageConnection(SCOPE, {
 			...BASE_INPUT,
 			// accessKeyId and secretAccessKey intentionally omitted
 		});
