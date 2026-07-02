@@ -1,17 +1,29 @@
-import * as esbuild from "esbuild";
+import { readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 /**
  * Runtime externals.
- * - `ws` is externalised because Bun's `node:http` upgrade handling does not
- *   work with esbuild's CJS-wrapped `ws` package (WebSocket upgrades hang).
  * - `bun:sqlite` and `bun` are Bun-specific and cannot be bundled.
  * - `bun-pty` (Windows-only PTY backend) loads a prebuilt native FFI library
  *   (`rust-pty/target/release/rust_pty.dll`) via a path resolved *relative to its
  *   own module location* in node_modules. Bundling it would break that relative
  *   resolution, so it must stay external and be loaded from node_modules at
  *   runtime. It is only dynamically imported on win32 (see pty-session.ts).
+ * - `@xterm/headless` and `@xterm/addon-serialize` ship a browser build in
+ *   `module` and the real Node/headless build in `main`, with no `exports` map.
+ *   With `target: "bun"` the bundler prefers `module` and would inline the wrong
+ *   (browser) build — `@xterm/addon-serialize`'s `.mjs` doesn't even expose the
+ *   default export the source imports. Externalising them defers resolution to
+ *   the Bun runtime, which resolves the correct headless build exactly like
+ *   `bun src/cli.ts` does in dev. Both are runtime `dependencies`.
+ *
+ * Note: `ws` is deliberately NOT external here. esbuild used to CJS-wrap `ws`,
+ * which hung `node:http` WebSocket upgrades, forcing `ws` external as a
+ * workaround. With `target: "bun"`, Bun handles `ws` natively (it leaves the
+ * import for its built-in `ws`, unwrapped), so the upgrade works and the explicit
+ * workaround is gone — no `"ws"` entry is needed here.
  */
-const external = ["bun:sqlite", "bun", "ws", "bun-pty"];
+const external = ["bun:sqlite", "bun", "bun-pty", "@xterm/headless", "@xterm/addon-serialize"];
 
 /** Bake OTEL telemetry env vars into the bundle at build time. */
 const define = {
@@ -25,68 +37,61 @@ const define = {
 	"process.env.OTEL_EXPORTER_OTLP_HEADERS": JSON.stringify(process.env.OTEL_EXPORTER_OTLP_HEADERS ?? ""),
 };
 
-/** Shared esbuild options for both entry points. */
+/**
+ * CLI banner: the shebang that makes `dist/cli.js` directly executable under Bun.
+ *
+ * `-S` splits the args so Bun receives `--no-env-file`, which disables Bun's
+ * default auto-loading of a `.env` in the invocation cwd. When the `kanban`
+ * binary runs inside an arbitrary user repo / task worktree, a stray `.env` there
+ * must NOT be injected into the runtime's env (KANBAN_*, proxy, credential-file
+ * paths). Kanban never reads its own config from `.env`, so this is pure
+ * hardening. `env -S` needs GNU coreutils >= 8.30 / macOS / BSD (not busybox);
+ * the service launchers pass the same flag explicitly (see service-launch.ts).
+ *
+ * (The esbuild build also injected `var module = { exports: {} };` to stop Bun
+ * from misclassifying the ESM bundle as CJS via Sentry's bundled `typeof module`
+ * check. `target: "bun"` output carries a `// @bun` pragma so Bun trusts the ESM
+ * format and no longer applies that heuristic, so the shim is no longer needed.)
+ */
+const CLI_SHEBANG = "#!/usr/bin/env -S bun --no-env-file";
+const cliBanner = CLI_SHEBANG;
+
+/**
+ * Shared Bun.build options for both entry points.
+ *
+ * `target: "bun"` is what lets Bun handle `ws` natively (see the externals note)
+ * — the whole point of moving off esbuild. The output runs under Bun anyway.
+ */
 const shared = {
-	bundle: true,
+	target: "bun",
 	format: "esm",
-	platform: "node",
-	target: "node22",
+	sourcemap: "linked",
 	external,
 	define,
-	sourcemap: true,
-	packages: "bundle",
+	naming: "[name].[ext]",
+	outdir: "dist",
 	loader: { ".md": "text", ".html": "text" },
-	plugins: [
-		{
-			name: "strip-import-attributes",
-			setup(build) {
-				// esbuild 0.27.x doesn't support `with { type: "text" }` import attributes.
-				// Strip them from .md and .html imports so the text loader can handle them.
-				build.onLoad({ filter: /\.(ts|js|mjs|mts)$/ }, async (args) => {
-					const fs = await import("node:fs");
-					let contents = fs.readFileSync(args.path, "utf8");
-					// Remove `with { type: "text" }` from import statements
-					contents = contents.replace(/\s+with\s*\{\s*type:\s*["']text["']\s*\}/g, "");
-					return { contents, loader: args.path.endsWith(".ts") || args.path.endsWith(".mts") ? "ts" : "js" };
-				});
-			},
-		},
-	],
+	throw: true,
 };
 
-await Promise.all([
-	// CLI binary
-	esbuild.build({
-		...shared,
-		entryPoints: ["src/cli.ts"],
-		outfile: "dist/cli.js",
-		banner: {
-			js: [
-				// `-S` splits the args so Bun receives `--no-env-file`, which disables
-				// Bun's default auto-loading of a `.env` in the invocation cwd. When the
-				// `kanban` binary runs inside an arbitrary user repo / task worktree, a
-				// stray `.env` there must NOT be injected into the runtime's env
-				// (KANBAN_*, proxy, credential-file paths). Kanban never reads its own
-				// config from `.env`, so this is pure hardening. `env -S` needs GNU
-				// coreutils >= 8.30 / macOS / BSD (not busybox); the service launchers
-				// pass the same flag explicitly (see service-launch.ts).
-				"#!/usr/bin/env -S bun --no-env-file",
-				// Sentry's bundled `isCjs()` contains a bare `typeof module` check
-				// that causes Bun to classify the entire ESM file as CJS, which then
-				// conflicts with ESM `import` statements.  Declaring a local `module`
-				// binding before any code runs satisfies Bun's CJS heuristic without
-				// affecting runtime behaviour (the Sentry code path correctly falls
-				// through to `false`).
-				"var module = { exports: {} };",
-			].join("\n"),
-		},
-	}),
-	// Library export
-	esbuild.build({
-		...shared,
-		entryPoints: ["src/index.ts"],
-		outfile: "dist/index.js",
-	}),
-]);
+await Bun.build({
+	...shared,
+	entrypoints: ["src/cli.ts"],
+	banner: cliBanner,
+});
 
-console.log("esbuild: bundled dist/cli.js and dist/index.js");
+await Bun.build({
+	...shared,
+	entrypoints: ["src/index.ts"],
+});
+
+// Bun may emit a `// @bun` pragma; ensure the shebang is still the first line so
+// the `kanban` bin stays directly executable.
+const cliPath = resolve("dist/cli.js");
+const cliContents = await readFile(cliPath, "utf8");
+if (!cliContents.startsWith(`${CLI_SHEBANG}\n`)) {
+	const withoutShebang = cliContents.replace(new RegExp(`^${CLI_SHEBANG}\\n`, "m"), "");
+	await writeFile(cliPath, `${CLI_SHEBANG}\n${withoutShebang}`);
+}
+
+console.log("Bun.build: bundled dist/cli.js and dist/index.js");
