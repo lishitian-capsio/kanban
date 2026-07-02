@@ -190,10 +190,10 @@
     {
       "id": "bcd4d0cd-58af-4991-967b-36e566b082ed",
       "agentId": "claude",
-      "name": "new chat thread无法像创建task那个输入框一样复制粘贴图片？文件？",
+      "name": "聊天输入框图片粘贴支持",
       "titleSource": "auto",
       "createdAt": 1782982954395,
-      "updatedAt": 1782982954395
+      "updatedAt": 1782982972444
     }
   ],
   "fullscreenTabs": {
