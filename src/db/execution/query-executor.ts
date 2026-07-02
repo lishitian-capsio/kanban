@@ -213,6 +213,7 @@ export class QueryExecutor {
 		const bounded = buildBoundedQuery({
 			sql: input.sql,
 			classification,
+			engine: record.engine,
 			page: { pageSize, cursor: input.page?.cursor },
 		});
 

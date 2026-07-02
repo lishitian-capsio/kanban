@@ -60,6 +60,12 @@ describe("buildBoundedQuery", () => {
 		expect(bounded.wrapped).toBe(false);
 		expect(bounded.sql).toBe("VACUUM weird");
 	});
+
+	it("never wraps a redis read (self-bounded by SCAN/range)", () => {
+		const r = buildBoundedQuery({ sql: "SCAN 0", classification: "read", engine: "redis", page: { pageSize: 10 } });
+		expect(r.wrapped).toBe(false);
+		expect(r.sql).toBe("SCAN 0");
+	});
 });
 
 describe("offset cursor", () => {

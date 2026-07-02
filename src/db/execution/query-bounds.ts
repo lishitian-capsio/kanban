@@ -31,6 +31,8 @@ export interface BuildBoundedQueryInput {
 	sql: string;
 	classification: SqlClassification;
 	page: PageRequest;
+	/** Engine hint; a KV engine (redis) is self-bounded and never LIMIT-wrapped. */
+	engine?: string;
 }
 
 export interface BoundedQuery {
@@ -102,6 +104,9 @@ function stripTrailingSemicolon(sql: string): string {
  * derived-table subquery; everything else passes through unchanged.
  */
 export function buildBoundedQuery(input: BuildBoundedQueryInput): BoundedQuery {
+	if (input.engine === "redis") {
+		return { sql: input.sql, wrapped: false, fetchLimit: 0, offset: 0 };
+	}
 	if (input.classification !== "read") {
 		return { sql: input.sql, wrapped: false, fetchLimit: 0, offset: 0 };
 	}

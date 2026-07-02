@@ -1,6 +1,7 @@
 import { Parser } from "node-sql-parser";
 
 import { createLogger } from "../../logging";
+import { isReadOnlyRedisCommand, parseRedisCommandLine } from "../driver/redis/redis-commands";
 import { MultiStatementError } from "../errors";
 import type { DatabaseEngine, SqlClassification } from "../types";
 
@@ -8,8 +9,8 @@ const log = createLogger("db:sql-classifier");
 
 const parser = new Parser();
 
-/** node-sql-parser dialect key per engine. */
-const PARSER_DIALECT: Record<DatabaseEngine, string> = {
+/** node-sql-parser dialect key per SQL engine (redis is handled before this map is read). */
+const PARSER_DIALECT: Record<Exclude<DatabaseEngine, "redis">, string> = {
 	postgres: "postgresql",
 	mysql: "mysql",
 	sqlite: "sqlite",
@@ -32,9 +33,18 @@ interface StatementAst {
  * fail closed).
  */
 export function classifySql(sql: string, engine: DatabaseEngine): SqlClassification {
+	if (engine === "redis") {
+		try {
+			const { command } = parseRedisCommandLine(sql);
+			return isReadOnlyRedisCommand(command) ? "read" : "write";
+		} catch {
+			return "unknown";
+		}
+	}
+
 	let ast: StatementAst | StatementAst[];
 	try {
-		ast = parser.astify(sql, { database: PARSER_DIALECT[engine] }) as StatementAst | StatementAst[];
+		ast = parser.astify(sql, { database: PARSER_DIALECT[engine as Exclude<DatabaseEngine, "redis">] }) as StatementAst | StatementAst[];
 	} catch (error) {
 		log.debug("sql parse failed; classifying as unknown", { engine, error });
 		return "unknown";

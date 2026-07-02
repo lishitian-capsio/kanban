@@ -47,4 +47,13 @@ describe("classifySql", () => {
 	it("rejects multiple statements", () => {
 		expect(() => classifySql("SELECT 1; SELECT 2", "postgres")).toThrow(MultiStatementError);
 	});
+
+	it("classifies an allowlisted redis command as read", () => {
+		expect(classifySql("HGETALL user:1", "redis")).toBe("read");
+		expect(classifySql("scan 0", "redis")).toBe("read");
+	});
+	it("classifies a redis write command as write", () => {
+		expect(classifySql("SET k v", "redis")).toBe("write");
+		expect(classifySql("FLUSHALL", "redis")).toBe("write");
+	});
 });
