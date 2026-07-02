@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { DatabaseDriver } from "../../../src/db/driver/driver";
+import { RedisDriver } from "../../../src/db/driver/redis/redis-driver";
+import type { RedisClientLike } from "../../../src/db/driver/redis/redis-client";
 import { PoolManager } from "../../../src/db/pool/pool-manager";
 import type { ConnectionRecord, DbCredential } from "../../../src/db/registry/connection-store";
 import { normalizeConnId } from "../../../src/db/registry/connection-store";
-import type { QueryRequest } from "../../../src/db/types";
+import type { ConnectionConfig, QueryRequest } from "../../../src/db/types";
 import { createDbApi } from "../../../src/trpc/db-api";
 
 const SCOPE = { workspaceId: "ws-1", workspacePath: "/tmp/repo" };
@@ -132,6 +134,83 @@ function pgRecord(overrides: Partial<ConnectionRecord> = {}): ConnectionRecord {
 	};
 }
 
+function redisRecord(overrides: Partial<ConnectionRecord> = {}): ConnectionRecord {
+	return {
+		connId: "r",
+		label: "Redis",
+		engine: "redis",
+		host: "localhost",
+		port: 6379,
+		database: "0",
+		user: null,
+		filePath: null,
+		ssl: null,
+		allowWrites: false,
+		createdAt: "2026-06-22T00:00:00.000Z",
+		...overrides,
+	};
+}
+
+/** A fake RedisClientLike driven by per-command responses (mirrors redis-driver.test.ts). */
+function makeFakeRedisClient(handler: (command: string, args: string[]) => unknown): RedisClientLike {
+	return {
+		connected: true,
+		connect: async () => {},
+		close: () => {},
+		send: async (command, args) => handler(command, args),
+	};
+}
+
+function makeRedisHarness(initial: ConnectionRecord[] = []): Harness {
+	const records = [...initial];
+	const credentials = new Map<string, DbCredential>();
+	const seen: QueryRequest[] = [];
+
+	// Build a fake redis client that answers the browse sequence:
+	// SELECT → "OK", SCAN → ["0", ["user:1"]] (cursor "0" = single page done),
+	// TYPE → "string", TTL → -1, GETRANGE → "alice"
+	const fakeRedisClient = makeFakeRedisClient((command) => {
+		if (command === "SELECT") return "OK";
+		if (command === "SCAN") return ["0", ["user:1"]];
+		if (command === "TYPE") return "string";
+		if (command === "TTL") return -1;
+		if (command === "GETRANGE") return "alice";
+		return null;
+	});
+
+	const redisConfig: ConnectionConfig = { engine: "redis", host: "localhost", port: 6379, database: "0" };
+	const poolManager = new PoolManager({
+		createDriver: (config) => {
+			if (config.engine === "redis") {
+				return new RedisDriver(redisConfig, () => fakeRedisClient);
+			}
+			return fakeDriver(seen);
+		},
+	});
+
+	const api = createDbApi({
+		poolManager,
+		loadConnections: async () => records,
+		mutateConnections: async (_workspaceId, mutate) => {
+			const next = await mutate([...records]);
+			records.splice(0, records.length, ...next);
+			return records;
+		},
+		loadCredential: async (connId) => credentials.get(normalizeConnId(connId)),
+		mutateCredential: async (connId, mutate) => {
+			const id = normalizeConnId(connId);
+			const next = mutate(credentials.get(id));
+			if (next === undefined) {
+				credentials.delete(id);
+			} else {
+				credentials.set(id, next);
+			}
+		},
+		now: () => new Date("2026-06-23T00:00:00.000Z"),
+	});
+	return { api, records, credentials, seen };
+}
+
 describe("createDbApi", () => {
 	it("adds a connection, slugs the id from the label, and stores the secret out-of-band", async () => {
 		const h = makeHarness();
@@ -251,5 +330,25 @@ describe("createDbApi", () => {
 		const h = makeHarness([pgRecord({ connId: "main", allowWrites: true })]);
 		await expect(h.api.runQuery(SCOPE, { connId: "main", sql: "DELETE FROM users" })).rejects.toThrow(/read-only/);
 		expect(h.seen).toHaveLength(0);
+	});
+
+	it("browses a redis connection's keyspace prefix via executor.browseTable", async () => {
+		const h = makeRedisHarness([redisRecord({ connId: "r" })]);
+		const res = await h.api.browseTable(SCOPE, { connId: "r", schema: "db0", table: "user" });
+		expect(res.columns.map((c) => c.name)).toEqual(["key", "type", "ttl", "value"]);
+		expect(res.rows).toHaveLength(1);
+		expect(res.rows[0]).toMatchObject({ key: "user:1", type: "string", ttl: -1, value: "alice" });
+	});
+
+	it("forces allowWrites false when adding a redis connection", async () => {
+		const h = makeRedisHarness();
+		const res = await h.api.addConnection(SCOPE, {
+			label: "My Redis",
+			engine: "redis",
+			host: "localhost",
+			port: 6379,
+			allowWrites: true, // caller requests writes — must be overridden to false for redis
+		});
+		expect(res.connection.allowWrites).toBe(false);
 	});
 });

@@ -155,7 +155,7 @@ export function createWorkspaceDbApi(): WorkspaceDbApi {
 					user: input.user ?? null,
 					filePath: input.filePath ?? null,
 					ssl: input.ssl ?? null,
-					allowWrites: input.allowWrites,
+					allowWrites: input.engine === "redis" ? false : input.allowWrites,
 					createdAt: existing?.createdAt ?? new Date().toISOString(),
 				};
 				const others = current.filter((r) => normalizeConnId(r.connId) !== connId);
@@ -260,14 +260,36 @@ export function createWorkspaceDbApi(): WorkspaceDbApi {
 
 		async browseTable(scope, input) {
 			const record = await loadRecordOrThrow(scope.workspaceId, input.connId);
-			const built = buildBrowseQuery({
-				engine: record.engine,
-				schema: input.schema,
-				table: input.table,
-				filters: input.filters,
-				sort: input.sort,
-			});
 			try {
+				// Redis has no SQL browse — route through the executor's keyspace dispatch instead of
+				// buildBrowseQuery, which is SQL-only and would fail for redis connections.
+				if (record.engine === "redis") {
+					const result = await getWorkspaceDbStack(scope.workspaceId).executor.browseTable({
+						connId: input.connId,
+						schema: input.schema,
+						table: input.table,
+						caller: CALLER,
+						page: { pageSize: input.pageSize, cursor: input.cursor },
+					});
+					return {
+						columns: result.columns.map((c) => ({ name: c.name, dataType: c.dataType ?? null })),
+						rows: result.rows.map((row) => formatDbRow(row)),
+						rowCount: result.rowCount,
+						pagination: {
+							pageSize: result.pagination.pageSize,
+							hasMore: result.pagination.hasMore,
+							nextCursor: result.pagination.nextCursor,
+						},
+						truncated: result.truncated,
+					};
+				}
+				const built = buildBrowseQuery({
+					engine: record.engine,
+					schema: input.schema,
+					table: input.table,
+					filters: input.filters,
+					sort: input.sort,
+				});
 				const result = await getWorkspaceDbStack(scope.workspaceId).executor.execute({
 					connId: input.connId,
 					sql: built.sql,

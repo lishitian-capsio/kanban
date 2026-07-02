@@ -189,7 +189,7 @@ export function createDbApi(deps: CreateDbApiDependencies = {}): RuntimeTrpcCont
 				user: input.user ?? null,
 				filePath: input.filePath ?? null,
 				ssl: input.ssl ?? null,
-				allowWrites: input.allowWrites ?? false,
+				allowWrites: input.engine === "redis" ? false : (input.allowWrites ?? false),
 				createdAt: now().toISOString(),
 			};
 
