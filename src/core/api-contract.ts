@@ -1022,6 +1022,10 @@ export const runtimeVaultSettingsSchema = z.object({
 	// the database at all. Row edits go through the human Database UI on a separate channel
 	// and are unaffected.
 	agentDatabaseAccessEnabled: z.boolean().default(false),
+	// Gate for the agent-facing S3 storage subsystem. `false` (default) disables access;
+	// `true` allows the agent to use storage connections and objects. A peer of
+	// `agentDatabaseAccessEnabled` in shape and intent.
+	agentStorageAccessEnabled: z.boolean().default(false),
 });
 export type RuntimeVaultSettings = z.infer<typeof runtimeVaultSettingsSchema>;
 
@@ -1038,6 +1042,7 @@ export const runtimeVaultSettingsUpdateRequestSchema = z.object({
 	agentVaultManagementEnabled: z.boolean().optional(),
 	extraPushRemotes: z.array(runtimeExtraPushRemoteSchema).optional(),
 	agentDatabaseAccessEnabled: z.boolean().optional(),
+	agentStorageAccessEnabled: z.boolean().optional(),
 });
 export type RuntimeVaultSettingsUpdateRequest = z.infer<typeof runtimeVaultSettingsUpdateRequestSchema>;
 
