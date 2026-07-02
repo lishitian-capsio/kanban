@@ -40,6 +40,7 @@ export function useStorageTree(workspaceId: string | null, connId: string | null
 
 	// Reset to bucket root whenever the connection changes.
 	useEffect(() => {
+		setPrefix("");
 		setEntries([]);
 		setErrorMessage(null);
 		setIsTruncated(false);

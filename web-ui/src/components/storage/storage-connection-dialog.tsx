@@ -17,9 +17,11 @@ interface DraftState {
 	bucket: string;
 	virtualHostedStyle: boolean;
 	accessKeyId: string;
+	accessKeyIdTouched: boolean;
 	secretAccessKey: string;
 	secretTouched: boolean;
 	sessionToken: string;
+	sessionTokenTouched: boolean;
 }
 
 function initialDraft(connection: RuntimeStorageConnection | null): DraftState {
@@ -30,9 +32,11 @@ function initialDraft(connection: RuntimeStorageConnection | null): DraftState {
 		bucket: connection?.bucket ?? "",
 		virtualHostedStyle: connection?.virtualHostedStyle ?? false,
 		accessKeyId: "",
+		accessKeyIdTouched: false,
 		secretAccessKey: "",
 		secretTouched: false,
 		sessionToken: "",
+		sessionTokenTouched: false,
 	};
 }
 
@@ -44,9 +48,9 @@ function buildUpsertRequest(draft: DraftState, connId: string | undefined): Runt
 		region: draft.region.trim() || null,
 		bucket: draft.bucket.trim(),
 		virtualHostedStyle: draft.virtualHostedStyle,
-		accessKeyId: draft.accessKeyId.trim() || null,
+		accessKeyId: draft.accessKeyIdTouched ? draft.accessKeyId.trim() || null : undefined,
 		secretAccessKey: draft.secretTouched ? (draft.secretAccessKey || null) : undefined,
-		sessionToken: draft.sessionToken.trim() || null,
+		sessionToken: draft.sessionTokenTouched ? draft.sessionToken.trim() || null : undefined,
 	};
 }
 
@@ -187,7 +191,7 @@ export function StorageConnectionDialog({
 						id="st-conn-akid"
 						className={INPUT_CLASS}
 						value={draft.accessKeyId}
-						onChange={(e) => patch({ accessKeyId: e.target.value })}
+						onChange={(e) => patch({ accessKeyId: e.target.value, accessKeyIdTouched: true })}
 						placeholder={isEdit && connection?.hasCredential ? "(unchanged)" : "AKIAIOSFODNN7EXAMPLE"}
 					/>
 				</div>
@@ -209,8 +213,8 @@ export function StorageConnectionDialog({
 						type="password"
 						className={INPUT_CLASS}
 						value={draft.sessionToken}
-						onChange={(e) => patch({ sessionToken: e.target.value })}
-						placeholder="For temporary credentials only"
+						onChange={(e) => patch({ sessionToken: e.target.value, sessionTokenTouched: true })}
+						placeholder={isEdit && connection?.hasCredential ? "(unchanged)" : "For temporary credentials only"}
 					/>
 				</div>
 			</DialogBody>
