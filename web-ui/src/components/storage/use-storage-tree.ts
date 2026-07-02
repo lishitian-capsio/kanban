@@ -41,6 +41,9 @@ export function useStorageTree(workspaceId: string | null, connId: string | null
 	// Reset to bucket root whenever the connection changes.
 	useEffect(() => {
 		setEntries([]);
+		setErrorMessage(null);
+		setIsTruncated(false);
+		setToken(undefined);
 		if (connId) {
 			void load("");
 		}
@@ -53,6 +56,8 @@ export function useStorageTree(workspaceId: string | null, connId: string | null
 		}
 	}, [isTruncated, token, prefix, load]);
 
+	const reload = useCallback(() => void load(prefix), [load, prefix]);
+
 	return {
 		prefix,
 		entries,
@@ -61,6 +66,6 @@ export function useStorageTree(workspaceId: string | null, connId: string | null
 		errorMessage,
 		enter,
 		loadMore,
-		reload: () => void load(prefix),
+		reload,
 	};
 }
