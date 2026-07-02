@@ -29,6 +29,9 @@ describe("buildSchtasksTaskRunString", () => {
 		expect(tr).toContain('"C:\\kanban\\dist\\cli.js"');
 		expect(tr).toContain("--skip-shutdown-cleanup");
 		expect(tr).toContain("--no-open");
+		// --no-env-file must sit before the quoted script path (bun runtime flag).
+		expect(tr).toContain("--no-env-file");
+		expect(tr.indexOf("--no-env-file")).toBeLessThan(tr.indexOf('"C:\\kanban\\dist\\cli.js"'));
 	});
 });
 

@@ -49,10 +49,18 @@ describe("buildServiceLaunchArgs", () => {
 });
 
 describe("buildServiceCommand", () => {
-	it("prefixes the bun executable and the cli script path", () => {
+	it("prefixes the bun executable, --no-env-file, then the cli script path", () => {
 		const command = buildServiceCommand(baseConfig());
 		expect(command[0]).toBe("/usr/local/bin/bun");
-		expect(command[1]).toBe("/opt/kanban/dist/cli.js");
-		expect(command.slice(2)).toEqual(buildServiceLaunchArgs(baseConfig()));
+		// --no-env-file is a bun runtime flag, so it MUST sit before the script path.
+		expect(command[1]).toBe("--no-env-file");
+		expect(command[2]).toBe("/opt/kanban/dist/cli.js");
+		expect(command.slice(3)).toEqual(buildServiceLaunchArgs(baseConfig()));
+	});
+
+	it("disables Bun's .env auto-loading so a repo .env can't pollute the daemon", () => {
+		const command = buildServiceCommand(baseConfig());
+		expect(command).toContain("--no-env-file");
+		expect(command.indexOf("--no-env-file")).toBeLessThan(command.indexOf("/opt/kanban/dist/cli.js"));
 	});
 });

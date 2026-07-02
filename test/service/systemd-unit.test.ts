@@ -22,6 +22,8 @@ describe("buildSystemdUnit", () => {
 		expect(unit).toMatch(/ExecStart=.*\/usr\/local\/bin\/bun.*dist\/cli\.js/);
 		expect(unit).toContain("--skip-shutdown-cleanup");
 		expect(unit).toContain("--no-open");
+		// --no-env-file (before the script) keeps a repo .env out of the daemon env.
+		expect(unit).toMatch(/ExecStart=.*bun.*--no-env-file.*dist\/cli\.js/);
 	});
 
 	it("sets the working directory and restart policy", () => {
