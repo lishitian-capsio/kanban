@@ -168,6 +168,22 @@
       "createdAt": 1782980850459,
       "updatedAt": 1782980915058,
       "pendingNextStep": "Create a task to add the workflow scope to Kanban's GitHub device-flow auth"
+    },
+    {
+      "id": "49269ceb-b13c-4019-aaaf-65bd61e653ff",
+      "agentId": "claude",
+      "name": ".kanban/worktrees/__board__/kanban/.kanban/files/blobs/f7ed…",
+      "titleSource": "auto",
+      "createdAt": 1782982437956,
+      "updatedAt": 1782982437956
+    },
+    {
+      "id": "6eff6e3c-a36d-4d19-8f02-3462ec4b1e41",
+      "agentId": "claude",
+      "name": "Fix CI: bun not installed",
+      "titleSource": "auto",
+      "createdAt": 1782982535028,
+      "updatedAt": 1782982578985
     }
   ],
   "fullscreenTabs": {

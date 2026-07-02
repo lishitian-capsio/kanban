@@ -1,0 +1,20 @@
+{
+  "id": "3a676",
+  "title": "Fix CI: install Bun before npm run build",
+  "prompt": "CI is failing on PR #27 with `bun: command not found` / `sh: bun: not found` (exit 127). The web build (npm --prefix web-ui run build) succeeds, then `npm run build` calls `bun scripts/build.mjs`, but the CI runners only set up Node — Bun is never installed. The runtime is now Bun-only.\n\nFix: add a Bun setup step (oven-sh/setup-bun@v2) BEFORE the \"Build\" step in the affected workflows so `bun` is on PATH on both ubuntu-latest and macos-latest.\n\nAffected workflows (all run `npm run build` with no Bun setup):\n- .github/workflows/test.yml (the failing one — build-check-test matrix, ubuntu + macos)\n- .github/workflows/build-release.yml (Build package)\n- .github/workflows/publish.yml (Build and validate package)\n\nPin a specific Bun version rather than latest for reproducibility. Verify by re-running the failed CI checks (gh pr checks 27) or pushing the branch. Do not change build.mjs — the build step is correct; only CI environment setup is missing.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6eff6e3c-a36d-4d19-8f02-3462ec4b1e41",
+  "baseRef": "main",
+  "createdAt": 1782982585190,
+  "updatedAt": 1782982585190,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
