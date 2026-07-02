@@ -21,12 +21,14 @@ const ENGINE_LABELS: Record<RuntimeDbEngine, string> = {
 	postgres: "PostgreSQL",
 	mysql: "MySQL",
 	sqlite: "SQLite",
+	redis: "Redis",
 };
 
 const DEFAULT_PORT: Record<RuntimeDbEngine, number | null> = {
 	postgres: 5432,
 	mysql: 3306,
 	sqlite: null,
+	redis: 6379,
 };
 
 const SSL_MODES: RuntimeDbSslConfig["mode"][] = ["disable", "require", "verify-ca", "verify-full"];
@@ -74,7 +76,7 @@ function buildUpsertRequest(draft: DraftState, connId: string | undefined): Runt
 		user: isSqlite ? null : draft.user.trim() || null,
 		filePath: isSqlite ? draft.filePath.trim() || null : null,
 		ssl: isSqlite || draft.sslMode === "disable" ? null : { mode: draft.sslMode },
-		allowWrites: draft.allowWrites,
+		allowWrites: draft.engine === "redis" ? false : draft.allowWrites,
 		password: draft.passwordTouched ? (draft.password === "" ? null : draft.password) : undefined,
 	};
 }
@@ -128,6 +130,7 @@ export function ConnectionDialog({
 	}
 
 	const isSqlite = draft.engine === "sqlite";
+	const isRedis = draft.engine === "redis";
 	const isEdit = Boolean(connection);
 	const canSubmit = useMemo(() => {
 		if (!draft.label.trim()) {
@@ -254,7 +257,7 @@ export function ConnectionDialog({
 						<div className="flex gap-2">
 							<div className="flex-1">
 								<label className={FIELD_LABEL_CLASS} htmlFor="db-conn-db">
-									Database
+									{isRedis ? "Database (db index)" : "Database"}
 								</label>
 								<input
 									id="db-conn-db"
@@ -308,26 +311,35 @@ export function ConnectionDialog({
 					</>
 				)}
 
-				<label htmlFor="db-conn-allow-writes" className="flex items-center gap-2 pt-1 cursor-pointer select-none">
-					<Checkbox.Root
-						id="db-conn-allow-writes"
-						checked={draft.allowWrites}
-						onCheckedChange={(checked) => patch({ allowWrites: checked === true })}
-						className={cn(
-							"flex h-4 w-4 items-center justify-center rounded border border-border-bright bg-surface-2",
-							"data-[state=checked]:bg-accent data-[state=checked]:border-accent",
-						)}
-					>
-						<Checkbox.Indicator>
-							<Check size={12} className="text-white" />
-						</Checkbox.Indicator>
-					</Checkbox.Root>
-					<span className="text-[13px] text-text-primary">Allow writes (inline editing)</span>
-				</label>
-				<p className="text-[11px] text-text-tertiary leading-relaxed">
-					When off, this connection is read-only — browse only. The Kanban agent is always restricted to
-					read-only regardless of this setting.
-				</p>
+				{!isRedis && (
+					<label htmlFor="db-conn-allow-writes" className="flex items-center gap-2 pt-1 cursor-pointer select-none">
+						<Checkbox.Root
+							id="db-conn-allow-writes"
+							checked={draft.allowWrites}
+							onCheckedChange={(checked) => patch({ allowWrites: checked === true })}
+							className={cn(
+								"flex h-4 w-4 items-center justify-center rounded border border-border-bright bg-surface-2",
+								"data-[state=checked]:bg-accent data-[state=checked]:border-accent",
+							)}
+						>
+							<Checkbox.Indicator>
+								<Check size={12} className="text-white" />
+							</Checkbox.Indicator>
+						</Checkbox.Root>
+						<span className="text-[13px] text-text-primary">Allow writes (inline editing)</span>
+					</label>
+				)}
+				{!isRedis && (
+					<p className="text-[11px] text-text-tertiary leading-relaxed">
+						When off, this connection is read-only — browse only. The Kanban agent is always restricted to
+						read-only regardless of this setting.
+					</p>
+				)}
+				{isRedis && (
+					<p className="text-[11px] text-text-tertiary leading-relaxed">
+						Redis connections are always read-only (browse only). Only read commands are permitted.
+					</p>
+				)}
 			</DialogBody>
 			<DialogFooter>
 				<Button

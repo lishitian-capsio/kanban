@@ -30,11 +30,11 @@ export function parseRedisCommandLine(line: string): { command: string; args: st
 	const re = /"((?:[^"\\]|\\.)*)"|(\S+)/g;
 	let match: RegExpExecArray | null;
 	while ((match = re.exec(line)) !== null) {
-		tokens.push(match[1] !== undefined ? match[1].replace(/\\(.)/g, "$1") : match[2]);
+		tokens.push(match[1] !== undefined ? match[1].replace(/\\(.)/g, "$1") : (match[2] as string));
 	}
 	if (tokens.length === 0) {
 		throw new DbQueryError("empty redis command");
 	}
-	const [command, ...args] = tokens;
+	const [command, ...args] = tokens as [string, ...string[]];
 	return { command: command.toUpperCase(), args };
 }
