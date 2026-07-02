@@ -1,0 +1,20 @@
+{
+  "id": "5bbf1",
+  "title": "调研: 找出值得丢给 Bun Worker 的 CPU 热点",
+  "prompt": "调研(不改运行时代码)Kanban runtime 里是否存在值得卸载到 Bun Worker 线程的纯 CPU 热点,用数据说话再决定是否立项。\n\n## 背景与判断前提\n- Bun Worker = 独立线程跑 JS,用于把 CPU 密集活挪出主线程,避免阻塞事件循环。API 目前仍是**实验性**(尤其 terminate),postMessage 传大对象/ArrayBuffer 有 structured-clone 序列化成本。\n- Kanban 历史上的「100% CPU 卡死」根因都是**同步阻塞**(spawnSync(git) detectGitRepositoryInfo、per-chunk GC churn applyOutput),已用 async 化 / 微批处理修复(见 task-done-cpu-hang-bug、bun-event-loop-busywait-freeze)。**同步阻塞的正解是消除阻塞,不是上 Worker。**\n- 因此本任务目标是:区分「同步阻塞」与「真正的纯 CPU 热点」,只有后者才可能适合 Worker。\n\n## 候选热点(需实测验证,别臆断)\n- token 计数:js-tiktoken 大文本编码(找调用点)\n- mermaid 渲染:beautiful-mermaid\n- 压缩:jszip 大包\n- 超大 board 分片装配 / session journal 的 JSON 解析(src/state/task-shard-store.ts、sharded-json-store.ts、src/session/session-message-journal.ts)\n- xterm headless 镜像 decode / 提交行处理(src/terminal/ 相关)\n\n## 要求(只产出调研 + 方案文档,不改运行时代码)\n1. 用 stall 看门狗(src/server/event-loop-stall-watchdog.ts)判断法则先分类:哪些是同步阻塞(应直接 async 化/微批,不用 Worker),哪些是不可再拆的纯 CPU 计算。\n2. 对候选热点做**简单基准**(可写一次性脚本放 scripts/ 或临时测量),量化各自的主线程占用/耗时与触发频率。\n3. 对每个真正的 CPU 热点评估 Worker 卸载的净收益:要跨线程传输的数据量与 structured-clone 序列化成本 vs 省下的主线程时间;是否需要 transfer/零拷贝,Bun 当前是否支持。\n4. 明确结论:哪些**不值得**上 Worker(占多数是预期结果)、哪些**可能值得**并给出 ROI 与实现草案。\n5. 尊重项目 YAGNI 取向:没有实测瓶颈就不要建议上 Worker。\n6. 产出一份方案文档放 .plan/docs/,列数据、结论与后续建议。\n\n只做调研与文档,不改运行时代码,不引入 Worker 实现。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
+  "baseRef": "main",
+  "createdAt": 1782956720644,
+  "updatedAt": 1782956720644,
+  "column": "backlog",
+  "rank": "Zv",
+  "dependsOn": []
+}
