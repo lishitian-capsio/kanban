@@ -1,0 +1,20 @@
+{
+  "id": "2d059",
+  "title": "新建线程创建弹窗输入框支持粘贴/拖拽图片",
+  "prompt": "需求: 让\"新建聊天线程\"创建弹窗的输入框能像\"创建任务\"弹窗一样粘贴(Ctrl/Cmd+V)和拖拽图片。目前在该弹窗粘贴图片完全没有反应 —— 因为它是一个纯 textarea,从未接入图片能力(不是 bug,是缺功能)。\n\n## 现状(已诊断)\n- 目标组件: web-ui/src/components/home-agent/home-thread-create-dialog.tsx。输入框是第 82-102 行一个纯 <textarea>,只有 onChange / onKeyDown(⌘/Ctrl+Enter 提交),没有 onPaste、没有 images 状态、没有拖拽处理、没有 TaskImageStrip。\n- HomeThreadCreateDialogProps(约 13-19 行)只有 description / agentId,没有 images / onImagesChange。\n- 后端 schema RuntimeHomeChatThreadCreateRequest(src/core/api-contract.ts 约 364-377 行)只有 description? / name? / agentId,没有 images 字段。\n- 对照参考: 创建任务弹窗用 web-ui/src/components/task-prompt-composer.tsx(约 260-276 行有 onPaste,378 行左右绑定;拖拽 278-312 行;TaskImageStrip 408-410 行),它复用 web-ui/src/components/task-image-input-utils.ts(collectImageFilesFromDataTransfer / extractImagesFromDataTransfer / fileToTaskImage;支持 PNG/JPEG/GIF/WebP、最大 20MB)。\n\n## 要求\n1. 前端: 给 home-thread-create-dialog.tsx 的输入框加图片粘贴 + 拖拽支持,复用 task-image-input-utils.ts,复用 TaskImageStrip 展示已附图片。优先直接复用现有 composer(评估能否直接用 TaskPromptComposer,避免重复实现;若不合适再按其模式实现 onPaste/onDrop/onDragOver/onDragLeave)。\n2. 状态: 在 HomeThreadCreateDialogProps 增加 images / onImagesChange(或在弹窗内部管理 images state),弹窗关闭/提交后重置。\n3. 后端 + 打通: 在 RuntimeHomeChatThreadCreateRequest schema 增加 images 字段,并把图片一路透传到 createHomeThread 的 tRPC mutation 与线程 kickoff prompt,使新线程的首条消息真的带上图片给到 agent 会话(参考任务创建/现有聊天发送图片的链路 SendKanbanChatMessageOptions.images 是怎么传给后端的)。\n4. 亲自复现并验证: 打开新建线程弹窗,粘贴/拖拽一张图片 → 出现缩略图 → 创建线程 → 确认 agent 会话首条消息收到该图片。\n5. 遵循仓库约定(TypeScript 无 any、按现有代码风格),补充/更新相关测试,跑通 typecheck 与相关测试。\n6. 注意 AGENTS.md 的 'Dual-lib typecheck trap'(task-image-input-utils 涉及 Blob/DOM 类型,若被 router 可达的后端文件引用会二次 typecheck)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "bcd4d0cd-58af-4991-967b-36e566b082ed",
+  "baseRef": "main",
+  "createdAt": 1782983897517,
+  "updatedAt": 1782983897517,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
