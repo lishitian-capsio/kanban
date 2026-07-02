@@ -38,6 +38,7 @@ function countingDriver(counts: DriverCounts, signature: { value: string }): Dat
 		disconnect: async () => {},
 		testConnection: async () => ({ ok: true, latencyMs: 1, serverVersion: "PostgreSQL 16" }),
 		query: async () => ({ rows: [], fields: [], rowCount: 0, durationMs: 1 }),
+		transaction: async (fn) => fn({ query: async () => ({ rows: [], fields: [], rowCount: 0, durationMs: 1 }) }),
 		introspect: async () => ({ engine: "postgres", tables: [] }),
 		listSchemas: async (): Promise<SchemaSummary[]> => {
 			counts.listSchemas++;

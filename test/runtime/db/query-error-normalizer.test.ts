@@ -8,8 +8,10 @@ import {
 	MultiStatementError,
 	QueryCancelledError,
 	QueryTimeoutError,
+	SingleRowGuardError,
 } from "../../../src/db/errors";
 import { normalizeQueryError, QueryExecutionError } from "../../../src/db/execution/query-error-normalizer";
+import { SingleTableWriteError } from "../../../src/db/policy/single-table-write";
 
 describe("normalizeQueryError", () => {
 	it("maps a policy denial to a non-retryable policy_denied", () => {
@@ -49,6 +51,15 @@ describe("normalizeQueryError", () => {
 		expect(n.code).toBe("query_failed");
 		expect(n.message).toContain('relation "users" does not exist');
 		expect(n.message).not.toContain("192.168.1.5");
+	});
+
+	it("surfaces the guard/shape refusals as policy_denied with their safe message", () => {
+		const guard = normalizeQueryError(new SingleRowGuardError(3));
+		expect(guard.code).toBe("policy_denied");
+		expect(guard.message).toContain("rolled back");
+		const shape = normalizeQueryError(new SingleTableWriteError("statement targets \"other\", expected \"users\""));
+		expect(shape.code).toBe("policy_denied");
+		expect(shape.message).toContain("refused write");
 	});
 
 	it("does not echo an arbitrary unknown error message", () => {

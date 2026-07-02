@@ -68,6 +68,8 @@ function fakeDriver(ctrl: FakeDriverController): DatabaseDriver {
 			}
 			return { rows: ctrl.rows, fields: ctrl.fields, rowCount: ctrl.rowCount, durationMs: ctrl.durationMs };
 		},
+		transaction: async (fn) =>
+			fn({ query: async () => ({ rows: ctrl.rows, fields: ctrl.fields, rowCount: ctrl.rowCount, durationMs: ctrl.durationMs }) }),
 		introspect: async () => ({ engine: "postgres", tables: [] }),
 		listSchemas: async () => [{ name: "public" }],
 		listTables: async (schema) => [{ schema, name: "t", kind: "table" as const }],
@@ -241,6 +243,30 @@ describe("QueryExecutor timeout & cancellation", () => {
 		ac.abort();
 		const error = await promise.catch((e) => e);
 		expect((error as QueryExecutionError).normalized.code).toBe("cancelled");
+	});
+});
+
+describe("QueryExecutor.executeGuardedRowWrite", () => {
+	it("returns a write result (affectedRows, not read-only) when exactly one row is affected", async () => {
+		const ctrl = controller({ rows: [], rowCount: 1 });
+		const { executor } = makeExecutor(record({ allowWrites: true }), ctrl);
+		const result = await executor.executeGuardedRowWrite({
+			connId: "c1",
+			sql: "UPDATE t SET a = $1 WHERE a = $2",
+			params: ["new", "old"],
+			caller: "human",
+		});
+		expect(result.affectedRows).toBe(1);
+		expect(result.readOnly).toBe(false);
+		expect(result.classification).toBe("write");
+	});
+
+	it("normalizes a multi-row guard rejection into a QueryExecutionError", async () => {
+		const ctrl = controller({ rows: [], rowCount: 2 });
+		const { executor } = makeExecutor(record({ allowWrites: true }), ctrl);
+		await expect(
+			executor.executeGuardedRowWrite({ connId: "c1", sql: "DELETE FROM t WHERE a = $1", params: ["x"], caller: "human" }),
+		).rejects.toBeInstanceOf(QueryExecutionError);
 	});
 });
 

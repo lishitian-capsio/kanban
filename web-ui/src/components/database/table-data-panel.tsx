@@ -13,10 +13,18 @@ import {
 	AlertDialogTitle,
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
-import type { RuntimeDbColumnValue, RuntimeDbConnection, RuntimeDbFilter, RuntimeDbSort, RuntimeDbTable } from "@/runtime/types";
+import type {
+	RuntimeDbColumnValue,
+	RuntimeDbConnection,
+	RuntimeDbFilter,
+	RuntimeDbPreviewWriteRequest,
+	RuntimeDbSort,
+	RuntimeDbTable,
+} from "@/runtime/types";
 import { DataGrid } from "./data-grid";
-import { buildRowKey, dbErrorMessage, primaryKeyColumns } from "./db-utils";
+import { buildFullRowKey, buildRowKey, dbErrorMessage, primaryKeyColumns } from "./db-utils";
 import { InsertRowDialog } from "./insert-row-dialog";
+import { SqlPreview } from "./sql-preview";
 import { useDbRowMutations } from "./use-db-row-mutations";
 import { useDbTableData } from "./use-db-table-data";
 
@@ -26,17 +34,26 @@ export interface TableDataPanelProps {
 	table: RuntimeDbTable;
 }
 
+interface PendingEdit {
+	rowIndex: number;
+	column: string;
+	value: string | null;
+}
+
 /** The main browse/edit surface for one selected table. Keyed per-table so state resets on switch. */
 export function TableDataPanel({ workspaceId, connection, table }: TableDataPanelProps): React.ReactElement {
 	const [sort, setSort] = useState<RuntimeDbSort | null>(null);
 	const [filtersByColumn, setFiltersByColumn] = useState<Map<string, RuntimeDbFilter>>(new Map());
 	const [insertOpen, setInsertOpen] = useState(false);
 	const [pendingDelete, setPendingDelete] = useState<number | null>(null);
+	const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
 
 	const pkColumns = useMemo(() => primaryKeyColumns(table), [table]);
 	const pkColumnNames = useMemo(() => new Set(pkColumns.map((c) => c.name)), [pkColumns]);
 	const hasPrimaryKey = pkColumns.length > 0;
-	const editable = connection.allowWrites && hasPrimaryKey && table.kind === "table";
+	// Writes need an allow-writes connection and a real table (not a view). A missing primary key no
+	// longer disables editing — keyless rows are matched on all columns and guarded to a single row.
+	const editable = connection.allowWrites && table.kind === "table";
 
 	const sortArray = useMemo(() => (sort ? [sort] : []), [sort]);
 	const filterArray = useMemo(() => [...filtersByColumn.values()], [filtersByColumn]);
@@ -71,19 +88,15 @@ export function TableDataPanel({ workspaceId, connection, table }: TableDataPane
 
 	const { rows, updateRowLocal, removeRowLocal, reload } = data;
 
-	const handleCommitEdit = useCallback(
-		async (rowIndex: number, column: string, value: string | null) => {
+	/** Apply an UPDATE for one cell and reflect it locally; shared by the PK and keyless paths. */
+	const applyUpdate = useCallback(
+		async (rowIndex: number, column: string, value: string | null, where: RuntimeDbColumnValue[], requireSingleRow: boolean) => {
 			const row = rows[rowIndex];
-			if (!row || row[column] === value) {
-				return;
-			}
-			const where = buildRowKey(table, row);
-			if (!where) {
-				showAppToast({ intent: "danger", message: "Cannot edit: table has no primary key." });
+			if (!row) {
 				return;
 			}
 			try {
-				await mutations.updateRow({ schema: table.schema, table: table.name, assignments: [{ column, value }], where });
+				await mutations.updateRow({ schema: table.schema, table: table.name, assignments: [{ column, value }], where, requireSingleRow });
 				updateRowLocal(rowIndex, { ...row, [column]: value });
 			} catch (error) {
 				showAppToast({ intent: "danger", message: dbErrorMessage(error, "Update failed.") });
@@ -92,6 +105,40 @@ export function TableDataPanel({ workspaceId, connection, table }: TableDataPane
 		},
 		[rows, table, mutations, updateRowLocal, reload],
 	);
+
+	const handleCommitEdit = useCallback(
+		async (rowIndex: number, column: string, value: string | null) => {
+			const row = rows[rowIndex];
+			if (!row || row[column] === value) {
+				return;
+			}
+			if (hasPrimaryKey) {
+				const where = buildRowKey(table, row);
+				if (!where) {
+					showAppToast({ intent: "danger", message: "Cannot edit: primary key value is NULL." });
+					return;
+				}
+				await applyUpdate(rowIndex, column, value, where, false);
+				return;
+			}
+			// Keyless table: confirm with a SQL preview before applying the guarded, full-row-match edit.
+			setPendingEdit({ rowIndex, column, value });
+		},
+		[rows, table, hasPrimaryKey, applyUpdate],
+	);
+
+	const handleConfirmEdit = useCallback(async () => {
+		if (!pendingEdit) {
+			return;
+		}
+		const { rowIndex, column, value } = pendingEdit;
+		const row = rows[rowIndex];
+		setPendingEdit(null);
+		if (!row) {
+			return;
+		}
+		await applyUpdate(rowIndex, column, value, buildFullRowKey(table, row), true);
+	}, [pendingEdit, rows, table, applyUpdate]);
 
 	const handleConfirmDelete = useCallback(async () => {
 		if (pendingDelete === null) {
@@ -103,20 +150,20 @@ export function TableDataPanel({ workspaceId, connection, table }: TableDataPane
 		if (!row) {
 			return;
 		}
-		const where = buildRowKey(table, row);
+		const where = hasPrimaryKey ? buildRowKey(table, row) : buildFullRowKey(table, row);
 		if (!where) {
-			showAppToast({ intent: "danger", message: "Cannot delete: table has no primary key." });
+			showAppToast({ intent: "danger", message: "Cannot delete: primary key value is NULL." });
 			return;
 		}
 		try {
-			await mutations.deleteRow({ schema: table.schema, table: table.name, where });
+			await mutations.deleteRow({ schema: table.schema, table: table.name, where, requireSingleRow: !hasPrimaryKey });
 			removeRowLocal(index);
 			showAppToast({ intent: "success", message: "Row deleted." });
 		} catch (error) {
 			showAppToast({ intent: "danger", message: dbErrorMessage(error, "Delete failed.") });
 			reload();
 		}
-	}, [pendingDelete, rows, table, mutations, removeRowLocal, reload]);
+	}, [pendingDelete, rows, table, hasPrimaryKey, mutations, removeRowLocal, reload]);
 
 	const handleInsert = useCallback(
 		async (values: RuntimeDbColumnValue[]) => {
@@ -131,6 +178,39 @@ export function TableDataPanel({ workspaceId, connection, table }: TableDataPane
 		},
 		[mutations, table, reload],
 	);
+
+	const deletePreview = useMemo<RuntimeDbPreviewWriteRequest | null>(() => {
+		if (pendingDelete === null) {
+			return null;
+		}
+		const row = rows[pendingDelete];
+		if (!row) {
+			return null;
+		}
+		const where = hasPrimaryKey ? buildRowKey(table, row) : buildFullRowKey(table, row);
+		if (!where) {
+			return null;
+		}
+		return { connId: connection.connId, schema: table.schema, table: table.name, op: "delete", where };
+	}, [pendingDelete, rows, table, hasPrimaryKey, connection.connId]);
+
+	const editPreview = useMemo<RuntimeDbPreviewWriteRequest | null>(() => {
+		if (!pendingEdit) {
+			return null;
+		}
+		const row = rows[pendingEdit.rowIndex];
+		if (!row) {
+			return null;
+		}
+		return {
+			connId: connection.connId,
+			schema: table.schema,
+			table: table.name,
+			op: "update",
+			assignments: [{ column: pendingEdit.column, value: pendingEdit.value }],
+			where: buildFullRowKey(table, row),
+		};
+	}, [pendingEdit, rows, table, connection.connId]);
 
 	return (
 		<div className="flex flex-1 flex-col min-h-0 bg-surface-0">
@@ -148,8 +228,8 @@ export function TableDataPanel({ workspaceId, connection, table }: TableDataPane
 						<Lock size={10} /> read-only
 					</span>
 				) : !hasPrimaryKey ? (
-					<span className="rounded-sm bg-surface-2 px-1.5 py-0.5 text-[10px] text-text-tertiary">
-						no primary key — read-only
+					<span className="rounded-sm bg-surface-2 px-1.5 py-0.5 text-[10px] text-status-orange">
+						no primary key — edits matched on all columns
 					</span>
 				) : null}
 				<div className="ml-auto flex items-center gap-2">
@@ -218,6 +298,8 @@ export function TableDataPanel({ workspaceId, connection, table }: TableDataPane
 			{insertOpen ? (
 				<InsertRowDialog
 					open={insertOpen}
+					workspaceId={workspaceId}
+					connId={connection.connId}
 					table={table}
 					isSaving={mutations.isMutating}
 					onClose={() => setInsertOpen(false)}
@@ -225,15 +307,46 @@ export function TableDataPanel({ workspaceId, connection, table }: TableDataPane
 				/>
 			) : null}
 
+			<AlertDialog open={pendingEdit !== null} onOpenChange={(next) => (next ? undefined : setPendingEdit(null))}>
+				<AlertDialogHeader>
+					<AlertDialogTitle>Apply this edit?</AlertDialogTitle>
+				</AlertDialogHeader>
+				<AlertDialogBody>
+					<AlertDialogDescription>
+						<strong>{table.name}</strong> has no primary key, so this row is matched on all of its column values. The
+						change is applied only if it matches exactly one row — otherwise it is rolled back.
+					</AlertDialogDescription>
+					<div className="mt-3">
+						<SqlPreview workspaceId={workspaceId} request={editPreview} />
+					</div>
+				</AlertDialogBody>
+				<AlertDialogFooter>
+					<AlertDialogCancel asChild>
+						<Button variant="default" onClick={() => setPendingEdit(null)}>
+							Cancel
+						</Button>
+					</AlertDialogCancel>
+					<Button variant="primary" disabled={mutations.isMutating} onClick={() => void handleConfirmEdit()}>
+						Apply edit
+					</Button>
+				</AlertDialogFooter>
+			</AlertDialog>
+
 			<AlertDialog open={pendingDelete !== null} onOpenChange={(next) => (next ? undefined : setPendingDelete(null))}>
 				<AlertDialogHeader>
 					<AlertDialogTitle>Delete this row?</AlertDialogTitle>
 				</AlertDialogHeader>
 				<AlertDialogBody>
 					<AlertDialogDescription>
-						This permanently deletes the row from <strong>{table.name}</strong> using its primary key. This cannot be
-						undone.
+						This permanently deletes the row from <strong>{table.name}</strong>
+						{hasPrimaryKey
+							? " using its primary key."
+							: ". This table has no primary key, so the row is matched on all of its columns and the delete is rolled back unless it matches exactly one row."}{" "}
+						This cannot be undone.
 					</AlertDialogDescription>
+					<div className="mt-3">
+						<SqlPreview workspaceId={workspaceId} request={deletePreview} />
+					</div>
 				</AlertDialogBody>
 				<AlertDialogFooter>
 					<AlertDialogCancel asChild>

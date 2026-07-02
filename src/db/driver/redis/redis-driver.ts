@@ -12,7 +12,14 @@ import type {
 	TableSummary,
 	TestConnectionResult,
 } from "../../types";
-import type { BrowseKeyspaceInput, BrowseKeyspaceResult, DatabaseDriver, KeyspaceBrowser, RedisKeyspaceRow } from "../driver";
+import type {
+	BrowseKeyspaceInput,
+	BrowseKeyspaceResult,
+	DatabaseDriver,
+	DbTransaction,
+	KeyspaceBrowser,
+	RedisKeyspaceRow,
+} from "../driver";
 import { registerDriver } from "../driver-registry";
 import {
 	buildRedisTlsOptions,
@@ -199,6 +206,13 @@ export class RedisDriver implements DatabaseDriver, KeyspaceBrowser {
 
 	async metadataSignature(): Promise<string> {
 		return "";
+	}
+
+	// Redis is strictly read-only: the guarded-write transaction path is never legitimately reached
+	// for a redis connection (writes are blocked by the allowlist + policy + forced allowWrites:false).
+	// Implement the contract method as a hard refusal rather than a no-op transaction.
+	transaction<T>(_fn: (tx: DbTransaction) => Promise<T>): Promise<T> {
+		return Promise.reject(new DbPolicyError("redis connections are read-only; transactions are not supported"));
 	}
 
 	async browseKeyspace(input: BrowseKeyspaceInput): Promise<BrowseKeyspaceResult> {

@@ -10,13 +10,13 @@
  * shell, so no further shell-escaping is applied here.
  */
 
-import { buildServiceLaunchArgs } from "../service-launch";
+import { BUN_RUNTIME_FLAGS, buildServiceLaunchArgs } from "../service-launch";
 import type { ServiceConfig } from "../service-types";
 
-/** Build the `/TR` task-run command string (`"bun" "cli.js" <args>`). */
+/** Build the `/TR` task-run command string (`"bun" --no-env-file "cli.js" <args>`). */
 export function buildSchtasksTaskRunString(config: ServiceConfig): string {
 	const launchArgs = buildServiceLaunchArgs(config);
-	return [`"${config.bunPath}"`, `"${config.scriptPath}"`, ...launchArgs].join(" ");
+	return [`"${config.bunPath}"`, ...BUN_RUNTIME_FLAGS, `"${config.scriptPath}"`, ...launchArgs].join(" ");
 }
 
 /** `schtasks /Create` args: an at-logon task, force-overwriting any existing. */

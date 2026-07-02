@@ -33,3 +33,17 @@ export function buildRowKey(table: RuntimeDbTable, row: RuntimeDbRow): RuntimeDb
 	}
 	return key;
 }
+
+/**
+ * Build a row-identifying key from ALL of a table's columns and a row's current values — the
+ * fallback used to edit/delete a row in a table WITHOUT a primary key. A NULL (or missing) cell is
+ * preserved as `null` so the runtime renders `IS NULL` rather than `= NULL`. Because a full-row
+ * match can still hit duplicate rows, the caller MUST send `requireSingleRow: true` so the write is
+ * rolled back unless exactly one row is affected.
+ */
+export function buildFullRowKey(table: RuntimeDbTable, row: RuntimeDbRow): RuntimeDbColumnValue[] {
+	return table.columns.map((column) => {
+		const value = row[column.name];
+		return { column: column.name, value: value === undefined ? null : value };
+	});
+}

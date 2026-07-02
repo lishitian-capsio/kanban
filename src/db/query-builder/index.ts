@@ -9,9 +9,12 @@ export { createPlaceholderFactory, quoteIdentifier, quoteQualifiedTable } from "
 export {
 	type BuildDeleteRowInput,
 	type BuildInsertRowInput,
+	type BuildRowWriteInput,
 	type BuildUpdateRowInput,
 	buildDeleteRow,
 	buildInsertRow,
+	buildRowWrite,
 	buildUpdateRow,
 	type ColumnValue,
+	type RowWriteOp,
 } from "./mutation";

@@ -30,6 +30,7 @@ describe("buildLaunchdPlist", () => {
 		expect(plist).toContain("<string>/opt/kanban/dist/cli.js</string>");
 		expect(plist).toContain("<string>--skip-shutdown-cleanup</string>");
 		expect(plist).toContain("<string>--no-open</string>");
+		expect(plist).toContain("<string>--no-env-file</string>");
 	});
 
 	it("sets RunAtLoad and KeepAlive so it starts at login and respawns", () => {

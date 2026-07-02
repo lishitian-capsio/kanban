@@ -26,6 +26,7 @@
 import { readFile } from "node:fs/promises";
 
 import type { RuntimeTaskSessionUsage } from "../core/api-contract";
+import { parseJsonl } from "../fs/jsonl";
 import { findLatestCodexRollout } from "./codex-session-capture";
 import { isUsageCacheFresh, type SessionUsageReadCache, statUsageFile } from "./session-usage-cache";
 
@@ -48,18 +49,7 @@ export function parseCodexRolloutUsage(content: string): RuntimeTaskSessionUsage
 	let outputTokens = 0;
 	let sawAnyUsage = false;
 
-	for (const rawLine of content.split("\n")) {
-		const line = rawLine.trim();
-		if (!line) {
-			continue;
-		}
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(line);
-		} catch {
-			// Torn/garbage line (e.g. a crash mid-write) — skip it.
-			continue;
-		}
+	for (const parsed of parseJsonl(content)) {
 		if (!parsed || typeof parsed !== "object") {
 			continue;
 		}

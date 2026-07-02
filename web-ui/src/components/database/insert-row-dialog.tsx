@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
-import type { RuntimeDbColumnValue, RuntimeDbTable } from "@/runtime/types";
+import type { RuntimeDbColumnValue, RuntimeDbPreviewWriteRequest, RuntimeDbTable } from "@/runtime/types";
+import { SqlPreview } from "./sql-preview";
 
 interface FieldState {
 	value: string;
@@ -16,6 +17,8 @@ interface FieldState {
 
 export interface InsertRowDialogProps {
 	open: boolean;
+	workspaceId: string;
+	connId: string;
 	table: RuntimeDbTable;
 	isSaving: boolean;
 	onClose: () => void;
@@ -26,7 +29,15 @@ export interface InsertRowDialogProps {
  * Insert a new row. Each column is optional in the form: a blank, non-NULL field is omitted so the
  * database applies its own DEFAULT; a NULL toggle sends an explicit SQL NULL.
  */
-export function InsertRowDialog({ open, table, isSaving, onClose, onInsert }: InsertRowDialogProps): React.ReactElement {
+export function InsertRowDialog({
+	open,
+	workspaceId,
+	connId,
+	table,
+	isSaving,
+	onClose,
+	onInsert,
+}: InsertRowDialogProps): React.ReactElement {
 	const [fields, setFields] = useState<Record<string, FieldState>>({});
 	const [renderedKey, setRenderedKey] = useState(table.name);
 	if (renderedKey !== table.name) {
@@ -60,6 +71,11 @@ export function InsertRowDialog({ open, table, isSaving, onClose, onInsert }: In
 		}
 		await onInsert(values);
 	};
+
+	const preview = useMemo<RuntimeDbPreviewWriteRequest | null>(
+		() => (values.length === 0 ? null : { connId, schema: table.schema, table: table.name, op: "insert", values }),
+		[values, connId, table.schema, table.name],
+	);
 
 	return (
 		<Dialog open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
@@ -106,6 +122,11 @@ export function InsertRowDialog({ open, table, isSaving, onClose, onInsert }: In
 						</div>
 					);
 				})}
+				{preview ? (
+					<div className="pt-1">
+						<SqlPreview workspaceId={workspaceId} request={preview} />
+					</div>
+				) : null}
 			</DialogBody>
 			<DialogFooter>
 				<Button variant="ghost" size="sm" onClick={onClose}>

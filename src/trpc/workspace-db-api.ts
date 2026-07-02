@@ -13,6 +13,8 @@ import type {
 	RuntimeDbInsertRowRequest,
 	RuntimeDbIntrospectRequest,
 	RuntimeDbIntrospectResponse,
+	RuntimeDbPreviewWriteRequest,
+	RuntimeDbPreviewWriteResponse,
 	RuntimeDbTestConnectionRequest,
 	RuntimeDbTestConnectionResponse,
 	RuntimeDbUpdateRowRequest,
@@ -21,18 +23,21 @@ import type {
 	RuntimeDbWriteResponse,
 } from "../core/api-contract";
 import {
+	assertSingleTableWrite,
 	buildBrowseQuery,
-	buildDeleteRow,
-	buildInsertRow,
-	buildUpdateRow,
+	buildRowWrite,
+	type BuiltQuery,
+	classifySql,
 	type ConnectionConfig,
 	type ConnectionRecord,
 	createDriver,
+	type DatabaseEngine,
 	DbError,
 	DbPolicyError,
 	formatDbRow,
 	normalizeConnId,
 	QueryExecutionError,
+	type RowWriteOp,
 } from "../db";
 import { createLogger } from "../logging";
 import {
@@ -125,6 +130,39 @@ export interface WorkspaceDbApi {
 	updateRow: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeDbUpdateRowRequest) => Promise<RuntimeDbWriteResponse>;
 	insertRow: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeDbInsertRowRequest) => Promise<RuntimeDbWriteResponse>;
 	deleteRow: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeDbDeleteRowRequest) => Promise<RuntimeDbWriteResponse>;
+	previewWrite: (
+		scope: RuntimeTrpcWorkspaceScope,
+		input: RuntimeDbPreviewWriteRequest,
+	) => Promise<RuntimeDbPreviewWriteResponse>;
+}
+
+/**
+ * Build the parameterized SQL for a row write and assert (defense-in-depth) that it is exactly one
+ * single-table INSERT/UPDATE/DELETE against the intended table before it can reach a driver. Shared
+ * by the preview and the execute paths so both go through the identical build + guard.
+ */
+function buildAndAssertRowWrite(
+	engine: DatabaseEngine,
+	op: RowWriteOp,
+	input: {
+		schema: string;
+		table: string;
+		assignments?: ReadonlyArray<{ column: string; value: string | null }>;
+		values?: ReadonlyArray<{ column: string; value: string | null }>;
+		where?: ReadonlyArray<{ column: string; value: string | null }>;
+	},
+): BuiltQuery {
+	const built = buildRowWrite({
+		op,
+		engine,
+		schema: input.schema,
+		table: input.table,
+		assignments: input.assignments,
+		values: input.values,
+		where: input.where,
+	});
+	assertSingleTableWrite(built.sql, engine, { schema: input.schema, table: input.table });
+	return built;
 }
 
 export function createWorkspaceDbApi(): WorkspaceDbApi {
@@ -315,52 +353,52 @@ export function createWorkspaceDbApi(): WorkspaceDbApi {
 
 		async updateRow(scope, input) {
 			const record = await loadRecordOrThrow(scope.workspaceId, input.connId);
-			const built = buildUpdateRow({
-				engine: record.engine,
-				schema: input.schema,
-				table: input.table,
-				assignments: input.assignments,
-				where: input.where,
-			});
-			return runWrite(scope.workspaceId, input.connId, built);
+			const built = buildAndAssertRowWrite(record.engine, "update", input);
+			return runWrite(scope.workspaceId, input.connId, built, input.requireSingleRow === true);
 		},
 
 		async insertRow(scope, input) {
 			const record = await loadRecordOrThrow(scope.workspaceId, input.connId);
-			const built = buildInsertRow({
-				engine: record.engine,
-				schema: input.schema,
-				table: input.table,
-				values: input.values,
-			});
-			return runWrite(scope.workspaceId, input.connId, built);
+			const built = buildAndAssertRowWrite(record.engine, "insert", input);
+			// An INSERT affects exactly one row by construction — never needs the row guard.
+			return runWrite(scope.workspaceId, input.connId, built, false);
 		},
 
 		async deleteRow(scope, input) {
 			const record = await loadRecordOrThrow(scope.workspaceId, input.connId);
-			const built = buildDeleteRow({
-				engine: record.engine,
-				schema: input.schema,
-				table: input.table,
-				where: input.where,
-			});
-			return runWrite(scope.workspaceId, input.connId, built);
+			const built = buildAndAssertRowWrite(record.engine, "delete", input);
+			return runWrite(scope.workspaceId, input.connId, built, input.requireSingleRow === true);
+		},
+
+		async previewWrite(scope, input) {
+			const record = await loadRecordOrThrow(scope.workspaceId, input.connId);
+			try {
+				const built = buildAndAssertRowWrite(record.engine, input.op, input);
+				return { sql: built.sql, params: built.params, classification: classifySql(built.sql, record.engine) };
+			} catch (error) {
+				throw toTrpcError(error);
+			}
 		},
 	};
 }
 
+/**
+ * Execute a built row write as the `human` caller. When `guardSingleRow` is set (no-primary-key
+ * edits, where the full-row WHERE could match duplicates), it runs through the transactional path
+ * that rolls back unless at most one row is affected; otherwise the plain (primary-key-bounded) path.
+ */
 async function runWrite(
 	workspaceId: string,
 	connId: string,
-	built: { sql: string; params: Array<string | null> },
+	built: BuiltQuery,
+	guardSingleRow: boolean,
 ): Promise<RuntimeDbWriteResponse> {
 	try {
-		const result = await getWorkspaceDbStack(workspaceId).executor.execute({
-			connId,
-			sql: built.sql,
-			params: built.params,
-			caller: CALLER,
-		});
+		const executor = getWorkspaceDbStack(workspaceId).executor;
+		const request = { connId, sql: built.sql, params: built.params, caller: CALLER };
+		const result = guardSingleRow
+			? await executor.executeGuardedRowWrite(request)
+			: await executor.execute(request);
 		return { affectedRows: result.affectedRows };
 	} catch (error) {
 		throw toTrpcError(error);

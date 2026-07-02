@@ -50,7 +50,7 @@ export interface QueryExecutorDeps {
 	 * the access policy cannot be bypassed. {@link DatabaseService.invalidate} is the
 	 * teardown used to abandon a timed-out / cancelled connection.
 	 */
-	service: Pick<DatabaseService, "runQuery" | "invalidate" | "describeTable" | "browseKeyspace">;
+	service: Pick<DatabaseService, "runQuery" | "runGuardedRowWrite" | "invalidate" | "describeTable" | "browseKeyspace">;
 	/** Resolve a connection's record (the executor needs its engine to classify + bound). */
 	loadConnection: (connId: string) => Promise<ConnectionRecord | null>;
 	/** Concurrency throttle. Defaults to the host-wide singleton. */
@@ -157,6 +157,43 @@ export class QueryExecutor {
 		const started = this.now();
 		try {
 			return await this.limiter.run(input.connId, () => this.runBrowse(input, started));
+		} catch (error) {
+			throw this.toExecutionError(input.connId, input.caller, error);
+		}
+	}
+
+	/**
+	 * Execute a single-row write (UPDATE/DELETE) under the guarded, transactional path — the write is
+	 * rolled back unless it affects at most one row. Used for edits on tables WITHOUT a primary key,
+	 * where the WHERE matches on all original values and a duplicate row could otherwise be
+	 * over-affected. Shares the executor's concurrency throttle and normalized errors with
+	 * {@link execute}; the transaction and the row guard live in {@link DatabaseService.runGuardedRowWrite}.
+	 */
+	async executeGuardedRowWrite(input: ExecuteQueryInput): Promise<ExecuteQueryResult> {
+		const started = this.now();
+		try {
+			return await this.limiter.run(input.connId, async () => {
+				const limits = { ...this.limits, ...input.limits };
+				const driverResult = await this.deps.service.runGuardedRowWrite({
+					connId: input.connId,
+					sql: input.sql,
+					caller: input.caller,
+					params: input.params,
+					timeoutMs: limits.timeoutMs,
+				});
+				return {
+					columns: driverResult.fields,
+					rows: [],
+					rowCount: 0,
+					affectedRows: driverResult.rowCount,
+					classification: "write" as const,
+					readOnly: false,
+					durationMs: driverResult.durationMs,
+					totalDurationMs: this.now() - started,
+					pagination: { paginated: false, pageSize: 0, hasMore: false, nextCursor: null },
+					truncated: { byRows: false, byBytes: false },
+				};
+			});
 		} catch (error) {
 			throw this.toExecutionError(input.connId, input.caller, error);
 		}

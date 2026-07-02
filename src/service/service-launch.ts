@@ -10,6 +10,18 @@
 
 import type { ServiceConfig } from "./service-types";
 
+/**
+ * Bun runtime flags that MUST precede the script path.
+ *
+ * `--no-env-file` disables Bun's default auto-loading of a `.env` in the
+ * process cwd. A service runs with `WorkingDirectory` = the user's repo and
+ * under a minimal (non-interactive) environment, so a stray `.env` in that
+ * repo would otherwise be injected into any KANBAN_-prefixed, proxy, or
+ * credential-path var the user's shell didn't already set. Kanban never reads
+ * its own config from a `.env`, so disabling this breaks nothing (see AGENTS.md).
+ */
+export const BUN_RUNTIME_FLAGS: readonly string[] = ["--no-env-file"];
+
 /** Build the runtime CLI args (everything after the script path). */
 export function buildServiceLaunchArgs(config: ServiceConfig): string[] {
 	const args: string[] = ["--skip-shutdown-cleanup", "--no-open"];
@@ -28,7 +40,7 @@ export function buildServiceLaunchArgs(config: ServiceConfig): string[] {
 	return args;
 }
 
-/** Build the full launch command: `[bun, script, ...args]`. */
+/** Build the full launch command: `[bun, ...bunFlags, script, ...args]`. */
 export function buildServiceCommand(config: ServiceConfig): string[] {
-	return [config.bunPath, config.scriptPath, ...buildServiceLaunchArgs(config)];
+	return [config.bunPath, ...BUN_RUNTIME_FLAGS, config.scriptPath, ...buildServiceLaunchArgs(config)];
 }

@@ -736,8 +736,13 @@ export const runtimeDbUpdateRowRequestSchema = z.object({
 	schema: z.string(),
 	table: z.string(),
 	assignments: z.array(runtimeDbColumnValueSchema).min(1),
-	/** Row-identifying key (introspected primary key). */
+	/** Row-identifying key: the primary key, or (for a keyless table) all of the row's columns. */
 	where: z.array(runtimeDbColumnValueSchema).min(1),
+	/**
+	 * Run the write in a transaction that is rolled back unless it affects exactly one row. The UI
+	 * sets this for tables WITHOUT a primary key, where the full-row WHERE could match duplicates.
+	 */
+	requireSingleRow: z.boolean().optional(),
 });
 export type RuntimeDbUpdateRowRequest = z.infer<typeof runtimeDbUpdateRowRequestSchema>;
 
@@ -753,8 +758,10 @@ export const runtimeDbDeleteRowRequestSchema = z.object({
 	connId: z.string(),
 	schema: z.string(),
 	table: z.string(),
-	/** Row-identifying key (introspected primary key). */
+	/** Row-identifying key: the primary key, or (for a keyless table) all of the row's columns. */
 	where: z.array(runtimeDbColumnValueSchema).min(1),
+	/** See {@link runtimeDbUpdateRowRequestSchema.requireSingleRow}. */
+	requireSingleRow: z.boolean().optional(),
 });
 export type RuntimeDbDeleteRowRequest = z.infer<typeof runtimeDbDeleteRowRequestSchema>;
 
@@ -762,6 +769,33 @@ export const runtimeDbWriteResponseSchema = z.object({
 	affectedRows: z.number().nullable(),
 });
 export type RuntimeDbWriteResponse = z.infer<typeof runtimeDbWriteResponseSchema>;
+
+/** The row-write kind for a preview. */
+export const runtimeDbRowWriteOpSchema = z.enum(["update", "insert", "delete"]);
+export type RuntimeDbRowWriteOp = z.infer<typeof runtimeDbRowWriteOpSchema>;
+
+/**
+ * Ask the runtime to build (but NOT execute) the parameterized SQL for a row write, so the human can
+ * review exactly what will run before applying it. Uses the same builders as execute, so the preview
+ * is byte-identical to the executed statement.
+ */
+export const runtimeDbPreviewWriteRequestSchema = z.object({
+	connId: z.string(),
+	schema: z.string(),
+	table: z.string(),
+	op: runtimeDbRowWriteOpSchema,
+	assignments: z.array(runtimeDbColumnValueSchema).optional(),
+	values: z.array(runtimeDbColumnValueSchema).optional(),
+	where: z.array(runtimeDbColumnValueSchema).optional(),
+});
+export type RuntimeDbPreviewWriteRequest = z.infer<typeof runtimeDbPreviewWriteRequestSchema>;
+
+export const runtimeDbPreviewWriteResponseSchema = z.object({
+	sql: z.string(),
+	params: z.array(z.string().nullable()),
+	classification: z.enum(["read", "write", "ddl", "unknown"]),
+});
+export type RuntimeDbPreviewWriteResponse = z.infer<typeof runtimeDbPreviewWriteResponseSchema>;
 
 // ---------------------------------------------------------------------------
 // Vault documents

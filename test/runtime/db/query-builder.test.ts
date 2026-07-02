@@ -4,6 +4,7 @@ import {
 	buildBrowseQuery,
 	buildDeleteRow,
 	buildInsertRow,
+	buildRowWrite,
 	buildUpdateRow,
 	quoteIdentifier,
 	quoteQualifiedTable,
@@ -126,6 +127,21 @@ describe("buildUpdateRow", () => {
 			}),
 		).toThrow();
 	});
+
+	it("renders a NULL WHERE key as IS NULL without consuming a placeholder (full-row match)", () => {
+		const built = buildUpdateRow({
+			engine: "postgres",
+			schema: "public",
+			table: "logs",
+			assignments: [{ column: "note", value: "seen" }],
+			where: [
+				{ column: "user_id", value: null },
+				{ column: "kind", value: "login" },
+			],
+		});
+		expect(built.sql).toBe('UPDATE "public"."logs" SET "note" = $1 WHERE "user_id" IS NULL AND "kind" = $2');
+		expect(built.params).toEqual(["seen", "login"]);
+	});
 });
 
 describe("buildInsertRow", () => {
@@ -165,5 +181,58 @@ describe("buildDeleteRow", () => {
 
 	it("throws when the WHERE key is empty (refuses an unbounded delete)", () => {
 		expect(() => buildDeleteRow({ engine: "sqlite", schema: "", table: "t", where: [] })).toThrow();
+	});
+
+	it("renders a NULL WHERE key as IS NULL (full-row match on a nullable column)", () => {
+		const built = buildDeleteRow({
+			engine: "sqlite",
+			schema: "",
+			table: "logs",
+			where: [
+				{ column: "note", value: null },
+				{ column: "kind", value: "login" },
+			],
+		});
+		expect(built.sql).toBe('DELETE FROM "logs" WHERE "note" IS NULL AND "kind" = ?');
+		expect(built.params).toEqual(["login"]);
+	});
+});
+
+describe("buildRowWrite (op dispatch — shared by preview and execute)", () => {
+	it("dispatches op=update to buildUpdateRow", () => {
+		const via = buildRowWrite({
+			op: "update",
+			engine: "postgres",
+			schema: "public",
+			table: "users",
+			assignments: [{ column: "name", value: "a" }],
+			where: [{ column: "id", value: "1" }],
+		});
+		const direct = buildUpdateRow({
+			engine: "postgres",
+			schema: "public",
+			table: "users",
+			assignments: [{ column: "name", value: "a" }],
+			where: [{ column: "id", value: "1" }],
+		});
+		expect(via).toEqual(direct);
+	});
+
+	it("dispatches op=insert to buildInsertRow", () => {
+		const via = buildRowWrite({ op: "insert", engine: "mysql", schema: "s", table: "t", values: [{ column: "c", value: "v" }] });
+		const direct = buildInsertRow({ engine: "mysql", schema: "s", table: "t", values: [{ column: "c", value: "v" }] });
+		expect(via).toEqual(direct);
+	});
+
+	it("dispatches op=delete to buildDeleteRow", () => {
+		const via = buildRowWrite({ op: "delete", engine: "sqlite", schema: "", table: "t", where: [{ column: "id", value: "1" }] });
+		const direct = buildDeleteRow({ engine: "sqlite", schema: "", table: "t", where: [{ column: "id", value: "1" }] });
+		expect(via).toEqual(direct);
+	});
+
+	it("throws for an update with no WHERE key", () => {
+		expect(() =>
+			buildRowWrite({ op: "update", engine: "sqlite", schema: "", table: "t", assignments: [{ column: "a", value: "1" }], where: [] }),
+		).toThrow();
 	});
 });

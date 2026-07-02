@@ -13,6 +13,15 @@ import type {
 export type { ConnectionConfig };
 
 /**
+ * A statement runner bound to a single in-progress transaction (one physical connection).
+ * Handed to the callback of {@link DatabaseDriver.transaction} so a multi-step write can run
+ * on the same connection and be committed / rolled back atomically.
+ */
+export interface DbTransaction {
+	query(request: QueryRequest): Promise<QueryResult>;
+}
+
+/**
  * The engine-agnostic driver contract. Every adapter (Postgres/MySQL/SQLite/…)
  * implements exactly this surface so the pool manager and service treat all engines
  * identically. `query` trusts the `readOnly` flag the policy layer resolved and opens
@@ -28,6 +37,12 @@ export interface DatabaseDriver {
 	testConnection(): Promise<TestConnectionResult>;
 	/** Execute one statement in the resolved session mode. */
 	query(request: QueryRequest): Promise<QueryResult>;
+	/**
+	 * Run `fn` inside a transaction on one reserved connection, committing if it resolves and
+	 * rolling back if it throws (the error is rethrown). Backs the no-primary-key safe-edit path,
+	 * where the write must be undone unless a post-write guard (exactly one row affected) passes.
+	 */
+	transaction<T>(fn: (tx: DbTransaction) => Promise<T>): Promise<T>;
 	/** Read the catalog, normalized to {@link SchemaIntrospection}. Always read-only. */
 	introspect(): Promise<SchemaIntrospection>;
 	/**

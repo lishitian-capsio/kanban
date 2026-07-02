@@ -62,7 +62,15 @@ await Promise.all([
 		outfile: "dist/cli.js",
 		banner: {
 			js: [
-				"#!/usr/bin/env bun",
+				// `-S` splits the args so Bun receives `--no-env-file`, which disables
+				// Bun's default auto-loading of a `.env` in the invocation cwd. When the
+				// `kanban` binary runs inside an arbitrary user repo / task worktree, a
+				// stray `.env` there must NOT be injected into the runtime's env
+				// (KANBAN_*, proxy, credential-file paths). Kanban never reads its own
+				// config from `.env`, so this is pure hardening. `env -S` needs GNU
+				// coreutils >= 8.30 / macOS / BSD (not busybox); the service launchers
+				// pass the same flag explicitly (see service-launch.ts).
+				"#!/usr/bin/env -S bun --no-env-file",
 				// Sentry's bundled `isCjs()` contains a bare `typeof module` check
 				// that causes Bun to classify the entire ESM file as CJS, which then
 				// conflicts with ESM `import` statements.  Declaring a local `module`

@@ -10,9 +10,16 @@ export interface UseDbRowMutationsResult {
 		table: string;
 		assignments: RuntimeDbColumnValue[];
 		where: RuntimeDbColumnValue[];
+		/** For keyless tables: run in a transaction rolled back unless exactly one row matches. */
+		requireSingleRow?: boolean;
 	}) => Promise<number | null>;
 	insertRow: (args: { schema: string; table: string; values: RuntimeDbColumnValue[] }) => Promise<number | null>;
-	deleteRow: (args: { schema: string; table: string; where: RuntimeDbColumnValue[] }) => Promise<number | null>;
+	deleteRow: (args: {
+		schema: string;
+		table: string;
+		where: RuntimeDbColumnValue[];
+		requireSingleRow?: boolean;
+	}) => Promise<number | null>;
 }
 
 /** Structured row writes (UPDATE/INSERT/DELETE). The runtime builds the SQL from the PK key. */

@@ -146,6 +146,23 @@ export class SqliteDriver implements DatabaseDriver {
 		}
 	}
 
+	async transaction<T>(fn: (tx: { query(request: QueryRequest): Promise<QueryResult> }) => Promise<T>): Promise<T> {
+		const db = this.require();
+		db.exec("BEGIN");
+		try {
+			const result = await fn({ query: (request) => this.query(request) });
+			db.exec("COMMIT");
+			return result;
+		} catch (error) {
+			try {
+				db.exec("ROLLBACK");
+			} catch {
+				// best-effort rollback
+			}
+			throw error;
+		}
+	}
+
 	async introspect(): Promise<SchemaIntrospection> {
 		const db = this.require();
 		const objects = db
