@@ -1,0 +1,20 @@
+{
+  "id": "87214",
+  "title": "Database: 人工视图写/编辑增强(SQL, 保持通道只读决策)",
+  "prompt": "增强 Database 人工视图的写/编辑能力(基于 Bun.SQL 支持写),严格限定在人工视图,绝不放开 CLI/agent 通道。\n\n## 铁律(现有决策,不可违背)\n- **CLI/agent 的 db 通道严格只读**(见 db-cli-agent-readonly),迁移/增强绝不能给 agent 通道放开写/DDL。\n- 现有人工 Database 视图的行编辑已由 allowWrites + 主键(PK)门控(见 database-ui-implemented)。本任务是在**人工视图**内增强,不是新开写通道。\n\n## 目标\n先盘清现状(人工视图现在支持哪些写/编辑:行编辑?insert/delete?),再在人工视图内增量增强写/编辑体验,底层用 Bun.SQL 的写能力,针对 postgres/mysql(sqlite 已 bun:sqlite)。\n\n## 要求\n1. 现状调研:人工视图 + 各驱动当前的写路径、allowWrites 门控、PK 依赖、事务处理;明确缺口(如无 PK 表、批量编辑、insert/delete、事务回滚 UX)。\n2. 增强项(取用户价值高的):行 insert/delete、无 PK 表的安全编辑策略、编辑前预览生成的 SQL、失败回滚提示。全部走参数化,防注入。\n3. **门控不放松**:写仅在 allowWrites 打开的人工视图;CLI/agent 只读不变;每工作区 access gate 不变。\n4. 用 node-sql-parser 或等价手段确保只生成预期的单表写语句,不误伤。\n5. vitest 注入/mock 全绿;真实写路径走 bun test 或容器,覆盖回滚。\n6. 文档 + 明确安全边界。\n\n先出现状调研 + 增强清单 + 安全边界,再改代码。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
+  "baseRef": "main",
+  "createdAt": 1782961691462,
+  "updatedAt": 1782961691462,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}

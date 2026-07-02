@@ -1,0 +1,20 @@
+{
+  "id": "be8d7",
+  "title": "Database: 新增 Redis 只读引擎(Bun.redis)",
+  "prompt": "给 Kanban 的 Database 功能新增 Redis 引擎,基于 Bun 原生 Bun.redis,只读浏览。\n\n## 背景与架构\n- Database 功能是关系型只读:驱动走 src/db/driver/driver-registry.ts 的 registerDriver(engine, factory),实现 src/db/driver/driver.ts 的 DatabaseDriver 契约;现有引擎 postgres/mysql(src/db/driver/bun-sql/)、sqlite(src/db/driver/sqlite-driver.ts,bun:sqlite)。\n- 有 per-workspace access gate(resolveDbWorkspace / database_access_disabled),严格只读。\n- Bun 原生 Bun.redis(import { RedisClient } from \"bun\")支持连接串、pub/sub、raw send。\n\n## 目标\n新增 \"redis\" 引擎:用户配置 Redis 连接(redis:// / rediss:// / unix),在 Database 视图里只读浏览。\n\n## 要求\n1. 先出方案:Redis 是 KV,不是表/列。设计它如何映射到现有 DatabaseDriver 契约(tables/describe/query 的语义)——建议把 key-space 浏览(SCAN + TYPE)当作\"表列表\",value 展示按类型(string/hash/list/set/zset)。列出对契约的适配点。\n2. 实现 RedisDriver(基于 Bun.redis),registerDriver(\"redis\", ...);连接生命周期、超时、错误映射对齐现有驱动。\n3. **严格只读**:只允许只读命令(GET/HGETALL/LRANGE/SMEMBERS/ZRANGE/SCAN/TYPE/TTL 等),拒绝写命令;保留 access gate。\n4. 打通 tRPC database 路由 + CLI db 子命令 + Database 视图 UI 的引擎选择(engine=redis)。\n5. vitest 在 Node 上跑,Bun.redis 不可用 → 需注入/mock,测试全绿;真实连接走 bun test。\n6. 更新 db 相关文档。\n\n先出方案再改代码。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
+  "baseRef": "main",
+  "createdAt": 1782961691232,
+  "updatedAt": 1782961691232,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}

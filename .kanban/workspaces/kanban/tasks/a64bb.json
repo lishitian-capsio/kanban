@@ -1,0 +1,20 @@
+{
+  "id": "a64bb",
+  "title": "Database/文件面: S3 对象浏览(Bun.s3) — 先定位再实现",
+  "prompt": "给 Kanban 增加 S3 兼容对象存储的只读浏览,基于 Bun 原生 Bun.s3 / S3Client。\n\n## 重要:先决定它属于哪个面\n- 对象存储不是关系型 DB,范式更接近文件浏览器(fs-explorer / file-surface),硬塞进关系型 Database 视图会错位。\n- 因此本任务第一步是**设计决策**:S3 浏览应放进 (a) Database 视图作为一个特殊 \"engine=s3\",还是 (b) file-surface/fs-explorer 作为一个远程文件源。给出取舍与推荐,再据此实现。\n\n## 背景\n- Bun 原生 Bun.s3 / S3Client:list(桶内对象,支持 prefix/maxKeys/分页 isTruncated)、file().text()/bytes()/stream()、stat(size/etag/lastModified)、presign。兼容 AWS S3 / R2 / DigitalOcean / MinIO / Supabase,凭证走显式配置(不要读进程 env,按 per-connection 配置)。\n- 现有 file-surface / fs-explorer 已有文件树 + 预览 + 只读浏览的 UI 范式(见 workspace-fs-api.ts、components/file-surface/)。\n\n## 要求\n1. 产出放置方案(Database vs file-surface)+ 推荐,列 UI/契约/复用点。\n2. 按推荐实现只读浏览:列桶/对象(分页)、预览文本/二进制、显示 stat 元数据;凭证 per-connection 显式配置,支持自定义 endpoint(R2/MinIO 等)。\n3. **只读**:不做写/删/presign-上传(至少首版);保留 access gate 或等价的每工作区开关。\n4. vitest 在 Node 上 Bun.s3 不可用 → 注入/mock;真实走 bun test 或 MinIO 本地。\n5. 文档。\n\n先出放置方案与实现设计,再改代码。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
+  "baseRef": "main",
+  "createdAt": 1782961691686,
+  "updatedAt": 1782961691686,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}

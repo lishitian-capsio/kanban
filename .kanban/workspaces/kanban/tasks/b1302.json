@@ -1,0 +1,20 @@
+{
+  "id": "b1302",
+  "title": "Database: 扩展更多 SQL 兼容引擎(Bun.SQL)",
+  "prompt": "在现有 Bun.SQL 驱动(src/db/driver/bun-sql/)基础上,扩展支持更多 SQL 兼容引擎。\n\n## 背景\n- 现有 bun-sql/ 通过 BunSqlDriver + dialect 支持 postgres、mysql(register.ts)。sqlite 走 bun:sqlite。\n- 许多数据库是 pg/mysql 线协议兼容(如 MariaDB≈mysql、CockroachDB/Redshift/Timescale≈postgres、以及各类 pg 兼容云库),理论上加一个 dialect / 复用现有 dialect 即可支持。\n\n## 目标\n先调研 Bun.SQL 实际支持的 wire 协议与方言差异,再增量支持一组高价值的 SQL 兼容引擎(如 MariaDB,以及主流 pg 兼容库),尽量复用现有 postgres/mysql dialect。\n\n## 要求\n1. 调研:Bun.SQL 支持哪些协议/方言?现有 postgresDialect/mysqlDialect 的差异点在哪(introspection SQL、类型映射、describe/tables 查询)?列出可低成本纳入的引擎清单。\n2. 对每个新增引擎:注册 engine、复用或新增 dialect、覆盖 introspection(tables/columns)、类型映射。\n3. 保持只读语义 + access gate 不回归。\n4. tRPC database 路由 + CLI + UI 的 engine 选项同步扩展。\n5. vitest 注入/mock 保持全绿;真实连接走 bun test 或容器。\n6. 文档 + 明确哪些引擎已验证、哪些仅协议兼容未实测。\n\n先出调研与引擎清单,再改代码。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
+  "baseRef": "main",
+  "createdAt": 1782961691881,
+  "updatedAt": 1782961691881,
+  "column": "backlog",
+  "rank": "Zw",
+  "dependsOn": []
+}
