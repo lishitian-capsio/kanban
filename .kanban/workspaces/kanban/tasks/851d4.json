@@ -1,0 +1,20 @@
+{
+  "id": "851d4",
+  "title": "自更新源: npm registry → GitHub Releases (.tgz)",
+  "prompt": "把 Kanban 自身的 CLI 自更新机制的『源』从 npm registry 改为 GitHub Releases,分发产物为 npm pack 生成的 .tgz 附件。\n\n## 背景\n当前实现在 src/update/update.ts,由 src/cli.ts 挂载(约 778-789 行、855-865 行),测试在 test/runtime/update/auto-update.test.ts。\n现状:\n- 版本探测:fetch('https://registry.npmjs.org/kanban/<tag>'),2.5s 超时。\n- 版本比对:自研 semver 解析(compareVersions),支持 -nightly. prerelease,prerelease < release。\n- 安装:detectAutoUpdateInstallation 按二进制路径判断安装方式(npm/pnpm/yarn/bun 全局、npx/dlx 临时、本地 dev),生成升级命令 <pm> install/add -g kanban@<tag>,再用 spawnSync(stdio:inherit)执行。\n- 代理:spawn 时必须合并 buildSubprocessProxyEnv()(运行时 process.env 不带原始代理变量)。\n- 入口:kanban update / kanban --update / 启动时后台 autoUpdateOnStartup() / 关机 runPendingAutoUpdateOnShutdown();可用 KANBAN_NO_AUTO_UPDATE=1 / NODE_ENV=test / CI=true 关闭自动检查。\n\n## 目标改动\n1. 版本探测源改为 GitHub Releases API:GET https://api.github.com/repos/<owner>/<repo>/releases/latest(以及 nightly 场景取对应 prerelease release)。tag_name 即最新版本号,沿用现有 compareVersions 比对(注意剥掉可能的 'v' 前缀)。\n2. 安装源改为:从该 release 的 assets 中找到 npm pack 生成的 .tgz 附件(约定命名,如 kanban-<version>.tgz),下载到临时目录,然后用探测到的包管理器执行全局安装 *本地 .tgz 文件*(如 npm install -g <下载的.tgz 路径>,pnpm/yarn/bun 对应等价命令)。保留 detectAutoUpdateInstallation 的安装方式探测与本地-dev/临时安装的既有分支处理。\n3. 复用现有 GitHub 鉴权:src/github-auth/ 已有 machine-local token(github-auth-service.ts / getGitInjection 那套)。GitHub API 与 asset 下载请求应在有 token 时带上 Authorization,以支持私有仓库与提高限流额度;无 token 时按公开仓库匿名请求(degrade 而非报错)。不要把 token 写进磁盘/日志/进程 args。\n4. 所有 GitHub 网络请求走 globalThis.fetch(已被代理 monkey-patch 覆盖);安装 spawn 仍合并 buildSubprocessProxyEnv()。asset 下载注意 GitHub 的 302 重定向到 codeload/对象存储。\n5. owner/repo 通过常量或环境变量(如 KANBAN_UPDATE_GITHUB_REPO='owner/repo')配置,给一个合理默认;若你需要具体仓库名而无法确定,先在实现顶部留一个显眼的常量并在 PR 描述里说明需要人工填。\n6. 保留所有返回状态语义:updated / already_up_to_date / cache_refreshed / unsupported_installation / check_failed / update_failed;网络失败仍 graceful degrade(不 crash Kanban)。\n\n## 验收\n- kanban update / kanban --update 走 GitHub Releases 路径。\n- 更新/加相应单元测试:mock fetch 返回 releases/latest JSON + asset,覆盖 already_up_to_date、updated、check_failed(网络失败)、asset 缺失、prerelease/nightly。参考并改造 test/runtime/update/auto-update.test.ts 的现有测试风格。\n- 遵循仓库 TypeScript 规范(无 any、无 inline import、结构化日志用 src/logging 的 createLogger、不 console.*)。\n- typecheck + 相关测试通过。\n\n先读 src/update/update.ts、src/cli.ts 相关段、test/runtime/update/auto-update.test.ts、src/github-auth/ 与 config/proxy-env.ts(buildSubprocessProxyEnv)再动手。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "14c3b7dd-36b3-4205-a132-f9be33ca0f2c",
+  "baseRef": "main",
+  "createdAt": 1782955998737,
+  "updatedAt": 1782955998737,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
