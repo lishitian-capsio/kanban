@@ -3029,6 +3029,121 @@ export type RuntimeDbBrowseRequest = z.infer<typeof runtimeDbBrowseRequestSchema
 export const runtimeDbBrowseResponseSchema = runtimeDbQueryResponseSchema;
 export type RuntimeDbBrowseResponse = z.infer<typeof runtimeDbBrowseResponseSchema>;
 
+// --- S3 object storage (read-only browsing) ---
+// Wire contract for the `kanban storage` CLI surface. Mirrors the secret-free shapes the
+// storage core exposes; secrets (accessKeyId/secretAccessKey/sessionToken) only ever
+// travel inbound on `add`/`update` and are never returned.
+// Kept self-contained here (api-contract imports only core) so the web-ui bundle never
+// pulls in the AWS SDK modules.
+
+export const runtimeStorageConnectionSchema = z.object({
+	connId: z.string(),
+	label: z.string(),
+	endpoint: z.string().nullable(),
+	region: z.string().nullable(),
+	bucket: z.string(),
+	virtualHostedStyle: z.boolean(),
+	hasCredential: z.boolean(),
+	createdAt: z.string(),
+});
+export type RuntimeStorageConnection = z.infer<typeof runtimeStorageConnectionSchema>;
+
+export const runtimeStorageConnectionsListResponseSchema = z.object({
+	connections: z.array(runtimeStorageConnectionSchema),
+});
+export type RuntimeStorageConnectionsListResponse = z.infer<typeof runtimeStorageConnectionsListResponseSchema>;
+
+export const runtimeStorageUpsertConnectionRequestSchema = z.object({
+	connId: z.string().optional(),
+	label: z.string().min(1),
+	endpoint: z.string().nullable(),
+	region: z.string().nullable(),
+	bucket: z.string().min(1),
+	virtualHostedStyle: z.boolean(),
+	accessKeyId: z.string().nullable().optional(),
+	secretAccessKey: z.string().nullable().optional(),
+	sessionToken: z.string().nullable().optional(),
+});
+export type RuntimeStorageUpsertConnectionRequest = z.infer<typeof runtimeStorageUpsertConnectionRequestSchema>;
+
+export const runtimeStorageUpsertConnectionResponseSchema = z.object({ connection: runtimeStorageConnectionSchema });
+export type RuntimeStorageUpsertConnectionResponse = z.infer<typeof runtimeStorageUpsertConnectionResponseSchema>;
+
+export const runtimeStorageDeleteConnectionRequestSchema = z.object({ connId: z.string() });
+export type RuntimeStorageDeleteConnectionRequest = z.infer<typeof runtimeStorageDeleteConnectionRequestSchema>;
+export const runtimeStorageDeleteConnectionResponseSchema = z.object({ deleted: z.boolean() });
+export type RuntimeStorageDeleteConnectionResponse = z.infer<typeof runtimeStorageDeleteConnectionResponseSchema>;
+
+export const runtimeStorageTestConnectionRequestSchema = z.object({ connId: z.string() });
+export type RuntimeStorageTestConnectionRequest = z.infer<typeof runtimeStorageTestConnectionRequestSchema>;
+export const runtimeStorageTestConnectionResponseSchema = z.object({
+	ok: z.boolean(),
+	latencyMs: z.number(),
+	error: z.string().nullable(),
+});
+export type RuntimeStorageTestConnectionResponse = z.infer<typeof runtimeStorageTestConnectionResponseSchema>;
+
+export const runtimeStorageEntrySchema = z.object({
+	key: z.string(),
+	name: z.string(),
+	kind: z.enum(["prefix", "object"]),
+	size: z.number().optional(),
+	lastModified: z.string().optional(),
+	etag: z.string().optional(),
+});
+export type RuntimeStorageEntry = z.infer<typeof runtimeStorageEntrySchema>;
+
+export const runtimeStorageListRequestSchema = z.object({
+	connId: z.string(),
+	prefix: z.string().optional(),
+	continuationToken: z.string().optional(),
+	maxKeys: z.number().int().positive().max(1000).optional(),
+});
+export type RuntimeStorageListRequest = z.infer<typeof runtimeStorageListRequestSchema>;
+export const runtimeStorageListResponseSchema = z.object({
+	prefix: z.string(),
+	entries: z.array(runtimeStorageEntrySchema),
+	isTruncated: z.boolean(),
+	nextContinuationToken: z.string().optional(),
+});
+export type RuntimeStorageListResponse = z.infer<typeof runtimeStorageListResponseSchema>;
+
+export const runtimeStorageReadRequestSchema = z.object({ connId: z.string(), key: z.string() });
+export type RuntimeStorageReadRequest = z.infer<typeof runtimeStorageReadRequestSchema>;
+export const runtimeStorageObjectContentSchema = z.object({
+	key: z.string(),
+	encoding: z.enum(["utf8", "base64"]),
+	content: z.string().nullable(),
+	size: z.number(),
+	lastModified: z.string(),
+	etag: z.string(),
+	contentType: z.string(),
+	binary: z.boolean(),
+	tooLarge: z.boolean(),
+});
+export type RuntimeStorageObjectContent = z.infer<typeof runtimeStorageObjectContentSchema>;
+
+export const runtimeStorageStatRequestSchema = z.object({ connId: z.string(), key: z.string() });
+export type RuntimeStorageStatRequest = z.infer<typeof runtimeStorageStatRequestSchema>;
+export const runtimeStorageStatResponseSchema = z.object({
+	key: z.string(),
+	size: z.number(),
+	lastModified: z.string(),
+	etag: z.string(),
+	contentType: z.string(),
+});
+export type RuntimeStorageStatResponse = z.infer<typeof runtimeStorageStatResponseSchema>;
+
+export const runtimeStorageDownloadRequestSchema = z.object({ connId: z.string(), key: z.string() });
+export type RuntimeStorageDownloadRequest = z.infer<typeof runtimeStorageDownloadRequestSchema>;
+export const runtimeStorageDownloadResponseSchema = z.object({
+	fileName: z.string(),
+	contentType: z.string(),
+	data: z.string().nullable(),
+	tooLarge: z.boolean(),
+});
+export type RuntimeStorageDownloadResponse = z.infer<typeof runtimeStorageDownloadResponseSchema>;
+
 export const runtimeHookEventSchema = z.enum(["to_review", "to_in_progress", "activity"]);
 export type RuntimeHookEvent = z.infer<typeof runtimeHookEventSchema>;
 
