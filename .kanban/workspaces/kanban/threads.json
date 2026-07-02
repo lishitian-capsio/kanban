@@ -176,7 +176,7 @@
       "titleSource": "auto",
       "createdAt": 1782982437956,
       "updatedAt": 1782983212206,
-      "pendingNextStep": "建个 task 修复 fetchAuthenticatedLogin：先写盘再查用户名并加超时，避免登录完成信号卡住"
+      "pendingNextStep": "Start task #69671"
     },
     {
       "id": "6eff6e3c-a36d-4d19-8f02-3462ec4b1e41",
