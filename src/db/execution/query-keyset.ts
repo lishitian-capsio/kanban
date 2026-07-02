@@ -1,5 +1,5 @@
 import { InvalidCursorError } from "../errors";
-import type { DatabaseEngine, TableDetail } from "../types";
+import { type DatabaseEngine, engineWireProtocol, type TableDetail } from "../types";
 
 /**
  * Keyset (a.k.a. seek) pagination for large-table browsing.
@@ -104,9 +104,9 @@ export function decodeKeysetCursor(cursor: string | null | undefined): unknown[]
 	return decoded.values;
 }
 
-/** Quote a SQL identifier for the engine (Postgres/SQLite double-quote, MySQL backtick). */
+/** Quote a SQL identifier for the engine (Postgres family double-quote, MySQL family backtick). */
 export function quoteIdentifier(engine: DatabaseEngine, name: string): string {
-	if (engine === "mysql") {
+	if (engineWireProtocol(engine) === "mysql") {
 		return `\`${name.replace(/`/g, "``")}\``;
 	}
 	return `"${name.replace(/"/g, '""')}"`;
@@ -183,9 +183,9 @@ export function buildKeysetQuery(input: BuildKeysetQueryInput): KeysetQuery {
 	return { sql, params, fetchLimit };
 }
 
-/** Positional placeholder for the engine: Postgres `$n`, MySQL/SQLite `?`. */
+/** Positional placeholder for the engine: Postgres family `$n`, MySQL family / SQLite `?`. */
 function placeholder(engine: DatabaseEngine, n: number): string {
-	return engine === "postgres" ? `$${n}` : "?";
+	return engineWireProtocol(engine) === "postgres" ? `$${n}` : "?";
 }
 
 /** Extract the ordering-key values from a returned row, in key-column order. */

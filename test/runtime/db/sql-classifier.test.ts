@@ -35,6 +35,16 @@ describe("classifySql", () => {
 		expect(classifySql("WITH t AS (SELECT id FROM users) DELETE FROM users", "postgres")).toBe("unknown");
 	});
 
+	it("classifies protocol-compatible engines via their wire-protocol parser dialect", () => {
+		// postgres family
+		expect(classifySql("SELECT * FROM users", "cockroachdb")).toBe("read");
+		expect(classifySql("SELECT * FROM users", "timescaledb")).toBe("read");
+		expect(classifySql("UPDATE users SET id = 2", "cockroachdb")).toBe("write");
+		// mysql family
+		expect(classifySql("SELECT * FROM users", "mariadb")).toBe("read");
+		expect(classifySql("DELETE FROM users", "mariadb")).toBe("write");
+	});
+
 	it("classifies DDL as ddl", () => {
 		expect(classifySql("CREATE TABLE x (id int)", "postgres")).toBe("ddl");
 		expect(classifySql("DROP TABLE x", "postgres")).toBe("ddl");

@@ -21,6 +21,14 @@ describe("quoteIdentifier", () => {
 		expect(quoteIdentifier("mysql", "users")).toBe("`users`");
 		expect(quoteIdentifier("mysql", "we`ird")).toBe("`we``ird`");
 	});
+
+	it("quotes by wire-protocol family, not product identity", () => {
+		// mariadb speaks the mysql protocol -> backticks
+		expect(quoteIdentifier("mariadb", "users")).toBe("`users`");
+		// cockroachdb / timescaledb speak the postgres protocol -> double quotes
+		expect(quoteIdentifier("cockroachdb", "users")).toBe('"users"');
+		expect(quoteIdentifier("timescaledb", "users")).toBe('"users"');
+	});
 });
 
 describe("quoteQualifiedTable", () => {
@@ -52,6 +60,26 @@ describe("buildBrowseQuery", () => {
 		});
 		expect(built.sql).toBe('SELECT * FROM "public"."users" WHERE "age" >= $1 AND "name" LIKE $2');
 		expect(built.params).toEqual(["18", "%ann%"]);
+	});
+
+	it("uses positional $ placeholders for the postgres family (cockroachdb)", () => {
+		const built = buildBrowseQuery({
+			engine: "cockroachdb",
+			schema: "public",
+			table: "users",
+			filters: [{ column: "age", op: "gte", value: "18" }],
+		});
+		expect(built.sql).toBe('SELECT * FROM "public"."users" WHERE "age" >= $1');
+	});
+
+	it("uses ? placeholders for the mysql family (mariadb)", () => {
+		const built = buildBrowseQuery({
+			engine: "mariadb",
+			schema: "shop",
+			table: "orders",
+			filters: [{ column: "total", op: "gte", value: "10" }],
+		});
+		expect(built.sql).toBe("SELECT * FROM `shop`.`orders` WHERE `total` >= ?");
 	});
 
 	it("uses ? placeholders for mysql and sqlite", () => {

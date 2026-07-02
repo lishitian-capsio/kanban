@@ -9,7 +9,15 @@ import type { RuntimeDbConnection, RuntimeDbEngine, RuntimeDbTable } from "@/run
 import { SchemaTree } from "./schema-tree";
 import type { IntrospectionState } from "./use-db-introspection";
 
-const ENGINE_TAG: Record<RuntimeDbEngine, string> = { postgres: "PG", mysql: "MY", sqlite: "SL", redis: "RD" };
+const ENGINE_TAG: Record<RuntimeDbEngine, string> = {
+	postgres: "PG",
+	cockroachdb: "CR",
+	timescaledb: "TS",
+	mysql: "MY",
+	mariadb: "MA",
+	sqlite: "SL",
+	redis: "RD",
+};
 
 export interface DatabaseSidebarProps {
 	connections: RuntimeDbConnection[];

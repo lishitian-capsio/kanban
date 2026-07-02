@@ -540,7 +540,15 @@ export type RuntimeFilePathResponse = z.infer<typeof runtimeFilePathResponseSche
 // Cell values cross the wire as display strings (or null) and edits return the same way.
 // ---------------------------------------------------------------------------
 
-export const runtimeDbEngineSchema = z.enum(["postgres", "mysql", "sqlite", "redis"]);
+export const runtimeDbEngineSchema = z.enum([
+	"postgres",
+	"cockroachdb",
+	"timescaledb",
+	"mysql",
+	"mariadb",
+	"sqlite",
+	"redis",
+]);
 export type RuntimeDbEngine = z.infer<typeof runtimeDbEngineSchema>;
 
 export const runtimeDbSslConfigSchema = z.object({

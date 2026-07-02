@@ -1,5 +1,45 @@
-/** Database engines the core supports. Extend this union + the driver-registry to add more. */
-export type DatabaseEngine = "postgres" | "mysql" | "sqlite" | "redis";
+/**
+ * Database engines the core supports. Extend this union + the driver-registry to add more.
+ *
+ * Values are product identities, not wire protocols: `cockroachdb`/`timescaledb` speak the
+ * Postgres protocol and `mariadb` speaks the MySQL protocol. Anything that depends on the wire
+ * protocol (identifier quoting, bind-parameter style, the node-sql-parser dialect, the Bun.SQL
+ * adapter) MUST key off {@link engineWireProtocol}, never a bare `engine === "mysql"` check —
+ * otherwise a new family member silently takes the wrong branch.
+ */
+export type DatabaseEngine =
+	| "postgres"
+	| "cockroachdb"
+	| "timescaledb"
+	| "mysql"
+	| "mariadb"
+	| "sqlite"
+	| "redis";
+
+/** The distinct on-the-wire protocols behind the {@link DatabaseEngine} product identities. */
+export type WireProtocol = "postgres" | "mysql" | "sqlite" | "redis";
+
+/**
+ * Collapse a product engine to the protocol it actually speaks. This is the single source of truth
+ * for every wire-protocol-dependent decision (quoting, placeholders, SQL parser dialect, Bun
+ * adapter selection), so adding a protocol-compatible engine is one line here instead of a new
+ * branch in each of those call sites.
+ */
+export function engineWireProtocol(engine: DatabaseEngine): WireProtocol {
+	switch (engine) {
+		case "postgres":
+		case "cockroachdb":
+		case "timescaledb":
+			return "postgres";
+		case "mysql":
+		case "mariadb":
+			return "mysql";
+		case "sqlite":
+			return "sqlite";
+		case "redis":
+			return "redis";
+	}
+}
 
 /** The upper entry on whose behalf an operation runs. Drives policy strictness. */
 export type DbCaller = "agent" | "human" | "cli";

@@ -2,6 +2,7 @@ import { createLogger } from "../../../logging";
 import type {
 	ColumnInfo,
 	ConnectionConfig,
+	DatabaseEngine,
 	ForeignKeyInfo,
 	IndexInfo,
 	SchemaIntrospection,
@@ -193,49 +194,81 @@ function groupColumnsIntoTables(rows: Array<Record<string, unknown>>): TableInfo
 	return [...byTable.values()];
 }
 
-export const postgresDialect: EngineDialect = {
-	engine: "postgres",
-	buildOptions(config: ConnectionConfig): BunSqlOptions {
-		return buildRemoteSqlOptions(config, "postgres");
-	},
-	versionSql: "SELECT version() AS v",
-	beginReadOnly: "BEGIN TRANSACTION READ ONLY",
-	timeoutStatement(ms: number): string {
-		// Transaction-scoped: rolled back with the tx, so it never leaks to the pooled connection.
-		return `SET LOCAL statement_timeout = ${ms}`;
-	},
-	resetTimeoutStatement: null,
-	async introspect(run: RowRunner): Promise<SchemaIntrospection> {
-		const rows = await run(INTROSPECT_SQL);
-		const tables = groupColumnsIntoTables(rows);
-		log.debug("postgres introspect complete", { tableCount: tables.length });
-		return { engine: "postgres", tables };
-	},
-	async listSchemas(run: RowRunner): Promise<SchemaSummary[]> {
-		const rows = (await run(LIST_SCHEMAS_SQL)) as Array<{ schema_name: string }>;
-		return rows.map((r) => ({ name: r.schema_name }));
-	},
-	async listTables(run: RowRunner, schema: string): Promise<TableSummary[]> {
-		const rows = (await run(LIST_TABLES_SQL, [schema])) as Array<{ table_name: string; table_type: string }>;
-		return rows.map((r) => ({ schema, name: r.table_name, kind: r.table_type === "VIEW" ? "view" : "table" }));
-	},
-	async describeTable(run: RowRunner, schema: string, table: string): Promise<TableDetail> {
-		const [colsRes, idxRes, fkRes, kindRes] = await Promise.all([
-			run(DESCRIBE_COLUMNS_SQL, [schema, table]),
-			run(DESCRIBE_INDEXES_SQL, [schema, table]),
-			run(DESCRIBE_FKS_SQL, [schema, table]),
-			run(TABLE_TYPE_SQL, [schema, table]),
-		]);
-		const columns = (colsRes as unknown as PgColumnRow[]).map((c) => ({
-			name: c.column_name,
-			dataType: c.data_type,
-			nullable: c.is_nullable === "YES",
-			isPrimaryKey: c.is_primary_key === true,
-			defaultValue: c.column_default,
-		}));
-		const indexes = foldPgIndexes(idxRes as unknown as PgIndexRow[]);
-		const foreignKeys = foldPgForeignKeys(fkRes as unknown as PgForeignKeyRow[]);
-		const kind = (kindRes[0] as { table_type?: string } | undefined)?.table_type === "VIEW" ? "view" : "table";
-		return { schema, name: table, kind, columns, indexes, foreignKeys };
-	},
-};
+/** Per-engine knobs for a Postgres-protocol dialect. Introspection SQL and quoting are shared. */
+interface PostgresDialectOptions {
+	engine: DatabaseEngine;
+	/** Server-side statement-timeout statement. Defaults to Postgres's transaction-scoped `SET LOCAL`. */
+	timeoutStatement?: (ms: number) => string;
+	/** Reset for a session-scoped timeout, or null when the timeout is transaction-scoped (SET LOCAL). */
+	resetTimeoutStatement?: string | null;
+}
+
+/**
+ * Build a Postgres-wire-protocol dialect. `postgres`, `cockroachdb`, and `timescaledb` share the
+ * `information_schema`/`pg_catalog` introspection SQL and the `postgres` Bun.SQL adapter; only the
+ * server-side timeout mechanism differs (CockroachDB does not honor `SET LOCAL statement_timeout`,
+ * so it uses a session-scoped `SET statement_timeout` that is reset before the connection is pooled).
+ */
+export function createPostgresDialect(options: PostgresDialectOptions): EngineDialect {
+	const { engine } = options;
+	return {
+		engine,
+		buildOptions(config: ConnectionConfig): BunSqlOptions {
+			return buildRemoteSqlOptions(config, "postgres");
+		},
+		versionSql: "SELECT version() AS v",
+		beginReadOnly: "BEGIN TRANSACTION READ ONLY",
+		// Default: transaction-scoped, rolled back with the tx, so it never leaks to the pooled connection.
+		timeoutStatement: options.timeoutStatement ?? ((ms: number) => `SET LOCAL statement_timeout = ${ms}`),
+		resetTimeoutStatement: options.resetTimeoutStatement ?? null,
+		async introspect(run: RowRunner): Promise<SchemaIntrospection> {
+			const rows = await run(INTROSPECT_SQL);
+			const tables = groupColumnsIntoTables(rows);
+			log.debug("postgres-family introspect complete", { engine, tableCount: tables.length });
+			return { engine, tables };
+		},
+		async listSchemas(run: RowRunner): Promise<SchemaSummary[]> {
+			const rows = (await run(LIST_SCHEMAS_SQL)) as Array<{ schema_name: string }>;
+			return rows.map((r) => ({ name: r.schema_name }));
+		},
+		async listTables(run: RowRunner, schema: string): Promise<TableSummary[]> {
+			const rows = (await run(LIST_TABLES_SQL, [schema])) as Array<{ table_name: string; table_type: string }>;
+			return rows.map((r) => ({ schema, name: r.table_name, kind: r.table_type === "VIEW" ? "view" : "table" }));
+		},
+		async describeTable(run: RowRunner, schema: string, table: string): Promise<TableDetail> {
+			const [colsRes, idxRes, fkRes, kindRes] = await Promise.all([
+				run(DESCRIBE_COLUMNS_SQL, [schema, table]),
+				run(DESCRIBE_INDEXES_SQL, [schema, table]),
+				run(DESCRIBE_FKS_SQL, [schema, table]),
+				run(TABLE_TYPE_SQL, [schema, table]),
+			]);
+			const columns = (colsRes as unknown as PgColumnRow[]).map((c) => ({
+				name: c.column_name,
+				dataType: c.data_type,
+				nullable: c.is_nullable === "YES",
+				isPrimaryKey: c.is_primary_key === true,
+				defaultValue: c.column_default,
+			}));
+			const indexes = foldPgIndexes(idxRes as unknown as PgIndexRow[]);
+			const foreignKeys = foldPgForeignKeys(fkRes as unknown as PgForeignKeyRow[]);
+			const kind = (kindRes[0] as { table_type?: string } | undefined)?.table_type === "VIEW" ? "view" : "table";
+			return { schema, name: table, kind, columns, indexes, foreignKeys };
+		},
+	};
+}
+
+/** Standard PostgreSQL. */
+export const postgresDialect: EngineDialect = createPostgresDialect({ engine: "postgres" });
+
+/**
+ * CockroachDB: Postgres-wire-compatible, but `SET LOCAL statement_timeout` is unreliable, so it uses
+ * a session-scoped `SET statement_timeout` (ms) that is reset to 0 before the connection is pooled.
+ */
+export const cockroachdbDialect: EngineDialect = createPostgresDialect({
+	engine: "cockroachdb",
+	timeoutStatement: (ms: number) => `SET statement_timeout = ${ms}`,
+	resetTimeoutStatement: "SET statement_timeout = 0",
+});
+
+/** TimescaleDB: a Postgres extension — behaves exactly like PostgreSQL over the wire. */
+export const timescaledbDialect: EngineDialect = createPostgresDialect({ engine: "timescaledb" });

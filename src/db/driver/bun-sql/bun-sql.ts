@@ -44,7 +44,10 @@ export const defaultBunSqlFactory: BunSqlFactory = (options) => new Bun.SQL(opti
  * mirroring the SSL handling the old `pg`/`mysql2` drivers used (Kanban's `ssl.mode` →
  * `rejectUnauthorized`; `caPath`/PEM material → Bun's `tls` object).
  */
-export function buildRemoteSqlOptions(config: ConnectionConfig, adapter: "postgres" | "mysql"): BunSqlOptions {
+export function buildRemoteSqlOptions(
+	config: ConnectionConfig,
+	adapter: "postgres" | "mysql" | "mariadb",
+): BunSqlOptions {
 	const options: RemoteSqlOptions = {
 		adapter,
 		hostname: config.host,

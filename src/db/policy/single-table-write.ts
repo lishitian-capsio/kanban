@@ -3,18 +3,11 @@ import { Parser } from "node-sql-parser";
 import { createLogger } from "../../logging";
 import { DbError } from "../errors";
 import type { DatabaseEngine } from "../types";
+import { sqlParserDialect } from "./sql-classifier";
 
 const log = createLogger("db:single-table-write");
 
 const parser = new Parser();
-
-/** node-sql-parser dialect key per SQL engine (mirrors the classifier). Redis has no row-write
- * path, so it never reaches this map — excluded from the type rather than given a bogus dialect. */
-const PARSER_DIALECT: Record<Exclude<DatabaseEngine, "redis">, string> = {
-	postgres: "postgresql",
-	mysql: "mysql",
-	sqlite: "sqlite",
-};
 
 /** Operations the human row editor is allowed to emit. Everything else (select/DDL) is refused. */
 const ALLOWED_OPS = new Set(["update", "insert", "delete", "replace"]);
@@ -48,7 +41,7 @@ export class SingleTableWriteError extends DbError {
 export function assertSingleTableWrite(sql: string, engine: DatabaseEngine, target: SingleTableWriteTarget): void {
 	let entries: string[];
 	try {
-		entries = parser.tableList(sql, { database: PARSER_DIALECT[engine as Exclude<DatabaseEngine, "redis">] });
+		entries = parser.tableList(sql, { database: sqlParserDialect(engine) });
 	} catch (error) {
 		log.debug("single-table-write parse failed", { engine, error });
 		throw new SingleTableWriteError("statement could not be parsed");

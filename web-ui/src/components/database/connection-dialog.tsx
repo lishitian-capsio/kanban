@@ -19,14 +19,20 @@ import { dbErrorMessage } from "./db-utils";
 
 const ENGINE_LABELS: Record<RuntimeDbEngine, string> = {
 	postgres: "PostgreSQL",
+	cockroachdb: "CockroachDB",
+	timescaledb: "TimescaleDB",
 	mysql: "MySQL",
+	mariadb: "MariaDB",
 	sqlite: "SQLite",
 	redis: "Redis",
 };
 
 const DEFAULT_PORT: Record<RuntimeDbEngine, number | null> = {
 	postgres: 5432,
+	cockroachdb: 26257,
+	timescaledb: 5432,
 	mysql: 3306,
+	mariadb: 3306,
 	sqlite: null,
 	redis: 6379,
 };

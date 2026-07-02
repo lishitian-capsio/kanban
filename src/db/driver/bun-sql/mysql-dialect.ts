@@ -2,6 +2,7 @@ import { createLogger } from "../../../logging";
 import type {
 	ColumnInfo,
 	ConnectionConfig,
+	DatabaseEngine,
 	ForeignKeyInfo,
 	IndexInfo,
 	SchemaIntrospection,
@@ -170,49 +171,85 @@ function groupColumnsIntoTables(rows: Array<Record<string, unknown>>): TableInfo
 	return [...byTable.values()];
 }
 
-export const mysqlDialect: EngineDialect = {
+/** Per-engine knobs for a MySQL-protocol dialect. Introspection SQL and quoting are shared. */
+interface MysqlDialectOptions {
+	engine: DatabaseEngine;
+	/** Bun.SQL adapter — MySQL uses `mysql`; MariaDB has its own protocol-aware `mariadb` adapter. */
+	adapter: "mysql" | "mariadb";
+	/** Server-side statement-timeout statement. Defaults to MySQL's `SET max_execution_time` (ms). */
+	timeoutStatement?: (ms: number) => string;
+	/** Reset statement for the session-scoped timeout variable, cleared before the connection is pooled. */
+	resetTimeoutStatement: string;
+}
+
+/**
+ * Build a MySQL-wire-protocol dialect. `mysql` and `mariadb` share the `information_schema`
+ * introspection SQL and backtick quoting; they differ in the Bun.SQL adapter and the statement
+ * timeout: MySQL's `max_execution_time` is milliseconds and SELECT-only, while MariaDB has no such
+ * variable and instead uses `max_statement_time`, which is measured in **seconds** (a decimal).
+ */
+export function createMysqlDialect(options: MysqlDialectOptions): EngineDialect {
+	const { engine, adapter } = options;
+	return {
+		engine,
+		buildOptions(config: ConnectionConfig): BunSqlOptions {
+			return buildRemoteSqlOptions(config, adapter);
+		},
+		versionSql: "SELECT VERSION() AS v",
+		beginReadOnly: "START TRANSACTION READ ONLY",
+		timeoutStatement: options.timeoutStatement ?? ((ms: number) => `SET max_execution_time = ${ms}`),
+		// Session-scoped variable — reset before the connection returns to the pool so it never leaks.
+		resetTimeoutStatement: options.resetTimeoutStatement,
+		async introspect(run: RowRunner): Promise<SchemaIntrospection> {
+			const rows = await run(INTROSPECT_SQL);
+			const tables = groupColumnsIntoTables(rows);
+			log.debug("mysql-family introspect complete", { engine, tableCount: tables.length });
+			return { engine, tables };
+		},
+		async listSchemas(run: RowRunner): Promise<SchemaSummary[]> {
+			const rows = (await run(LIST_SCHEMAS_SQL)) as Array<{ schema_name: string }>;
+			return rows.map((r) => ({ name: r.schema_name }));
+		},
+		async listTables(run: RowRunner, schema: string): Promise<TableSummary[]> {
+			const rows = (await run(LIST_TABLES_SQL, [schema])) as Array<{ table_name: string; table_type: string }>;
+			return rows.map((r) => ({ schema, name: r.table_name, kind: r.table_type === "VIEW" ? "view" : "table" }));
+		},
+		async describeTable(run: RowRunner, schema: string, table: string): Promise<TableDetail> {
+			const [colRows, idxRows, fkRows, typeRows] = await Promise.all([
+				run(DESCRIBE_COLUMNS_SQL, [schema, table]),
+				run(DESCRIBE_INDEXES_SQL, [schema, table]),
+				run(DESCRIBE_FKS_SQL, [schema, table]),
+				run(TABLE_TYPE_SQL, [schema, table]),
+			]);
+			const columns: ColumnInfo[] = (colRows as unknown as MysqlColumnRow[]).map((c) => ({
+				name: c.column_name,
+				dataType: c.data_type,
+				nullable: c.is_nullable === "YES",
+				isPrimaryKey: c.is_primary_key === 1 || c.is_primary_key === true,
+				defaultValue: c.column_default,
+			}));
+			const indexes = foldMysqlIndexes(idxRows as unknown as MysqlIndexRow[]);
+			const foreignKeys = foldMysqlForeignKeys(fkRows as unknown as MysqlForeignKeyRow[]);
+			const tableType = (typeRows[0] as { table_type?: string } | undefined)?.table_type;
+			return { schema, name: table, kind: tableType === "VIEW" ? "view" : "table", columns, indexes, foreignKeys };
+		},
+	};
+}
+
+/** Standard MySQL. */
+export const mysqlDialect: EngineDialect = createMysqlDialect({
 	engine: "mysql",
-	buildOptions(config: ConnectionConfig): BunSqlOptions {
-		return buildRemoteSqlOptions(config, "mysql");
-	},
-	versionSql: "SELECT VERSION() AS v",
-	beginReadOnly: "START TRANSACTION READ ONLY",
-	timeoutStatement(ms: number): string {
-		return `SET max_execution_time = ${ms}`;
-	},
-	// Session-scoped variable — reset before the connection returns to the pool so it never leaks.
+	adapter: "mysql",
 	resetTimeoutStatement: "SET max_execution_time = 0",
-	async introspect(run: RowRunner): Promise<SchemaIntrospection> {
-		const rows = await run(INTROSPECT_SQL);
-		const tables = groupColumnsIntoTables(rows);
-		log.debug("mysql introspect complete", { tableCount: tables.length });
-		return { engine: "mysql", tables };
-	},
-	async listSchemas(run: RowRunner): Promise<SchemaSummary[]> {
-		const rows = (await run(LIST_SCHEMAS_SQL)) as Array<{ schema_name: string }>;
-		return rows.map((r) => ({ name: r.schema_name }));
-	},
-	async listTables(run: RowRunner, schema: string): Promise<TableSummary[]> {
-		const rows = (await run(LIST_TABLES_SQL, [schema])) as Array<{ table_name: string; table_type: string }>;
-		return rows.map((r) => ({ schema, name: r.table_name, kind: r.table_type === "VIEW" ? "view" : "table" }));
-	},
-	async describeTable(run: RowRunner, schema: string, table: string): Promise<TableDetail> {
-		const [colRows, idxRows, fkRows, typeRows] = await Promise.all([
-			run(DESCRIBE_COLUMNS_SQL, [schema, table]),
-			run(DESCRIBE_INDEXES_SQL, [schema, table]),
-			run(DESCRIBE_FKS_SQL, [schema, table]),
-			run(TABLE_TYPE_SQL, [schema, table]),
-		]);
-		const columns: ColumnInfo[] = (colRows as unknown as MysqlColumnRow[]).map((c) => ({
-			name: c.column_name,
-			dataType: c.data_type,
-			nullable: c.is_nullable === "YES",
-			isPrimaryKey: c.is_primary_key === 1 || c.is_primary_key === true,
-			defaultValue: c.column_default,
-		}));
-		const indexes = foldMysqlIndexes(idxRows as unknown as MysqlIndexRow[]);
-		const foreignKeys = foldMysqlForeignKeys(fkRows as unknown as MysqlForeignKeyRow[]);
-		const tableType = (typeRows[0] as { table_type?: string } | undefined)?.table_type;
-		return { schema, name: table, kind: tableType === "VIEW" ? "view" : "table", columns, indexes, foreignKeys };
-	},
-};
+});
+
+/**
+ * MariaDB: MySQL-wire-compatible, but has no `max_execution_time`. Its equivalent, `max_statement_time`,
+ * is measured in seconds (a decimal), so the millisecond deadline is divided by 1000.
+ */
+export const mariadbDialect: EngineDialect = createMysqlDialect({
+	engine: "mariadb",
+	adapter: "mariadb",
+	timeoutStatement: (ms: number) => `SET max_statement_time = ${ms / 1000}`,
+	resetTimeoutStatement: "SET max_statement_time = 0",
+});

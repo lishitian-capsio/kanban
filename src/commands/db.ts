@@ -11,7 +11,15 @@ import {
 	resolveWorkspaceRepoPath,
 } from "./runtime-workspace";
 
-const VALID_ENGINES: readonly RuntimeDbEngine[] = ["postgres", "mysql", "sqlite", "redis"];
+const VALID_ENGINES: readonly RuntimeDbEngine[] = [
+	"postgres",
+	"cockroachdb",
+	"timescaledb",
+	"mysql",
+	"mariadb",
+	"sqlite",
+	"redis",
+];
 const VALID_SSL_MODES: ReadonlyArray<RuntimeDbSslConfig["mode"]> = ["disable", "require", "verify-ca", "verify-full"];
 
 function parseEngine(value: string): RuntimeDbEngine {
@@ -297,7 +305,11 @@ export function registerDbCommand(program: Command): void {
 		.command("add")
 		.description("Register a database connection. Secrets are stored machine-locally, never committed.")
 		.requiredOption("--label <text>", "Human-readable connection label.")
-		.requiredOption("--engine <engine>", "Database engine: postgres | mysql | sqlite | redis.", parseEngine)
+		.requiredOption(
+			"--engine <engine>",
+			"Database engine: postgres | cockroachdb | timescaledb | mysql | mariadb | sqlite | redis.",
+			parseEngine,
+		)
 		.option("--id <id>", "Explicit connection id. Defaults to a slug of the label.")
 		.option("--host <host>", "Database host.")
 		.option("--port <port>", "Database port.", parsePort)

@@ -1,6 +1,23 @@
 import { z } from "zod";
 
-export const databaseEngineSchema = z.enum(["postgres", "mysql", "sqlite", "redis"]);
+import type { DatabaseEngine } from "../types";
+
+export const databaseEngineSchema = z.enum([
+	"postgres",
+	"cockroachdb",
+	"timescaledb",
+	"mysql",
+	"mariadb",
+	"sqlite",
+	"redis",
+]);
+
+// Compile-time parity guard: this zod enum and the `DatabaseEngine` union must list exactly the same
+// engines. If either side gains or loses a value without the other, one of these assignments fails.
+type _SchemaSubsetOfUnion = z.infer<typeof databaseEngineSchema> extends DatabaseEngine ? true : never;
+type _UnionSubsetOfSchema = DatabaseEngine extends z.infer<typeof databaseEngineSchema> ? true : never;
+const _engineParity: [_SchemaSubsetOfUnion, _UnionSubsetOfSchema] = [true, true];
+void _engineParity;
 
 export const dbSslConfigSchema = z.object({
 	mode: z.enum(["disable", "require", "verify-ca", "verify-full"]),

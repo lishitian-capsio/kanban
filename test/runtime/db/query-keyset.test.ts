@@ -41,6 +41,31 @@ describe("query-keyset", () => {
 		expect(quoteQualifiedTable("mysql", "db", "t")).toBe("`db`.`t`");
 	});
 
+	it("quotes and paginates protocol-compatible engines by wire-protocol family", () => {
+		// mariadb -> mysql family (backticks + ? placeholders)
+		expect(quoteIdentifier("mariadb", "users")).toBe("`users`");
+		const maria = buildKeysetQuery({
+			engine: "mariadb",
+			schema: "s",
+			table: "t",
+			keyColumns: ["id"],
+			cursorValues: [7],
+			pageSize: 10,
+		});
+		expect(maria.sql).toBe("SELECT * FROM `s`.`t` WHERE `id` > ? ORDER BY `id` ASC LIMIT 11");
+		// cockroachdb -> postgres family (double quotes + $n placeholders)
+		expect(quoteIdentifier("cockroachdb", "users")).toBe('"users"');
+		const crdb = buildKeysetQuery({
+			engine: "cockroachdb",
+			schema: "public",
+			table: "big",
+			keyColumns: ["id"],
+			cursorValues: [500_000],
+			pageSize: 100,
+		});
+		expect(crdb.sql).toBe('SELECT * FROM "public"."big" WHERE "id" > $1 ORDER BY "id" ASC LIMIT 101');
+	});
+
 	it("selects the primary key as the ordering key, or null when there is none", () => {
 		expect(selectKeysetKey(detail([{ name: "id", isPrimaryKey: true }, { name: "a" }]))).toEqual({ columns: ["id"] });
 		expect(
