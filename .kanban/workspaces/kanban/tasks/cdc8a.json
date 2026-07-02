@@ -1,0 +1,20 @@
+{
+  "id": "cdc8a",
+  "title": "排查: Bun .env 自动加载是否污染 runtime 环境",
+  "prompt": "排查 Bun 默认自动加载 .env 是否会在用户仓库 / 任务 worktree 里意外把 .env 灌进 Kanban runtime 的环境变量,若有风险则显式关闭。\n\n## 背景与疑虑\n- Bun **默认自动加载当前工作目录的 .env / .env.local / .env.<mode>** 到 process.env(无需 dotenv,三个别名等价:process.env === Bun.env === import.meta.env)。\n- Kanban runtime 是在**用户的仓库目录**里以 \\`#!/usr/bin/env bun\\` 运行 dist/cli.js;dev 是 \\`bun --watch run src/cli.ts\\`。task worktree 位于 \\`<repo>/.kanban/worktrees/...\\`,也可能被当作 cwd。\n- 风险:若用户仓库或某个 worktree 根目录存在 .env,Bun 可能**自动读入并覆盖/注入** Kanban 自己的关键配置(KANBAN_* 系列、代理 HTTP(S)_PROXY/NO_PROXY、各类 token、passcode 相关),产生难以排查的行为。注意记忆里代理相关行为对 process.env 里的 HTTP(S)_PROXY 极其敏感(见 bun-fetch-honors-http-proxy:Bun 会 latch 启动时的代理 env)。\n\n## 要求(先排查,再按结论最小化处置)\n1. **确认现状**:Kanban 启动 runtime 时,Bun 的 .env 自动加载是否生效?是否已被 \\`--no-env-file\\`、\\`bunfig.toml\\`(env=false)或其它方式关闭?检查 dist/cli.js 的 bin shebang、service 守护进程的启动命令(src/service/*)、dev 脚本、以及所有拉起 runtime/子 agent 的 spawn 点。\n2. **判定影响面**:\n   - runtime 自身进程:cwd 是否可能落在含 .env 的仓库/worktree?\n   - 被 Kanban spawn 的 terminal agent(claude/codex 等)与 shell 终端:它们的 cwd 是 task worktree,worktree 里若有 .env,agent 侧 Bun/工具是否会加载?(区分「Kanban runtime 的 env」与「agent 子进程的 env」两层)\n3. **给结论**:是否存在真实污染路径。若存在,采用**最小化处置**:对 Kanban runtime 显式禁用自动 .env 加载(如 \\`--no-env-file\\` 或 bunfig env=false),确保 Kanban 只依赖「从用户 shell 继承的环境 + 自己显式注入的 per-spawn env」,不受仓库内 .env 影响。不要影响用户 agent 在其 worktree 内正常使用 .env 的预期(如果那是期望行为)。\n4. 补一个能锁定该行为的测试或说明。\n\n先输出排查结论与处置方案,再动代码。若排查发现当前并无污染路径(例如启动 cwd 不含 .env、或已禁用),则如实说明并无需改动。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
+  "baseRef": "main",
+  "createdAt": 1782961014259,
+  "updatedAt": 1782961014259,
+  "column": "backlog",
+  "rank": "Zy",
+  "dependsOn": []
+}
