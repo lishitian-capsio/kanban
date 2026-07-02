@@ -26,7 +26,7 @@ Redis has no SQL-style read-only session mode that covers arbitrary commands. Th
 
 - `READ_ONLY_REDIS_COMMANDS` is a `ReadonlySet<string>` of every command that only reads data (GET, SCAN, HGETALL, LRANGE, SMEMBERS, ZRANGE, INFO, TYPE, TTL, …).
 - `isReadOnlyRedisCommand(command)` is checked by the driver's `query()` method before anything touches the wire. A command not in the set throws `DbPolicyError` immediately.
-- `allowWrites` on a Redis connection record has no effect — the driver is unconditionally read-only; the `db-service` layer forces `allowWrites: false` for redis connections.
+- `allowWrites` on a Redis connection record has no effect — the driver is unconditionally read-only; `allowWrites: false` is forced at the tRPC API layer when a connection is created or updated (`db-api.ts` `addConnection` and `workspace-db-api.ts` `upsertConnection` both set `allowWrites: input.engine === "redis" ? false : …`). `db-service.ts` reads the stored `record.allowWrites` as-is — the enforcement is at save time, not at query time.
 - Real-connection bun tests (`test/bun/db/redis-driver.test.ts`, gated on `REDIS_TEST_URL`) verify that `SET k v` is rejected even when called via the standard `query()` path.
 
 ## KV → table mapping
@@ -35,7 +35,7 @@ The engine maps Redis's flat keyspace onto the schema/table/column model:
 
 | DB concept | Redis mapping |
 |-----------|---------------|
-| **Schema** | Logical db: `db0`, `db1`, … `dbN`. Count queried from `CONFIG GET databases` (defaults to 16 if the command is disabled, e.g. on managed/cluster Redis). |
+| **Schema** | Logical db: `db0`, `db1`, … `dbN`. Count queried from `CONFIG GET databases`. If CONFIG throws (disabled/denied — managed or cluster Redis), `listSchemas` returns a single `db0`. The 16-database default applies only when CONFIG succeeds but returns an unparseable reply. |
 | **Table** | Key prefix — the segment of a key **before the first `:`**. Keys with no `:` delimiter are grouped under the synthetic table `(root)`. |
 | **Columns** | Four fixed columns for every table: `key` (PK, string), `type` (string — Redis type: string/hash/list/set/zset/stream), `ttl` (integer — seconds remaining; -1 = no expiry, -2 = key missing), `value` (string — bounded preview rendered per type). |
 
