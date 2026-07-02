@@ -1,100 +1,113 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { MysqlDriver, type MysqlPoolLike } from "../../../src/db/driver/mysql-driver";
+import type { BunSqlLike, BunSqlRows } from "../../../src/db/driver/bun-sql/bun-sql";
+import { BunSqlDriver } from "../../../src/db/driver/bun-sql/bun-sql-driver";
+import { mysqlDialect } from "../../../src/db/driver/bun-sql/mysql-dialect";
 import { DbQueryError } from "../../../src/db/errors";
 import type { ConnectionConfig } from "../../../src/db/types";
 
-function fakePool(): { pool: MysqlPoolLike; calls: string[] } {
+function rows(objs: Array<Record<string, unknown>>, command = "SELECT"): BunSqlRows {
+	const result = objs as BunSqlRows;
+	result.count = objs.length;
+	result.command = command;
+	return result;
+}
+
+function fakeSql(): { sql: BunSqlLike; calls: string[] } {
 	const calls: string[] = [];
-	const conn = {
-		query: async (sql: string) => {
-			calls.push(sql);
-			if (sql.startsWith("SELECT")) {
-				return [[{ one: 1 }], [{ name: "one" }]];
-			}
-			return [{ affectedRows: 0 }, undefined];
-		},
-		release: () => {},
+	const run = async (sql: string): Promise<BunSqlRows> => {
+		calls.push(sql);
+		if (sql === "SELECT VERSION() AS v") {
+			return rows([{ v: "8.0.36" }]);
+		}
+		if (sql.startsWith("SELECT")) {
+			return rows([{ one: 1 }]);
+		}
+		return rows([], "COMMIT");
 	};
-	const pool: MysqlPoolLike = {
-		getConnection: async () => conn,
-		query: async (sql: string) => {
-			calls.push(sql);
-			return [[{ v: "8.0.36" }], [{ name: "v" }]];
-		},
-		end: async () => {},
+	const sql: BunSqlLike = {
+		unsafe: run,
+		reserve: async () => ({ unsafe: run, release: () => {} }),
+		connect: async () => sql,
+		close: async () => {},
 	};
-	return { pool, calls };
+	return { sql, calls };
 }
 
 const config: ConnectionConfig = { engine: "mysql", host: "h", database: "d", user: "u" };
 
-describe("MysqlDriver", () => {
+function driver(sql: BunSqlLike): BunSqlDriver {
+	return new BunSqlDriver(config, mysqlDialect, () => sql);
+}
+
+describe("BunSqlDriver (mysql)", () => {
 	it("wraps a read query in a READ ONLY transaction", async () => {
-		const { pool, calls } = fakePool();
-		const driver = new MysqlDriver(config, () => pool);
-		await driver.connect();
-		const result = await driver.query({ sql: "SELECT 1 AS one", readOnly: true });
+		const { sql, calls } = fakeSql();
+		const d = driver(sql);
+		await d.connect();
+		const result = await d.query({ sql: "SELECT 1 AS one", readOnly: true });
 		expect(result.rows).toEqual([{ one: 1 }]);
 		expect(calls).toContain("START TRANSACTION READ ONLY");
 		expect(calls).toContain("COMMIT");
-		await driver.disconnect();
+		await d.disconnect();
 	});
 
 	it("sets and then resets max_execution_time for a read with a deadline", async () => {
-		const { pool, calls } = fakePool();
-		const driver = new MysqlDriver(config, () => pool);
-		await driver.connect();
-		await driver.query({ sql: "SELECT 1 AS one", readOnly: true, timeoutMs: 1500 });
+		const { sql, calls } = fakeSql();
+		const d = driver(sql);
+		await d.connect();
+		await d.query({ sql: "SELECT 1 AS one", readOnly: true, timeoutMs: 1500 });
 		expect(calls).toContain("SET max_execution_time = 1500");
-		// Reset to 0 before the connection returns to the pool, so the limit never leaks.
 		expect(calls).toContain("SET max_execution_time = 0");
 		expect(calls.indexOf("SET max_execution_time = 1500")).toBeLessThan(calls.indexOf("SET max_execution_time = 0"));
-		await driver.disconnect();
+		await d.disconnect();
 	});
 
 	it("omits max_execution_time when no deadline is given", async () => {
-		const { pool, calls } = fakePool();
-		const driver = new MysqlDriver(config, () => pool);
-		await driver.connect();
-		await driver.query({ sql: "SELECT 1 AS one", readOnly: true });
+		const { sql, calls } = fakeSql();
+		const d = driver(sql);
+		await d.connect();
+		await d.query({ sql: "SELECT 1 AS one", readOnly: true });
 		expect(calls.some((c) => c.startsWith("SET max_execution_time"))).toBe(false);
-		await driver.disconnect();
+		await d.disconnect();
 	});
 
 	it("testConnection reports the server version", async () => {
-		const { pool } = fakePool();
-		const driver = new MysqlDriver(config, () => pool);
-		await driver.connect();
-		const res = await driver.testConnection();
+		const { sql } = fakeSql();
+		const d = driver(sql);
+		await d.connect();
+		const res = await d.testConnection();
 		expect(res.ok).toBe(true);
 		expect(res.serverVersion).toBe("8.0.36");
-		await driver.disconnect();
+		await d.disconnect();
 	});
 
 	it("issues ROLLBACK and throws DbQueryError when the read query fails", async () => {
 		const calls: string[] = [];
-		const releaseSpy = vi.fn();
-		const conn = {
-			query: async (sql: string) => {
-				calls.push(sql);
-				if (sql.startsWith("START TRANSACTION") || sql === "ROLLBACK") {
-					return [{ affectedRows: 0 }, undefined];
-				}
-				throw new Error("query boom");
-			},
-			release: releaseSpy,
+		let released = false;
+		const run = async (sql: string): Promise<BunSqlRows> => {
+			calls.push(sql);
+			if (sql.startsWith("START TRANSACTION") || sql === "ROLLBACK") {
+				return [] as BunSqlRows;
+			}
+			throw new Error("query boom");
 		};
-		const pool: MysqlPoolLike = {
-			getConnection: async () => conn,
-			query: async (_sql: string) => [[{ v: "8.0.36" }], [{ name: "v" }]],
-			end: async () => {},
+		const sql: BunSqlLike = {
+			unsafe: run,
+			reserve: async () => ({
+				unsafe: run,
+				release: () => {
+					released = true;
+				},
+			}),
+			connect: async () => sql,
+			close: async () => {},
 		};
-		const driver = new MysqlDriver(config, () => pool);
-		await driver.connect();
-		await expect(driver.query({ sql: "SELECT boom", readOnly: true })).rejects.toBeInstanceOf(DbQueryError);
+		const d = driver(sql);
+		await d.connect();
+		await expect(d.query({ sql: "SELECT boom", readOnly: true })).rejects.toBeInstanceOf(DbQueryError);
 		expect(calls).toContain("ROLLBACK");
-		expect(releaseSpy).toHaveBeenCalled();
-		await driver.disconnect();
+		expect(released).toBe(true);
+		await d.disconnect();
 	});
 });

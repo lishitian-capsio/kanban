@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { type PgPoolLike, PostgresDriver } from "../../../src/db/driver/postgres-driver";
+import type { BunSqlLike, BunSqlRows } from "../../../src/db/driver/bun-sql/bun-sql";
+import { BunSqlDriver } from "../../../src/db/driver/bun-sql/bun-sql-driver";
+import { postgresDialect } from "../../../src/db/driver/bun-sql/postgres-dialect";
 import type { ConnectionConfig } from "../../../src/db/types";
 
 const config: ConnectionConfig = { engine: "postgres", host: "h", database: "d", user: "u" };
@@ -10,36 +12,34 @@ interface FakeRows {
 }
 
 /**
- * A pool that routes each catalog query to canned rows by a distinctive
- * substring, so the test exercises the driver's row-folding logic without a
- * real Postgres (mirrors the existing postgres-driver.test fake style).
+ * A fake Bun.SQL client that routes each catalog query to canned rows by a distinctive
+ * substring, so the test exercises the dialect's row-folding logic without a real Postgres.
  */
-function fakePool(rows: FakeRows): PgPoolLike {
-	const answer = (text: string): Array<Record<string, unknown>> => {
+function fakeSql(rows: FakeRows): BunSqlLike {
+	const run = async (sql: string): Promise<BunSqlRows> => {
 		for (const [marker, value] of Object.entries(rows)) {
-			if (text.includes(marker)) {
-				return value;
+			if (sql.includes(marker)) {
+				return value as BunSqlRows;
 			}
 		}
-		return [];
+		return [] as BunSqlRows;
 	};
-	return {
-		connect: async () => ({ query: async () => ({ rows: [], fields: [], rowCount: 0 }), release: () => {} }),
-		query: async (text: string) => {
-			const result = answer(text);
-			return { rows: result, fields: [], rowCount: result.length };
-		},
-		end: async () => {},
+	const sql: BunSqlLike = {
+		unsafe: run,
+		reserve: async () => ({ unsafe: run, release: () => {} }),
+		connect: async () => sql,
+		close: async () => {},
 	};
+	return sql;
 }
 
-async function driverWith(rows: FakeRows): Promise<PostgresDriver> {
-	const driver = new PostgresDriver(config, () => fakePool(rows));
+async function driverWith(rows: FakeRows): Promise<BunSqlDriver> {
+	const driver = new BunSqlDriver(config, postgresDialect, () => fakeSql(rows));
 	await driver.connect();
 	return driver;
 }
 
-describe("PostgresDriver lazy introspection", () => {
+describe("BunSqlDriver (postgres) lazy introspection", () => {
 	it("lists user schemas", async () => {
 		const driver = await driverWith({
 			"information_schema.schemata": [{ schema_name: "public" }, { schema_name: "app" }],

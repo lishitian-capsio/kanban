@@ -1,122 +1,161 @@
 import { describe, expect, it } from "vitest";
 
-import { PostgresDriver, type PgPoolLike } from "../../../src/db/driver/postgres-driver";
+import type { BunSqlLike, BunSqlRows } from "../../../src/db/driver/bun-sql/bun-sql";
+import { BunSqlDriver } from "../../../src/db/driver/bun-sql/bun-sql-driver";
+import { postgresDialect } from "../../../src/db/driver/bun-sql/postgres-dialect";
 import { DbQueryError } from "../../../src/db/errors";
 import type { ConnectionConfig } from "../../../src/db/types";
 
 interface RecordedCall {
-	text: string;
+	sql: string;
 	values?: unknown[];
 }
 
-function fakePool(): { pool: PgPoolLike; calls: RecordedCall[] } {
+/** Tag a Bun.SQL-style result array with the `count`/`command` metadata Bun attaches. */
+function rows(objs: Array<Record<string, unknown>>, command = "SELECT"): BunSqlRows {
+	const result = objs as BunSqlRows;
+	result.count = objs.length;
+	result.command = command;
+	return result;
+}
+
+/**
+ * A fake Bun.SQL client that records every statement. Reads resolve to a canned row; anything
+ * else (BEGIN/COMMIT/SET/write) resolves empty. `reserve()` returns a client wrapping the same
+ * recorder so the read-only transaction path is fully observable.
+ */
+function fakeSql(): { sql: BunSqlLike; calls: RecordedCall[] } {
 	const calls: RecordedCall[] = [];
-	const client = {
-		query: async (text: string, values?: unknown[]) => {
-			calls.push({ text, values });
-			if (text.startsWith("SELECT")) {
-				return { rows: [{ one: 1 }], fields: [{ name: "one", dataTypeID: 23 }], rowCount: 1 };
-			}
-			return { rows: [], fields: [], rowCount: 0 };
-		},
-		release: () => {},
+	const run = async (sql: string, values?: unknown[]): Promise<BunSqlRows> => {
+		calls.push({ sql, values });
+		if (sql === "SELECT version() AS v") {
+			return rows([{ v: "PostgreSQL 16.0" }]);
+		}
+		if (sql.startsWith("SELECT")) {
+			return rows([{ one: 1 }]);
+		}
+		return rows([], "COMMIT");
 	};
-	const pool: PgPoolLike = {
-		connect: async () => client,
-		query: async (text: string, values?: unknown[]) => {
-			calls.push({ text, values });
-			return { rows: [{ v: "PostgreSQL 16.0" }], fields: [{ name: "v", dataTypeID: 25 }], rowCount: 1 };
-		},
-		end: async () => {},
+	const sql: BunSqlLike = {
+		unsafe: run,
+		reserve: async () => ({ unsafe: run, release: () => {} }),
+		connect: async () => sql,
+		close: async () => {},
 	};
-	return { pool, calls };
+	return { sql, calls };
 }
 
 const config: ConnectionConfig = { engine: "postgres", host: "h", database: "d", user: "u" };
 
-describe("PostgresDriver", () => {
+function driver(sql: BunSqlLike): BunSqlDriver {
+	return new BunSqlDriver(config, postgresDialect, () => sql);
+}
+
+describe("BunSqlDriver (postgres)", () => {
 	it("wraps a read query in a READ ONLY transaction", async () => {
-		const { pool, calls } = fakePool();
-		const driver = new PostgresDriver(config, () => pool);
-		await driver.connect();
-		const result = await driver.query({ sql: "SELECT 1 AS one", readOnly: true });
+		const { sql, calls } = fakeSql();
+		const d = driver(sql);
+		await d.connect();
+		const result = await d.query({ sql: "SELECT 1 AS one", readOnly: true });
 		expect(result.rows).toEqual([{ one: 1 }]);
 		expect(result.fields[0].name).toBe("one");
-		// The client path opened a read-only transaction.
-		const texts = calls.map((c) => c.text);
+		const texts = calls.map((c) => c.sql);
 		expect(texts).toContain("BEGIN TRANSACTION READ ONLY");
 		expect(texts).toContain("COMMIT");
-		await driver.disconnect();
+		await d.disconnect();
 	});
 
 	it("applies a transaction-scoped server-side statement_timeout for a read with a deadline", async () => {
-		const { pool, calls } = fakePool();
-		const driver = new PostgresDriver(config, () => pool);
-		await driver.connect();
-		await driver.query({ sql: "SELECT 1 AS one", readOnly: true, timeoutMs: 1500 });
-		const texts = calls.map((c) => c.text);
-		// SET LOCAL is inside the tx (after BEGIN, before the SELECT) so it rolls back with the tx.
+		const { sql, calls } = fakeSql();
+		const d = driver(sql);
+		await d.connect();
+		await d.query({ sql: "SELECT 1 AS one", readOnly: true, timeoutMs: 1500 });
+		const texts = calls.map((c) => c.sql);
 		expect(texts).toContain("SET LOCAL statement_timeout = 1500");
 		expect(texts.indexOf("SET LOCAL statement_timeout = 1500")).toBeGreaterThan(
 			texts.indexOf("BEGIN TRANSACTION READ ONLY"),
 		);
-		await driver.disconnect();
+		await d.disconnect();
 	});
 
 	it("omits the statement_timeout when no deadline (or a non-positive one) is given", async () => {
-		const { pool, calls } = fakePool();
-		const driver = new PostgresDriver(config, () => pool);
-		await driver.connect();
-		await driver.query({ sql: "SELECT 1 AS one", readOnly: true });
-		await driver.query({ sql: "SELECT 1 AS one", readOnly: true, timeoutMs: 0 });
-		expect(calls.some((c) => c.text.startsWith("SET LOCAL statement_timeout"))).toBe(false);
-		await driver.disconnect();
+		const { sql, calls } = fakeSql();
+		const d = driver(sql);
+		await d.connect();
+		await d.query({ sql: "SELECT 1 AS one", readOnly: true });
+		await d.query({ sql: "SELECT 1 AS one", readOnly: true, timeoutMs: 0 });
+		expect(calls.some((c) => c.sql.startsWith("SET LOCAL statement_timeout"))).toBe(false);
+		await d.disconnect();
 	});
 
 	it("runs a write query without the read-only transaction when readOnly is false", async () => {
-		const { pool, calls } = fakePool();
-		const driver = new PostgresDriver(config, () => pool);
-		await driver.connect();
-		await driver.query({ sql: "UPDATE t SET a = 1", readOnly: false });
-		expect(calls.map((c) => c.text)).not.toContain("BEGIN TRANSACTION READ ONLY");
-		await driver.disconnect();
+		const { sql, calls } = fakeSql();
+		const d = driver(sql);
+		await d.connect();
+		await d.query({ sql: "UPDATE t SET a = 1", readOnly: false });
+		expect(calls.map((c) => c.sql)).not.toContain("BEGIN TRANSACTION READ ONLY");
+		await d.disconnect();
+	});
+
+	it("reports affected rows from Bun's count for a write", async () => {
+		const calls: RecordedCall[] = [];
+		const run = async (text: string, values?: unknown[]): Promise<BunSqlRows> => {
+			calls.push({ sql: text, values });
+			const result = [] as BunSqlRows;
+			result.count = 3;
+			result.command = "UPDATE";
+			return result;
+		};
+		const sql: BunSqlLike = {
+			unsafe: run,
+			reserve: async () => ({ unsafe: run, release: () => {} }),
+			connect: async () => sql,
+			close: async () => {},
+		};
+		const d = driver(sql);
+		await d.connect();
+		const result = await d.query({ sql: "UPDATE t SET a = 1", readOnly: false });
+		expect(result.rowCount).toBe(3);
+		expect(result.rows).toEqual([]);
+		await d.disconnect();
 	});
 
 	it("testConnection reports the server version", async () => {
-		const { pool } = fakePool();
-		const driver = new PostgresDriver(config, () => pool);
-		await driver.connect();
-		const res = await driver.testConnection();
+		const { sql } = fakeSql();
+		const d = driver(sql);
+		await d.connect();
+		const res = await d.testConnection();
 		expect(res.ok).toBe(true);
 		expect(res.serverVersion).toContain("PostgreSQL");
-		await driver.disconnect();
+		await d.disconnect();
 	});
 
-	it("issues ROLLBACK and releases the client when a read-only query throws", async () => {
-		const queriedTexts: string[] = [];
+	it("issues ROLLBACK and releases the connection when a read-only query throws", async () => {
+		const texts: string[] = [];
 		let released = false;
-		const client = {
-			query: async (text: string) => {
-				queriedTexts.push(text);
-				if (text === "SELECT bad") {
-					throw new Error("syntax error");
-				}
-				return { rows: [], fields: [], rowCount: 0 };
-			},
-			release: () => {
-				released = true;
-			},
+		const run = async (sql: string): Promise<BunSqlRows> => {
+			texts.push(sql);
+			if (sql === "SELECT bad") {
+				throw new Error("syntax error");
+			}
+			return [] as BunSqlRows;
 		};
-		const pool: PgPoolLike = {
-			connect: async () => client,
-			query: async () => ({ rows: [], fields: [], rowCount: 0 }),
-			end: async () => {},
+		const sql: BunSqlLike = {
+			unsafe: run,
+			reserve: async () => ({
+				unsafe: run,
+				release: () => {
+					released = true;
+				},
+			}),
+			connect: async () => sql,
+			close: async () => {},
 		};
-		const driver = new PostgresDriver(config, () => pool);
-		await driver.connect();
-		await expect(driver.query({ sql: "SELECT bad", readOnly: true })).rejects.toBeInstanceOf(DbQueryError);
-		expect(queriedTexts).toContain("ROLLBACK");
+		const d = driver(sql);
+		await d.connect();
+		await expect(d.query({ sql: "SELECT bad", readOnly: true })).rejects.toBeInstanceOf(DbQueryError);
+		expect(texts).toContain("ROLLBACK");
 		expect(released).toBe(true);
-		await driver.disconnect();
+		await d.disconnect();
 	});
 });

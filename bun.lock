@@ -21,14 +21,12 @@
         "js-tiktoken": "^1.0.14",
         "jszip": "^3.10.1",
         "mime": "^4.1.0",
-        "mysql2": "^3.22.5",
         "node-sql-parser": "^5.4.0",
         "open": "^11.0.0",
         "openai": "^4.86.0",
         "ora": "^9.3.0",
         "p-limit": "^6.2.0",
         "partial-json": "^0.1.7",
-        "pg": "^8.22.0",
         "proper-lockfile": "^4.1.2",
         "string-width": "^8.2.0",
         "tree-kill": "^1.2.2",
@@ -42,7 +40,6 @@
         "@sentry/cli": "^3.3.3",
         "@types/bun": "latest",
         "@types/node": "^22.10.5",
-        "@types/pg": "^8.20.0",
         "@types/proper-lockfile": "^4.1.4",
         "@types/ws": "^8.18.1",
         "esbuild": "^0.27.4",
@@ -220,7 +217,7 @@
 
     "@types/pegjs": ["@types/pegjs@0.10.6", "https://registry.npmmirror.com/@types/pegjs/-/pegjs-0.10.6.tgz", {}, "sha512-eLYXDbZWXh2uxf+w8sXS8d6KSoXTswfps6fvCUuVAGN8eRpfe7h9eSRydxiSJvo9Bf+GzifsDOr9TMQlmJdmkw=="],
 
-    "@types/pg": ["@types/pg@8.20.0", "https://registry.npmmirror.com/@types/pg/-/pg-8.20.0.tgz", { "dependencies": { "@types/node": "*", "pg-protocol": "*", "pg-types": "^2.2.0" } }, "sha512-bEPFOaMAHTEP1EzpvHTbmwR8UsFyHSKsRisLIHVMXnpNefSbGA1bD6CVy+qKjGSqmZqNqBDV2azOBo8TgkcVow=="],
+    "@types/pg": ["@types/pg@8.15.6", "https://registry.npmmirror.com@types/pg/-/pg-8.15.6.tgz", { "dependencies": { "@types/node": "*", "pg-protocol": "*", "pg-types": "^2.2.0" } }, ""],
 
     "@types/pg-pool": ["@types/pg-pool@2.0.7", "https://registry.npmmirror.com@types/pg-pool/-/pg-pool-2.0.7.tgz", { "dependencies": { "@types/pg": "*" } }, ""],
 
@@ -275,8 +272,6 @@
     "async": ["async@3.2.6", "https://registry.npmmirror.comasync/-/async-3.2.6.tgz", {}, ""],
 
     "asynckit": ["asynckit@0.4.0", "https://registry.npmmirror.comasynckit/-/asynckit-0.4.0.tgz", {}, ""],
-
-    "aws-ssl-profiles": ["aws-ssl-profiles@1.1.2", "https://registry.npmmirror.com/aws-ssl-profiles/-/aws-ssl-profiles-1.1.2.tgz", {}, "sha512-NZKeq9AfyQvEeNlN0zSYAaWrmBffJh3IELMZfRpJVWgrpEbtEpnjvzqBPf+mxoI287JohRDoa+/nsfqqiZmF6g=="],
 
     "balanced-match": ["balanced-match@4.0.4", "https://registry.npmmirror.combalanced-match/-/balanced-match-4.0.4.tgz", {}, ""],
 
@@ -353,8 +348,6 @@
     "define-lazy-prop": ["define-lazy-prop@3.0.0", "https://registry.npmmirror.comdefine-lazy-prop/-/define-lazy-prop-3.0.0.tgz", {}, ""],
 
     "delayed-stream": ["delayed-stream@1.0.0", "https://registry.npmmirror.comdelayed-stream/-/delayed-stream-1.0.0.tgz", {}, ""],
-
-    "denque": ["denque@2.1.0", "https://registry.npmmirror.com/denque/-/denque-2.1.0.tgz", {}, "sha512-HVQE3AAb/pxF8fQAoiqpvg9i3evqug3hoiwakOyZAwJm+6vZehbkYXZ0l4JxS+I3QxM97v5aaRNhj8v5oBhekw=="],
 
     "depd": ["depd@2.0.0", "https://registry.npmmirror.comdepd/-/depd-2.0.0.tgz", {}, ""],
 
@@ -448,8 +441,6 @@
 
     "function-bind": ["function-bind@1.1.2", "https://registry.npmmirror.comfunction-bind/-/function-bind-1.1.2.tgz", {}, ""],
 
-    "generate-function": ["generate-function@2.3.1", "https://registry.npmmirror.com/generate-function/-/generate-function-2.3.1.tgz", { "dependencies": { "is-property": "^1.0.2" } }, "sha512-eeB5GfMNeevm/GRYq20ShmsaGcmI81kIX2K9XQx5miC8KdHaC6Jm0qQ8ZNeGOi7wYB8OsdxKs+Y2oVuTFuVwKQ=="],
-
     "get-east-asian-width": ["get-east-asian-width@1.5.0", "https://registry.npmmirror.comget-east-asian-width/-/get-east-asian-width-1.5.0.tgz", {}, ""],
 
     "get-intrinsic": ["get-intrinsic@1.3.0", "https://registry.npmmirror.comget-intrinsic/-/get-intrinsic-1.3.0.tgz", { "dependencies": { "call-bind-apply-helpers": "^1.0.2", "es-define-property": "^1.0.1", "es-errors": "^1.3.0", "es-object-atoms": "^1.1.1", "function-bind": "^1.1.2", "get-proto": "^1.0.1", "gopd": "^1.2.0", "has-symbols": "^1.1.0", "hasown": "^2.0.2", "math-intrinsics": "^1.1.0" } }, ""],
@@ -520,8 +511,6 @@
 
     "is-promise": ["is-promise@4.0.0", "https://registry.npmmirror.comis-promise/-/is-promise-4.0.0.tgz", {}, ""],
 
-    "is-property": ["is-property@1.0.2", "https://registry.npmmirror.com/is-property/-/is-property-1.0.2.tgz", {}, "sha512-Ks/IoX00TtClbGQr4TWXemAnktAQvYB7HzcCxDGqEZU6oCmb2INHuOoKxbtR+HFkmYWBKv/dOZtGRiAjDhj92g=="],
-
     "is-stream": ["is-stream@2.0.1", "https://registry.npmmirror.comis-stream/-/is-stream-2.0.1.tgz", {}, ""],
 
     "is-unicode-supported": ["is-unicode-supported@2.1.0", "https://registry.npmmirror.comis-unicode-supported/-/is-unicode-supported-2.1.0.tgz", {}, ""],
@@ -562,10 +551,6 @@
 
     "logform": ["logform@2.7.0", "https://registry.npmmirror.comlogform/-/logform-2.7.0.tgz", { "dependencies": { "@colors/colors": "1.6.0", "@types/triple-beam": "^1.3.2", "fecha": "^4.2.0", "ms": "^2.1.1", "safe-stable-stringify": "^2.3.1", "triple-beam": "^1.3.0" } }, ""],
 
-    "long": ["long@5.3.2", "https://registry.npmmirror.com/long/-/long-5.3.2.tgz", {}, "sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA=="],
-
-    "lru.min": ["lru.min@1.1.4", "https://registry.npmmirror.com/lru.min/-/lru.min-1.1.4.tgz", {}, "sha512-DqC6n3QQ77zdFpCMASA1a3Jlb64Hv2N2DciFGkO/4L9+q/IpIAuRlKOvCXabtRW6cQf8usbmM6BE/TOPysCdIA=="],
-
     "magic-string": ["magic-string@0.30.21", "https://registry.npmmirror.commagic-string/-/magic-string-0.30.21.tgz", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, ""],
 
     "math-intrinsics": ["math-intrinsics@1.1.0", "https://registry.npmmirror.commath-intrinsics/-/math-intrinsics-1.1.0.tgz", {}, ""],
@@ -595,10 +580,6 @@
     "moment": ["moment@2.30.1", "https://registry.npmmirror.commoment/-/moment-2.30.1.tgz", {}, ""],
 
     "ms": ["ms@2.1.3", "https://registry.npmmirror.comms/-/ms-2.1.3.tgz", {}, ""],
-
-    "mysql2": ["mysql2@3.22.5", "https://registry.npmmirror.com/mysql2/-/mysql2-3.22.5.tgz", { "dependencies": { "aws-ssl-profiles": "^1.1.2", "denque": "^2.1.0", "generate-function": "^2.3.1", "iconv-lite": "^0.7.2", "long": "^5.3.2", "lru.min": "^1.1.4", "named-placeholders": "^1.1.6", "sql-escaper": "^1.3.3" }, "peerDependencies": { "@types/node": ">= 8" } }, "sha512-95uZ2TrPWAZdwpB3vvvDbmEMcNG8yIeNCyu6GUcr/QnWEE/wXm7+mhOCsdQfWQDTV7qYT/PDUZ4U4UPP4AsXqQ=="],
-
-    "named-placeholders": ["named-placeholders@1.1.6", "https://registry.npmmirror.com/named-placeholders/-/named-placeholders-1.1.6.tgz", { "dependencies": { "lru.min": "^1.1.0" } }, "sha512-Tz09sEL2EEuv5fFowm419c1+a/jSMiBjI9gHxVLrVdbUkkNUUfjsVYs9pVZu5oCon/kmRh9TfLEObFtkVxmY0w=="],
 
     "nanoid": ["nanoid@3.3.11", "https://registry.npmmirror.comnanoid/-/nanoid-3.3.11.tgz", { "bin": "bin/nanoid.cjs" }, ""],
 
@@ -656,21 +637,11 @@
 
     "pathe": ["pathe@2.0.3", "https://registry.npmmirror.compathe/-/pathe-2.0.3.tgz", {}, ""],
 
-    "pg": ["pg@8.22.0", "https://registry.npmmirror.com/pg/-/pg-8.22.0.tgz", { "dependencies": { "pg-connection-string": "^2.14.0", "pg-pool": "^3.14.0", "pg-protocol": "^1.15.0", "pg-types": "2.2.0", "pgpass": "1.0.5" }, "optionalDependencies": { "pg-cloudflare": "^1.4.0" }, "peerDependencies": { "pg-native": ">=3.0.1" }, "optionalPeers": ["pg-native"] }, "sha512-8wih1vVIBMxoUM2oB4soJsD9tDnDpLv4OXBJ+EJzFsvycD+lfyIreC2gGHq78f8jbLLt+bvlPTFdFZfJkOuzAA=="],
-
-    "pg-cloudflare": ["pg-cloudflare@1.4.0", "https://registry.npmmirror.com/pg-cloudflare/-/pg-cloudflare-1.4.0.tgz", {}, "sha512-Vo7z/6rrQYxpNRylp4Tlob2elzbh+N/MOQbxFVWCxS7oEx6jF53GTJFxK2WWpKuBRkmiin4Mt+xofFDjx09R0A=="],
-
-    "pg-connection-string": ["pg-connection-string@2.14.0", "https://registry.npmmirror.com/pg-connection-string/-/pg-connection-string-2.14.0.tgz", {}, "sha512-XwWDGcLRGCXAR8F/AM5bG7Q+A3Wm2s6QeEjlOKZLlH3UYcguiqCWKyWXVag5TLTIjR7oOJUY8kcADaZgWPyLeg=="],
-
     "pg-int8": ["pg-int8@1.0.1", "https://registry.npmmirror.compg-int8/-/pg-int8-1.0.1.tgz", {}, ""],
 
-    "pg-pool": ["pg-pool@3.14.0", "https://registry.npmmirror.com/pg-pool/-/pg-pool-3.14.0.tgz", { "peerDependencies": { "pg": ">=8.0" } }, "sha512-gKtPkFdQPU3DksooVLi9LsjZxrsBUZIpa+7aVx+LV5pNh0KzP4Zleud2po+ConrxbuXGBJ6Hfer6hdgpIBpBaw=="],
-
-    "pg-protocol": ["pg-protocol@1.15.0", "https://registry.npmmirror.com/pg-protocol/-/pg-protocol-1.15.0.tgz", {}, "sha512-cq9sECI5s0+uPUXjbz8ioyPJni6RzsRib0US67i5IoTZKw8fNeYlVE7u8F4dG7vEJJtc5wdD1K189lCCUwqWTQ=="],
+    "pg-protocol": ["pg-protocol@1.13.0", "https://registry.npmmirror.compg-protocol/-/pg-protocol-1.13.0.tgz", {}, ""],
 
     "pg-types": ["pg-types@2.2.0", "https://registry.npmmirror.compg-types/-/pg-types-2.2.0.tgz", { "dependencies": { "pg-int8": "1.0.1", "postgres-array": "~2.0.0", "postgres-bytea": "~1.0.0", "postgres-date": "~1.0.4", "postgres-interval": "^1.1.0" } }, ""],
-
-    "pgpass": ["pgpass@1.0.5", "https://registry.npmmirror.com/pgpass/-/pgpass-1.0.5.tgz", { "dependencies": { "split2": "^4.1.0" } }, "sha512-FdW9r/jQZhSeohs1Z3sI1yxFQNFvMcnmfuj4WBMUTxOrAyLMaTcE1aAMBiTlbMNaXvBCQuVi0R7hd8udDSP7ug=="],
 
     "picocolors": ["picocolors@1.1.1", "https://registry.npmmirror.compicocolors/-/picocolors-1.1.1.tgz", {}, ""],
 
@@ -778,11 +749,7 @@
 
     "source-map-js": ["source-map-js@1.2.1", "https://registry.npmmirror.comsource-map-js/-/source-map-js-1.2.1.tgz", {}, ""],
 
-    "split2": ["split2@4.2.0", "https://registry.npmmirror.com/split2/-/split2-4.2.0.tgz", {}, "sha512-UcjcJOWknrNkF6PLX83qcHM6KHgVKNkV62Y8a5uYDVv9ydGQVwAHMKqHdJje1VTWpljG0WYpCDhrCdAOYH4TWg=="],
-
     "sprintf-js": ["sprintf-js@1.0.3", "https://registry.npmmirror.com/sprintf-js/-/sprintf-js-1.0.3.tgz", {}, "sha512-D9cPgkvLlV3t3IzL0D0YLvGA9Ahk4PcvVwUbN0dSGr1aP0Nrt4AEnTUbuGvquEC0mA64Gqt1fzirlRs5ibXx8g=="],
-
-    "sql-escaper": ["sql-escaper@1.3.3", "https://registry.npmmirror.com/sql-escaper/-/sql-escaper-1.3.3.tgz", {}, "sha512-BsTCV265VpTp8tm1wyIm1xqQCS+Q9NHx2Sr+WcnUrgLrQ6yiDIvHYJV5gHxsj1lMBy2zm5twLaZao8Jd+S8JJw=="],
 
     "stack-trace": ["stack-trace@0.0.10", "https://registry.npmmirror.comstack-trace/-/stack-trace-0.0.10.tgz", {}, ""],
 
@@ -906,8 +873,6 @@
 
     "@opentelemetry/instrumentation-pg/@opentelemetry/core": ["@opentelemetry/core@2.6.1", "https://registry.npmmirror.com@opentelemetry/core/-/core-2.6.1.tgz", { "dependencies": { "@opentelemetry/semantic-conventions": "^1.29.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, ""],
 
-    "@opentelemetry/instrumentation-pg/@types/pg": ["@types/pg@8.15.6", "https://registry.npmmirror.com@types/pg/-/pg-8.15.6.tgz", { "dependencies": { "@types/node": "*", "pg-protocol": "*", "pg-types": "^2.2.0" } }, ""],
-
     "@opentelemetry/instrumentation-undici/@opentelemetry/core": ["@opentelemetry/core@2.6.1", "https://registry.npmmirror.com@opentelemetry/core/-/core-2.6.1.tgz", { "dependencies": { "@opentelemetry/semantic-conventions": "^1.29.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, ""],
 
     "@opentelemetry/resources/@opentelemetry/core": ["@opentelemetry/core@2.6.1", "https://registry.npmmirror.com@opentelemetry/core/-/core-2.6.1.tgz", { "dependencies": { "@opentelemetry/semantic-conventions": "^1.29.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, ""],
@@ -917,8 +882,6 @@
     "@opentelemetry/sql-common/@opentelemetry/core": ["@opentelemetry/core@2.6.1", "https://registry.npmmirror.com@opentelemetry/core/-/core-2.6.1.tgz", { "dependencies": { "@opentelemetry/semantic-conventions": "^1.29.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, ""],
 
     "@prisma/instrumentation/@opentelemetry/instrumentation": ["@opentelemetry/instrumentation@0.207.0", "https://registry.npmmirror.com@opentelemetry/instrumentation/-/instrumentation-0.207.0.tgz", { "dependencies": { "@opentelemetry/api-logs": "0.207.0", "import-in-the-middle": "^2.0.0", "require-in-the-middle": "^8.0.0" }, "peerDependencies": { "@opentelemetry/api": "^1.3.0" } }, ""],
-
-    "@types/pg-pool/@types/pg": ["@types/pg@8.15.6", "https://registry.npmmirror.com@types/pg/-/pg-8.15.6.tgz", { "dependencies": { "@types/node": "*", "pg-protocol": "*", "pg-types": "^2.2.0" } }, ""],
 
     "cli-table3/string-width": ["string-width@4.2.3", "https://registry.npmmirror.com/string-width/-/string-width-4.2.3.tgz", { "dependencies": { "emoji-regex": "^8.0.0", "is-fullwidth-code-point": "^3.0.0", "strip-ansi": "^6.0.1" } }, "sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g=="],
 
@@ -950,13 +913,9 @@
 
     "@fastify/otel/@opentelemetry/instrumentation/import-in-the-middle": ["import-in-the-middle@2.0.6", "https://registry.npmmirror.comimport-in-the-middle/-/import-in-the-middle-2.0.6.tgz", { "dependencies": { "acorn": "^8.15.0", "acorn-import-attributes": "^1.9.5", "cjs-module-lexer": "^2.2.0", "module-details-from-path": "^1.0.4" } }, ""],
 
-    "@opentelemetry/instrumentation-pg/@types/pg/pg-protocol": ["pg-protocol@1.13.0", "https://registry.npmmirror.compg-protocol/-/pg-protocol-1.13.0.tgz", {}, ""],
-
     "@prisma/instrumentation/@opentelemetry/instrumentation/@opentelemetry/api-logs": ["@opentelemetry/api-logs@0.207.0", "https://registry.npmmirror.com@opentelemetry/api-logs/-/api-logs-0.207.0.tgz", { "dependencies": { "@opentelemetry/api": "^1.3.0" } }, ""],
 
     "@prisma/instrumentation/@opentelemetry/instrumentation/import-in-the-middle": ["import-in-the-middle@2.0.6", "https://registry.npmmirror.comimport-in-the-middle/-/import-in-the-middle-2.0.6.tgz", { "dependencies": { "acorn": "^8.15.0", "acorn-import-attributes": "^1.9.5", "cjs-module-lexer": "^2.2.0", "module-details-from-path": "^1.0.4" } }, ""],
-
-    "@types/pg-pool/@types/pg/pg-protocol": ["pg-protocol@1.13.0", "https://registry.npmmirror.compg-protocol/-/pg-protocol-1.13.0.tgz", {}, ""],
 
     "cli-table3/string-width/strip-ansi": ["strip-ansi@6.0.1", "https://registry.npmmirror.com/strip-ansi/-/strip-ansi-6.0.1.tgz", { "dependencies": { "ansi-regex": "^5.0.1" } }, "sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A=="],
 

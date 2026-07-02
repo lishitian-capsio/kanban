@@ -1,6 +1,6 @@
 // Importing the adapter modules registers their engine factories as a side effect.
-import "./driver/postgres-driver";
-import "./driver/mysql-driver";
+// Postgres/MySQL run on Bun's native SQL client; SQLite stays on bun:sqlite.
+import "./driver/bun-sql/register";
 import "./driver/sqlite-driver";
 
 export {

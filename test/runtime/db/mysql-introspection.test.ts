@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { MysqlDriver, type MysqlPoolLike } from "../../../src/db/driver/mysql-driver";
+import type { BunSqlLike, BunSqlRows } from "../../../src/db/driver/bun-sql/bun-sql";
+import { BunSqlDriver } from "../../../src/db/driver/bun-sql/bun-sql-driver";
+import { mysqlDialect } from "../../../src/db/driver/bun-sql/mysql-dialect";
 import type { ConnectionConfig } from "../../../src/db/types";
 
 const config: ConnectionConfig = { engine: "mysql", host: "h", database: "d", user: "u" };
@@ -10,30 +12,31 @@ interface FakeRows {
 }
 
 /** Route each catalog query to canned rows by a distinctive substring. */
-function fakePool(rows: FakeRows): MysqlPoolLike {
-	const answer = (sql: string): Array<Record<string, unknown>> => {
+function fakeSql(rows: FakeRows): BunSqlLike {
+	const run = async (sql: string): Promise<BunSqlRows> => {
 		for (const [marker, value] of Object.entries(rows)) {
 			if (sql.includes(marker)) {
-				return value;
+				return value as BunSqlRows;
 			}
 		}
-		return [];
+		return [] as BunSqlRows;
 	};
-	const query = async (sql: string): Promise<[unknown, undefined]> => [answer(sql), undefined];
-	return {
-		getConnection: async () => ({ query, release: () => {} }),
-		query,
-		end: async () => {},
+	const sql: BunSqlLike = {
+		unsafe: run,
+		reserve: async () => ({ unsafe: run, release: () => {} }),
+		connect: async () => sql,
+		close: async () => {},
 	};
+	return sql;
 }
 
-async function driverWith(rows: FakeRows): Promise<MysqlDriver> {
-	const driver = new MysqlDriver(config, () => fakePool(rows));
+async function driverWith(rows: FakeRows): Promise<BunSqlDriver> {
+	const driver = new BunSqlDriver(config, mysqlDialect, () => fakeSql(rows));
 	await driver.connect();
 	return driver;
 }
 
-describe("MysqlDriver lazy introspection", () => {
+describe("BunSqlDriver (mysql) lazy introspection", () => {
 	it("lists user databases as schemas", async () => {
 		const driver = await driverWith({
 			"information_schema.SCHEMATA": [{ schema_name: "shop" }, { schema_name: "analytics" }],
