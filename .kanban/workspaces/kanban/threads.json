@@ -172,10 +172,11 @@
     {
       "id": "49269ceb-b13c-4019-aaaf-65bd61e653ff",
       "agentId": "claude",
-      "name": ".kanban/worktrees/__board__/kanban/.kanban/files/blobs/f7ed…",
+      "name": "GitHub 登录一直转圈排查",
       "titleSource": "auto",
       "createdAt": 1782982437956,
-      "updatedAt": 1782982437956
+      "updatedAt": 1782982665902,
+      "pendingNextStep": "建个 task 修复 fetchAuthenticatedLogin：先写盘再查用户名并加超时，避免登录完成信号卡住"
     },
     {
       "id": "6eff6e3c-a36d-4d19-8f02-3462ec4b1e41",
