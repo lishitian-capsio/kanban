@@ -17,8 +17,14 @@ DigitalOcean Spaces / MinIO / Supabase) built on Bun's native `Bun.S3Client`.
 | **(c) Dedicated Storage surface** ✅ | **Chosen.** S3 browsing is *presentationally* a file browser but *operationally* a managed connection (a list of endpoint+bucket+credentials, like DB connections — unlike the workspace fs, which is just "the repo"). A dedicated surface lets each half sit where it belongs: reuse **file-surface's presentation** components + reuse **Database's connection-management / secret-storage / access-gate** patterns. |
 
 **Chosen architecture:** a new peer overlay (mutually exclusive with Vault / Database /
-GitHistory), reachable from the top bar via `?storage`. Presentation borrowed from
-file-surface; connection management borrowed from the Database subsystem.
+GitHistory), toggled from the top bar. Presentation borrowed from file-surface; connection
+management borrowed from the Database subsystem.
+
+> Implementation note: the surface is opened via a local `isStorageOpen` `useState` in
+> `App.tsx` (matching the sibling `isDatabaseOpen` mechanism), NOT a `?storage` URL param —
+> Database is likewise not URL-routed, so this keeps the two surfaces consistent. (An earlier
+> draft of this doc proposed a `?storage` query param; that was not shipped. A URL-routed
+> deep-link could be added later for both surfaces together.)
 
 ## 2. Hard Constraint from the Bun API
 
