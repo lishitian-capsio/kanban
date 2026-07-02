@@ -7,6 +7,28 @@ import { PoolManager } from "../../../src/db/pool/pool-manager";
 import type { ConnectionRecord } from "../../../src/db/registry/connection-store";
 import type { QueryRequest } from "../../../src/db/types";
 
+function makeServiceWithDriver(driver: DatabaseDriver) {
+	const rec: ConnectionRecord = {
+		connId: "c",
+		label: "c",
+		engine: "redis",
+		host: "localhost",
+		port: 6379,
+		database: "0",
+		user: "",
+		filePath: null,
+		ssl: null,
+		allowWrites: false,
+		createdAt: "2026-06-22T00:00:00.000Z",
+	};
+	const poolManager = new PoolManager({ createDriver: () => driver });
+	return new DatabaseService({
+		poolManager,
+		loadConnection: async (id) => (id === rec.connId ? rec : null),
+		loadCredential: async () => undefined,
+	});
+}
+
 function record(overrides: Partial<ConnectionRecord> = {}): ConnectionRecord {
 	return {
 		connId: "c1",
@@ -89,5 +111,24 @@ describe("DatabaseService", () => {
 		await expect(svc.runQuery({ connId: "missing", sql: "SELECT 1", caller: "cli" })).rejects.toBeInstanceOf(
 			DbConnectionError,
 		);
+	});
+
+	it("browseKeyspace delegates to a KeyspaceBrowser driver", async () => {
+		const driver = {
+			engine: "redis",
+			connect: async () => {},
+			disconnect: async () => {},
+			browseKeyspace: async () => ({
+				rows: [{ key: "user:1", type: "string", ttl: -1, value: "x" }],
+				scanCursor: "0",
+				durationMs: 1,
+			}),
+		} as never;
+		const service = makeServiceWithDriver(driver);
+		const r = await service.browseKeyspace({
+			connId: "c", caller: "human", schema: "db0", prefix: "user", cursor: null, limit: 10, valuePreviewLimit: 20,
+		});
+		expect(r.rows[0].key).toBe("user:1");
+		expect(r.scanCursor).toBe("0");
 	});
 });

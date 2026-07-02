@@ -337,3 +337,23 @@ describe("QueryExecutor.browseTable (keyset pagination)", () => {
 		).rejects.toBeInstanceOf(QueryExecutionError);
 	});
 });
+
+describe("QueryExecutor.browseTable (redis keyspace)", () => {
+	it("browseTable pages a redis keyspace via scanCursor", async () => {
+		const service = {
+			browseKeyspace: async () => ({
+				rows: [{ key: "user:1", type: "string", ttl: -1, value: "x" }],
+				scanCursor: "42",
+				durationMs: 1,
+			}),
+			runQuery: async () => { throw new Error("should not be called for redis"); },
+			invalidate: async () => {},
+			describeTable: async () => { throw new Error("nope"); },
+		} as never;
+		const executor = new QueryExecutor({ service, loadConnection: async () => ({ engine: "redis", connId: "c" } as never) });
+		const r = await executor.browseTable({ connId: "c", schema: "db0", table: "user", caller: "human" });
+		expect(r.rows[0].key).toBe("user:1");
+		expect(r.pagination.hasMore).toBe(true);
+		expect(r.pagination.nextCursor).not.toBeNull();
+	});
+});

@@ -1,6 +1,8 @@
 import { createLogger } from "../logging";
 import type { DatabaseDriver } from "./driver/driver";
-import { DbConnectionError } from "./errors";
+import { isKeyspaceBrowser } from "./driver/driver";
+import type { BrowseKeyspaceResult } from "./driver/driver";
+import { DbConnectionError, UnsupportedEngineError } from "./errors";
 import { getIntrospectionCache, type IntrospectionCache } from "./introspection/introspection-cache";
 import { assertOperationAllowed } from "./policy/access-policy";
 import type { PoolManager } from "./pool/pool-manager";
@@ -145,6 +147,32 @@ export class DatabaseService {
 			() => driver.metadataSignature(),
 			() => driver.describeTable(input.schema, input.table),
 		);
+	}
+
+	/**
+	 * Browse a Redis keyspace prefix page (SCAN + per-key TYPE/TTL/value preview). Always
+	 * read-only. Throws {@link UnsupportedEngineError} if the driver is not a KeyspaceBrowser.
+	 */
+	async browseKeyspace(input: {
+		connId: string;
+		caller: DbCaller;
+		schema: string;
+		prefix: string;
+		cursor: string | null;
+		limit: number;
+		valuePreviewLimit: number;
+	}): Promise<BrowseKeyspaceResult> {
+		const { record, driver } = await this.resolveDriver(input.connId);
+		if (!isKeyspaceBrowser(driver)) {
+			throw new UnsupportedEngineError(record.engine);
+		}
+		return driver.browseKeyspace({
+			schema: input.schema,
+			prefix: input.prefix,
+			cursor: input.cursor,
+			limit: input.limit,
+			valuePreviewLimit: input.valuePreviewLimit,
+		});
 	}
 
 	/** Drop any live driver for a connection after its registry record changed, and its cached metadata. */

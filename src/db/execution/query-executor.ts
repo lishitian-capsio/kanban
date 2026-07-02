@@ -40,6 +40,9 @@ export const DEFAULT_QUERY_EXECUTION_LIMITS: QueryExecutionLimits = {
 	timeoutMs: 30_000,
 };
 
+/** Default per-value preview budget for a redis keyspace browse. */
+const REDIS_VALUE_PREVIEW_LIMIT = 64;
+
 export interface QueryExecutorDeps {
 	/**
 	 * The policy chokepoint. The executor never talks to a driver directly — it routes
@@ -47,7 +50,7 @@ export interface QueryExecutorDeps {
 	 * the access policy cannot be bypassed. {@link DatabaseService.invalidate} is the
 	 * teardown used to abandon a timed-out / cancelled connection.
 	 */
-	service: Pick<DatabaseService, "runQuery" | "invalidate" | "describeTable">;
+	service: Pick<DatabaseService, "runQuery" | "invalidate" | "describeTable" | "browseKeyspace">;
 	/** Resolve a connection's record (the executor needs its engine to classify + bound). */
 	loadConnection: (connId: string) => Promise<ConnectionRecord | null>;
 	/** Concurrency throttle. Defaults to the host-wide singleton. */
@@ -235,6 +238,9 @@ export class QueryExecutor {
 		if (!record) {
 			throw new DbConnectionError(`unknown connection: "${input.connId}"`);
 		}
+		if (record.engine === "redis") {
+			return this.runRedisBrowse(input, started, record.engine);
+		}
 		const pageSize = clampPageSize(input.page?.pageSize ?? limits.defaultPageSize, limits.maxRows);
 		const detail = await this.deps.service.describeTable({
 			connId: input.connId,
@@ -317,6 +323,45 @@ export class QueryExecutor {
 		};
 	}
 
+	private async runRedisBrowse(
+		input: BrowseTableInput,
+		started: number,
+		_engine: string,
+	): Promise<ExecuteQueryResult> {
+		const limits = { ...this.limits, ...input.limits };
+		const pageSize = clampPageSize(input.page?.pageSize ?? limits.defaultPageSize, limits.maxRows);
+		const cursor = decodeScanCursor(input.page?.cursor);
+		const result = await this.deps.service.browseKeyspace({
+			connId: input.connId,
+			caller: input.caller,
+			schema: input.schema,
+			prefix: input.table,
+			cursor,
+			limit: pageSize,
+			valuePreviewLimit: REDIS_VALUE_PREVIEW_LIMIT,
+		});
+		let rows: Array<Record<string, unknown>> = result.rows.map((r) => ({ ...r }));
+		const capped = capRowsByBytes(rows, limits.maxBytes);
+		rows = capped.rows;
+		const done = result.scanCursor === "0";
+		const hasMore = !done || capped.truncated;
+		const nextCursor = hasMore ? encodeScanCursor(result.scanCursor) : null;
+		return {
+			columns: [
+				{ name: "key" }, { name: "type" }, { name: "ttl" }, { name: "value" },
+			],
+			rows,
+			rowCount: rows.length,
+			affectedRows: null,
+			classification: "read",
+			readOnly: true,
+			durationMs: result.durationMs,
+			totalDurationMs: this.now() - started,
+			pagination: { paginated: true, pageSize, hasMore, nextCursor },
+			truncated: { byRows: false, byBytes: capped.truncated },
+		};
+	}
+
 	private shapeResult(args: {
 		input: ExecuteQueryInput;
 		started: number;
@@ -375,4 +420,25 @@ function clampPageSize(requested: number, maxRows: number): number {
 		return Math.min(cap, 1);
 	}
 	return Math.min(value, cap);
+}
+
+/** Encode a redis SCAN cursor into the opaque browse cursor token. */
+function encodeScanCursor(scanCursor: string): string {
+	return Buffer.from(JSON.stringify({ s: scanCursor }), "utf8").toString("base64url");
+}
+
+/** Decode the opaque browse cursor back to a redis SCAN cursor; absent ⇒ null (start). */
+function decodeScanCursor(cursor: string | null | undefined): string | null {
+	if (!cursor) {
+		return null;
+	}
+	try {
+		const decoded = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as { s?: unknown };
+		if (typeof decoded.s === "string") {
+			return decoded.s;
+		}
+	} catch {
+		// fall through
+	}
+	throw new InvalidCursorError();
 }
