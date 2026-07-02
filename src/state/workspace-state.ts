@@ -32,6 +32,14 @@ import {
 	writeCredentials,
 } from "../db/registry/connection-store";
 import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
+import type { StorageConnectionRecord, StorageCredential } from "../storage/storage-connection-record";
+import {
+	normalizeConnId as normalizeStorageConnId,
+	readStorageConnections,
+	writeStorageConnections,
+	readStorageCredentials,
+	writeStorageCredentials,
+} from "../storage/storage-connection-store";
 import { createLogger } from "../logging";
 import { markStall } from "../server/event-loop-stall-watchdog";
 import { VaultDocumentStore } from "../vault/vault-document-store";
@@ -476,6 +484,75 @@ export async function mutateDbCredential(
 			data.credentials[id] = next;
 		}
 		await writeCredentials(path, data);
+	});
+}
+
+const STORAGE_CONNECTIONS_SHARD_DIRNAME = "storage-connections";
+
+/** Committed (board-data) per-connection metadata shard dir. Travels with the repo. */
+export function getWorkspaceStorageConnectionsShardDir(repoPath: string, workspaceId: string): string {
+	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), STORAGE_CONNECTIONS_SHARD_DIRNAME);
+}
+
+/** Machine-home storage credentials file (secrets only; never committed). */
+export function getStorageCredentialsPath(): string {
+	const override = process.env.KANBAN_STORAGE_CREDENTIALS_PATH?.trim();
+	if (override) {
+		return override;
+	}
+	return join(getMachineKanbanHomePath(), "settings", "storage-credentials.json");
+}
+
+/** Load all committed storage connection records for a workspace. */
+export async function loadWorkspaceStorageConnections(workspaceId: string): Promise<StorageConnectionRecord[]> {
+	const repoPath = await resolveRepoPathForWorkspaceId(workspaceId);
+	if (!repoPath) {
+		return [];
+	}
+	return await readStorageConnections(getWorkspaceStorageConnectionsShardDir(repoPath, workspaceId));
+}
+
+/** Locked read→mutate→write of a workspace's committed storage connection records. */
+export async function mutateWorkspaceStorageConnections(
+	workspaceId: string,
+	mutate: (records: StorageConnectionRecord[]) => StorageConnectionRecord[] | Promise<StorageConnectionRecord[]>,
+): Promise<StorageConnectionRecord[]> {
+	const repoPath = await resolveRepoPathForWorkspaceId(workspaceId);
+	if (!repoPath) {
+		throw new Error(`Unknown workspace "${workspaceId}"; cannot resolve its repository path.`);
+	}
+	const shardDir = getWorkspaceStorageConnectionsShardDir(repoPath, workspaceId);
+	return await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
+		const current = await readStorageConnections(shardDir);
+		const next = await mutate(current);
+		await writeStorageConnections(shardDir, next);
+		return next;
+	});
+}
+
+/** Load one machine-home storage credential by connection id. */
+export async function loadStorageCredential(connId: string): Promise<StorageCredential | undefined> {
+	const id = normalizeStorageConnId(connId);
+	const data = await readStorageCredentials(getStorageCredentialsPath());
+	return data.credentials[id];
+}
+
+/** Read→mutate→write one machine-home storage credential (machine-local; no repo lock). */
+export async function mutateStorageCredential(
+	connId: string,
+	mutate: (current: StorageCredential | undefined) => StorageCredential | undefined,
+): Promise<void> {
+	const path = getStorageCredentialsPath();
+	const id = normalizeStorageConnId(connId);
+	await lockedFileSystem.withLock({ path, type: "file" }, async () => {
+		const data = await readStorageCredentials(path);
+		const next = mutate(data.credentials[id]);
+		if (next === undefined) {
+			delete data.credentials[id];
+		} else {
+			data.credentials[id] = next;
+		}
+		await writeStorageCredentials(path, data);
 	});
 }
 

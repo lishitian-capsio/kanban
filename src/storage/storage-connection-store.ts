@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { chmod, readFile } from "node:fs/promises";
 
 import { createLogger } from "../logging";
 import { lockedFileSystem } from "../fs/locked-file-system";
@@ -70,9 +70,14 @@ export async function readStorageCredentials(path: string): Promise<StorageCrede
 	}
 }
 
-/** Persist the machine-home credentials file (machine-local; no repo lock). */
+/** Persist the machine-home credentials file (machine-local; no repo lock; owner-only 0600). */
 export async function writeStorageCredentials(path: string, data: StorageCredentialsData): Promise<void> {
 	await lockedFileSystem.writeJsonFileAtomic(path, data, { lock: null });
+	try {
+		await chmod(path, 0o600);
+	} catch (error) {
+		log.warn("failed to restrict storage credentials file permissions", { error });
+	}
 }
 
 /**
