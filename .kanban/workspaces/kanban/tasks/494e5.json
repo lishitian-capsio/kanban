@@ -1,0 +1,20 @@
+{
+  "id": "494e5",
+  "title": "Bun 原生工具替换: stringWidth/stripANSI(+which)",
+  "prompt": "用 Bun 原生工具替换 Kanban 自有代码里的第三方/手写实现,移除依赖并提速。\n\n## 范围与目标\n1. **Bun.stringWidth 替掉 string-width 依赖**\n   - 使用点:src/cli-human-render.ts。改用 Bun.stringWidth,并从 package.json dependencies 移除 string-width(确认无其他引用)。\n2. **Bun.stripANSI 收敛手写 ANSI 去除**\n   - Kanban 自有代码里多处手写 ANSI 正则剥离,如 src/terminal/output-utils.ts、src/terminal/session-state-machine.ts、src/cli-output.ts、src/terminal/agent-session-adapters.ts、src/terminal/claude-workspace-trust.ts、src/db/* 等。统一改用 Bun.stripANSI(更快、更正确)。\n3. **(可选)Bun.which 用于命令发现**\n   - src/terminal/command-discovery.ts 的可执行文件 PATH 查找可改用 Bun.which(与「优先直接 PATH 检查、避免起交互式 shell」的取向一致)。评估后决定是否纳入。\n\n## 禁区\n- **不要动 src/agent-sdk/**(vendored omp)里的 ANSI/其它实现。\n- web-ui 不在范围内。\n\n## 关键约束\n- vitest 在 Node 上跑,Bun.* 不可用 → 需薄封装/注入回退,保证现有 vitest 全绿。\n- 行为等价:stringWidth 用于对齐/表格宽度,stripANSI 用于日志/终端文本清洗,替换后视觉与既有测试不能回归。\n\n## 要求\n1. 先列出所有使用点与替换映射。\n2. 引入薄封装(Bun 优先,Node 回退),逐处替换。\n3. 移除 string-width 依赖(若替换完整)。\n4. typecheck + 测试全绿。\n\n先出方案再改代码。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
+  "baseRef": "main",
+  "createdAt": 1782960592182,
+  "updatedAt": 1782960592182,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}

@@ -1,0 +1,20 @@
+{
+  "id": "b3b15",
+  "title": "接入 Bun.JSONL 加速 JSONL 读解析",
+  "prompt": "把 Kanban 自有代码里手写的 JSONL 解析(split(chr10)+逐行 JSON.parse)替换为 Bun 原生 Bun.JSONL,提升性能并统一容错。\n\n## 背景\n- Kanban 大量用 JSONL,目前是手动按行切分再逐行 JSON.parse,并各自处理坏行/半行。\n- Bun.JSONL.parse(整块,SIMD 加速)与 Bun.JSONL.parseChunk(流式:返回 {values, read, done, error},错误捕获而非抛出、字节偏移零拷贝)可替代手写解析;parseChunk 的 done/error/read 正好对应 journal 的 torn-line 容错。\n\n## 范围(仅 Kanban 自有代码)\n需要改造的 JSONL 读路径:\n- src/session/session-message-journal.ts(append-only JSONL,含 torn 尾行容错、de-dup、compact)\n- src/terminal/codex-session-usage.ts、src/terminal/claude-session-usage.ts(token 用量解析)\n- src/terminal/codex-session-capture.ts(rollout 首行 session_meta 解析)\n- src/terminal/terminal-transcript-capture.ts(若涉及 JSONL 解析)\n\n## 禁区\n- **绝对不要动 src/agent-sdk/**(vendored omp,自带实现,规矩明令不合并):compaction.ts / stream.ts / env.ts / tool-call-display.ts 等即使命中 JSONL 也跳过。\n\n## 关键约束\n- vitest 在 Node 上跑,Bun.JSONL 不可用 → 需薄封装/注入,运行时用 Bun.JSONL、测试可回退到现有手写解析或 fake,保证现有 vitest 全绿。\n- **行为等价**:journal 的 torn 尾行容错、按 id last-write-wins de-dup、maxMessages 截断标记、Codex 最新 rollout 定位等语义必须保持不回归。\n- codex/claude usage 的去重与「取最后 total_token_usage」等既有逻辑不变(见 token-usage 相关实现)。\n\n## 要求\n1. 先出方案:逐个列出上述读路径当前解析方式与拟用 Bun.JSONL(parse vs parseChunk)的映射,标出容错点如何迁移。\n2. 引入统一薄封装(Bun.JSONL 优先,Node 测试回退)。\n3. 改造上述 Kanban 自有读路径,保持接口与语义不变。\n4. 测试全绿 + 给出 journal / usage 解析的粗略前后耗时对比。\n\n先出方案再改代码。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
+  "baseRef": "main",
+  "createdAt": 1782960592395,
+  "updatedAt": 1782960592395,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
