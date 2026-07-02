@@ -172,10 +172,10 @@
     {
       "id": "49269ceb-b13c-4019-aaaf-65bd61e653ff",
       "agentId": "claude",
-      "name": "GitHub 登录一直转圈排查",
+      "name": "Remove File upload tab, dock File in board",
       "titleSource": "auto",
       "createdAt": 1782982437956,
-      "updatedAt": 1782982665902,
+      "updatedAt": 1782983212206,
       "pendingNextStep": "建个 task 修复 fetchAuthenticatedLogin：先写盘再查用户名并加超时，避免登录完成信号卡住"
     },
     {
