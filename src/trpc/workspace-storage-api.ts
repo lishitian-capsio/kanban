@@ -114,8 +114,8 @@ export function createWorkspaceStorageApi(): WorkspaceStorageApi {
 						return undefined;
 					}
 					return {
-						accessKeyId: setKey ?? cur?.accessKeyId,
-						secretAccessKey: setSecret ?? cur?.secretAccessKey,
+						accessKeyId: setKey || cur?.accessKeyId,
+						secretAccessKey: setSecret || cur?.secretAccessKey,
 						sessionToken:
 							input.sessionToken === null || input.sessionToken === ""
 								? undefined
