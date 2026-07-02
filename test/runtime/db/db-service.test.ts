@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { DatabaseService } from "../../../src/db/db-service";
 import type { DatabaseDriver } from "../../../src/db/driver/driver";
-import { DbConnectionError, DbPolicyError } from "../../../src/db/errors";
+import { DbConnectionError, DbPolicyError, UnsupportedEngineError } from "../../../src/db/errors";
 import { PoolManager } from "../../../src/db/pool/pool-manager";
 import type { ConnectionRecord } from "../../../src/db/registry/connection-store";
 import type { QueryRequest } from "../../../src/db/types";
@@ -130,5 +130,34 @@ describe("DatabaseService", () => {
 		});
 		expect(r.rows[0].key).toBe("user:1");
 		expect(r.scanCursor).toBe("0");
+	});
+
+	it("browseKeyspace throws UnsupportedEngineError when the driver has no browseKeyspace method", async () => {
+		// A postgres driver does NOT implement browseKeyspace — it is not a KeyspaceBrowser.
+		const driver = {
+			engine: "postgres",
+			connect: async () => {},
+			disconnect: async () => {},
+			testConnection: async () => ({ ok: true, latencyMs: 1, serverVersion: "PostgreSQL 16" }),
+			query: async () => ({ rows: [], fields: [], rowCount: 0, durationMs: 0 }),
+			introspect: async () => ({ engine: "postgres", tables: [] }),
+			listSchemas: async () => [],
+			listTables: async () => [],
+			describeTable: async (schema: string, table: string) => ({
+				schema,
+				name: table,
+				kind: "table" as const,
+				columns: [],
+				indexes: [],
+				foreignKeys: [],
+			}),
+			metadataSignature: async () => "",
+		} satisfies DatabaseDriver;
+		const service = makeServiceWithDriver(driver as never);
+		await expect(
+			service.browseKeyspace({
+				connId: "c", caller: "human", schema: "public", prefix: "user", cursor: null, limit: 10, valuePreviewLimit: 20,
+			}),
+		).rejects.toBeInstanceOf(UnsupportedEngineError);
 	});
 });

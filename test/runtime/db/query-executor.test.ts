@@ -356,4 +356,26 @@ describe("QueryExecutor.browseTable (redis keyspace)", () => {
 		expect(r.pagination.hasMore).toBe(true);
 		expect(r.pagination.nextCursor).not.toBeNull();
 	});
+
+	it("scanCursor=0 terminates pagination (hasMore false, nextCursor null, no restart loop)", async () => {
+		// When SCAN returns cursor "0", iteration is complete. The executor must NOT emit a non-null
+		// nextCursor, as that would cause the caller to restart from the top of the keyspace.
+		const service = {
+			browseKeyspace: async () => ({
+				rows: [{ key: "user:1", type: "string", ttl: -1, value: "x" }],
+				scanCursor: "0",
+				durationMs: 1,
+			}),
+			runQuery: async () => { throw new Error("should not be called for redis"); },
+			invalidate: async () => {},
+			describeTable: async () => { throw new Error("nope"); },
+		} as never;
+		const executor = new QueryExecutor({ service, loadConnection: async () => ({ engine: "redis", connId: "c" } as never) });
+		const r = await executor.browseTable({ connId: "c", schema: "db0", table: "user", caller: "human" });
+		expect(r.rows[0].key).toBe("user:1");
+		expect(r.pagination.hasMore).toBe(false);
+		expect(r.pagination.nextCursor).toBeNull();
+		expect(r.truncated.byBytes).toBe(false);
+		expect(r.truncated.byRows).toBe(false);
+	});
 });

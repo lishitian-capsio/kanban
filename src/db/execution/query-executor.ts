@@ -239,7 +239,7 @@ export class QueryExecutor {
 			throw new DbConnectionError(`unknown connection: "${input.connId}"`);
 		}
 		if (record.engine === "redis") {
-			return this.runRedisBrowse(input, started, record.engine);
+			return this.runRedisBrowse(input, started);
 		}
 		const pageSize = clampPageSize(input.page?.pageSize ?? limits.defaultPageSize, limits.maxRows);
 		const detail = await this.deps.service.describeTable({
@@ -323,33 +323,39 @@ export class QueryExecutor {
 		};
 	}
 
-	private async runRedisBrowse(
-		input: BrowseTableInput,
-		started: number,
-		_engine: string,
-	): Promise<ExecuteQueryResult> {
+	private async runRedisBrowse(input: BrowseTableInput, started: number): Promise<ExecuteQueryResult> {
 		const limits = { ...this.limits, ...input.limits };
 		const pageSize = clampPageSize(input.page?.pageSize ?? limits.defaultPageSize, limits.maxRows);
 		const cursor = decodeScanCursor(input.page?.cursor);
-		const result = await this.deps.service.browseKeyspace({
-			connId: input.connId,
-			caller: input.caller,
-			schema: input.schema,
-			prefix: input.table,
-			cursor,
-			limit: pageSize,
-			valuePreviewLimit: REDIS_VALUE_PREVIEW_LIMIT,
-		});
-		let rows: Array<Record<string, unknown>> = result.rows.map((r) => ({ ...r }));
-		const capped = capRowsByBytes(rows, limits.maxBytes);
-		rows = capped.rows;
-		const done = result.scanCursor === "0";
-		const hasMore = !done || capped.truncated;
+		const result = await runWithDeadline(
+			() =>
+				this.deps.service.browseKeyspace({
+					connId: input.connId,
+					caller: input.caller,
+					schema: input.schema,
+					prefix: input.table,
+					cursor,
+					limit: pageSize,
+					valuePreviewLimit: REDIS_VALUE_PREVIEW_LIMIT,
+				}),
+			{
+				timeoutMs: limits.timeoutMs,
+				signal: input.signal,
+				onAbandon: (reason) => {
+					log.warn("abandoning redis browse; tearing down connection", { connId: input.connId, reason });
+					void this.deps.service.invalidate(input.connId);
+				},
+			},
+		);
+		// SCAN advances its cursor irreversibly, so every key this page returned must be delivered and
+		// pagination resumes solely from the SCAN cursor ("0" = iteration complete). Do NOT byte-cap/drop
+		// rows: dropping keys the SCAN already advanced past would lose them, and emitting
+		// encodeScanCursor("0") would restart the scan from the top.
+		const rows = result.rows.map((r) => ({ ...r }));
+		const hasMore = result.scanCursor !== "0";
 		const nextCursor = hasMore ? encodeScanCursor(result.scanCursor) : null;
 		return {
-			columns: [
-				{ name: "key" }, { name: "type" }, { name: "ttl" }, { name: "value" },
-			],
+			columns: [{ name: "key" }, { name: "type" }, { name: "ttl" }, { name: "value" }],
 			rows,
 			rowCount: rows.length,
 			affectedRows: null,
@@ -358,7 +364,7 @@ export class QueryExecutor {
 			durationMs: result.durationMs,
 			totalDurationMs: this.now() - started,
 			pagination: { paginated: true, pageSize, hasMore, nextCursor },
-			truncated: { byRows: false, byBytes: capped.truncated },
+			truncated: { byRows: false, byBytes: false },
 		};
 	}
 
