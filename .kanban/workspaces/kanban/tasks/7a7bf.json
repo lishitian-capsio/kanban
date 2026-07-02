@@ -1,0 +1,20 @@
+{
+  "id": "7a7bf",
+  "title": "修复: 新建聊天线程输入框粘贴图片无反应",
+  "prompt": "Bug: 在 home / 新建聊天线程(new chat thread)的输入框里粘贴图片(Ctrl/Cmd+V)完全没有反应 —— 连图片缩略图都不出现。而创建任务的输入框里粘贴图片是正常的。两者共用 web-ui/src/components/task-image-input-utils.ts,支持 PNG/JPEG/GIF/WebP、最大 20MB。\n\n## 已有诊断线索(请先验证,不要盲信)\n1. 输入框组件 web-ui/src/components/detail-panels/kanban-chat-composer.tsx 的 handlePaste(约 210-226 行)看起来正确:它调用 appendImages,而 appendImages 只有在父级传入 onImagesChange 时才生效。onPaste 绑定在约 481 行。\n2. 父级 web-ui/src/components/detail-panels/kanban-agent-chat-panel.tsx:声明了 draftImages state(约 206 行),并以 onImagesChange={setDraftImages} + images={draftImages} 传给 KanbanChatComposer(约 448-449 行);发送走 handleComposerSend → handleSendDraft(mode, draftImages)(约 388-409 行)。这条看起来是对的。\n3. **疑似根因**:home 聊天链路的发送回调类型被收窄,丢掉了 images:\n   - web-ui/src/components/home-agent/home-agent-conversation.tsx 约 132-145 行,handleSendHomeKanbanChatMessage 的 options 参数类型只有 { mode?: 'act' | 'plan' },缺少 images;它作为 onSendMessage 传给 KanbanAgentChatPanel,而 panel 的 onSendMessage prop 期望 options?: { mode; images?: TaskImage[] }。\n   - web-ui/src/hooks/use-task-sessions.ts 约 73-77 行重导出的 sendTaskChatMessage 类型同样只有 { mode },缺 images(次要,影响 task detail 视图)。\n   - 底层 web-ui/src/hooks/use-kanban-chat-runtime-actions.ts(约 20-25、32-41 行)的 SendKanbanChatMessageOptions 实际是支持 images 的。\n\n## 要求\n- 亲自复现:在 home 侧边栏 / 全屏 home 聊天里粘贴一张图片,确认现象(缩略图是否出现、发送后后端是否收到图片)。注意区分侧边栏 home 聊天与 task detail 聊天是否走同一条 composer 链路。\n- 找到真正根因(可能不止类型问题;如果粘贴后连缩略图都不出现,说明 onImagesChange/images 在该 surface 根本没接上,而不仅是发送时丢弃)。\n- 修复,使 home / 新建聊天线程输入框能像创建任务输入框一样粘贴和拖拽图片,并在发送时正确把图片带给后端。\n- 顺带把 use-task-sessions.ts 收窄的类型补回 images,保持全链路类型一致。\n- 遵循仓库约定(TypeScript 无 any、按现有代码风格),补充/更新相关测试;跑通 typecheck 与相关测试。\n- 参考 AGENTS.md 里的 'Dual-lib typecheck trap'(task-image-input-utils 涉及 Blob/DOM 类型)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "bcd4d0cd-58af-4991-967b-36e566b082ed",
+  "baseRef": "main",
+  "createdAt": 1782983547515,
+  "updatedAt": 1782983547515,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
