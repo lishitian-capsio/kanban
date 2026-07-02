@@ -106,13 +106,17 @@ export class StorageService {
 			etag: stat.etag,
 			contentType: stat.type,
 		};
-		// Read up to the binary-preview cap so we can classify; text is separately capped below.
-		const { bytes, contentType } = await client.readBytes(key, STORAGE_PREVIEW_MAX_BYTES);
-		const { binary } = classifyContent(bytes, contentType || stat.type, key);
-		const cap = binary ? STORAGE_PREVIEW_MAX_BYTES : STORAGE_TEXT_MAX_BYTES;
+		// Pre-classify using content-type + key extension only (empty bytes → no NUL heuristic).
+		const pre = classifyContent(new Uint8Array(), stat.type, key);
+		const cap = pre.binary ? STORAGE_PREVIEW_MAX_BYTES : STORAGE_TEXT_MAX_BYTES;
+		// Short-circuit: avoid any network read when the object is already known to exceed the cap.
 		if (stat.size > cap) {
-			return { ...base, encoding: binary ? "base64" : "utf8", content: null, binary, tooLarge: true };
+			return { ...base, encoding: pre.binary ? "base64" : "utf8", content: null, binary: pre.binary, tooLarge: true };
 		}
+		// Read only up to the type-appropriate cap (never more than needed).
+		const { bytes, contentType } = await client.readBytes(key, cap);
+		// Authoritative classification from real bytes wins for the returned value.
+		const { binary } = classifyContent(bytes, contentType || stat.type, key);
 		if (binary) {
 			return { ...base, encoding: "base64", content: Buffer.from(bytes).toString("base64"), binary, tooLarge: false };
 		}

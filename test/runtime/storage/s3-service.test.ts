@@ -106,4 +106,39 @@ describe("StorageService", () => {
 		expect((svc as unknown as Record<string, unknown>).deleteObject).toBeUndefined();
 		expect((svc as unknown as Record<string, unknown>).writeObject).toBeUndefined();
 	});
+
+	it("readObject does NOT call readBytes when a text file exceeds the text cap (pre-gate short-circuit)", async () => {
+		let readBytesCalled = false;
+		const svc = serviceWith({
+			async readBytes() {
+				readBytesCalled = true;
+				return { bytes: new Uint8Array(0), truncated: true, contentType: "text/plain" };
+			},
+			async stat() {
+				// 2 MB — between STORAGE_TEXT_MAX_BYTES (1 MB) and STORAGE_PREVIEW_MAX_BYTES (8 MB)
+				return { size: 2_000_000, lastModified: new Date(0), etag: "e", type: "text/plain" };
+			},
+		});
+		const out = await svc.readObject("r2", "big.txt");
+		expect(out.tooLarge).toBe(true);
+		expect(out.content).toBeNull();
+		expect(out.binary).toBe(false);
+		expect(readBytesCalled).toBe(false);
+	});
+
+	it("downloadObject returns base64-encoded data for a small file", async () => {
+		const fakeBytes = new Uint8Array([10, 20, 30, 40]);
+		const svc = serviceWith({
+			async readBytes() {
+				return { bytes: fakeBytes, truncated: false, contentType: "application/octet-stream" };
+			},
+			async stat() {
+				return { size: fakeBytes.byteLength, lastModified: new Date(0), etag: "e", type: "application/octet-stream" };
+			},
+		});
+		const out = await svc.downloadObject("r2", "path/to/asset.bin");
+		expect(out.tooLarge).toBe(false);
+		expect(out.fileName).toBe("asset.bin");
+		expect(out.data).toBe(Buffer.from(fakeBytes).toString("base64"));
+	});
 });
