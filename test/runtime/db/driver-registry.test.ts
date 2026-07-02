@@ -47,3 +47,10 @@ describe("isKeyspaceBrowser", () => {
 		expect(isKeyspaceBrowser({ engine: "redis", browseKeyspace: () => undefined } as never)).toBe(true);
 	});
 });
+
+it("creates a redis driver via the registry", async () => {
+	const { createDriver } = await import("../../../src/db/driver/driver-registry");
+	await import("../../../src/db/driver/redis/register");
+	const d = createDriver({ engine: "redis", host: "h" });
+	expect(d.engine).toBe("redis");
+});

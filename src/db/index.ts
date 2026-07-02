@@ -2,6 +2,7 @@
 // Postgres/MySQL run on Bun's native SQL client; SQLite stays on bun:sqlite.
 import "./driver/bun-sql/register";
 import "./driver/sqlite-driver";
+import "./driver/redis/register";
 
 export {
 	DatabaseService,
@@ -12,6 +13,13 @@ export {
 	type RunQueryInput,
 } from "./db-service";
 export type { DatabaseDriver } from "./driver/driver";
+export {
+	type BrowseKeyspaceInput,
+	type BrowseKeyspaceResult,
+	isKeyspaceBrowser,
+	type KeyspaceBrowser,
+	type RedisKeyspaceRow,
+} from "./driver/driver";
 export { createDriver, registerDriver } from "./driver/driver-registry";
 export * from "./errors";
 export { getIntrospectionCache, IntrospectionCache } from "./introspection/introspection-cache";
