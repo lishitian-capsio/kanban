@@ -1,0 +1,20 @@
+{
+  "id": "92aa4",
+  "title": "GitHub 认证增加 workflow scope",
+  "prompt": "让 Kanban 内置的 GitHub 认证在 device flow 登录时申请 `workflow` 权限，以便推送包含 `.github/workflows/` 改动的提交（否则 GitHub 会拒绝：'refusing to allow an OAuth App to create or update workflow ... without workflow scope'）。\n\n背景：\n- 目前 `src/github-auth/github-device-flow.ts:31` 写死了 `export const GITHUB_GIT_OAUTH_SCOPE = \"repo\";`，只申请 repo 权限。\n- `kanban github status` 显示当前 token 的 scope 仅为 `repo`，因此凭据无权推送 workflow 文件。\n\n改动要求：\n1. 将 `GITHUB_GIT_OAUTH_SCOPE` 改为 `\"repo workflow\"`（空格分隔的 scope，device flow 请求体里已按此字段传递）。\n2. 检查 scope 相关的类型/持久化路径（`github-auth-types.ts`、`github-auth-service.ts` 中 `record.scope`、`status` 返回的 scope）不需要额外改动即可正确保存与展示新的多值 scope；如需调整请一并处理。\n3. 确认 GitHub CLI 的 well-known device-flow client id 支持 `workflow` scope（它支持）；如需通过 `KANBAN_GITHUB_OAUTH_CLIENT_ID` 覆盖成组织自有 OAuth App 的情形，在注释/文档里说明该 App 也需勾选 workflow 权限。\n4. 更新/新增相关测试（`test/runtime/github-auth/`）覆盖新的 scope 值。\n5. 注意：现有已登录用户的旧 token 仍是 repo-only；改动后需要用户重新执行 `kanban github login` 才会拿到带 workflow 的新 token——请在代码注释或 PR 说明中提示这一点。\n\n不要触碰 pi/omp 的 agent OAuth，也不要改动 gitee-auth 或 host-keyed injector 的机制。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e66572b8-97c3-4325-a4ad-d747bc25f2a1",
+  "baseRef": "main",
+  "createdAt": 1782981039809,
+  "updatedAt": 1782981039809,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
