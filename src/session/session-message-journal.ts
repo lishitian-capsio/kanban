@@ -31,6 +31,7 @@ import { join } from "node:path";
 
 import { runtimeTaskChatMessageSchema } from "../core/api-contract";
 import { readTextFileOrNull } from "../fs/fast-file";
+import { parseJsonl } from "../fs/jsonl";
 import { lockedFileSystem } from "../fs/locked-file-system";
 import { cloneSessionMessage, type SessionMessage } from "./session-message";
 
@@ -206,16 +207,7 @@ export class FileSessionMessageJournal implements SessionMessageJournal {
 		const byId = new Map<string, SessionMessage>();
 		const order: string[] = [];
 		let rawCount = 0;
-		for (const line of raw.split("\n")) {
-			if (line.trim().length === 0) {
-				continue;
-			}
-			let parsed: unknown;
-			try {
-				parsed = JSON.parse(line) as unknown;
-			} catch {
-				continue;
-			}
+		for (const parsed of parseJsonl(raw)) {
 			const result = runtimeTaskChatMessageSchema.safeParse(parsed);
 			if (!result.success) {
 				continue;
