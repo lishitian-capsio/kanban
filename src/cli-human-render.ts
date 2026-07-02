@@ -19,8 +19,8 @@
  */
 
 import Table from "cli-table3";
-import stringWidth from "string-width";
 import { paint } from "./cli-output";
+import { stringWidth } from "./cli-string-width";
 
 export interface HumanRenderOptions {
 	useColor: boolean;
