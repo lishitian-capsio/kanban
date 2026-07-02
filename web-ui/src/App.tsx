@@ -87,6 +87,9 @@ import type { BoardData } from "@/types";
 const DatabaseView = lazy(() =>
 	import("@/components/database/database-view").then((module) => ({ default: module.DatabaseView })),
 );
+const StorageView = lazy(() =>
+	import("@/components/storage/storage-view").then((module) => ({ default: module.StorageView })),
+);
 const VaultView = lazy(() => import("@/components/vault/vault-view").then((module) => ({ default: module.VaultView })));
 const GitHistoryView = lazy(() =>
 	import("@/components/git-history-view").then((module) => ({ default: module.GitHistoryView })),
@@ -110,6 +113,7 @@ export default function App(): ReactElement {
 	const [isGitHistoryOpen, setIsGitHistoryOpen] = useState(false);
 	const [isVaultOpen, setIsVaultOpen] = useState(false);
 	const [isDatabaseOpen, setIsDatabaseOpen] = useState(false);
+	const [isStorageOpen, setIsStorageOpen] = useState(false);
 	const [pendingTaskStartAfterEditId, setPendingTaskStartAfterEditId] = useState<string | null>(null);
 	const taskEditorResetRef = useRef<() => void>(() => {});
 	const lastStreamErrorRef = useRef<string | null>(null);
@@ -118,6 +122,7 @@ export default function App(): ReactElement {
 		setIsGitHistoryOpen(false);
 		setIsVaultOpen(false);
 		setIsDatabaseOpen(false);
+		setIsStorageOpen(false);
 		setPendingTaskStartAfterEditId(null);
 		taskEditorResetRef.current();
 	}, []);
@@ -652,6 +657,7 @@ export default function App(): ReactElement {
 		}
 		setIsVaultOpen(false);
 		setIsDatabaseOpen(false);
+		setIsStorageOpen(false);
 		setIsGitHistoryOpen((current) => !current);
 	}, [hasNoProjects]);
 	const handleCloseGitHistory = useCallback(() => {
@@ -663,6 +669,7 @@ export default function App(): ReactElement {
 		}
 		setIsGitHistoryOpen(false);
 		setIsDatabaseOpen(false);
+		setIsStorageOpen(false);
 		setIsVaultOpen((current) => !current);
 	}, [hasNoProjects]);
 	const handleToggleDatabase = useCallback(() => {
@@ -671,7 +678,17 @@ export default function App(): ReactElement {
 		}
 		setIsGitHistoryOpen(false);
 		setIsVaultOpen(false);
+		setIsStorageOpen(false);
 		setIsDatabaseOpen((current) => !current);
+	}, [hasNoProjects]);
+	const handleToggleStorage = useCallback(() => {
+		if (hasNoProjects) {
+			return;
+		}
+		setIsGitHistoryOpen(false);
+		setIsVaultOpen(false);
+		setIsDatabaseOpen(false);
+		setIsStorageOpen((current) => !current);
 	}, [hasNoProjects]);
 
 	const {
@@ -1023,6 +1040,8 @@ export default function App(): ReactElement {
 									void vaultSettings.setAgentDatabaseAccessEnabled(next)
 								}
 								databaseSettingsDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
+								onToggleStorage={hasNoProjects || selectedCard ? undefined : handleToggleStorage}
+								isStorageOpen={isStorageOpen}
 								onOpenFile={hasNoProjects ? undefined : () => fileSurfaceStore.openLibrary()}
 								onToggleHomeChat={isHomeChatAvailable ? handleToggleHomeChat : undefined}
 								isHomeChatOpen={chatDock.open}
@@ -1071,6 +1090,8 @@ export default function App(): ReactElement {
 														<VaultView workspaceId={currentProjectId} />
 													) : isDatabaseOpen ? (
 														<DatabaseView workspaceId={currentProjectId} />
+													) : isStorageOpen ? (
+														<StorageView workspaceId={currentProjectId} />
 													) : isGitHistoryOpen ? (
 														<GitHistoryView
 															workspaceId={currentProjectId}

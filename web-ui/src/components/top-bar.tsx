@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { DatabaseControlButton } from "@/components/database/database-control-button";
+import { StorageControlButton } from "@/components/storage/storage-control-button";
 import { HomeBoardSyncControl } from "@/components/home-board-sync-control";
 import { OpenWorkspaceButton } from "@/components/open-workspace-button";
 import {
@@ -331,6 +332,8 @@ export function TopBar({
 	agentDatabaseAccessEnabled,
 	onAgentDatabaseAccessChange,
 	databaseSettingsDisabled,
+	onToggleStorage,
+	isStorageOpen,
 	onOpenFile,
 	onToggleHomeChat,
 	isHomeChatOpen,
@@ -386,6 +389,8 @@ export function TopBar({
 	agentDatabaseAccessEnabled?: boolean;
 	onAgentDatabaseAccessChange?: (next: boolean) => void;
 	databaseSettingsDisabled?: boolean;
+	onToggleStorage?: () => void;
+	isStorageOpen?: boolean;
 	/** Open the File surface (the binary file library; quick-open is reachable within). */
 	onOpenFile?: () => void;
 	onToggleHomeChat?: () => void;
@@ -594,6 +599,12 @@ export function TopBar({
 									agentDatabaseAccessEnabled={agentDatabaseAccessEnabled ?? false}
 									onAgentDatabaseAccessChange={onAgentDatabaseAccessChange ?? (() => {})}
 									settingsDisabled={databaseSettingsDisabled}
+								/>
+							) : null}
+							{!hideProjectDependentActions && onToggleStorage ? (
+								<StorageControlButton
+									isStorageOpen={isStorageOpen === true}
+									onToggleStorage={onToggleStorage}
 								/>
 							) : null}
 							{!hideProjectDependentActions && onOpenFile ? (
