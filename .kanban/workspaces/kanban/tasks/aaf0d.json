@@ -1,7 +1,7 @@
 {
   "id": "aaf0d",
-  "title": "调研: ws 迁移到 Bun.serve 原生 WebSocket",
-  "prompt": "调研(暂不实现)把 WebSocket 服务从 node \\`ws\\` 迁移到 Bun.serve 原生 WebSocket 的可行性与收益。\n\n## 背景\n- websocket hub 是最高频路径(task_chat_message 流式 token 广播)。Bun 原生 WS 吞吐远高于 node \\`ws\\`,并能彻底消除 esbuild-ws CJS 包装的坑。\n- 现涉及文件:\\`src/terminal/ws-server.ts\\`、\\`src/server/runtime-state-hub.ts\\`,以及 tRPC 的 ws adapter 接线。\n\n## 目标(本任务=调研 + 方案,不改运行代码)\n1. 摸清现有 ws + Node http + tRPC(@trpc/server ws adapter)的接线方式与升级(upgrade)流程。\n2. 评估 Bun.serve 原生 WebSocket 能否承载 tRPC 订阅/双向流;是否有现成的 Bun + tRPC ws 适配路径,还是需要自写适配。\n3. 列出迁移的风险点:连接生命周期、心跳/重连(见 terminal-reconnect-after-hardkill)、passcode/host 校验、广播扇出、背压。\n4. 给出粗略性能预期与工作量估算,以及分阶段迁移建议。\n5. 产出一份方案文档(可放 .plan/docs/),供后续决策。\n\n只做调研与方案文档,不改运行时代码。",
+  "title": "调研: 整个 HTTP+WS 服务器迁移到 Bun.serve",
+  "prompt": "调研(暂不实现)把 Kanban 的整个 HTTP + WebSocket 服务器从 node:http/node:https + ws 迁移到 Bun.serve 的可行性、工作量与收益。产出方案文档,不改运行代码。\n\n## 关键前提(必须理解)\n- 现状:runtime 服务器用 **node:http + node:https**(src/server/runtime-server.ts:createServer/createHttpsServer,已支持 HTTPS/TLS),WebSocket 在其上叠 **ws**(src/terminal/ws-server.ts、src/server/runtime-state-hub.ts),并接 tRPC 的 HTTP + ws adapter。\n- **Bun 原生 WebSocket 只能通过 Bun.serve 的 server.upgrade() 实现**——无法把 Bun 原生 WS 单独接到现有 node:http 服务器上。因此「ws → Bun.serve WS」**隐含整个 HTTP 服务器也要迁到 Bun.serve**,是全有或全无的迁移,不是只换 WS 一层。本任务据此评估的是**整体迁移**。\n\n## 收益(迁移后可一并拿到)\n- 原生 WS:比 node ws 高约 7x 吞吐;原生 pub/sub(subscribe/publish)契合 hub 的 task_chat_message 扇出广播。\n- routes:SIMD 路由 + 静态响应零分配。\n- server metrics:pendingRequests / pendingWebSockets / subscriberCount —— 可喂给 ops 状态栏(见 sidebar-ops-status-bar)。\n- 消除 esbuild 对 ws 的 CJS 包装 workaround(见 build 相关任务 24a0c)。\n- Cookies(BunRequest.cookies)、HTTP/3、Unix socket 等(视需要)。\n\n## 调研范围(只出方案 + 文档,不改运行时代码)\n1. **摸清现状接线**:node:http/https 服务器、中间件(src/server/middleware.ts)、tRPC HTTP handler、ws upgrade 流程、host/CORS 校验(host-cors-wildcard-bind-fix)、passcode 校验(cli-launch-passcode)、TLS 证书加载路径。\n2. **tRPC 适配**:@trpc/server 在 Bun.serve 下如何承载 HTTP 查询/变更 + WS 订阅?有无现成 Bun+tRPC adapter,还是需自写 fetch/upgrade 适配。\n3. **WS 迁移细节**:连接生命周期、心跳/重连(terminal-reconnect-after-hardkill)、广播扇出(用原生 pub/sub 还是自维护连接表)、背压(send 返回值 -1/0/1+)、maxPayloadLength/idleTimeout(流式响应需 server.timeout(req,0))。\n4. **TLS 对齐**:现有 node:https 的 key/cert/passphrase/ca 加载迁到 Bun.serve tls 的差异;host 绑定与 --host 0.0.0.0 行为一致性。\n5. **metrics 机会**:pendingRequests/pendingWebSockets/subscriberCount 接入 ops 状态栏的方式。\n6. **工作量与风险**:全量迁移 vs 分阶段(能否分阶段?鉴于 WS 与 HTTP 绑定 Bun.serve,分阶段空间有限——评估清楚)。给出粗略 LOC/风险评级。\n7. **测试影响**:vitest 在 Node 上跑,Bun.serve 不可用 → 服务器层测试如何组织(注入/mock 或改走 bun test)。\n8. 产出方案文档放 .plan/docs/,含推荐结论(迁 or 不迁、若迁的阶段划分)。\n\n只做调研与方案文档,不改运行时代码。",
   "startInPlanMode": false,
   "autoReviewEnabled": false,
   "autoReviewMode": "commit",
@@ -13,7 +13,7 @@
   "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
   "baseRef": "main",
   "createdAt": 1782956270577,
-  "updatedAt": 1782957635738,
+  "updatedAt": 1782962032498,
   "column": "trash",
   "rank": "aB4",
   "dependsOn": []
