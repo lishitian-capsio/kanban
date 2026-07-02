@@ -86,7 +86,7 @@ describe("RedisDriver", () => {
 			if (cmd === "SCAN") return ["7", ["user:1"]];
 			if (cmd === "TYPE") return "string";
 			if (cmd === "TTL") return -1;
-			if (cmd === "GET") return "alice";
+			if (cmd === "GETRANGE") return "alice";
 			return null;
 		});
 		const d = driver(client);

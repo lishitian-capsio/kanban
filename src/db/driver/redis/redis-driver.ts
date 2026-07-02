@@ -226,8 +226,10 @@ export class RedisDriver implements DatabaseDriver, KeyspaceBrowser {
 		try {
 			switch (type) {
 				case "string": {
-					const raw = asString(await this.send("GET", [key]));
-					return raw.slice(0, limit);
+					// GETRANGE bounds the read server-side so a multi-MB value never crosses the wire / heap.
+					// GETRANGE's end index is inclusive, so limit-1 returns at most `limit` bytes.
+					const raw = asString(await this.send("GETRANGE", [key, "0", String(limit - 1)]));
+					return raw;
 				}
 				case "hash": {
 					const reply = await this.send("HGETALL", [key]);
