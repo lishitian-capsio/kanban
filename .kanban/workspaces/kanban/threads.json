@@ -193,7 +193,8 @@
       "name": "聊天输入框图片粘贴支持",
       "titleSource": "auto",
       "createdAt": 1782982954395,
-      "updatedAt": 1782982972444
+      "updatedAt": 1782982972444,
+      "pendingNextStep": "新規チャット欄に「画像を添付」ボタンを追加し、画像paste不具合も調べるタスクを作成して"
     }
   ],
   "fullscreenTabs": {
