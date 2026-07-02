@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const databaseEngineSchema = z.enum(["postgres", "mysql", "sqlite"]);
+export const databaseEngineSchema = z.enum(["postgres", "mysql", "sqlite", "redis"]);
 
 export const dbSslConfigSchema = z.object({
 	mode: z.enum(["disable", "require", "verify-ca", "verify-full"]),

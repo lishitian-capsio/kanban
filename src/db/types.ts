@@ -1,5 +1,5 @@
 /** Database engines the core supports. Extend this union + the driver-registry to add more. */
-export type DatabaseEngine = "postgres" | "mysql" | "sqlite";
+export type DatabaseEngine = "postgres" | "mysql" | "sqlite" | "redis";
 
 /** The upper entry on whose behalf an operation runs. Drives policy strictness. */
 export type DbCaller = "agent" | "human" | "cli";
@@ -58,6 +58,12 @@ export interface QueryResult {
 	fields: FieldInfo[];
 	rowCount: number;
 	durationMs: number;
+	/**
+	 * Engine-native continuation token (Redis SCAN cursor). "0" means the scan is complete.
+	 * Present only for engines that page natively; SQL drivers leave it undefined and the
+	 * executor falls back to the +1-probe-row heuristic.
+	 */
+	scanCursor?: string;
 }
 
 export interface ColumnInfo {

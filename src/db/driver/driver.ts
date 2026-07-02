@@ -47,3 +47,45 @@ export interface DatabaseDriver {
 	 */
 	metadataSignature(): Promise<string>;
 }
+
+/** One row of a Redis keyspace browse: a key plus its type, TTL, and a bounded value preview. */
+export interface RedisKeyspaceRow {
+	key: string;
+	type: string;
+	/** Redis TTL in seconds; -1 = no expiry, -2 = missing (raced away). */
+	ttl: number;
+	/** Bounded, human-readable value preview rendered per type. */
+	value: string;
+}
+
+export interface BrowseKeyspaceInput {
+	/** Logical db name, e.g. "db0". */
+	schema: string;
+	/** Key prefix (the segment before the first ':'); "" browses the "(root)" no-delimiter keys. */
+	prefix: string;
+	/** SCAN cursor to resume from; null/undefined starts a fresh scan at "0". */
+	cursor: string | null;
+	/** Max keys to materialize this page. */
+	limit: number;
+	/** Per-value preview element/byte budget. */
+	valuePreviewLimit: number;
+}
+
+export interface BrowseKeyspaceResult {
+	rows: RedisKeyspaceRow[];
+	/** The SCAN cursor to resume from; "0" when the scan is complete. */
+	scanCursor: string;
+	durationMs: number;
+}
+
+/**
+ * Optional driver capability for KV engines that browse a keyspace instead of SQL tables.
+ * SQL drivers do not implement it; the executor feature-detects via {@link isKeyspaceBrowser}.
+ */
+export interface KeyspaceBrowser {
+	browseKeyspace(input: BrowseKeyspaceInput): Promise<BrowseKeyspaceResult>;
+}
+
+export function isKeyspaceBrowser(driver: DatabaseDriver): driver is DatabaseDriver & KeyspaceBrowser {
+	return typeof (driver as Partial<KeyspaceBrowser>).browseKeyspace === "function";
+}

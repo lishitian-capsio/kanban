@@ -12,6 +12,7 @@ import {
 	writeConnections,
 	writeCredentials,
 } from "../../../src/db/registry/connection-store";
+import { databaseEngineSchema } from "../../../src/db/registry/connection-record";
 import { createTempDir } from "../../utilities/temp-dir";
 
 function record(connId: string, overrides: Partial<ConnectionRecord> = {}): ConnectionRecord {
@@ -91,5 +92,11 @@ describe("connection-store", () => {
 		const loaded = await readConnections(shardDir);
 		expect(loaded[0]?.connId).toBe("prod-db");
 		expect(normalizeConnId("Prod-DB")).toBe("prod-db");
+	});
+});
+
+describe("databaseEngineSchema redis", () => {
+	it("accepts redis", () => {
+		expect(databaseEngineSchema.parse("redis")).toBe("redis");
 	});
 });
