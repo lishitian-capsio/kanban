@@ -149,7 +149,8 @@
       "name": "Kanban CLI self-update internals",
       "titleSource": "auto",
       "createdAt": 1782954500148,
-      "updatedAt": 1782954541389
+      "updatedAt": 1782954541389,
+      "pendingNextStep": "开始跑任务 851d4"
     }
   ],
   "fullscreenTabs": {
