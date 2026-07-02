@@ -1,10 +1,36 @@
 import { spawn, spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
 import { buildSubprocessProxyEnv } from "../config/proxy-fetch";
+import { getGitHubAuthService } from "../github-auth";
 import { createLogger } from "../logging";
 
 const log = createLogger("update");
+
+/**
+ * Kanban self-update is sourced from **GitHub Releases**, not the npm registry: the latest
+ * version is discovered from the repo's releases and the installable artifact is the
+ * `npm pack`-produced `.tgz` attached as a release asset (see `.github/workflows/`).
+ *
+ * The default is the repo that actually publishes those tgz releases — the `origin` remote /
+ * RELEASE-GUIDE repo, NOT the `cline/kanban` upstream that README/package.json still point at.
+ * Override with `KANBAN_UPDATE_GITHUB_REPO=owner/repo` to point at a fork or private mirror.
+ */
+const DEFAULT_UPDATE_GITHUB_REPO = "Capsio-Technology/kanban";
+
+/** GitHub REST API host (behind the runtime's globalThis.fetch proxy monkey-patch). */
+const GITHUB_API_ORIGIN = "https://api.github.com";
+const GITHUB_API_VERSION = "2022-11-28";
+const UPDATE_USER_AGENT = "kanban-cli-self-update";
+
+/** The release probe stays snappy (mirrors the old 2.5s registry probe); the download gets longer. */
+const RELEASE_PROBE_TIMEOUT_MS = 4_000;
+const ASSET_DOWNLOAD_TIMEOUT_MS = 120_000;
+
+/** How many recent releases to scan when locating the newest prerelease for the nightly channel. */
+const NIGHTLY_RELEASE_SCAN_COUNT = 30;
 
 export enum UpdatePackageManager {
 	NPM = "npm",
@@ -21,17 +47,50 @@ interface UpdateInstallCommand {
 	args: string[];
 }
 
-interface UpdateInstallationInfo {
-	packageManager: UpdatePackageManager;
-	npmTag: string;
-	updateCommand: UpdateInstallCommand | null;
-	updateTiming: "startup" | "shutdown";
+/**
+ * How to run a package manager's **global install of a local `.tgz` file**. `installArgs` is
+ * the verb prefix (e.g. `["install", "-g"]`); the resolved downloaded tgz path is appended at
+ * install time by {@link buildGlobalInstallCommand}.
+ */
+interface GlobalInstallSpec {
+	command: string;
+	installArgs: string[];
 }
 
-interface FetchLatestVersionInput {
-	packageName: string;
-	npmTag: string;
+interface UpdateInstallationInfo {
+	packageManager: UpdatePackageManager;
+	/** Release channel: `"latest"` (stable) or `"nightly"` (newest prerelease). */
+	releaseChannel: ReleaseChannel;
+	updateTiming: "startup" | "shutdown";
+	/**
+	 * Transient (dlx/npx/bunx) installs: clearing the launcher cache so the next invocation
+	 * re-fetches. A complete command; no download/tgz install is involved.
+	 */
+	cacheRefreshCommand: UpdateInstallCommand | null;
+	/** Persistent global installs: how to globally install the downloaded release tgz. */
+	globalInstall: GlobalInstallSpec | null;
 }
+
+type ReleaseChannel = "latest" | "nightly";
+
+/** A `.tgz` release asset located on a GitHub release. */
+export interface ReleaseAsset {
+	name: string;
+	/** Public, redirect-following download URL (`browser_download_url`). */
+	downloadUrl: string;
+	/** Asset REST API URL; used with `Accept: application/octet-stream` for private repos. */
+	apiUrl: string;
+}
+
+/** The result of probing GitHub Releases for the newest version on a channel. */
+export interface ResolvedRelease {
+	/** `tag_name` with any leading `v` stripped, so it compares against the package version. */
+	version: string;
+	tgzAsset: ReleaseAsset | null;
+}
+
+type ResolveLatestRelease = (input: { releaseChannel: ReleaseChannel }) => Promise<ResolvedRelease | null>;
+type DownloadReleaseAsset = (asset: ReleaseAsset) => Promise<string | null>;
 
 export interface UpdateStartupOptions {
 	currentVersion: string;
@@ -40,7 +99,8 @@ export interface UpdateStartupOptions {
 	argv?: string[];
 	cwd?: string;
 	resolveRealPath?: (path: string) => string;
-	fetchLatestVersion?: (input: FetchLatestVersionInput) => Promise<string | null>;
+	resolveLatestRelease?: ResolveLatestRelease;
+	downloadReleaseAsset?: DownloadReleaseAsset;
 	spawnUpdate?: (command: string, args: string[]) => void;
 	scheduleShutdownUpdate?: (update: PendingShutdownAutoUpdate) => void;
 }
@@ -86,28 +146,29 @@ export interface PendingUpdateNotification {
 function buildUserFacingInstallCommand(
 	packageManager: UpdatePackageManager,
 	packageName: string,
-	npmTag: string,
 	updateTiming: "startup" | "shutdown",
 ): string | null {
-	const packageSpec = `${packageName}@${npmTag}`;
-	// `updateTiming === "shutdown"` is the marker for transient (dlx / npx / bunx) runs:
-	// the user did not perform a global install, so steering them toward `... add -g`
-	// would change their workflow. The right command is just to re-run the same launcher.
-	switch (packageManager) {
-		case UpdatePackageManager.PNPM:
-			return updateTiming === "shutdown" ? `pnpm dlx ${packageName}` : `pnpm add -g ${packageSpec}`;
-		case UpdatePackageManager.YARN:
-			return updateTiming === "shutdown" ? `yarn dlx ${packageName}` : `yarn global add ${packageSpec}`;
-		case UpdatePackageManager.BUN:
-			return updateTiming === "shutdown" ? `bunx ${packageName}` : `bun add -g ${packageSpec}`;
-		case UpdatePackageManager.NPX:
-			return `npx ${packageName}`;
-		case UpdatePackageManager.NPM:
-		case UpdatePackageManager.LOCAL:
-			return `npm install -g ${packageSpec}`;
-		case UpdatePackageManager.UNKNOWN:
-			return null;
+	// `updateTiming === "shutdown"` marks transient (dlx / npx / bunx) runs: the user did not
+	// perform a global install, so the right advice is to re-run the same launcher (which
+	// re-fetches the newest published version) rather than steer them toward `... add -g`.
+	if (updateTiming === "shutdown") {
+		switch (packageManager) {
+			case UpdatePackageManager.PNPM:
+				return `pnpm dlx ${packageName}`;
+			case UpdatePackageManager.YARN:
+				return `yarn dlx ${packageName}`;
+			case UpdatePackageManager.BUN:
+				return `bunx ${packageName}`;
+			case UpdatePackageManager.NPX:
+				return `npx ${packageName}`;
+			default:
+				return null;
+		}
 	}
+	// Persistent global installs are updated by the built-in updater, which downloads and
+	// installs the GitHub Release tgz for the detected package manager. There is no simple
+	// one-liner the user can paste (the tgz is a temp file), so point them at `kanban update`.
+	return `${packageName} update`;
 }
 
 const DELETE_DIRECTORY_AFTER_DELAY_SCRIPT = `
@@ -157,7 +218,7 @@ function isNightlyVersion(version: string): boolean {
 	return version.includes("-nightly.");
 }
 
-function getNpmTag(currentVersion: string): string {
+function getReleaseChannel(currentVersion: string): ReleaseChannel {
 	return isNightlyVersion(currentVersion) ? "nightly" : "latest";
 }
 
@@ -184,6 +245,13 @@ function buildShutdownCacheRefreshCommand(cacheDirectory: string): UpdateInstall
 	return {
 		command: process.execPath,
 		args: ["-e", DELETE_DIRECTORY_AFTER_DELAY_SCRIPT, cacheDirectory],
+	};
+}
+
+function buildGlobalInstallCommand(spec: GlobalInstallSpec, tgzPath: string): UpdateInstallCommand {
+	return {
+		command: spec.command,
+		args: [...spec.installArgs, tgzPath],
 	};
 }
 
@@ -289,7 +357,7 @@ function detectTransientAutoUpdateInstallation(options: {
 	packageName: string;
 	entrypointPath: string;
 }): UpdateInstallationInfo | null {
-	const npmTag = getNpmTag(options.currentVersion);
+	const releaseChannel = getReleaseChannel(options.currentVersion);
 	const normalizedPath = toPosixLowerPath(options.entrypointPath);
 
 	if (!normalizedPath.includes(`/node_modules/${options.packageName.toLowerCase()}/`)) {
@@ -304,8 +372,9 @@ function detectTransientAutoUpdateInstallation(options: {
 	if (npxCacheDirectory) {
 		return {
 			packageManager: UpdatePackageManager.NPX,
-			npmTag,
-			updateCommand: buildShutdownCacheRefreshCommand(npxCacheDirectory),
+			releaseChannel,
+			cacheRefreshCommand: buildShutdownCacheRefreshCommand(npxCacheDirectory),
+			globalInstall: null,
 			updateTiming: "shutdown",
 		};
 	}
@@ -314,8 +383,9 @@ function detectTransientAutoUpdateInstallation(options: {
 	if (pnpmDlxCacheDirectory) {
 		return {
 			packageManager: UpdatePackageManager.PNPM,
-			npmTag,
-			updateCommand: buildShutdownCacheRefreshCommand(pnpmDlxCacheDirectory),
+			releaseChannel,
+			cacheRefreshCommand: buildShutdownCacheRefreshCommand(pnpmDlxCacheDirectory),
+			globalInstall: null,
 			updateTiming: "shutdown",
 		};
 	}
@@ -324,8 +394,9 @@ function detectTransientAutoUpdateInstallation(options: {
 	if (yarnDlxDirectory) {
 		return {
 			packageManager: UpdatePackageManager.YARN,
-			npmTag,
-			updateCommand: buildShutdownCacheRefreshCommand(yarnDlxDirectory),
+			releaseChannel,
+			cacheRefreshCommand: buildShutdownCacheRefreshCommand(yarnDlxDirectory),
+			globalInstall: null,
 			updateTiming: "shutdown",
 		};
 	}
@@ -334,8 +405,9 @@ function detectTransientAutoUpdateInstallation(options: {
 	if (bunxDirectory) {
 		return {
 			packageManager: UpdatePackageManager.BUN,
-			npmTag,
-			updateCommand: buildShutdownCacheRefreshCommand(bunxDirectory),
+			releaseChannel,
+			cacheRefreshCommand: buildShutdownCacheRefreshCommand(bunxDirectory),
+			globalInstall: null,
 			updateTiming: "shutdown",
 		};
 	}
@@ -408,13 +480,14 @@ export function detectAutoUpdateInstallation(options: {
 	cwd: string;
 }): UpdateInstallationInfo {
 	const normalizedPath = toPosixLowerPath(options.entrypointPath);
-	const npmTag = getNpmTag(options.currentVersion);
+	const releaseChannel = getReleaseChannel(options.currentVersion);
 
 	if (isPathInside(options.entrypointPath, options.cwd)) {
 		return {
 			packageManager: UpdatePackageManager.LOCAL,
-			npmTag,
-			updateCommand: null,
+			releaseChannel,
+			cacheRefreshCommand: null,
+			globalInstall: null,
 			updateTiming: "startup",
 		};
 	}
@@ -431,8 +504,9 @@ export function detectAutoUpdateInstallation(options: {
 	if (looksLikeTransientCachePath(options.entrypointPath)) {
 		return {
 			packageManager: UpdatePackageManager.UNKNOWN,
-			npmTag,
-			updateCommand: null,
+			releaseChannel,
+			cacheRefreshCommand: null,
+			globalInstall: null,
 			updateTiming: "startup",
 		};
 	}
@@ -440,11 +514,9 @@ export function detectAutoUpdateInstallation(options: {
 	if (normalizedPath.includes("/.pnpm/global/") || normalizedPath.includes("/pnpm/global/")) {
 		return {
 			packageManager: UpdatePackageManager.PNPM,
-			npmTag,
-			updateCommand: {
-				command: "pnpm",
-				args: ["add", "-g", `${options.packageName}@${npmTag}`],
-			},
+			releaseChannel,
+			cacheRefreshCommand: null,
+			globalInstall: { command: "pnpm", installArgs: ["add", "-g"] },
 			updateTiming: "startup",
 		};
 	}
@@ -452,11 +524,9 @@ export function detectAutoUpdateInstallation(options: {
 	if (normalizedPath.includes("/.yarn/") || normalizedPath.includes("/yarn/global/")) {
 		return {
 			packageManager: UpdatePackageManager.YARN,
-			npmTag,
-			updateCommand: {
-				command: "yarn",
-				args: ["global", "add", `${options.packageName}@${npmTag}`],
-			},
+			releaseChannel,
+			cacheRefreshCommand: null,
+			globalInstall: { command: "yarn", installArgs: ["global", "add"] },
 			updateTiming: "startup",
 		};
 	}
@@ -464,11 +534,9 @@ export function detectAutoUpdateInstallation(options: {
 	if (normalizedPath.includes("/.bun/bin/")) {
 		return {
 			packageManager: UpdatePackageManager.BUN,
-			npmTag,
-			updateCommand: {
-				command: "bun",
-				args: ["add", "-g", `${options.packageName}@${npmTag}`],
-			},
+			releaseChannel,
+			cacheRefreshCommand: null,
+			globalInstall: { command: "bun", installArgs: ["add", "-g"] },
 			updateTiming: "startup",
 		};
 	}
@@ -476,11 +544,9 @@ export function detectAutoUpdateInstallation(options: {
 	if (normalizedPath.includes(`/lib/node_modules/${options.packageName}/`)) {
 		return {
 			packageManager: UpdatePackageManager.NPM,
-			npmTag,
-			updateCommand: {
-				command: "npm",
-				args: ["install", "-g", `${options.packageName}@${npmTag}`],
-			},
+			releaseChannel,
+			cacheRefreshCommand: null,
+			globalInstall: { command: "npm", installArgs: ["install", "-g"] },
 			updateTiming: "startup",
 		};
 	}
@@ -488,19 +554,18 @@ export function detectAutoUpdateInstallation(options: {
 	if (normalizedPath.includes(`/node_modules/${options.packageName}/`)) {
 		return {
 			packageManager: UpdatePackageManager.NPM,
-			npmTag,
-			updateCommand: {
-				command: "npm",
-				args: ["install", "-g", `${options.packageName}@${npmTag}`],
-			},
+			releaseChannel,
+			cacheRefreshCommand: null,
+			globalInstall: { command: "npm", installArgs: ["install", "-g"] },
 			updateTiming: "startup",
 		};
 	}
 
 	return {
 		packageManager: UpdatePackageManager.UNKNOWN,
-		npmTag,
-		updateCommand: null,
+		releaseChannel,
+		cacheRefreshCommand: null,
+		globalInstall: null,
 		updateTiming: "startup",
 	};
 }
@@ -518,27 +583,200 @@ function isAutoUpdateDisabled(env: NodeJS.ProcessEnv): boolean {
 	return false;
 }
 
-async function fetchLatestVersionFromRegistry(input: FetchLatestVersionInput): Promise<string | null> {
+function resolveUpdateGitHubRepo(env: NodeJS.ProcessEnv): string {
+	const override = env.KANBAN_UPDATE_GITHUB_REPO?.trim();
+	return override?.includes("/") ? override : DEFAULT_UPDATE_GITHUB_REPO;
+}
+
+function buildGitHubApiHeaders(token: string | null): Record<string, string> {
+	const headers: Record<string, string> = {
+		Accept: "application/vnd.github+json",
+		"User-Agent": UPDATE_USER_AGENT,
+		"X-GitHub-Api-Version": GITHUB_API_VERSION,
+	};
+	if (token) {
+		headers.Authorization = `Bearer ${token}`;
+	}
+	return headers;
+}
+
+function stripLeadingV(tag: string): string {
+	const trimmed = tag.trim();
+	return trimmed.startsWith("v") || trimmed.startsWith("V") ? trimmed.slice(1) : trimmed;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function parseReleaseAsset(value: unknown): ReleaseAsset | null {
+	if (!isRecord(value)) {
+		return null;
+	}
+	const name = value.name;
+	const downloadUrl = value.browser_download_url;
+	const apiUrl = value.url;
+	if (typeof name !== "string" || typeof downloadUrl !== "string" || typeof apiUrl !== "string") {
+		return null;
+	}
+	return { name, downloadUrl, apiUrl };
+}
+
+/**
+ * Locate the npm-pack `.tgz` asset on a release. Prefers an asset whose name embeds the
+ * version (the `kanban-<version>.tgz` convention) but accepts any `.tgz` so a naming tweak
+ * doesn't silently break updates.
+ */
+function selectTgzAsset(release: Record<string, unknown>): ReleaseAsset | null {
+	const rawAssets = release.assets;
+	if (!Array.isArray(rawAssets)) {
+		return null;
+	}
+	const assets = rawAssets.map(parseReleaseAsset).filter((asset): asset is ReleaseAsset => asset !== null);
+	const tgzAssets = assets.filter((asset) => asset.name.toLowerCase().endsWith(".tgz"));
+	const version = typeof release.tag_name === "string" ? stripLeadingV(release.tag_name) : "";
+	const versioned = version ? tgzAssets.find((asset) => asset.name.includes(version)) : undefined;
+	return versioned ?? tgzAssets[0] ?? null;
+}
+
+function toResolvedRelease(release: Record<string, unknown>): ResolvedRelease | null {
+	const tagName = release.tag_name;
+	if (typeof tagName !== "string" || tagName.trim().length === 0) {
+		return null;
+	}
+	return {
+		version: stripLeadingV(tagName),
+		tgzAsset: selectTgzAsset(release),
+	};
+}
+
+/**
+ * Probe GitHub Releases for the newest version on the requested channel. `latest` uses the
+ * `releases/latest` endpoint (which excludes prereleases/drafts); `nightly` scans recent
+ * releases for the newest prerelease. Network/parse failures degrade to `null` (never throw)
+ * so a self-update check can never crash Kanban.
+ */
+export async function resolveLatestReleaseFromGitHub(input: {
+	releaseChannel: ReleaseChannel;
+	repo: string;
+	token: string | null;
+}): Promise<ResolvedRelease | null> {
+	const headers = buildGitHubApiHeaders(input.token);
 	try {
-		const response = await fetch(`https://registry.npmjs.org/${input.packageName}/${input.npmTag}`, {
-			signal: AbortSignal.timeout(2_500),
+		if (input.releaseChannel === "nightly") {
+			const response = await fetch(
+				`${GITHUB_API_ORIGIN}/repos/${input.repo}/releases?per_page=${NIGHTLY_RELEASE_SCAN_COUNT}`,
+				{ headers, signal: AbortSignal.timeout(RELEASE_PROBE_TIMEOUT_MS) },
+			);
+			if (!response.ok) {
+				return null;
+			}
+			const payload = (await response.json()) as unknown;
+			if (!Array.isArray(payload)) {
+				return null;
+			}
+			const prerelease = payload.find(
+				(release): release is Record<string, unknown> =>
+					isRecord(release) && release.prerelease === true && release.draft !== true,
+			);
+			return prerelease ? toResolvedRelease(prerelease) : null;
+		}
+
+		const response = await fetch(`${GITHUB_API_ORIGIN}/repos/${input.repo}/releases/latest`, {
+			headers,
+			signal: AbortSignal.timeout(RELEASE_PROBE_TIMEOUT_MS),
 		});
 		if (!response.ok) {
 			return null;
 		}
 		const payload = (await response.json()) as unknown;
-		if (!payload || typeof payload !== "object") {
+		if (!isRecord(payload)) {
 			return null;
 		}
-		const version = (payload as { version?: unknown }).version;
-		if (typeof version !== "string") {
-			return null;
-		}
-		const normalized = version.trim();
-		return normalized.length > 0 ? normalized : null;
+		return toResolvedRelease(payload);
 	} catch {
 		return null;
 	}
+}
+
+function isRedirectStatus(status: number): boolean {
+	return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
+
+/**
+ * Download a release `.tgz` asset to a fresh temp file and return its path (or `null` on any
+ * failure). With a token, the asset REST API URL is used with `Accept: application/octet-stream`
+ * (works for private repos); GitHub answers with a 302 to codeload/object storage, which we
+ * follow **without** re-sending the Authorization header (the signed URL carries its own auth
+ * and a stray Authorization header is rejected by the storage backend).
+ */
+export async function downloadReleaseAssetToTemp(asset: ReleaseAsset, token: string | null): Promise<string | null> {
+	try {
+		const useApiUrl = token !== null;
+		const initialUrl = useApiUrl ? asset.apiUrl : asset.downloadUrl;
+		const initialHeaders: Record<string, string> = {
+			"User-Agent": UPDATE_USER_AGENT,
+			Accept: "application/octet-stream",
+		};
+		if (token) {
+			initialHeaders.Authorization = `Bearer ${token}`;
+		}
+
+		let response = await fetch(initialUrl, {
+			headers: initialHeaders,
+			redirect: "manual",
+			signal: AbortSignal.timeout(ASSET_DOWNLOAD_TIMEOUT_MS),
+		});
+		if (isRedirectStatus(response.status)) {
+			const location = response.headers.get("location");
+			if (!location) {
+				return null;
+			}
+			response = await fetch(location, {
+				headers: { "User-Agent": UPDATE_USER_AGENT },
+				signal: AbortSignal.timeout(ASSET_DOWNLOAD_TIMEOUT_MS),
+			});
+		}
+		if (!response.ok) {
+			return null;
+		}
+
+		const bytes = new Uint8Array(await response.arrayBuffer());
+		if (bytes.length === 0) {
+			return null;
+		}
+		const directory = await mkdtemp(join(tmpdir(), "kanban-update-"));
+		const filePath = join(directory, basename(asset.name) || "kanban-release.tgz");
+		await writeFile(filePath, bytes);
+		return filePath;
+	} catch (error) {
+		log.debug("release asset download failed", { error });
+		return null;
+	}
+}
+
+async function resolveGitHubTokenSafely(): Promise<string | null> {
+	try {
+		return await getGitHubAuthService().getAccessToken();
+	} catch (error) {
+		log.debug("github token lookup for self-update failed; continuing anonymously", { error });
+		return null;
+	}
+}
+
+function createDefaultResolveLatestRelease(env: NodeJS.ProcessEnv): ResolveLatestRelease {
+	const repo = resolveUpdateGitHubRepo(env);
+	return async ({ releaseChannel }) => {
+		const token = await resolveGitHubTokenSafely();
+		return resolveLatestReleaseFromGitHub({ releaseChannel, repo, token });
+	};
+}
+
+function createDefaultDownloadReleaseAsset(): DownloadReleaseAsset {
+	return async (asset) => {
+		const token = await resolveGitHubTokenSafely();
+		return downloadReleaseAssetToTemp(asset, token);
+	};
 }
 
 function spawnDetachedUpdate(command: string, args: string[]): void {
@@ -599,7 +837,29 @@ export function runPendingAutoUpdateOnShutdown(options?: {
 	spawnUpdate(pendingUpdate.command, pendingUpdate.args);
 }
 
+/**
+ * Local dev checkouts (`packageManager === LOCAL` with nothing to run) are treated as a manual
+ * global npm install so `kanban update` still does something useful; every other installation
+ * keeps whatever the detector resolved.
+ */
+function resolveManualInstallation(installation: UpdateInstallationInfo): UpdateInstallationInfo {
+	if (installation.globalInstall || installation.cacheRefreshCommand) {
+		return installation;
+	}
+	if (installation.packageManager !== UpdatePackageManager.LOCAL) {
+		return installation;
+	}
+	return {
+		packageManager: UpdatePackageManager.NPM,
+		releaseChannel: installation.releaseChannel,
+		updateTiming: "startup",
+		cacheRefreshCommand: null,
+		globalInstall: { command: "npm", installArgs: ["install", "-g"] },
+	};
+}
+
 export async function runOnDemandUpdate(options: OnDemandUpdateOptions): Promise<OnDemandUpdateResult> {
+	const env = options.env ?? process.env;
 	const entrypointArg = options.argv?.[1] ?? process.argv[1];
 	if (!entrypointArg) {
 		return {
@@ -633,20 +893,8 @@ export async function runOnDemandUpdate(options: OnDemandUpdateOptions): Promise
 		cwd: options.cwd ?? process.cwd(),
 	});
 
-	const manualInstallation: UpdateInstallationInfo =
-		installation.updateCommand || installation.packageManager !== UpdatePackageManager.LOCAL
-			? installation
-			: {
-					packageManager: UpdatePackageManager.NPM,
-					npmTag: installation.npmTag,
-					updateTiming: "startup",
-					updateCommand: {
-						command: "npm",
-						args: ["install", "-g", `${packageName}@${installation.npmTag}`],
-					},
-				};
-
-	if (!manualInstallation.updateCommand) {
+	const manualInstallation = resolveManualInstallation(installation);
+	if (!manualInstallation.globalInstall && !manualInstallation.cacheRefreshCommand) {
 		return {
 			status: "unsupported_installation",
 			currentVersion: options.currentVersion,
@@ -656,59 +904,106 @@ export async function runOnDemandUpdate(options: OnDemandUpdateOptions): Promise
 		};
 	}
 
-	const fetchLatestVersion = options.fetchLatestVersion ?? fetchLatestVersionFromRegistry;
-	const latestVersion = await fetchLatestVersion({
-		packageName,
-		npmTag: manualInstallation.npmTag,
-	});
-	if (!latestVersion) {
+	const resolveLatestRelease = options.resolveLatestRelease ?? createDefaultResolveLatestRelease(env);
+	const release = await resolveLatestRelease({ releaseChannel: manualInstallation.releaseChannel });
+	if (!release) {
 		return {
 			status: "check_failed",
 			currentVersion: options.currentVersion,
 			latestVersion: null,
 			packageManager: manualInstallation.packageManager,
-			message: "Could not check the latest Kanban version from npm.",
+			message: "Could not check the latest Kanban version from GitHub Releases.",
 		};
 	}
 
-	if (compareVersions(options.currentVersion, latestVersion) >= 0) {
+	if (compareVersions(options.currentVersion, release.version) >= 0) {
 		return {
 			status: "already_up_to_date",
 			currentVersion: options.currentVersion,
-			latestVersion,
+			latestVersion: release.version,
 			packageManager: installation.packageManager,
 			message: `Kanban is already up to date (${options.currentVersion}).`,
 		};
 	}
 
 	const runUpdateCommand = options.runUpdateCommand ?? runUpdateCommandSync;
-	const exitCode = runUpdateCommand(manualInstallation.updateCommand.command, manualInstallation.updateCommand.args);
+
+	// Transient (dlx/npx/bunx) installs: clear the launcher cache so the next invocation
+	// re-fetches the newest published version. No tgz download/install is involved.
+	if (manualInstallation.cacheRefreshCommand) {
+		const exitCode = runUpdateCommand(
+			manualInstallation.cacheRefreshCommand.command,
+			manualInstallation.cacheRefreshCommand.args,
+		);
+		if (exitCode !== 0) {
+			return {
+				status: "update_failed",
+				currentVersion: options.currentVersion,
+				latestVersion: release.version,
+				packageManager: manualInstallation.packageManager,
+				message: `Update command failed with exit code ${exitCode}.`,
+			};
+		}
+		return {
+			status: "cache_refreshed",
+			currentVersion: options.currentVersion,
+			latestVersion: release.version,
+			packageManager: manualInstallation.packageManager,
+			message: `Cleared transient Kanban cache. Re-run your command to launch version ${release.version}.`,
+		};
+	}
+
+	const globalInstall = manualInstallation.globalInstall;
+	if (!globalInstall) {
+		return {
+			status: "unsupported_installation",
+			currentVersion: options.currentVersion,
+			latestVersion: release.version,
+			packageManager: manualInstallation.packageManager,
+			message: "Could not determine an automatic update command for this Kanban installation.",
+		};
+	}
+
+	if (!release.tgzAsset) {
+		return {
+			status: "update_failed",
+			currentVersion: options.currentVersion,
+			latestVersion: release.version,
+			packageManager: manualInstallation.packageManager,
+			message: `Release ${release.version} has no installable .tgz asset attached.`,
+		};
+	}
+
+	const downloadReleaseAsset = options.downloadReleaseAsset ?? createDefaultDownloadReleaseAsset();
+	const tgzPath = await downloadReleaseAsset(release.tgzAsset);
+	if (!tgzPath) {
+		return {
+			status: "update_failed",
+			currentVersion: options.currentVersion,
+			latestVersion: release.version,
+			packageManager: manualInstallation.packageManager,
+			message: `Could not download the Kanban ${release.version} release asset.`,
+		};
+	}
+
+	const installCommand = buildGlobalInstallCommand(globalInstall, tgzPath);
+	const exitCode = runUpdateCommand(installCommand.command, installCommand.args);
 	if (exitCode !== 0) {
 		return {
 			status: "update_failed",
 			currentVersion: options.currentVersion,
-			latestVersion,
+			latestVersion: release.version,
 			packageManager: manualInstallation.packageManager,
 			message: `Update command failed with exit code ${exitCode}.`,
-		};
-	}
-
-	if (manualInstallation.updateTiming === "shutdown") {
-		return {
-			status: "cache_refreshed",
-			currentVersion: options.currentVersion,
-			latestVersion,
-			packageManager: manualInstallation.packageManager,
-			message: `Cleared transient Kanban cache. Re-run your command to launch version ${latestVersion}.`,
 		};
 	}
 
 	return {
 		status: "updated",
 		currentVersion: options.currentVersion,
-		latestVersion,
+		latestVersion: release.version,
 		packageManager: manualInstallation.packageManager,
-		message: `Updated Kanban from ${options.currentVersion} to ${latestVersion}.`,
+		message: `Updated Kanban from ${options.currentVersion} to ${release.version}.`,
 	};
 }
 
@@ -738,28 +1033,25 @@ export async function runAutoUpdateCheck(options: UpdateStartupOptions): Promise
 		entrypointPath,
 		cwd: options.cwd ?? process.cwd(),
 	});
-	if (!installation.updateCommand) {
+	if (!installation.globalInstall && !installation.cacheRefreshCommand) {
 		return;
 	}
 
-	const fetchLatestVersion = options.fetchLatestVersion ?? fetchLatestVersionFromRegistry;
+	const resolveLatestRelease = options.resolveLatestRelease ?? createDefaultResolveLatestRelease(env);
+	const downloadReleaseAsset = options.downloadReleaseAsset ?? createDefaultDownloadReleaseAsset();
 	const spawnUpdate = options.spawnUpdate ?? spawnDetachedUpdate;
 	const scheduleShutdownUpdate = options.scheduleShutdownUpdate ?? schedulePendingShutdownAutoUpdate;
 
 	try {
-		const latestVersion = await fetchLatestVersion({
-			packageName,
-			npmTag: installation.npmTag,
-		});
+		const release = await resolveLatestRelease({ releaseChannel: installation.releaseChannel });
 
-		if (!latestVersion || compareVersions(options.currentVersion, latestVersion) >= 0) {
+		if (!release || compareVersions(options.currentVersion, release.version) >= 0) {
 			return;
 		}
 
 		const installCommand = buildUserFacingInstallCommand(
 			installation.packageManager,
 			packageName,
-			installation.npmTag,
 			installation.updateTiming,
 		);
 		if (!installCommand) {
@@ -768,21 +1060,33 @@ export async function runAutoUpdateCheck(options: UpdateStartupOptions): Promise
 
 		pendingUpdateNotification = {
 			currentVersion: options.currentVersion,
-			latestVersion,
+			latestVersion: release.version,
 			updateTiming: installation.updateTiming,
 			installCommand,
 		};
 
-		if (installation.updateTiming === "shutdown") {
+		// Transient (dlx/npx/bunx) installs defer to shutdown: clearing the launcher cache mid
+		// session would pull the running process's files out from under it.
+		if (installation.cacheRefreshCommand) {
 			scheduleShutdownUpdate({
-				command: installation.updateCommand.command,
-				args: installation.updateCommand.args,
-				latestVersion,
+				command: installation.cacheRefreshCommand.command,
+				args: installation.cacheRefreshCommand.args,
+				latestVersion: release.version,
 			});
 			return;
 		}
 
-		spawnUpdate(installation.updateCommand.command, installation.updateCommand.args);
+		if (!installation.globalInstall || !release.tgzAsset) {
+			return;
+		}
+
+		const tgzPath = await downloadReleaseAsset(release.tgzAsset);
+		if (!tgzPath) {
+			return;
+		}
+
+		const globalInstallCommand = buildGlobalInstallCommand(installation.globalInstall, tgzPath);
+		spawnUpdate(globalInstallCommand.command, globalInstallCommand.args);
 	} catch {
 		return;
 	}

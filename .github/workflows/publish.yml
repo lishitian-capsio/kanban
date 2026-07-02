@@ -138,11 +138,19 @@ jobs:
             echo "link=" >> "$GITHUB_OUTPUT"
           fi
 
+      # Pack the built package into a .tgz and attach it to the release so Kanban's
+      # self-updater (which sources versions + the installable artifact from GitHub
+      # Releases, not npm) can install it. `npm pack` does not re-run prepublishOnly,
+      # so it just tars the already-built dist/. Mirrors build-release.yml.
+      - name: Pack tgz for GitHub release asset
+        run: npm pack
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.resolve_tag.outputs.tag }}
           name: ${{ steps.resolve_tag.outputs.tag }}
+          files: kanban-*.tgz
           body: |
             ${{ steps.changelog.outputs.body }}
 

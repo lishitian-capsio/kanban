@@ -1,10 +1,15 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { readFile, rm } from "node:fs/promises";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
 	clearPendingUpdateNotification,
 	compareVersions,
 	detectAutoUpdateInstallation,
+	downloadReleaseAssetToTemp,
 	getPendingUpdateNotification,
+	type ReleaseAsset,
+	type ResolvedRelease,
+	resolveLatestReleaseFromGitHub,
 	resolveUpdateCommandForPlatform,
 	runAutoUpdateCheck,
 	runOnDemandUpdate,
@@ -21,12 +26,28 @@ function expectPathEndsWith(actualPath: string | undefined, expectedSuffix: stri
 	expect(normalizePath(actualPath ?? "").endsWith(expectedSuffix)).toBe(true);
 }
 
+function makeAsset(version: string): ReleaseAsset {
+	return {
+		name: `kanban-${version}.tgz`,
+		downloadUrl: `https://github.com/cline/kanban/releases/download/v${version}/kanban-${version}.tgz`,
+		apiUrl: `https://api.github.com/repos/cline/kanban/releases/assets/123`,
+	};
+}
+
+function makeRelease(version: string, withAsset = true): ResolvedRelease {
+	return {
+		version,
+		tgzAsset: withAsset ? makeAsset(version) : null,
+	};
+}
+
 afterEach(() => {
 	runPendingAutoUpdateOnShutdown({
 		spawnUpdate: () => {},
 		log: () => {},
 	});
 	clearPendingUpdateNotification();
+	vi.restoreAllMocks();
 });
 
 describe("compareVersions", () => {
@@ -66,8 +87,61 @@ describe("detectAutoUpdateInstallation", () => {
 		});
 
 		expect(installation.packageManager).toBe(UpdatePackageManager.LOCAL);
-		expect(installation.updateCommand).toBeNull();
+		expect(installation.globalInstall).toBeNull();
+		expect(installation.cacheRefreshCommand).toBeNull();
 		expect(installation.updateTiming).toBe("startup");
+	});
+
+	it("marks global npm installs with a global tgz install command", () => {
+		const installation = detectAutoUpdateInstallation({
+			currentVersion: "1.0.0",
+			packageName: "kanban",
+			entrypointPath: "/usr/local/lib/node_modules/kanban/dist/cli.js",
+			cwd: "/Users/saoud/projects/work",
+		});
+
+		expect(installation.packageManager).toBe(UpdatePackageManager.NPM);
+		expect(installation.cacheRefreshCommand).toBeNull();
+		expect(installation.globalInstall).toEqual({ command: "npm", installArgs: ["install", "-g"] });
+		expect(installation.updateTiming).toBe("startup");
+		expect(installation.releaseChannel).toBe("latest");
+	});
+
+	it("uses the nightly channel for nightly builds", () => {
+		const installation = detectAutoUpdateInstallation({
+			currentVersion: "1.0.0-nightly.5",
+			packageName: "kanban",
+			entrypointPath: "/usr/local/lib/node_modules/kanban/dist/cli.js",
+			cwd: "/Users/saoud/projects/work",
+		});
+
+		expect(installation.releaseChannel).toBe("nightly");
+	});
+
+	it("resolves pnpm/yarn/bun global install verbs", () => {
+		const pnpm = detectAutoUpdateInstallation({
+			currentVersion: "1.0.0",
+			packageName: "kanban",
+			entrypointPath: "/Users/saoud/Library/pnpm/global/5/node_modules/kanban/dist/cli.js",
+			cwd: "/Users/saoud/projects/work",
+		});
+		expect(pnpm.globalInstall).toEqual({ command: "pnpm", installArgs: ["add", "-g"] });
+
+		const yarn = detectAutoUpdateInstallation({
+			currentVersion: "1.0.0",
+			packageName: "kanban",
+			entrypointPath: "/Users/saoud/.yarn/global/node_modules/kanban/dist/cli.js",
+			cwd: "/Users/saoud/projects/work",
+		});
+		expect(yarn.globalInstall).toEqual({ command: "yarn", installArgs: ["global", "add"] });
+
+		const bun = detectAutoUpdateInstallation({
+			currentVersion: "1.0.0",
+			packageName: "kanban",
+			entrypointPath: "/Users/saoud/.bun/bin/node_modules/kanban/dist/cli.js",
+			cwd: "/Users/saoud/projects/work",
+		});
+		expect(bun.globalInstall).toEqual({ command: "bun", installArgs: ["add", "-g"] });
 	});
 
 	it("marks npx installs for shutdown-time cache refresh", () => {
@@ -80,10 +154,11 @@ describe("detectAutoUpdateInstallation", () => {
 
 		expect(installation.packageManager).toBe(UpdatePackageManager.NPX);
 		expect(installation.updateTiming).toBe("shutdown");
-		expect(installation.updateCommand?.command).toBe(process.execPath);
-		expect(installation.updateCommand?.args[0]).toBe("-e");
-		expect(typeof installation.updateCommand?.args[1]).toBe("string");
-		expectPathEndsWith(installation.updateCommand?.args[2], "/Users/saoud/.npm/_npx/593b71878a7c70f2");
+		expect(installation.globalInstall).toBeNull();
+		expect(installation.cacheRefreshCommand?.command).toBe(process.execPath);
+		expect(installation.cacheRefreshCommand?.args[0]).toBe("-e");
+		expect(typeof installation.cacheRefreshCommand?.args[1]).toBe("string");
+		expectPathEndsWith(installation.cacheRefreshCommand?.args[2], "/Users/saoud/.npm/_npx/593b71878a7c70f2");
 	});
 
 	it("marks npm-cache npx installs for shutdown-time cache refresh", () => {
@@ -96,11 +171,11 @@ describe("detectAutoUpdateInstallation", () => {
 
 		expect(installation.packageManager).toBe(UpdatePackageManager.NPX);
 		expect(installation.updateTiming).toBe("shutdown");
-		expect(installation.updateCommand?.command).toBe(process.execPath);
-		expect(installation.updateCommand?.args[0]).toBe("-e");
-		expect(typeof installation.updateCommand?.args[1]).toBe("string");
+		expect(installation.cacheRefreshCommand?.command).toBe(process.execPath);
+		expect(installation.cacheRefreshCommand?.args[0]).toBe("-e");
+		expect(typeof installation.cacheRefreshCommand?.args[1]).toBe("string");
 		expectPathEndsWith(
-			installation.updateCommand?.args[2],
+			installation.cacheRefreshCommand?.args[2],
 			"/Users/saoud/AppData/Local/npm-cache/_npx/593b71878a7c70f2",
 		);
 	});
@@ -116,11 +191,11 @@ describe("detectAutoUpdateInstallation", () => {
 
 		expect(installation.packageManager).toBe(UpdatePackageManager.PNPM);
 		expect(installation.updateTiming).toBe("shutdown");
-		expect(installation.updateCommand?.command).toBe(process.execPath);
-		expect(installation.updateCommand?.args[0]).toBe("-e");
-		expect(typeof installation.updateCommand?.args[1]).toBe("string");
+		expect(installation.cacheRefreshCommand?.command).toBe(process.execPath);
+		expect(installation.cacheRefreshCommand?.args[0]).toBe("-e");
+		expect(typeof installation.cacheRefreshCommand?.args[1]).toBe("string");
 		expectPathEndsWith(
-			installation.updateCommand?.args[2],
+			installation.cacheRefreshCommand?.args[2],
 			"/Users/saoud/Library/Caches/pnpm/dlx/82fa34f6d8482ef2103aa281bbfd9bc42aeec4c8b99d8b1d6bc4653f9d4d179d/19cd9b46385-11271",
 		);
 	});
@@ -135,10 +210,10 @@ describe("detectAutoUpdateInstallation", () => {
 
 		expect(installation.packageManager).toBe(UpdatePackageManager.BUN);
 		expect(installation.updateTiming).toBe("shutdown");
-		expect(installation.updateCommand?.command).toBe(process.execPath);
-		expect(installation.updateCommand?.args[0]).toBe("-e");
-		expect(typeof installation.updateCommand?.args[1]).toBe("string");
-		expectPathEndsWith(installation.updateCommand?.args[2], "/private/tmp/bunx-501-kanban@1.0.0");
+		expect(installation.cacheRefreshCommand?.command).toBe(process.execPath);
+		expect(installation.cacheRefreshCommand?.args[0]).toBe("-e");
+		expect(typeof installation.cacheRefreshCommand?.args[1]).toBe("string");
+		expectPathEndsWith(installation.cacheRefreshCommand?.args[2], "/private/tmp/bunx-501-kanban@1.0.0");
 	});
 
 	it("marks yarn dlx installs for shutdown-time cache refresh", () => {
@@ -152,11 +227,11 @@ describe("detectAutoUpdateInstallation", () => {
 
 		expect(installation.packageManager).toBe(UpdatePackageManager.YARN);
 		expect(installation.updateTiming).toBe("shutdown");
-		expect(installation.updateCommand?.command).toBe(process.execPath);
-		expect(installation.updateCommand?.args[0]).toBe("-e");
-		expect(typeof installation.updateCommand?.args[1]).toBe("string");
+		expect(installation.cacheRefreshCommand?.command).toBe(process.execPath);
+		expect(installation.cacheRefreshCommand?.args[0]).toBe("-e");
+		expect(typeof installation.cacheRefreshCommand?.args[1]).toBe("string");
 		expectPathEndsWith(
-			installation.updateCommand?.args[2],
+			installation.cacheRefreshCommand?.args[2],
 			"/private/var/folders/v5/vpxh_439455fv8f_y_55m8q00000gn/T/xfs-bf17b212/dlx-39615",
 		);
 	});
@@ -170,7 +245,8 @@ describe("detectAutoUpdateInstallation", () => {
 		});
 
 		expect(installation.packageManager).toBe(UpdatePackageManager.LOCAL);
-		expect(installation.updateCommand).toBeNull();
+		expect(installation.globalInstall).toBeNull();
+		expect(installation.cacheRefreshCommand).toBeNull();
 		expect(installation.updateTiming).toBe("startup");
 	});
 
@@ -183,7 +259,8 @@ describe("detectAutoUpdateInstallation", () => {
 		});
 
 		expect(installation.packageManager).toBe(UpdatePackageManager.UNKNOWN);
-		expect(installation.updateCommand).toBeNull();
+		expect(installation.globalInstall).toBeNull();
+		expect(installation.cacheRefreshCommand).toBeNull();
 		expect(installation.updateTiming).toBe("startup");
 	});
 
@@ -196,7 +273,8 @@ describe("detectAutoUpdateInstallation", () => {
 		});
 
 		expect(installation.packageManager).toBe(UpdatePackageManager.UNKNOWN);
-		expect(installation.updateCommand).toBeNull();
+		expect(installation.globalInstall).toBeNull();
+		expect(installation.cacheRefreshCommand).toBeNull();
 		expect(installation.updateTiming).toBe("startup");
 	});
 
@@ -209,7 +287,8 @@ describe("detectAutoUpdateInstallation", () => {
 		});
 
 		expect(installation.packageManager).toBe(UpdatePackageManager.UNKNOWN);
-		expect(installation.updateCommand).toBeNull();
+		expect(installation.globalInstall).toBeNull();
+		expect(installation.cacheRefreshCommand).toBeNull();
 		expect(installation.updateTiming).toBe("startup");
 	});
 
@@ -222,22 +301,235 @@ describe("detectAutoUpdateInstallation", () => {
 		});
 
 		expect(installation.packageManager).toBe(UpdatePackageManager.UNKNOWN);
-		expect(installation.updateCommand).toBeNull();
+		expect(installation.globalInstall).toBeNull();
+		expect(installation.cacheRefreshCommand).toBeNull();
 		expect(installation.updateTiming).toBe("startup");
 	});
 });
 
+describe("resolveLatestReleaseFromGitHub", () => {
+	it("reads the latest stable release and strips a leading v from the tag", async () => {
+		const fetchMock = vi.fn(
+			async (_url: string | URL | Request, _init?: RequestInit) =>
+				new Response(
+					JSON.stringify({
+						tag_name: "v1.2.3",
+						assets: [
+							{
+								name: "kanban-1.2.3.tgz",
+								browser_download_url: "https://github.com/cline/kanban/releases/download/v1.2.3/kanban-1.2.3.tgz",
+								url: "https://api.github.com/repos/cline/kanban/releases/assets/9",
+							},
+						],
+					}),
+					{ status: 200 },
+				),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		const release = await resolveLatestReleaseFromGitHub({
+			releaseChannel: "latest",
+			repo: "cline/kanban",
+			token: null,
+		});
+
+		expect(release).toEqual({
+			version: "1.2.3",
+			tgzAsset: {
+				name: "kanban-1.2.3.tgz",
+				downloadUrl: "https://github.com/cline/kanban/releases/download/v1.2.3/kanban-1.2.3.tgz",
+				apiUrl: "https://api.github.com/repos/cline/kanban/releases/assets/9",
+			},
+		});
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const [url, init] = fetchMock.mock.calls[0] ?? [];
+		expect(url).toBe("https://api.github.com/repos/cline/kanban/releases/latest");
+		expect((init as RequestInit | undefined)?.headers).not.toHaveProperty("Authorization");
+	});
+
+	it("passes a bearer token when authenticated", async () => {
+		const fetchMock = vi.fn(
+			async (_url: string | URL | Request, _init?: RequestInit) =>
+				new Response(JSON.stringify({ tag_name: "1.2.3", assets: [] }), { status: 200 }),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		await resolveLatestReleaseFromGitHub({ releaseChannel: "latest", repo: "cline/kanban", token: "secret-token" });
+
+		const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+		expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer secret-token");
+	});
+
+	it("finds the newest prerelease for the nightly channel", async () => {
+		const fetchMock = vi.fn(
+			async (_url: string | URL | Request, _init?: RequestInit) =>
+				new Response(
+					JSON.stringify([
+						{ tag_name: "v1.2.3", prerelease: false, assets: [] },
+						{
+							tag_name: "v1.3.0-nightly.4",
+							prerelease: true,
+							assets: [
+								{
+									name: "kanban-1.3.0-nightly.4.tgz",
+									browser_download_url: "https://example.test/nightly.tgz",
+									url: "https://api.github.com/repos/cline/kanban/releases/assets/42",
+								},
+							],
+						},
+					]),
+					{ status: 200 },
+				),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		const release = await resolveLatestReleaseFromGitHub({
+			releaseChannel: "nightly",
+			repo: "cline/kanban",
+			token: null,
+		});
+
+		expect(release?.version).toBe("1.3.0-nightly.4");
+		expect(release?.tgzAsset?.name).toBe("kanban-1.3.0-nightly.4.tgz");
+		expect(fetchMock.mock.calls[0]?.[0]).toContain("/releases?per_page=");
+	});
+
+	it("returns null when the release has no tgz asset", async () => {
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						tag_name: "1.2.3",
+						assets: [{ name: "kanban-1.2.3.zip", browser_download_url: "https://x/y.zip", url: "https://x/api" }],
+					}),
+					{ status: 200 },
+				),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		const release = await resolveLatestReleaseFromGitHub({
+			releaseChannel: "latest",
+			repo: "cline/kanban",
+			token: null,
+		});
+
+		expect(release?.version).toBe("1.2.3");
+		expect(release?.tgzAsset).toBeNull();
+	});
+
+	it("degrades to null on a network failure", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				throw new Error("network down");
+			}),
+		);
+
+		const release = await resolveLatestReleaseFromGitHub({
+			releaseChannel: "latest",
+			repo: "cline/kanban",
+			token: null,
+		});
+
+		expect(release).toBeNull();
+	});
+
+	it("degrades to null on a non-ok response", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response("not found", { status: 404 })),
+		);
+
+		const release = await resolveLatestReleaseFromGitHub({
+			releaseChannel: "latest",
+			repo: "cline/kanban",
+			token: null,
+		});
+
+		expect(release).toBeNull();
+	});
+});
+
+describe("downloadReleaseAssetToTemp", () => {
+	it("follows the GitHub 302 redirect without leaking the Authorization header", async () => {
+		const storageUrl = "https://objects.githubusercontent.com/signed-blob";
+		const payload = new Uint8Array([1, 2, 3, 4]);
+		const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
+			const url = typeof input === "string" ? input : input.toString();
+			if (url.includes("api.github.com")) {
+				return new Response(null, { status: 302, headers: { location: storageUrl } });
+			}
+			return new Response(payload, { status: 200 });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const asset = makeAsset("1.2.3");
+		const filePath = await downloadReleaseAssetToTemp(asset, "secret-token");
+
+		expect(filePath).toBeTruthy();
+		const contents = await readFile(filePath ?? "");
+		expect(new Uint8Array(contents)).toEqual(payload);
+		if (filePath) {
+			await rm(filePath, { force: true });
+		}
+
+		// First call hits the API url with auth; the redirect follow must NOT re-send it.
+		const firstInit = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+		expect((firstInit?.headers as Record<string, string>).Authorization).toBe("Bearer secret-token");
+		expect(fetchMock.mock.calls[0]?.[0]).toBe(asset.apiUrl);
+
+		const secondInit = fetchMock.mock.calls[1]?.[1] as RequestInit | undefined;
+		expect((secondInit?.headers as Record<string, string>).Authorization).toBeUndefined();
+		expect(fetchMock.mock.calls[1]?.[0]).toBe(storageUrl);
+	});
+
+	it("uses the public download url anonymously when there is no token", async () => {
+		const payload = new Uint8Array([9, 9]);
+		const fetchMock = vi.fn(
+			async (_url: string | URL | Request, _init?: RequestInit) => new Response(payload, { status: 200 }),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		const asset = makeAsset("1.2.3");
+		const filePath = await downloadReleaseAssetToTemp(asset, null);
+
+		expect(fetchMock.mock.calls[0]?.[0]).toBe(asset.downloadUrl);
+		const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+		expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
+		if (filePath) {
+			await rm(filePath, { force: true });
+		}
+	});
+
+	it("degrades to null on a download failure", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				throw new Error("boom");
+			}),
+		);
+
+		expect(await downloadReleaseAssetToTemp(makeAsset("1.2.3"), null)).toBeNull();
+	});
+});
+
 describe("runOnDemandUpdate", () => {
-	it("runs global install when a newer version is available", async () => {
+	it("downloads the release tgz and runs a global install when a newer version is available", async () => {
 		const spawnedUpdates: Array<{ command: string; args: string[] }> = [];
+		const downloadedAssets: ReleaseAsset[] = [];
 
 		const result = await runOnDemandUpdate({
 			currentVersion: "1.0.0",
 			packageName: "kanban",
 			argv: ["node", "/usr/local/lib/node_modules/kanban/dist/cli.js"],
 			cwd: "/Users/saoud/projects/work",
+			env: {},
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => "1.1.0",
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
+			downloadReleaseAsset: async (asset) => {
+				downloadedAssets.push(asset);
+				return "/tmp/kanban-update-abc/kanban-1.1.0.tgz";
+			},
 			runUpdateCommand: (command, args) => {
 				spawnedUpdates.push({ command, args });
 				return 0;
@@ -245,15 +537,18 @@ describe("runOnDemandUpdate", () => {
 		});
 
 		expect(result.status).toBe("updated");
+		expect(result.latestVersion).toBe("1.1.0");
+		expect(downloadedAssets).toHaveLength(1);
 		expect(spawnedUpdates).toEqual([
 			{
 				command: "npm",
-				args: ["install", "-g", "kanban@latest"],
+				args: ["install", "-g", "/tmp/kanban-update-abc/kanban-1.1.0.tgz"],
 			},
 		]);
 	});
 
 	it("returns already_up_to_date when current version matches latest", async () => {
+		let downloadCalled = false;
 		let runUpdateCalled = false;
 
 		const result = await runOnDemandUpdate({
@@ -261,8 +556,13 @@ describe("runOnDemandUpdate", () => {
 			packageName: "kanban",
 			argv: ["node", "/usr/local/lib/node_modules/kanban/dist/cli.js"],
 			cwd: "/Users/saoud/projects/work",
+			env: {},
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => "1.1.0",
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
+			downloadReleaseAsset: async () => {
+				downloadCalled = true;
+				return null;
+			},
 			runUpdateCommand: () => {
 				runUpdateCalled = true;
 				return 0;
@@ -270,10 +570,67 @@ describe("runOnDemandUpdate", () => {
 		});
 
 		expect(result.status).toBe("already_up_to_date");
+		expect(downloadCalled).toBe(false);
 		expect(runUpdateCalled).toBe(false);
 	});
 
-	it("updates local workspace installs via npm fallback", async () => {
+	it("reports check_failed when the release probe fails", async () => {
+		const result = await runOnDemandUpdate({
+			currentVersion: "1.0.0",
+			packageName: "kanban",
+			argv: ["node", "/usr/local/lib/node_modules/kanban/dist/cli.js"],
+			cwd: "/Users/saoud/projects/work",
+			env: {},
+			resolveRealPath: (path) => path,
+			resolveLatestRelease: async () => null,
+			downloadReleaseAsset: async () => "/tmp/should-not-happen.tgz",
+			runUpdateCommand: () => 0,
+		});
+
+		expect(result.status).toBe("check_failed");
+		expect(result.latestVersion).toBeNull();
+	});
+
+	it("reports update_failed when the release has no tgz asset", async () => {
+		let downloadCalled = false;
+
+		const result = await runOnDemandUpdate({
+			currentVersion: "1.0.0",
+			packageName: "kanban",
+			argv: ["node", "/usr/local/lib/node_modules/kanban/dist/cli.js"],
+			cwd: "/Users/saoud/projects/work",
+			env: {},
+			resolveRealPath: (path) => path,
+			resolveLatestRelease: async () => makeRelease("1.1.0", false),
+			downloadReleaseAsset: async () => {
+				downloadCalled = true;
+				return null;
+			},
+			runUpdateCommand: () => 0,
+		});
+
+		expect(result.status).toBe("update_failed");
+		expect(result.latestVersion).toBe("1.1.0");
+		expect(downloadCalled).toBe(false);
+	});
+
+	it("reports update_failed when the asset download fails", async () => {
+		const result = await runOnDemandUpdate({
+			currentVersion: "1.0.0",
+			packageName: "kanban",
+			argv: ["node", "/usr/local/lib/node_modules/kanban/dist/cli.js"],
+			cwd: "/Users/saoud/projects/work",
+			env: {},
+			resolveRealPath: (path) => path,
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
+			downloadReleaseAsset: async () => null,
+			runUpdateCommand: () => 0,
+		});
+
+		expect(result.status).toBe("update_failed");
+	});
+
+	it("updates local workspace installs via the npm global tgz fallback", async () => {
 		const spawnedUpdates: Array<{ command: string; args: string[] }> = [];
 
 		const result = await runOnDemandUpdate({
@@ -281,8 +638,10 @@ describe("runOnDemandUpdate", () => {
 			packageName: "kanban",
 			argv: ["node", "/workspace/kanban/dist/cli.js"],
 			cwd: "/workspace/kanban",
+			env: {},
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => "1.1.0",
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
+			downloadReleaseAsset: async () => "/tmp/kanban-1.1.0.tgz",
 			runUpdateCommand: (command, args) => {
 				spawnedUpdates.push({ command, args });
 				return 0;
@@ -294,21 +653,27 @@ describe("runOnDemandUpdate", () => {
 		expect(spawnedUpdates).toEqual([
 			{
 				command: "npm",
-				args: ["install", "-g", "kanban@latest"],
+				args: ["install", "-g", "/tmp/kanban-1.1.0.tgz"],
 			},
 		]);
 	});
 
-	it("refreshes transient npx cache when a newer version exists", async () => {
+	it("refreshes transient npx cache without downloading when a newer version exists", async () => {
 		const spawnedUpdates: Array<{ command: string; args: string[] }> = [];
+		let downloadCalled = false;
 
 		const result = await runOnDemandUpdate({
 			currentVersion: "1.0.0",
 			packageName: "kanban",
 			argv: ["node", "/Users/saoud/.npm/_npx/593b71878a7c70f2/node_modules/kanban/dist/cli.js"],
 			cwd: "/Users/saoud/projects/work",
+			env: {},
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => "1.1.0",
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
+			downloadReleaseAsset: async () => {
+				downloadCalled = true;
+				return null;
+			},
 			runUpdateCommand: (command, args) => {
 				spawnedUpdates.push({ command, args });
 				return 0;
@@ -316,6 +681,7 @@ describe("runOnDemandUpdate", () => {
 		});
 
 		expect(result.status).toBe("cache_refreshed");
+		expect(downloadCalled).toBe(false);
 		expect(spawnedUpdates).toHaveLength(1);
 		expect(spawnedUpdates[0]?.command).toBe(process.execPath);
 		expect(spawnedUpdates[0]?.args[0]).toBe("-e");
@@ -323,7 +689,7 @@ describe("runOnDemandUpdate", () => {
 });
 
 describe("runAutoUpdateCheck", () => {
-	it("spawns a global update when a newer version is available", async () => {
+	it("downloads and spawns a global update when a newer version is available", async () => {
 		const spawnedUpdates: Array<{ command: string; args: string[] }> = [];
 
 		await runAutoUpdateCheck({
@@ -333,7 +699,8 @@ describe("runAutoUpdateCheck", () => {
 			cwd: "/Users/saoud/projects/work",
 			env: {},
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => "1.1.0",
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
+			downloadReleaseAsset: async () => "/tmp/kanban-1.1.0.tgz",
 			spawnUpdate: (command, args) => {
 				spawnedUpdates.push({ command, args });
 			},
@@ -342,9 +709,29 @@ describe("runAutoUpdateCheck", () => {
 		expect(spawnedUpdates).toEqual([
 			{
 				command: "npm",
-				args: ["install", "-g", "kanban@latest"],
+				args: ["install", "-g", "/tmp/kanban-1.1.0.tgz"],
 			},
 		]);
+	});
+
+	it("does not spawn when the release asset download fails", async () => {
+		const spawnedUpdates: Array<{ command: string; args: string[] }> = [];
+
+		await runAutoUpdateCheck({
+			currentVersion: "1.0.0",
+			packageName: "kanban",
+			argv: ["node", "/usr/local/lib/node_modules/kanban/dist/cli.js"],
+			cwd: "/Users/saoud/projects/work",
+			env: {},
+			resolveRealPath: (path) => path,
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
+			downloadReleaseAsset: async () => null,
+			spawnUpdate: (command, args) => {
+				spawnedUpdates.push({ command, args });
+			},
+		});
+
+		expect(spawnedUpdates).toEqual([]);
 	});
 
 	it("schedules transient cache refresh until shutdown", async () => {
@@ -357,7 +744,10 @@ describe("runAutoUpdateCheck", () => {
 			cwd: "/Users/saoud/projects/work",
 			env: {},
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => "1.1.0",
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
+			downloadReleaseAsset: async () => {
+				throw new Error("transient update should not download");
+			},
 			spawnUpdate: (command, args) => {
 				spawnedUpdates.push({ command, args });
 			},
@@ -377,7 +767,7 @@ describe("runAutoUpdateCheck", () => {
 			cwd: "/Users/saoud/projects/work",
 			env: {},
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => "1.1.0",
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
 			spawnUpdate: () => {
 				throw new Error("transient update should not spawn immediately");
 			},
@@ -401,7 +791,7 @@ describe("runAutoUpdateCheck", () => {
 	});
 
 	it("checks for updates on each startup without persisted state", async () => {
-		let fetchCalls = 0;
+		let resolveCalls = 0;
 		let spawnCalls = 0;
 
 		const options = {
@@ -411,10 +801,11 @@ describe("runAutoUpdateCheck", () => {
 			cwd: "/Users/saoud/projects/work",
 			env: {},
 			resolveRealPath: (path: string) => path,
-			fetchLatestVersion: async () => {
-				fetchCalls += 1;
-				return "1.1.0";
+			resolveLatestRelease: async () => {
+				resolveCalls += 1;
+				return makeRelease("1.1.0");
 			},
+			downloadReleaseAsset: async () => "/tmp/kanban-1.1.0.tgz",
 			spawnUpdate: () => {
 				spawnCalls += 1;
 			},
@@ -423,12 +814,12 @@ describe("runAutoUpdateCheck", () => {
 		await runAutoUpdateCheck(options);
 		await runAutoUpdateCheck(options);
 
-		expect(fetchCalls).toBe(2);
+		expect(resolveCalls).toBe(2);
 		expect(spawnCalls).toBe(2);
 	});
 
 	it("skips update checks when KANBAN_NO_AUTO_UPDATE is set", async () => {
-		let fetchCalled = false;
+		let resolveCalled = false;
 
 		await runAutoUpdateCheck({
 			currentVersion: "1.0.0",
@@ -437,16 +828,16 @@ describe("runAutoUpdateCheck", () => {
 			cwd: "/Users/saoud/projects/work",
 			env: { KANBAN_NO_AUTO_UPDATE: "1" },
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => {
-				fetchCalled = true;
-				return "1.1.0";
+			resolveLatestRelease: async () => {
+				resolveCalled = true;
+				return makeRelease("1.1.0");
 			},
 			spawnUpdate: () => {
 				throw new Error("should not spawn");
 			},
 		});
 
-		expect(fetchCalled).toBe(false);
+		expect(resolveCalled).toBe(false);
 	});
 });
 
@@ -455,7 +846,7 @@ describe("getPendingUpdateNotification", () => {
 		expect(getPendingUpdateNotification()).toBeNull();
 	});
 
-	it("records a pending notification for startup-timing global installs", async () => {
+	it("records a pending notification pointing at `kanban update` for global installs", async () => {
 		await runAutoUpdateCheck({
 			currentVersion: "1.0.0",
 			packageName: "kanban",
@@ -463,7 +854,8 @@ describe("getPendingUpdateNotification", () => {
 			cwd: "/Users/saoud/projects/work",
 			env: {},
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => "1.1.0",
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
+			downloadReleaseAsset: async () => "/tmp/kanban-1.1.0.tgz",
 			spawnUpdate: () => {},
 		});
 
@@ -471,7 +863,7 @@ describe("getPendingUpdateNotification", () => {
 			currentVersion: "1.0.0",
 			latestVersion: "1.1.0",
 			updateTiming: "startup",
-			installCommand: "npm install -g kanban@latest",
+			installCommand: "kanban update",
 		});
 	});
 
@@ -483,7 +875,7 @@ describe("getPendingUpdateNotification", () => {
 			cwd: "/Users/saoud/projects/work",
 			env: {},
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => "1.1.0",
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
 			spawnUpdate: () => {},
 		});
 
@@ -506,7 +898,7 @@ describe("getPendingUpdateNotification", () => {
 			cwd: "/Users/saoud/projects/work",
 			env: {},
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => "1.1.0",
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
 			spawnUpdate: () => {},
 		});
 
@@ -529,7 +921,7 @@ describe("getPendingUpdateNotification", () => {
 			cwd: "/Users/saoud/projects/work",
 			env: {},
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => "1.1.0",
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
 			spawnUpdate: () => {},
 		});
 
@@ -549,7 +941,7 @@ describe("getPendingUpdateNotification", () => {
 			cwd: "/Users/saoud/projects/work",
 			env: {},
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => "1.1.0",
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
 			spawnUpdate: () => {},
 		});
 
@@ -569,7 +961,8 @@ describe("getPendingUpdateNotification", () => {
 			cwd: "/Users/saoud/projects/work",
 			env: {},
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => "1.1.0",
+			resolveLatestRelease: async () => makeRelease("1.1.0"),
+			downloadReleaseAsset: async () => "/tmp/kanban-1.1.0.tgz",
 			spawnUpdate: () => {},
 		});
 
@@ -577,7 +970,7 @@ describe("getPendingUpdateNotification", () => {
 	});
 
 	it("leaves the pending notification null for unknown installations", async () => {
-		let fetchCalled = false;
+		let resolveCalled = false;
 
 		await runAutoUpdateCheck({
 			currentVersion: "1.0.0",
@@ -586,16 +979,16 @@ describe("getPendingUpdateNotification", () => {
 			cwd: "/Users/saoud/projects/work",
 			env: {},
 			resolveRealPath: (path) => path,
-			fetchLatestVersion: async () => {
-				fetchCalled = true;
-				return "1.1.0";
+			resolveLatestRelease: async () => {
+				resolveCalled = true;
+				return makeRelease("1.1.0");
 			},
 			spawnUpdate: () => {
 				throw new Error("unknown installation should not update");
 			},
 		});
 
-		expect(fetchCalled).toBe(false);
+		expect(resolveCalled).toBe(false);
 		expect(getPendingUpdateNotification()).toBeNull();
 	});
 });

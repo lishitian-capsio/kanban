@@ -200,6 +200,17 @@ export class GitHubAuthService {
 	}
 
 	/**
+	 * The current (non-expired) access token, or `null` when logged out. Used by non-git
+	 * callers that talk to the GitHub REST API directly (e.g. the self-update release probe)
+	 * to raise the rate limit and reach private repos. The secret must never be logged or
+	 * written to disk by callers — treat it like {@link getGitInjection}'s env value.
+	 */
+	async getAccessToken(): Promise<string | null> {
+		const record = await this.resolveUsableRecord();
+		return record?.accessToken ?? null;
+	}
+
+	/**
 	 * The github.com-scoped credential config + env for `runGit`, or `null` when not
 	 * authenticated (caller injects nothing — today's full-passthrough behavior).
 	 */
