@@ -47,6 +47,14 @@
       "category": "image",
       "size": 11880,
       "addedAt": 1782648116147
+    },
+    {
+      "id": "f7ede",
+      "name": "image.png",
+      "mime": "image/png",
+      "category": "image",
+      "size": 20817,
+      "addedAt": 1782982381915
     }
   ]
 }
