@@ -101,6 +101,9 @@ export class VaultSettingsStore {
 				...(patch.agentDatabaseAccessEnabled !== undefined
 					? { agentDatabaseAccessEnabled: patch.agentDatabaseAccessEnabled }
 					: {}),
+				...(patch.agentStorageAccessEnabled !== undefined
+					? { agentStorageAccessEnabled: patch.agentStorageAccessEnabled }
+					: {}),
 			});
 			await lockedFileSystem.writeJsonFileAtomic(this.settingsPath, next, { lock: null });
 			return next;

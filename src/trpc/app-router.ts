@@ -340,6 +340,21 @@ import {
 	runtimeShellSessionStartRequestSchema,
 	runtimeShellSessionStartResponseSchema,
 	runtimeSlashCommandsResponseSchema,
+	runtimeStorageConnectionsListResponseSchema,
+	runtimeStorageDeleteConnectionRequestSchema,
+	runtimeStorageDeleteConnectionResponseSchema,
+	runtimeStorageDownloadRequestSchema,
+	runtimeStorageDownloadResponseSchema,
+	runtimeStorageListRequestSchema,
+	runtimeStorageListResponseSchema,
+	runtimeStorageObjectContentSchema,
+	runtimeStorageReadRequestSchema,
+	runtimeStorageStatRequestSchema,
+	runtimeStorageStatResponseSchema,
+	runtimeStorageTestConnectionRequestSchema,
+	runtimeStorageTestConnectionResponseSchema,
+	runtimeStorageUpsertConnectionRequestSchema,
+	runtimeStorageUpsertConnectionResponseSchema,
 	runtimeTaskChatAbortRequestSchema,
 	runtimeTaskChatAbortResponseSchema,
 	runtimeTaskChatCancelRequestSchema,
@@ -403,6 +418,7 @@ import {
 import { getGiteeAuthService } from "../gitee-auth";
 import { getGitHubAuthService } from "../github-auth";
 import type { WorkspaceDbApi } from "./workspace-db-api";
+import type { WorkspaceStorageApi } from "./workspace-storage-api";
 
 export interface RuntimeTrpcWorkspaceScope {
 	workspaceId: string;
@@ -687,7 +703,7 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeGitCommitDiffRequest,
 		) => Promise<RuntimeGitCommitDiffResponse>;
-	} & WorkspaceDbApi;
+	} & WorkspaceDbApi & WorkspaceStorageApi;
 	workspaceFsApi: {
 		listDir: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsListDirRequest) => Promise<RuntimeFsListDirResponse>;
 		listPaths: (
@@ -1503,6 +1519,53 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeDbPreviewWriteResponseSchema)
 			.query(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.previewWrite(ctx.workspaceScope, input);
+			}),
+	}),
+	storage: t.router({
+		listConnections: workspaceProcedure.output(runtimeStorageConnectionsListResponseSchema).query(async ({ ctx }) => {
+			return await ctx.workspaceApi.listStorageConnections(ctx.workspaceScope);
+		}),
+		upsertConnection: workspaceProcedure
+			.input(runtimeStorageUpsertConnectionRequestSchema)
+			.output(runtimeStorageUpsertConnectionResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.upsertStorageConnection(ctx.workspaceScope, input);
+			}),
+		deleteConnection: workspaceProcedure
+			.input(runtimeStorageDeleteConnectionRequestSchema)
+			.output(runtimeStorageDeleteConnectionResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.deleteStorageConnection(ctx.workspaceScope, input);
+			}),
+		testConnection: workspaceProcedure
+			.input(runtimeStorageTestConnectionRequestSchema)
+			.output(runtimeStorageTestConnectionResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.testStorageConnection(ctx.workspaceScope, input);
+			}),
+		listObjects: workspaceProcedure
+			.input(runtimeStorageListRequestSchema)
+			.output(runtimeStorageListResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.listObjects(ctx.workspaceScope, input);
+			}),
+		readObject: workspaceProcedure
+			.input(runtimeStorageReadRequestSchema)
+			.output(runtimeStorageObjectContentSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.readObject(ctx.workspaceScope, input);
+			}),
+		statObject: workspaceProcedure
+			.input(runtimeStorageStatRequestSchema)
+			.output(runtimeStorageStatResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.statObject(ctx.workspaceScope, input);
+			}),
+		downloadObject: workspaceProcedure
+			.input(runtimeStorageDownloadRequestSchema)
+			.output(runtimeStorageDownloadResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.downloadObject(ctx.workspaceScope, input);
 			}),
 	}),
 	// GitHub OAuth for git remote auth. Machine-global (no workspace scope) — it delegates

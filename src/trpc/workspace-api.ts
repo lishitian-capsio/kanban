@@ -54,6 +54,7 @@ import {
 } from "../workspace/task-worktree";
 import type { RuntimeTrpcContext } from "./app-router";
 import { createWorkspaceDbApi } from "./workspace-db-api";
+import { createWorkspaceStorageApi } from "./workspace-storage-api";
 
 export interface CreateWorkspaceApiDependencies {
 	ensureTerminalManagerForWorkspace: (workspaceId: string, repoPath: string) => Promise<TerminalSessionManager>;
@@ -234,6 +235,7 @@ function isMissingTaskWorktreeError(error: unknown): boolean {
 export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): RuntimeTrpcContext["workspaceApi"] {
 	return {
 		...createWorkspaceDbApi(),
+		...createWorkspaceStorageApi(),
 		loadGitSummary: async (workspaceScope, input) => {
 			try {
 				const taskScope = normalizeOptionalTaskWorkspaceScopeInput(input);

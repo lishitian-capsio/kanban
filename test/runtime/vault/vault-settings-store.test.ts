@@ -82,6 +82,7 @@ describe("VaultSettingsStore.get", () => {
 			agentVaultManagementEnabled: false,
 			extraPushRemotes: [],
 			agentDatabaseAccessEnabled: false,
+			agentStorageAccessEnabled: false,
 		});
 	});
 
@@ -91,6 +92,7 @@ describe("VaultSettingsStore.get", () => {
 			agentVaultManagementEnabled: true,
 			extraPushRemotes: [],
 			agentDatabaseAccessEnabled: false,
+			agentStorageAccessEnabled: false,
 		});
 	});
 
@@ -100,6 +102,7 @@ describe("VaultSettingsStore.get", () => {
 			agentVaultManagementEnabled: false,
 			extraPushRemotes: [],
 			agentDatabaseAccessEnabled: false,
+			agentStorageAccessEnabled: false,
 		});
 	});
 
@@ -109,6 +112,7 @@ describe("VaultSettingsStore.get", () => {
 			agentVaultManagementEnabled: true,
 			extraPushRemotes: [],
 			agentDatabaseAccessEnabled: false,
+			agentStorageAccessEnabled: false,
 		});
 	});
 
@@ -121,6 +125,7 @@ describe("VaultSettingsStore.get", () => {
 			agentVaultManagementEnabled: false,
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 			agentDatabaseAccessEnabled: false,
+			agentStorageAccessEnabled: false,
 		});
 	});
 
@@ -142,14 +147,15 @@ describe("VaultSettingsStore.set", () => {
 				agentVaultManagementEnabled,
 				extraPushRemotes: [],
 				agentDatabaseAccessEnabled: false,
+				agentStorageAccessEnabled: false,
 			});
-			expect(written).toEqual({ agentVaultManagementEnabled, extraPushRemotes: [], agentDatabaseAccessEnabled: false });
+			expect(written).toEqual({ agentVaultManagementEnabled, extraPushRemotes: [], agentDatabaseAccessEnabled: false, agentStorageAccessEnabled: false });
 
 			const onDisk = JSON.parse(await readFile(settingsPath(), "utf8"));
-			expect(onDisk).toEqual({ agentVaultManagementEnabled, extraPushRemotes: [], agentDatabaseAccessEnabled: false });
+			expect(onDisk).toEqual({ agentVaultManagementEnabled, extraPushRemotes: [], agentDatabaseAccessEnabled: false, agentStorageAccessEnabled: false });
 
 			const reread = await new VaultSettingsStore(repoPath).get();
-			expect(reread).toEqual({ agentVaultManagementEnabled, extraPushRemotes: [], agentDatabaseAccessEnabled: false });
+			expect(reread).toEqual({ agentVaultManagementEnabled, extraPushRemotes: [], agentDatabaseAccessEnabled: false, agentStorageAccessEnabled: false });
 		}
 	});
 });
@@ -160,18 +166,20 @@ describe("VaultSettingsStore.update", () => {
 			agentVaultManagementEnabled: false,
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 			agentDatabaseAccessEnabled: false,
+			agentStorageAccessEnabled: false,
 		});
 		const updated = await store.update({ agentVaultManagementEnabled: true });
 		expect(updated).toEqual({
 			agentVaultManagementEnabled: true,
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 			agentDatabaseAccessEnabled: false,
+			agentStorageAccessEnabled: false,
 		});
 		expect(await new VaultSettingsStore(repoPath).get()).toEqual(updated);
 	});
 
 	it("changes only extraPushRemotes and preserves agentVaultManagementEnabled", async () => {
-		await store.set({ agentVaultManagementEnabled: true, extraPushRemotes: [], agentDatabaseAccessEnabled: false });
+		await store.set({ agentVaultManagementEnabled: true, extraPushRemotes: [], agentDatabaseAccessEnabled: false, agentStorageAccessEnabled: false });
 		const updated = await store.update({
 			extraPushRemotes: [{ name: "mirror", url: "https://github.com/o/r.git" }],
 		});
@@ -179,6 +187,7 @@ describe("VaultSettingsStore.update", () => {
 			agentVaultManagementEnabled: true,
 			extraPushRemotes: [{ name: "mirror", url: "https://github.com/o/r.git" }],
 			agentDatabaseAccessEnabled: false,
+			agentStorageAccessEnabled: false,
 		});
 	});
 
@@ -187,12 +196,14 @@ describe("VaultSettingsStore.update", () => {
 			agentVaultManagementEnabled: true,
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 			agentDatabaseAccessEnabled: false,
+			agentStorageAccessEnabled: false,
 		});
 		const enabled = await store.update({ agentDatabaseAccessEnabled: true });
 		expect(enabled).toEqual({
 			agentVaultManagementEnabled: true,
 			extraPushRemotes: [{ name: "gitee", url: "https://gitee.com/o/r.git" }],
 			agentDatabaseAccessEnabled: true,
+			agentStorageAccessEnabled: false,
 		});
 		expect(await new VaultSettingsStore(repoPath).get()).toEqual(enabled);
 
@@ -201,11 +212,12 @@ describe("VaultSettingsStore.update", () => {
 	});
 
 	it("is a no-op that returns the current settings when given an empty patch", async () => {
-		await store.set({ agentVaultManagementEnabled: true, extraPushRemotes: [], agentDatabaseAccessEnabled: true });
+		await store.set({ agentVaultManagementEnabled: true, extraPushRemotes: [], agentDatabaseAccessEnabled: true, agentStorageAccessEnabled: false });
 		expect(await store.update({})).toEqual({
 			agentVaultManagementEnabled: true,
 			extraPushRemotes: [],
 			agentDatabaseAccessEnabled: true,
+			agentStorageAccessEnabled: false,
 		});
 	});
 });
