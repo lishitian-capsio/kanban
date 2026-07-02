@@ -11,7 +11,7 @@ import {
 	resolveWorkspaceRepoPath,
 } from "./runtime-workspace";
 
-const VALID_ENGINES: readonly RuntimeDbEngine[] = ["postgres", "mysql", "sqlite"];
+const VALID_ENGINES: readonly RuntimeDbEngine[] = ["postgres", "mysql", "sqlite", "redis"];
 const VALID_SSL_MODES: ReadonlyArray<RuntimeDbSslConfig["mode"]> = ["disable", "require", "verify-ca", "verify-full"];
 
 function parseEngine(value: string): RuntimeDbEngine {
@@ -297,7 +297,7 @@ export function registerDbCommand(program: Command): void {
 		.command("add")
 		.description("Register a database connection. Secrets are stored machine-locally, never committed.")
 		.requiredOption("--label <text>", "Human-readable connection label.")
-		.requiredOption("--engine <engine>", "Database engine: postgres | mysql | sqlite.", parseEngine)
+		.requiredOption("--engine <engine>", "Database engine: postgres | mysql | sqlite | redis.", parseEngine)
 		.option("--id <id>", "Explicit connection id. Defaults to a slug of the label.")
 		.option("--host <host>", "Database host.")
 		.option("--port <port>", "Database port.", parsePort)
@@ -494,8 +494,8 @@ export function registerDbCommand(program: Command): void {
 	db.command("query")
 		.argument("<sql>", "SQL statement to execute.")
 		.description(
-			"Run a read-only SQL query. The CLI is capped to reads — writes/DDL are refused even on an " +
-				"allow-writes connection (row edits go through the human Database UI). Bounded by paging and row/byte caps.",
+			"Run a read-only query. SQL engines: a single SELECT. Redis: a single read-only command " +
+				"(e.g. \"HGETALL user:1\"). Writes/DDL are refused even on an allowWrites connection.",
 		)
 		.requiredOption("--connection <id>", "Connection id.")
 		.option("--page-size <n>", "Rows per page for reads (clamped by the core row cap).", parsePort)
