@@ -1,6 +1,8 @@
-import { readdir, readFile, rm, stat } from "node:fs/promises";
+import { readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
+
+import { readJsonFileOrNull } from "../fs/fast-file";
 
 import {
 	type RuntimeBoardCard,
@@ -104,22 +106,11 @@ async function pathExists(path: string): Promise<boolean> {
 	}
 }
 
-async function readJson(path: string): Promise<unknown | null> {
-	try {
-		const raw = await readFile(path, "utf8");
-		try {
-			return JSON.parse(raw) as unknown;
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			throw new Error(`Malformed JSON in ${path}. ${message}`);
-		}
-	} catch (error) {
-		if (isNodeErrorWithCode(error, "ENOENT")) {
-			return null;
-		}
-		throw error;
-	}
-}
+// Bun-native JSON read (`Bun.file().json()`) with a Node `fs` fallback. Semantics
+// are identical to the previous local `readFile` + `JSON.parse`: ENOENT → null,
+// parse failure → `Malformed JSON in <path>` (so `readStoredTasks` can skip a
+// torn shard by catching it), any other IO error propagates.
+const readJson = readJsonFileOrNull;
 
 /**
  * An "old shape" board is the legacy single-file board: `{ columns: [{ cards }] }`.

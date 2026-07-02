@@ -1,7 +1,8 @@
-import { readdir, readFile, rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { z } from "zod";
 
+import { readTextFile } from "../fs/fast-file";
 import { mapFilesConcurrent } from "../fs/concurrent-files";
 import { lockedFileSystem } from "../fs/locked-file-system";
 
@@ -57,7 +58,7 @@ export async function readShardDir<T>(
 	const ids = await listShardIds(dir);
 	const entries = await mapFilesConcurrent(ids, async (id): Promise<[string, T]> => {
 		const filePath = shardFilePath(dir, id);
-		const raw = await readFile(filePath, "utf8");
+		const raw = await readTextFile(filePath);
 		let parsedJson: unknown;
 		try {
 			parsedJson = JSON.parse(raw) as unknown;

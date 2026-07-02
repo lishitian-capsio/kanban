@@ -26,10 +26,11 @@
 //      safe to run while a session is still streaming.
 
 import { createHash } from "node:crypto";
-import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
+import { appendFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { runtimeTaskChatMessageSchema } from "../core/api-contract";
+import { readTextFileOrNull } from "../fs/fast-file";
 import { lockedFileSystem } from "../fs/locked-file-system";
 import { cloneSessionMessage, type SessionMessage } from "./session-message";
 
@@ -91,17 +92,6 @@ function sanitizeTaskId(taskId: string): string {
 		return taskId;
 	}
 	return `enc-${createHash("sha256").update(taskId).digest("hex").slice(0, 32)}`;
-}
-
-async function readFileIfExists(path: string): Promise<string | null> {
-	try {
-		return await readFile(path, "utf8");
-	} catch (error) {
-		if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
-			return null;
-		}
-		throw error;
-	}
 }
 
 export class FileSessionMessageJournal implements SessionMessageJournal {
@@ -276,7 +266,7 @@ export class FileSessionMessageJournal implements SessionMessageJournal {
 		taskId: string,
 		options: { cap: boolean },
 	): Promise<{ kept: SessionMessage[]; omitted: number }> {
-		const raw = await readFileIfExists(this.messagesPath(taskId));
+		const raw = await readTextFileOrNull(this.messagesPath(taskId));
 		if (raw === null) {
 			this.staleAppends.delete(taskId);
 			return { kept: [], omitted: 0 };
