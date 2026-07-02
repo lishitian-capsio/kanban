@@ -144,10 +144,16 @@ describe("GitHubAuthService", () => {
 		await service.beginLogin();
 		expect(await service.pollLogin()).toEqual({ state: "pending" });
 		const done = await service.pollLogin();
-		expect(done).toMatchObject({ state: "complete", status: { authenticated: true, login: "octocat" } });
+		// Completion is signalled the instant the token lands; the username is resolved in the
+		// background so a slow api.github.com/user call can never gate the "complete" signal.
+		expect(done).toMatchObject({ state: "complete", status: { authenticated: true, login: null } });
 		expect(await readPersistedGitHubAuth(file)).toMatchObject({ accessToken: "gho_UI" });
 		// Pending login cleared on success so it can't block a fresh sign-in.
 		expect(await readPendingGitHubLogin(pendingFile)).toBeNull();
+		// Once the best-effort resolution settles, the username is back-filled on disk + status.
+		await service.settleLoginResolution();
+		expect(await readPersistedGitHubAuth(file)).toMatchObject({ accessToken: "gho_UI", login: "octocat" });
+		expect(await service.getStatus()).toMatchObject({ authenticated: true, login: "octocat" });
 	});
 
 	it("pollLogin() resumes from disk across a runtime restart (a fresh service instance)", async () => {
@@ -161,8 +167,65 @@ describe("GitHubAuthService", () => {
 			fetchAuthenticatedLogin: async () => "octocat",
 		});
 		const done = await after.pollLogin();
-		expect(done).toMatchObject({ state: "complete", status: { authenticated: true, login: "octocat" } });
+		expect(done).toMatchObject({ state: "complete", status: { authenticated: true, login: null } });
 		expect(await readPersistedGitHubAuth(file)).toMatchObject({ accessToken: "gho_RESUMED" });
+		await after.settleLoginResolution();
+		expect(await readPersistedGitHubAuth(file)).toMatchObject({ accessToken: "gho_RESUMED", login: "octocat" });
+	});
+
+	it("pollLogin() completes even when the username lookup returns null (timeout/failure)", async () => {
+		const fetchAuthenticatedLogin = vi.fn(async () => null);
+		const service = makeService({
+			requestDeviceCode: async () => grant,
+			pollAccessTokenOnce: async () => ({ kind: "token", grant: { accessToken: "gho_NOUSER", scope: "repo" } }),
+			fetchAuthenticatedLogin,
+		});
+
+		await service.beginLogin();
+		const done = await service.pollLogin();
+		// Login is complete and the token is usable despite the username being unresolvable.
+		expect(done).toMatchObject({ state: "complete", status: { authenticated: true, login: null } });
+		expect((await service.getGitInjection())?.env[GITHUB_TOKEN_ENV_VAR]).toBe("gho_NOUSER");
+		expect(await readPendingGitHubLogin(pendingFile)).toBeNull();
+
+		await service.settleLoginResolution();
+		// A null resolution leaves the login unset (never a stringified null) and never throws.
+		expect(await readPersistedGitHubAuth(file)).toMatchObject({ accessToken: "gho_NOUSER" });
+		expect((await readPersistedGitHubAuth(file))?.login).toBeUndefined();
+	});
+
+	it("pollLogin() completes even when the username lookup rejects (hung request that errors out)", async () => {
+		const fetchAuthenticatedLogin = vi.fn(async () => {
+			throw new Error("api.github.com/user timed out");
+		});
+		const service = makeService({
+			requestDeviceCode: async () => grant,
+			pollAccessTokenOnce: async () => ({ kind: "token", grant: { accessToken: "gho_HANG", scope: "repo" } }),
+			fetchAuthenticatedLogin,
+		});
+
+		await service.beginLogin();
+		const done = await service.pollLogin();
+		expect(done).toMatchObject({ state: "complete", status: { authenticated: true, login: null } });
+		// The background resolution swallows the rejection — settling never throws.
+		await expect(service.settleLoginResolution()).resolves.toBeUndefined();
+		expect(await readPersistedGitHubAuth(file)).toMatchObject({ accessToken: "gho_HANG" });
+	});
+
+	it("getStatus back-fills a username that was persisted null once the lookup succeeds", async () => {
+		// A credential landed without a login (the completing poll's lookup had failed).
+		await writePersistedGitHubAuth(file, { accessToken: "gho_BACKFILL", scope: "repo" });
+		const fetchAuthenticatedLogin = vi.fn(async () => "octocat");
+		const service = makeService({ fetchAuthenticatedLogin });
+
+		// The first status read returns the current (null-login) state without blocking on the
+		// lookup, and kicks off the best-effort resolution.
+		expect(await service.getStatus()).toMatchObject({ authenticated: true, login: null });
+		await service.settleLoginResolution();
+		expect(fetchAuthenticatedLogin).toHaveBeenCalledWith("gho_BACKFILL");
+		// The resolved name is now on disk and surfaced by a subsequent read.
+		expect(await readPersistedGitHubAuth(file)).toMatchObject({ accessToken: "gho_BACKFILL", login: "octocat" });
+		expect(await service.getStatus()).toMatchObject({ authenticated: true, login: "octocat" });
 	});
 
 	it("pollLogin() returns idle when there is no pending login", async () => {

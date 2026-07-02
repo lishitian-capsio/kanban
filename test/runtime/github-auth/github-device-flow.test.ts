@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+	fetchAuthenticatedLogin,
 	GITHUB_GIT_OAUTH_SCOPE,
 	type PollAttempt,
 	pollAccessTokenOnce,
@@ -171,6 +172,34 @@ describe("pollForAccessToken (blocking loop)", () => {
 				pollOnce: async () => ({ kind: "pending" }),
 			}),
 		).rejects.toThrow(/cancelled/i);
+	});
+});
+
+describe("fetchAuthenticatedLogin", () => {
+	it("returns the login on success", async () => {
+		mockFetchOnce(200, { login: "octocat" });
+		expect(await fetchAuthenticatedLogin("gho_TOK")).toBe("octocat");
+	});
+
+	it("bounds the request with an abort signal so a hung /user call cannot spin forever", async () => {
+		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			new Response(JSON.stringify({ login: "octocat" }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+		await fetchAuthenticatedLogin("gho_TOK");
+		expect(fetchSpy.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+	});
+
+	it("returns null (never throws) when the request times out", async () => {
+		vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new DOMException("aborted", "TimeoutError"));
+		expect(await fetchAuthenticatedLogin("gho_TOK")).toBeNull();
+	});
+
+	it("returns null on a non-ok response", async () => {
+		mockFetchOnce(401, { message: "Bad credentials" });
+		expect(await fetchAuthenticatedLogin("gho_TOK")).toBeNull();
 	});
 });
 

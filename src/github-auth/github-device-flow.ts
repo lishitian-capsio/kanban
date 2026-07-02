@@ -259,7 +259,13 @@ export async function refreshAccessToken(
 	return token;
 }
 
-/** Resolve the authenticated user's login (username) for display. Best-effort. */
+/**
+ * Resolve the authenticated user's login (username) for display. Best-effort: any failure —
+ * including a request that exceeds {@link REQUEST_TIMEOUT_MS} (a stalled proxy / a dropped
+ * connection that never resets, common on headless remote hosts) — returns `null` instead of
+ * hanging. Bounding this call is what keeps a login from spinning forever: the token is already
+ * valid and persisted; the username is a nice-to-have that must never gate completion.
+ */
 export async function fetchAuthenticatedLogin(accessToken: string): Promise<string | null> {
 	try {
 		const response = await fetch(USER_API_URL, {
@@ -268,6 +274,7 @@ export async function fetchAuthenticatedLogin(accessToken: string): Promise<stri
 				Authorization: `Bearer ${accessToken}`,
 				"User-Agent": "kanban-git-auth",
 			},
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 		});
 		if (!response.ok) {
 			return null;

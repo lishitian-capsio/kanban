@@ -101,6 +101,7 @@ export class GitHubAuthService {
 	private readonly deps: Required<Omit<GitHubAuthServiceDeps, "resolvePath" | "resolvePendingPath" | "now">>;
 	private cache: { mtimeMs: number | null; record: PersistedGitHubAuth | null } | null = null;
 	private refreshInFlight: Promise<PersistedGitHubAuth | null> | null = null;
+	private loginResolveInFlight: Promise<void> | null = null;
 
 	constructor(deps: GitHubAuthServiceDeps = {}) {
 		this.resolvePath = deps.resolvePath ?? getGitHubAuthFilePath;
@@ -196,6 +197,12 @@ export class GitHubAuthService {
 	/** Public, secret-free auth state (refreshes a stale token first, best effort). */
 	async getStatus(): Promise<GitHubAuthStatus> {
 		const record = await this.resolveUsableRecord();
+		// Back-fill a login that was persisted without one (a completed login never waits on
+		// the username lookup — see pollLogin). Fire-and-forget so the status read stays fast;
+		// the resolved name surfaces on the next read.
+		if (record && !record.login) {
+			void this.ensureLoginResolved(record.accessToken);
+		}
 		return this.statusOf(record);
 	}
 
@@ -309,11 +316,16 @@ export class GitHubAuthService {
 		}
 		const attempt = await this.deps.pollAccessTokenOnce(pending.deviceCode, resolveGitHubOAuthClientId());
 		if (attempt.kind === "token") {
-			const login = await this.deps.fetchAuthenticatedLogin(attempt.grant.accessToken);
-			const record = this.toRecord(attempt.grant, login);
+			// Persist the token and mark the login COMPLETE before resolving the username. The
+			// completion signal must reach the UI the instant the token lands — a slow or hung
+			// api.github.com/user call (network jitter behind a proxy on a headless host) would
+			// otherwise leave the UI spinning on "Waiting for you to authorize…" even though the
+			// token is already valid. The username is back-filled best-effort in the background.
+			const record = this.toRecord(attempt.grant, null);
 			await writePersistedGitHubAuth(this.resolvePath(), record);
 			this.cache = { mtimeMs: await statGitHubAuthMtimeMs(this.resolvePath()), record };
 			await clearPendingGitHubLogin(pendingPath);
+			void this.ensureLoginResolved(record.accessToken);
 			return { state: "complete", status: this.statusOf(record) };
 		}
 		if (attempt.kind === "error") {
@@ -322,6 +334,52 @@ export class GitHubAuthService {
 		}
 		// `pending` / `slow_down` ⇒ keep polling on the next UI tick.
 		return { state: "pending" };
+	}
+
+	/**
+	 * Best-effort, NON-BLOCKING back-fill of the authenticated user's login (username) onto a
+	 * record that was persisted without one (see {@link pollLogin}). Single-flight: concurrent
+	 * triggers (a completing poll + a status read) share one in-flight resolution. Any failure —
+	 * a timeout, a network error, a since-changed credential — is swallowed and simply leaves the
+	 * login unresolved to be retried on the next status read; it must never reject a caller.
+	 */
+	private ensureLoginResolved(accessToken: string): Promise<void> {
+		if (this.loginResolveInFlight) {
+			return this.loginResolveInFlight;
+		}
+		this.loginResolveInFlight = this.resolveLogin(accessToken)
+			.catch((error) => {
+				log.warn("best-effort github login resolution failed", { error });
+			})
+			.finally(() => {
+				this.loginResolveInFlight = null;
+			});
+		return this.loginResolveInFlight;
+	}
+
+	private async resolveLogin(accessToken: string): Promise<void> {
+		const login = await this.deps.fetchAuthenticatedLogin(accessToken);
+		if (!login) {
+			return;
+		}
+		// Re-read under the current record: never clobber a credential that changed while the
+		// lookup was in flight (a re-login / refresh), and never overwrite a login already set.
+		const record = await this.loadRecord();
+		if (!record || record.accessToken !== accessToken || record.login) {
+			return;
+		}
+		const next: PersistedGitHubAuth = { ...record, login };
+		await writePersistedGitHubAuth(this.resolvePath(), next);
+		this.cache = { mtimeMs: await statGitHubAuthMtimeMs(this.resolvePath()), record: next };
+	}
+
+	/**
+	 * Test/shutdown seam: resolves once any in-flight best-effort username back-fill has settled.
+	 * Production callers never await this — the back-fill is deliberately fire-and-forget so login
+	 * completion and status reads stay non-blocking.
+	 */
+	async settleLoginResolution(): Promise<void> {
+		await this.loginResolveInFlight;
 	}
 
 	/** Discard the in-flight login (explicit Cancel). Idempotent. */
