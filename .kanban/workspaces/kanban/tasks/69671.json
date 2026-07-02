@@ -1,0 +1,20 @@
+{
+  "id": "69671",
+  "title": "Remove File upload tab; make File dockable in board mode",
+  "prompt": "Two changes to the File surface in web-ui:\n\n1) Remove the file upload tab entirely — it is no longer needed. The File filesystem view currently has two sub-tabs (文件系统 / 上传). Remove the 上传 (upload) sub-tab and its UI. Since only the 文件系统 view remains, collapse away the now-single-tab switcher so there is no leftover tab chrome. Keep the OS drag-in upload path only if it exists independently of the removed tab; otherwise remove the upload code paths that are now dead (e.g. the workspaceFs.uploadFile-driven tab UI). Do not break the read/edit/create/rename/move/delete filesystem explorer functionality.\n\n2) In board mode, File should be positioned like the Kanban agent sidebar: anchored in the top-right corner and dockable to either the left or right side. Mirror the existing dockable-home-chat-panel behavior (left/right docking) for the File surface so users can toggle its side. Reuse the existing dock/anchor pattern rather than inventing a new one.\n\nContext pointers: the File surface lives under web-ui/src/components/file-surface/ and the filesystem explorer / upload code (workspaceFs tRPC, FileTree, upload dialog). The dockable panel reference is the home chat dockable panel (left/right/float, react-rnd for float). Match existing design tokens and UI primitives per AGENTS.md.\n\nVerify web:typecheck passes and the File surface still opens, reads, and edits files after the changes.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "49269ceb-b13c-4019-aaaf-65bd61e653ff",
+  "baseRef": "main",
+  "createdAt": 1782983235893,
+  "updatedAt": 1782983235893,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
