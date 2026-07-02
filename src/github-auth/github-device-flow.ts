@@ -22,13 +22,26 @@ const USER_API_URL = "https://api.github.com/user";
  * OAuth **client id** for the device flow. A client id is public (not a secret) and device
  * flow requires no client secret. Override with `KANBAN_GITHUB_OAUTH_CLIENT_ID` to point at
  * an organization's own GitHub OAuth App. The default is the GitHub CLI's well-known public
- * device-flow client id, which supports `repo` scope out of the box so headless setups work
- * with zero configuration.
+ * device-flow client id, which supports both `repo` and `workflow` scopes out of the box so
+ * headless setups work with zero configuration.
+ *
+ * NOTE: if you override to an org-owned OAuth App via `KANBAN_GITHUB_OAUTH_CLIENT_ID`, that
+ * App must also be allowed to request the `workflow` scope (see {@link GITHUB_GIT_OAUTH_SCOPE})
+ * — otherwise pushing commits that touch `.github/workflows/` is rejected by GitHub.
  */
 const DEFAULT_CLIENT_ID = "178c6fc778ccc68e1d6a";
 
-/** Scopes requested for git remote operations: full `repo` (push/pull private + public). */
-export const GITHUB_GIT_OAUTH_SCOPE = "repo";
+/**
+ * Scopes requested for git remote operations (space-delimited, as the device-flow request
+ * body expects). `repo` grants push/pull on private + public repos; `workflow` is REQUIRED to
+ * push commits that create or update `.github/workflows/` files — without it GitHub rejects
+ * the push with "refusing to allow an OAuth App to create or update workflow ... without
+ * `workflow` scope".
+ *
+ * NOTE: existing users who logged in before this scope was added still hold a `repo`-only
+ * token; they must re-run `kanban github login` to obtain a new token that carries `workflow`.
+ */
+export const GITHUB_GIT_OAUTH_SCOPE = "repo workflow";
 
 export function resolveGitHubOAuthClientId(): string {
 	return process.env.KANBAN_GITHUB_OAUTH_CLIENT_ID?.trim() || DEFAULT_CLIENT_ID;

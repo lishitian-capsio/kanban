@@ -33,8 +33,16 @@ describe("resolveGitHubOAuthClientId", () => {
 	});
 });
 
+describe("GITHUB_GIT_OAUTH_SCOPE", () => {
+	it("requests both repo and workflow scopes (workflow is needed to push .github/workflows/ changes)", () => {
+		const scopes = GITHUB_GIT_OAUTH_SCOPE.split(" ");
+		expect(scopes).toContain("repo");
+		expect(scopes).toContain("workflow");
+	});
+});
+
 describe("requestDeviceCode", () => {
-	it("requests the repo scope and maps the response fields", async () => {
+	it("requests the repo+workflow scope and maps the response fields", async () => {
 		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
 			new Response(
 				JSON.stringify({
