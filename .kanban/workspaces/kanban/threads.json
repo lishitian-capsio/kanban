@@ -137,19 +137,19 @@
     {
       "id": "e60ea195-0a08-4edf-a21a-f47e5911b442",
       "agentId": "claude",
-      "name": "Fix board terminal claude hook error",
+      "name": "Windows 支持与 Bun PTY",
       "titleSource": "auto",
       "createdAt": 1782896909465,
-      "updatedAt": 1782896934947,
-      "pendingNextStep": "启动任务 2fff2 开始修复这个 hook 报错"
+      "updatedAt": 1782954561591,
+      "pendingNextStep": "Start the Windows PTY task"
     },
     {
       "id": "14c3b7dd-36b3-4205-a132-f9be33ca0f2c",
       "agentId": "claude",
-      "name": "kanban本身的cli update是如何实现？",
+      "name": "Kanban CLI self-update internals",
       "titleSource": "auto",
       "createdAt": 1782954500148,
-      "updatedAt": 1782954500148
+      "updatedAt": 1782954541389
     }
   ],
   "fullscreenTabs": {
