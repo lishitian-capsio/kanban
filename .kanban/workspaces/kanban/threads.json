@@ -185,7 +185,7 @@
       "titleSource": "auto",
       "createdAt": 1782982535028,
       "updatedAt": 1782982578985,
-      "pendingNextStep": "Start task 3a676 to fix the CI Bun setup"
+      "pendingNextStep": "给任务 3a676 开启自动提交"
     }
   ],
   "fullscreenTabs": {
