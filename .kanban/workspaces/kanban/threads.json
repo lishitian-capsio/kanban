@@ -126,15 +126,6 @@
       "pendingNextStep": "开始任务 f87c2"
     },
     {
-      "id": "16d0ae97-5f56-4649-ba14-d0134b8c262e",
-      "agentId": "claude",
-      "name": "Pi 会话管理收归 Pi",
-      "titleSource": "auto",
-      "createdAt": 1782801665092,
-      "updatedAt": 1782801686932,
-      "pendingNextStep": "启动任务 2ddde"
-    },
-    {
       "id": "98d352bf-cb23-490b-8d5d-8945798a7371",
       "agentId": "claude",
       "name": "Board 作为可感知开关的surface",
@@ -151,12 +142,21 @@
       "createdAt": 1782896909465,
       "updatedAt": 1782896934947,
       "pendingNextStep": "启动任务 2fff2 开始修复这个 hook 报错"
+    },
+    {
+      "id": "14c3b7dd-36b3-4205-a132-f9be33ca0f2c",
+      "agentId": "claude",
+      "name": "kanban本身的cli update是如何实现？",
+      "titleSource": "auto",
+      "createdAt": 1782954500148,
+      "updatedAt": 1782954500148
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "e60ea195-0a08-4edf-a21a-f47e5911b442"
+      "e60ea195-0a08-4edf-a21a-f47e5911b442",
+      "14c3b7dd-36b3-4205-a132-f9be33ca0f2c"
     ],
-    "activeThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442"
+    "activeThreadId": "14c3b7dd-36b3-4205-a132-f9be33ca0f2c"
   }
 }

@@ -1,0 +1,20 @@
+{
+  "id": "355e7",
+  "title": "Windows PTY 后端：接入 bun-pty",
+  "prompt": "为 Kanban 在 Windows 原生环境增加 PTY(伪终端)后端支持。\n\n## 背景\n- Kanban 运行时是 Bun-only。终端会话由 `src/terminal/pty-session.ts` 的 `PtySession` 管理,当前**只有一个后端**:Bun 原生的 `Terminal` API(`Bun.spawn(argv, { terminal })`),当该 API 不存在时 `spawn` **直接抛错**(刻意设计,已移除 node-pty 及 Node 回退)。\n- 已确认的限制:Bun 原生 `Terminal`/PTY API(Bun v1.3.5 引入)**只支持 POSIX(Linux/macOS),不支持 Windows**;Windows 支持仅是未排期的 feature request(oven-sh/bun#25593)。因此当前 Windows 原生环境下 agent 会话与 shell 终端无法启动。\n- 社区已有跨平台方案 `@skitee3000/bun-pty`(基于 Rust portable-pty,支持 Win/mac/Linux,API 近似 node-pty),以及 `sursaone/bun-pty`。\n\n## 目标\n在 Windows(process.platform === 'win32')上,让 `PtySession` 使用一个可用的 Windows PTY 后端(优先评估 `@skitee3000/bun-pty`,基于 ConPTY);POSIX 路径**保持不变**,继续用 Bun 原生 `Terminal`。\n\n## 要求\n1. 先做技术选型调研:比较 `@skitee3000/bun-pty` 与 `sursaone/bun-pty` 在 Bun 上的可用性、维护状态、是否引入原生编译依赖(注意 AGENTS.md 里 '运行时无原生依赖' 的原则——如果引入原生依赖需在 PR 里明确说明权衡)。把结论写清楚。\n2. 在 `src/terminal/pty-session.ts` 引入**后端抽象**:POSIX 用现有 Bun `Terminal`;Windows 用选定的 bun-pty 后端。不要破坏现有 POSIX 行为。\n3. 复用现有 `src/core/windows-cmd-launch.ts` 的 `resolveWindowsCmdArgv`(.cmd/.bat cmd.exe 包装)。确认 spawn 参数、env 合并、cwd、resize、写入 stdin、退出/信号处理在新后端上都正确接线。\n4. 保持 `PtySession` 对上层(TerminalSessionManager 等)的接口与事件不变。\n5. 保留现有 PtySession 测试的注入式 fake-Bun 模式(测试需在 `bun vitest` 与 `npx vitest`(Node/CI)下都能过);为 Windows 后端增加相应的可注入/可测试路径与单元测试。\n6. 更新相关文档/AGENTS.md 里 'runtime Bun-only / PtySession 单后端' 的描述,说明新增 Windows 后端。\n\n## 验证\n- Linux/macOS 上现有 agent 会话与 shell 终端行为不回归(手动或既有测试)。\n- 说明如何在 Windows 上验证(如无 Windows 机器,至少给出验证步骤与预期)。\n- typecheck + 相关测试通过。\n\n先输出选型与实现方案再动手改代码。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
+  "baseRef": "main",
+  "createdAt": 1782954527707,
+  "updatedAt": 1782954527707,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
