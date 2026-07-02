@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { DatabaseService } from "../../../src/db/db-service";
 import type { DatabaseDriver } from "../../../src/db/driver/driver";
-import { DbConnectionError, DbPolicyError } from "../../../src/db/errors";
+import { DbConnectionError, DbPolicyError, SingleRowGuardError } from "../../../src/db/errors";
 import { PoolManager } from "../../../src/db/pool/pool-manager";
 import type { ConnectionRecord } from "../../../src/db/registry/connection-store";
 import type { QueryRequest } from "../../../src/db/types";
@@ -24,16 +24,19 @@ function record(overrides: Partial<ConnectionRecord> = {}): ConnectionRecord {
 	};
 }
 
-function fakeDriver(seen: QueryRequest[]): DatabaseDriver {
+function fakeDriver(seen: QueryRequest[], writeRowCount = 1): DatabaseDriver {
+	const runQuery = async (req: QueryRequest) => {
+		seen.push(req);
+		const rowCount = req.readOnly ? 1 : writeRowCount;
+		return { rows: [{ ok: 1 }], fields: [{ name: "ok" }], rowCount, durationMs: 1 };
+	};
 	return {
 		engine: "postgres",
 		connect: async () => {},
 		disconnect: async () => {},
 		testConnection: async () => ({ ok: true, latencyMs: 1, serverVersion: "PostgreSQL 16" }),
-		query: async (req) => {
-			seen.push(req);
-			return { rows: [{ ok: 1 }], fields: [{ name: "ok" }], rowCount: 1, durationMs: 1 };
-		},
+		query: runQuery,
+		transaction: async (fn) => fn({ query: runQuery }),
 		introspect: async () => ({ engine: "postgres", tables: [] }),
 		listSchemas: async () => [],
 		listTables: async () => [],
@@ -49,8 +52,8 @@ function fakeDriver(seen: QueryRequest[]): DatabaseDriver {
 	};
 }
 
-function makeService(rec: ConnectionRecord, seen: QueryRequest[]) {
-	const poolManager = new PoolManager({ createDriver: () => fakeDriver(seen) });
+function makeService(rec: ConnectionRecord, seen: QueryRequest[], writeRowCount = 1) {
+	const poolManager = new PoolManager({ createDriver: () => fakeDriver(seen, writeRowCount) });
 	return new DatabaseService({
 		poolManager,
 		loadConnection: async (id) => (id === rec.connId ? rec : null),
@@ -89,5 +92,47 @@ describe("DatabaseService", () => {
 		await expect(svc.runQuery({ connId: "missing", sql: "SELECT 1", caller: "cli" })).rejects.toBeInstanceOf(
 			DbConnectionError,
 		);
+	});
+});
+
+describe("DatabaseService.runGuardedRowWrite", () => {
+	it("runs the write inside a transaction (readOnly=false) and returns the affected rows", async () => {
+		const seen: QueryRequest[] = [];
+		const svc = makeService(record({ allowWrites: true }), seen, 1);
+		const result = await svc.runGuardedRowWrite({
+			connId: "c1",
+			sql: "UPDATE t SET a = $1 WHERE a = $2 AND b = $3",
+			params: ["new", "old", "k"],
+			caller: "human",
+		});
+		expect(result.rowCount).toBe(1);
+		expect(seen).toHaveLength(1);
+		expect(seen[0].readOnly).toBe(false);
+	});
+
+	it("rolls back and throws when the write matches more than one row", async () => {
+		const seen: QueryRequest[] = [];
+		const svc = makeService(record({ allowWrites: true }), seen, 2);
+		await expect(
+			svc.runGuardedRowWrite({ connId: "c1", sql: "DELETE FROM t WHERE a = $1", params: ["x"], caller: "human" }),
+		).rejects.toBeInstanceOf(SingleRowGuardError);
+	});
+
+	it("blocks the agent caller even on an allow-writes connection", async () => {
+		const seen: QueryRequest[] = [];
+		const svc = makeService(record({ allowWrites: true }), seen, 1);
+		await expect(
+			svc.runGuardedRowWrite({ connId: "c1", sql: "DELETE FROM t WHERE a = $1", params: ["x"], caller: "agent" }),
+		).rejects.toBeInstanceOf(DbPolicyError);
+		expect(seen).toHaveLength(0);
+	});
+
+	it("refuses when the connection does not allow writes", async () => {
+		const seen: QueryRequest[] = [];
+		const svc = makeService(record({ allowWrites: false }), seen, 1);
+		await expect(
+			svc.runGuardedRowWrite({ connId: "c1", sql: "DELETE FROM t WHERE a = $1", params: ["x"], caller: "human" }),
+		).rejects.toBeInstanceOf(DbPolicyError);
+		expect(seen).toHaveLength(0);
 	});
 });

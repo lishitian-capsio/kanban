@@ -16,6 +16,7 @@ export { createDriver, registerDriver } from "./driver/driver-registry";
 export * from "./errors";
 export { getIntrospectionCache, IntrospectionCache } from "./introspection/introspection-cache";
 export { type AccessPolicyInput, assertOperationAllowed, type ResolvedOperation } from "./policy/access-policy";
+export { assertSingleTableWrite, SingleTableWriteError, type SingleTableWriteTarget } from "./policy/single-table-write";
 export { classifySql } from "./policy/sql-classifier";
 export { PoolManager, type PoolManagerOptions } from "./pool/pool-manager";
 export {
@@ -39,16 +40,19 @@ export {
 	type BuildBrowseQueryInput,
 	type BuildDeleteRowInput,
 	type BuildInsertRowInput,
+	type BuildRowWriteInput,
 	type BuildUpdateRowInput,
 	type BuiltQuery,
 	buildBrowseQuery,
 	buildDeleteRow,
 	buildInsertRow,
+	buildRowWrite,
 	buildUpdateRow,
 	type ColumnValue,
 	type DbFilter,
 	type DbFilterOp,
 	type DbSort,
+	type RowWriteOp,
 } from "./query-builder";
 export {
 	type ExecuteQueryInput,

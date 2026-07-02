@@ -72,3 +72,17 @@ export class QueryCancelledError extends DbError {
 		super("query was cancelled");
 	}
 }
+
+/**
+ * A guarded single-row write (the no-primary-key edit path) matched more than one row and was
+ * rolled back. The full-row WHERE could not uniquely identify the target, so the edit is refused
+ * rather than silently changing several rows.
+ */
+export class SingleRowGuardError extends DbError {
+	constructor(readonly matchedRows: number) {
+		super(
+			`refused edit: matched ${matchedRows} rows, but this table has no primary key so exactly one row must ` +
+				`match. The change was rolled back — no rows were modified.`,
+		);
+	}
+}

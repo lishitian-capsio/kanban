@@ -232,6 +232,8 @@ import {
 	runtimeDbInsertRowRequestSchema,
 	runtimeDbIntrospectRequestSchema,
 	runtimeDbIntrospectResponseSchema,
+	runtimeDbPreviewWriteRequestSchema,
+	runtimeDbPreviewWriteResponseSchema,
 	runtimeDbQueryRequestSchema,
 	runtimeDbQueryResponseSchema,
 	runtimeDbTablesRequestSchema,
@@ -1495,6 +1497,12 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeDbWriteResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.deleteRow(ctx.workspaceScope, input);
+			}),
+		previewWrite: workspaceProcedure
+			.input(runtimeDbPreviewWriteRequestSchema)
+			.output(runtimeDbPreviewWriteResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.previewWrite(ctx.workspaceScope, input);
 			}),
 	}),
 	// GitHub OAuth for git remote auth. Machine-global (no workspace scope) — it delegates

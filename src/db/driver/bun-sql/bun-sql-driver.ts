@@ -118,6 +118,35 @@ export class BunSqlDriver implements DatabaseDriver {
 		}
 	}
 
+	async transaction<T>(fn: (tx: { query(request: QueryRequest): Promise<QueryResult> }) => Promise<T>): Promise<T> {
+		const sql = this.require();
+		const reserved = await sql.reserve();
+		try {
+			await reserved.unsafe("BEGIN");
+			try {
+				const result = await fn({
+					query: async (request) => {
+						const started = performance.now();
+						const params = request.params ? [...request.params] : [];
+						const rows = await reserved.unsafe(request.sql, params);
+						return toQueryResult(rows, started);
+					},
+				});
+				await reserved.unsafe("COMMIT");
+				return result;
+			} catch (error) {
+				try {
+					await reserved.unsafe("ROLLBACK");
+				} catch {
+					// best-effort rollback
+				}
+				throw error;
+			}
+		} finally {
+			reserved.release();
+		}
+	}
+
 	introspect(): Promise<SchemaIntrospection> {
 		return this.dialect.introspect(this.runner());
 	}

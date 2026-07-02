@@ -1,6 +1,6 @@
 import { createLogger } from "../logging";
 import type { DatabaseDriver } from "./driver/driver";
-import { DbConnectionError } from "./errors";
+import { DbConnectionError, DbPolicyError, SingleRowGuardError } from "./errors";
 import { getIntrospectionCache, type IntrospectionCache } from "./introspection/introspection-cache";
 import { assertOperationAllowed } from "./policy/access-policy";
 import type { PoolManager } from "./pool/pool-manager";
@@ -105,6 +105,45 @@ export class DatabaseService {
 		if (!resolved.readOnly) {
 			this.cache.invalidate(normalizeConnId(input.connId));
 		}
+		return result;
+	}
+
+	/**
+	 * Run a single-row write inside a transaction that is rolled back unless it affects at most one
+	 * row. This is the safe path for editing/deleting a row in a table WITHOUT a primary key, where
+	 * the WHERE matches on all of the row's original values and a duplicate row could otherwise be
+	 * silently over-affected. The same policy chokepoint as {@link runQuery} gates it (human caller +
+	 * `allowWrites` only); the transaction guarantees a rejected guard leaves the data untouched.
+	 */
+	async runGuardedRowWrite(input: RunQueryInput): Promise<QueryResult> {
+		const { record, driver } = await this.resolveDriver(input.connId);
+		const resolved = assertOperationAllowed({
+			sql: input.sql,
+			engine: record.engine,
+			caller: input.caller,
+			connectionAllowsWrites: record.allowWrites,
+		});
+		if (resolved.readOnly) {
+			throw new DbPolicyError("runGuardedRowWrite requires a write statement", {
+				caller: input.caller,
+				classification: resolved.classification,
+			});
+		}
+		log.debug("running guarded row write", { connId: input.connId, caller: input.caller });
+		const result = await driver.transaction(async (tx) => {
+			const res = await tx.query({
+				sql: input.sql,
+				params: input.params,
+				readOnly: false,
+				...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+			});
+			// The whole point: undo an ambiguous full-row match instead of committing a mass edit.
+			if (res.rowCount > 1) {
+				throw new SingleRowGuardError(res.rowCount);
+			}
+			return res;
+		});
+		this.cache.invalidate(normalizeConnId(input.connId));
 		return result;
 	}
 

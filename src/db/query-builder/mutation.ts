@@ -29,7 +29,27 @@ export interface BuildDeleteRowInput extends MutationBase {
 	where: ReadonlyArray<ColumnValue>;
 }
 
-/** Render `col = ?` predicates joined by AND, pushing each value onto `params`. */
+/** The three row-write kinds the human editor can emit. */
+export type RowWriteOp = "update" | "insert" | "delete";
+
+/**
+ * A single, op-tagged row write. The one input shape the editor's preview AND execute paths share,
+ * so the previewed SQL is guaranteed byte-identical to what runs. Field requirements match the
+ * underlying builder per op (assignments+where for update, values for insert, where for delete).
+ */
+export interface BuildRowWriteInput extends MutationBase {
+	op: RowWriteOp;
+	assignments?: ReadonlyArray<ColumnValue>;
+	values?: ReadonlyArray<ColumnValue>;
+	where?: ReadonlyArray<ColumnValue>;
+}
+
+/**
+ * Render `col = ?` predicates joined by AND, pushing each value onto `params`. A NULL key value
+ * renders as `col IS NULL` (and consumes no placeholder) — `col = NULL` is never true, so this is
+ * required for full-row matching on nullable columns (the no-primary-key edit path). Primary-key
+ * keys are non-null, so their SQL is unchanged.
+ */
 function renderKey(
 	engine: DatabaseEngine,
 	key: ReadonlyArray<ColumnValue>,
@@ -38,6 +58,9 @@ function renderKey(
 ): string {
 	return key
 		.map((k) => {
+			if (k.value === null) {
+				return `${quoteIdentifier(engine, k.column)} IS NULL`;
+			}
 			params.push(k.value);
 			return `${quoteIdentifier(engine, k.column)} = ${nextPlaceholder()}`;
 		})
@@ -100,4 +123,21 @@ export function buildDeleteRow(input: BuildDeleteRowInput): BuiltQuery {
 	const whereClause = renderKey(input.engine, input.where, nextPlaceholder, params);
 	const target = quoteQualifiedTable(input.engine, input.schema, input.table);
 	return { sql: `DELETE FROM ${target} WHERE ${whereClause}`, params };
+}
+
+/**
+ * Dispatch a single op-tagged row write to the matching builder. Used by both the SQL preview and
+ * the execute path so they can never diverge. The per-op builders enforce their own invariants
+ * (non-empty assignments / values / WHERE), so a malformed request still fails closed here.
+ */
+export function buildRowWrite(input: BuildRowWriteInput): BuiltQuery {
+	const base = { engine: input.engine, schema: input.schema, table: input.table };
+	switch (input.op) {
+		case "update":
+			return buildUpdateRow({ ...base, assignments: input.assignments ?? [], where: input.where ?? [] });
+		case "insert":
+			return buildInsertRow({ ...base, values: input.values ?? [] });
+		case "delete":
+			return buildDeleteRow({ ...base, where: input.where ?? [] });
+	}
 }

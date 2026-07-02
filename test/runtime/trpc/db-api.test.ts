@@ -23,6 +23,13 @@ function fakeDriver(seen: QueryRequest[]): DatabaseDriver {
 				durationMs: 3,
 			};
 		},
+		transaction: async (fn) =>
+			fn({
+				query: async (request) => {
+					seen.push(request);
+					return { rows: [{ id: 1 }], fields: [{ name: "id" }], rowCount: 1, durationMs: 3 };
+				},
+			}),
 		introspect: async () => {
 			introspectCalls.introspect++;
 			return {

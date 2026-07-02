@@ -20,6 +20,7 @@ function makeDriver(): DatabaseDriver & { connects: number; disconnects: number 
 		},
 		testConnection: async () => ({ ok: true, latencyMs: 0, serverVersion: null }),
 		query: async () => ({ rows: [], fields: [], rowCount: 0, durationMs: 0 }),
+		transaction: async (fn) => fn({ query: async () => ({ rows: [], fields: [], rowCount: 0, durationMs: 0 }) }),
 		introspect: async () => ({ engine: "sqlite", tables: [] }),
 		listSchemas: async () => [],
 		listTables: async () => [],

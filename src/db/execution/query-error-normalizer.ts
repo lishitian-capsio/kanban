@@ -7,7 +7,9 @@ import {
 	MultiStatementError,
 	QueryCancelledError,
 	QueryTimeoutError,
+	SingleRowGuardError,
 } from "../errors";
+import { SingleTableWriteError } from "../policy/single-table-write";
 
 /**
  * Stable, transport-agnostic error codes the three upper entries (agent / human / cli)
@@ -75,6 +77,11 @@ export function normalizeQueryError(error: unknown): NormalizedQueryError {
 		return error.normalized;
 	}
 	if (error instanceof DbPolicyError) {
+		return normalized("policy_denied", error.message, false);
+	}
+	// The row-guard rollback and the single-table shape guard are deliberate, safe refusals — their
+	// messages carry no secrets and explain what to do, so surface them (as a policy denial) verbatim.
+	if (error instanceof SingleRowGuardError || error instanceof SingleTableWriteError) {
 		return normalized("policy_denied", error.message, false);
 	}
 	if (error instanceof MultiStatementError) {
