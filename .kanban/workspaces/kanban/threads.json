@@ -159,6 +159,15 @@
       "titleSource": "auto",
       "createdAt": 1782974894462,
       "updatedAt": 1782974894462
+    },
+    {
+      "id": "e66572b8-97c3-4325-a4ad-d747bc25f2a1",
+      "agentId": "claude",
+      "name": "Push rejected: workflow scope",
+      "titleSource": "auto",
+      "createdAt": 1782980850459,
+      "updatedAt": 1782980915058,
+      "pendingNextStep": "Create a task to add the workflow scope to Kanban's GitHub device-flow auth"
     }
   ],
   "fullscreenTabs": {
@@ -166,8 +175,9 @@
       "e60ea195-0a08-4edf-a21a-f47e5911b442",
       "14c3b7dd-36b3-4205-a132-f9be33ca0f2c",
       "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
-      "1560c042-3150-49ba-a54b-0a96c1f26a27"
+      "1560c042-3150-49ba-a54b-0a96c1f26a27",
+      "e66572b8-97c3-4325-a4ad-d747bc25f2a1"
     ],
-    "activeThreadId": "1560c042-3150-49ba-a54b-0a96c1f26a27"
+    "activeThreadId": "e66572b8-97c3-4325-a4ad-d747bc25f2a1"
   }
 }
