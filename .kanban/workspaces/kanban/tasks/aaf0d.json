@@ -1,0 +1,20 @@
+{
+  "id": "aaf0d",
+  "title": "调研: ws 迁移到 Bun.serve 原生 WebSocket",
+  "prompt": "调研(暂不实现)把 WebSocket 服务从 node \\`ws\\` 迁移到 Bun.serve 原生 WebSocket 的可行性与收益。\n\n## 背景\n- websocket hub 是最高频路径(task_chat_message 流式 token 广播)。Bun 原生 WS 吞吐远高于 node \\`ws\\`,并能彻底消除 esbuild-ws CJS 包装的坑。\n- 现涉及文件:\\`src/terminal/ws-server.ts\\`、\\`src/server/runtime-state-hub.ts\\`,以及 tRPC 的 ws adapter 接线。\n\n## 目标(本任务=调研 + 方案,不改运行代码)\n1. 摸清现有 ws + Node http + tRPC(@trpc/server ws adapter)的接线方式与升级(upgrade)流程。\n2. 评估 Bun.serve 原生 WebSocket 能否承载 tRPC 订阅/双向流;是否有现成的 Bun + tRPC ws 适配路径,还是需要自写适配。\n3. 列出迁移的风险点:连接生命周期、心跳/重连(见 terminal-reconnect-after-hardkill)、passcode/host 校验、广播扇出、背压。\n4. 给出粗略性能预期与工作量估算,以及分阶段迁移建议。\n5. 产出一份方案文档(可放 .plan/docs/),供后续决策。\n\n只做调研与方案文档,不改运行时代码。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
+  "baseRef": "main",
+  "createdAt": 1782956270577,
+  "updatedAt": 1782956270577,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}

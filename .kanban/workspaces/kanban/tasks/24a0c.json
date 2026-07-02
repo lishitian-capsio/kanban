@@ -1,0 +1,20 @@
+{
+  "id": "24a0c",
+  "title": "构建从 esbuild 迁移到 bun build",
+  "prompt": "把后端打包从 esbuild 换成 bun build,提升构建速度并消除 ws 的 CJS 包装 workaround。\n\n## 背景\n- \\`scripts/build.mjs\\` 目前用 esbuild 打包 \\`dist/cli.js\\` 和 \\`dist/index.js\\`。\n- 注释里已写明:esbuild 对 \\`ws\\` 做 CJS 包装会导致 WebSocket upgrade 挂起,现有代码为此加了 workaround。\n- Bun 原生 \\`bun build\\` 处理 ws 无需该 workaround,且构建更快。**只影响构建工具链,不碰运行时行为。**\n\n## 要求\n1. 用 \\`bun build\\`(或 Bun.build API)复刻现有两个入口的产物:相同的 external 处理(注意 Windows PTY 后端相关的 external 设置)、shebang(#!/usr/bin/env bun)、text import 属性、sourcemap/Sentry 上传步骤(scripts/upload-sentry-sourcemaps.mjs)。\n2. 移除不再需要的 ws CJS-包装 workaround,验证 WebSocket upgrade 正常。\n3. 评估能否从 devDependencies 移除 esbuild。\n4. 验证:\\`npm run build\\` 产物可正常启动运行时、CLI 可执行、web-ui 资源被正确复制;不回归。\n\n注意:web-ui 侧构建(Vite/rolldown)不在本任务范围。先出方案再改。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
+  "baseRef": "main",
+  "createdAt": 1782956270838,
+  "updatedAt": 1782956270838,
+  "column": "backlog",
+  "rank": "Zw",
+  "dependsOn": []
+}

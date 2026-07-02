@@ -1,0 +1,20 @@
+{
+  "id": "e0d54",
+  "title": "后端 uuid 替换为 crypto.randomUUID",
+  "prompt": "把后端对 \\`uuid\\` 包的使用替换为原生 \\`crypto.randomUUID()\\`,移除依赖。\n\n## 范围\n- 仅 **后端 src/**(当前只有 1 处 \\`from \"uuid\"\\` 导入)。替换为 Node/Bun 都支持的全局 \\`crypto.randomUUID()\\`。\n- **不要动 web-ui**:web-ui 必须继续用 \\`safeRandomUUID\\`(HTTP + LAN 非安全上下文下 crypto.randomUUID 会 crash,见现有实现/记忆)。\n\n## 要求\n1. 替换后端唯一的 uuid 用法为 crypto.randomUUID()。\n2. 从 dependencies 移除 \\`uuid\\` 与 \\`@types/uuid\\`(如存在),确认无其他引用。\n3. typecheck + 相关测试通过。\n\n这是小改动,可直接做。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
+  "baseRef": "main",
+  "createdAt": 1782956269884,
+  "updatedAt": 1782956269884,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}

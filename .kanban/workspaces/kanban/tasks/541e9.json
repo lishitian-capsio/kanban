@@ -1,0 +1,20 @@
+{
+  "id": "541e9",
+  "title": "DB 驱动接入 Bun.SQL (Postgres/MySQL)",
+  "prompt": "把 Kanban 只读 DB 查询迁移到 Bun 原生 SQL 客户端以提升性能。\n\n## 背景\n- 现有驱动:\\`src/db/driver/postgres-driver.ts\\`(node \\`pg\\`)、\\`src/db/driver/mysql-driver.ts\\`(\\`mysql2\\`)。db 模块本身是驱动抽象层。\n- Bun 提供原生 \\`Bun.SQL\\`(统一 Postgres/MySQL/SQLite),吞吐高于第三方库。\n- 运行时是 Bun-only,运行时用 Bun.SQL 没问题。\n\n## 关键约束\n- vitest 测试在 CI 上跑在 Node 上(\\`npx vitest\\`),\\`Bun.SQL\\` 在 Node 下不可用。必须像 pi service 那样做**可注入/可 mock**:运行时用 Bun.SQL 驱动,测试注入 fake,或让 Bun.SQL 走 \\`bun test\\` 覆盖(参考 test/bun 目录约定)。\n- db 通道是**严格只读**(见 db-cli-agent-readonly),迁移后仍必须拒绝写/DDL,并保留每工作区 access gate(resolveDbWorkspace / database_access_disabled)。\n\n## 要求\n1. 先出方案:评估 Bun.SQL 对现有 db 驱动接口(连接管理、参数化查询、describe/tables、行结果形状)的适配,列出差异点。\n2. 新增 Bun.SQL 驱动实现,保留现有驱动接口契约不变;PG 与 MySQL 都要覆盖。\n3. 保持只读语义与 access gate 不回归。\n4. 测试:在 bun test 下覆盖 Bun.SQL 路径;vitest 侧用注入 fake 保持通过。\n5. 说明是否可移除 \\`pg\\`/\\`mysql2\\` 依赖(或保留作为 Node 测试回退)。\n\n先输出方案再改代码。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
+  "baseRef": "main",
+  "createdAt": 1782956270128,
+  "updatedAt": 1782956270128,
+  "column": "backlog",
+  "rank": "Zz",
+  "dependsOn": []
+}
