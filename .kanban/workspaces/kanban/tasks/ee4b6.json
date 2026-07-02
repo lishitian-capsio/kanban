@@ -3,7 +3,7 @@
   "title": "热路径文件 I/O 迁移到 Bun.file/Bun.write",
   "prompt": "把高频文件读写热路径从 node:fs 迁移到 Bun 原生 Bun.file/Bun.write 以降低开销。\n\n## 背景\n- 全仓 74 处 fs 导入,仅 3 处用了 Bun.file。不要全量迁移,只改**高频热路径**:\n  - board 分片装配:\\`src/state/task-shard-store.ts\\` / \\`src/state/sharded-json-store.ts\\`(每次 workspace_state 广播都读)\n  - session 消息 journal:\\`src/session/session-message-journal.ts\\`(每 turn 追加/读取)\n- \\`Bun.file().json()\\` / \\`Bun.write\\` 比 fs 读写更快;\\`writeJsonFileAtomic\\` 的内容比对逻辑要保持等价。\n\n## 关键约束\n- vitest 在 Node 上运行,Bun.file 不可用 → 需要一个**运行时用 Bun、测试可退回 fs**的薄封装(或注入),保证现有 vitest 全绿。\n- 原子写语义(临时文件+rename、content-compare 跳过未变更文件、torn-line 容错读)必须保持,不能引入分片读损坏。\n\n## 要求\n1. 先定位并列出确切的热路径读写点与调用频率。\n2. 引入统一的文件读写薄封装(Bun 优先,fs 回退),只在热路径接入。\n3. 保持原子写/内容比对/容错读语义与现有测试全部通过。\n4. 基准:给出改造前后在 board 装配 / journal 读写上的粗略耗时对比。\n\n先出方案再改代码。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -13,7 +13,7 @@
   "originThreadId": "e60ea195-0a08-4edf-a21a-f47e5911b442",
   "baseRef": "main",
   "createdAt": 1782956270331,
-  "updatedAt": 1782956270331,
+  "updatedAt": 1782956438198,
   "column": "backlog",
   "rank": "Zy",
   "dependsOn": [
