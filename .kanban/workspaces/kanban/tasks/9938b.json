@@ -13,8 +13,8 @@
   "originThreadId": "49269ceb-b13c-4019-aaaf-65bd61e653ff",
   "baseRef": "main",
   "createdAt": 1782982745185,
-  "updatedAt": 1782983761870,
-  "column": "in_progress",
+  "updatedAt": 1782983850155,
+  "column": "review",
   "rank": "a1",
   "dependsOn": []
 }
