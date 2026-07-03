@@ -157,7 +157,7 @@ describe("HomeThreadCreateDialog", () => {
 		expect(document.body.textContent).toContain("docs/readme.md");
 	});
 
-	it("shows `/` slash commands in the completion menu", async () => {
+	it("does not surface `/` slash commands (they are disabled in this dialog)", async () => {
 		getKanbanSlashCommandsMock.mockResolvedValue({
 			commands: [{ name: "compact", description: "Compact the conversation" }],
 		});
@@ -171,7 +171,9 @@ describe("HomeThreadCreateDialog", () => {
 			await flushCompletion();
 		});
 
-		expect(getKanbanSlashCommandsMock).toHaveBeenCalled();
-		expect(document.body.textContent).toContain("/compact");
+		// Slash completion is opt-in and left off here, so typing `/` never queries
+		// commands and no menu appears — while `@` mentions (below) stay available.
+		expect(getKanbanSlashCommandsMock).not.toHaveBeenCalled();
+		expect(document.body.textContent).not.toContain("/compact");
 	});
 });

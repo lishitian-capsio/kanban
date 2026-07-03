@@ -18,9 +18,9 @@ interface HomeThreadCreateDialogProps {
 	agents: RuntimeAgentDefinition[];
 	defaultAgentId: RuntimeAgentId;
 	/**
-	 * Workspace scope that powers the opening prompt's `@` file mentions and `/`
-	 * slash commands. Without it the composer still works but those completions
-	 * stay inert.
+	 * Workspace scope that powers the opening prompt's `@` file mentions. Without
+	 * it the composer still works but the mention completion stays inert. (Slash
+	 * commands are intentionally disabled here — see the composer below.)
 	 */
 	workspaceId?: string | null;
 	onCreate: (input: {
@@ -96,9 +96,11 @@ export function HomeThreadCreateDialog({
 					{/* Reuse the task composer so the kickoff prompt gets the same
 					    affordances as the in-conversation chat input: image paste
 					    (⌘/Ctrl+V), drag-and-drop, an attach-image button + thumbnail
-					    strip, `@` file mentions, and `/` slash commands. Passing the
-					    workspace scope enables the mention/command completions; Enter
-					    inserts a newline, ⌘/Ctrl+Enter submits. */}
+					    strip, and `@` file mentions. Passing the workspace scope
+					    enables the mention completion; Enter inserts a newline,
+					    ⌘/Ctrl+Enter submits. Slash commands are intentionally left
+					    off here (no `enableSlashCommands`) — a kickoff prompt doesn't
+					    run `/` commands, so the menu would only be noise. */}
 					<TaskPromptComposer
 						id={descriptionId}
 						value={description}
@@ -110,13 +112,11 @@ export function HomeThreadCreateDialog({
 						disabled={isSubmitting}
 						autoFocus
 						workspaceId={workspaceId}
-						enableSlashCommands
 					/>
 					<p id={descriptionHelpId} className="text-[11px] text-text-tertiary">
 						The thread's agent works from this opening prompt and names the thread itself. Type{" "}
-						<code className="rounded bg-surface-3 px-1 py-px font-mono text-[11px]">@</code> to reference files
-						or <code className="rounded bg-surface-3 px-1 py-px font-mono text-[11px]">/</code> for slash
-						commands. Paste or drag images to attach them.
+						<code className="rounded bg-surface-3 px-1 py-px font-mono text-[11px]">@</code> to reference files.
+						Paste or drag images to attach them.
 					</p>
 				</div>
 
