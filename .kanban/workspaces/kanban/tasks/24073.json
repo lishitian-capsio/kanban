@@ -3,7 +3,7 @@
   "title": "CLI agent 会话支持拖入/粘贴文件→注入 @路径 (仅 claude)",
   "prompt": "目标：让 CLI/terminal agent 会话（本期【只做 claude】）支持把图片/文件拖入或粘贴到聊天输入框，自动写盘并在输入框注入 @路径，用户无感知底层写盘细节。\n\n## 背景 / 现状（探查已确认）\n- 统一输入框 web-ui/src/components/detail-panels/kanban-chat-composer.tsx 已有 handlePaste / handleDrop，能用 collectImageFilesFromDataTransfer / extractImagesFromDataTransfer 抽出 blob（见 web-ui/src/components/task-image-input-utils.ts）。\n- 发送时只有 pi agent 会把 base64 图片走 piService 传过去；【CLI/terminal agent 这条路图片被直接丢弃】，只有文本 Buffer.from(text) 进 PTY（src/trpc/runtime-api.ts 约 862-961 的 sendTaskChatMessage）。\n- CLI agent 输入通道是纯文本 PTY（src/terminal/session-manager.ts writeInput → PtySession.write），二进制没法进 stdin。\n- claude code CLI 原生支持通过文件路径引用图片：@/path/to/img.png，它自己读盘。已有 @ 提及机制：web-ui/src/components/detail-panels/kanban-chat-composer-completion.ts 的 buildMentionInsertText 把路径拼成 @/path 文本注入。\n- 目前【不存在】把上传字节写盘再注入路径的机制——这就是要补的部分。\n\n## 交互（用户视角）\n1. 用户把文件/图片拖进某个 CLI agent 的输入框，或 Cmd/Ctrl+V 粘贴。\n2. 字节被写进该 task worktree 的附件目录（见下），拿到落盘路径。\n3. 输入框光标处自动插入绝对路径的 @ 提及（复用 buildMentionInsertText），例如 @/…/worktree/.kanban/attachments/<uuid>.png。\n4. 写盘有间隙时（大文件），先在光标处插入一个占位符（如 @…uploading…），写完再替换成真实 @路径；失败则移除占位符并提示 toast。\n5. 用户回车发送，PTY 收到 @路径文本，claude 读图。\n\n## 存储位置（已定）\n写进该 task 自己的 worktree 根下：<worktree>/.kanban/attachments/<uuid>.<ext>\n- worktree 根就是 CLI agent 的 cwd。\n- .kanban/* 在 worktree 里除 board-ref 外已被 gitignore（board-branch 解耦那次的 /.kanban/* + !board-ref 规则），所以附件【天然不入 git】，无需新增 gitignore 规则——请验证这条 gitignore 假设仍成立。\n- task 移到 done / 删除时 Kanban 会删整个 worktree，附件随之清理，无需单独清理逻辑。\n\n## 后端\n- 新增一个 tRPC mutation（如 workspace/runtime 层的 writeTaskSessionAttachment），入参含 taskId + 文件字节（base64）+ 原始文件名/扩展名，做严格校验：\n  - 解析该 task 的 worktree 路径（复用现有 worktree/session 解析），把文件写进 <worktree>/.kanban/attachments/，文件名用 safeRandomUUID + 清洗过的扩展名，绝不使用用户提供的原始路径拼接（防目录穿越）。\n  - 返回绝对路径。\n  - 加合理大小上限，超限返回结构化错误。\n- 只对 CLI/terminal agent 生效；pi 维持现有 base64 图片通道不变。\n\n## 约束\n- 本期【只做 claude】。codex 等其它 CLI agent 的提及/图片语法不同，本期不做，留作后续任务（可在代码里为 agent 分支预留清晰的扩展点，但不实现）。\n- 不改 pi 的图片通道。\n- token/安全：不引入任意路径写入；附件目录固定在 worktree 内。\n- 跟随现有代码风格与 logging facade（createLogger），web-ui 用现有 UI 原语与 toast。\n- 补测试：后端写盘端点的路径安全/大小上限；前端拖入/粘贴→注入 @路径 的逻辑（占位符替换、失败回滚）。\n\n参考 AGENTS.md 关于 terminal 会话、board-branch 解耦与 gitignore 的说明。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -13,7 +13,7 @@
   "originThreadId": "49269ceb-b13c-4019-aaaf-65bd61e653ff",
   "baseRef": "main",
   "createdAt": 1783043189599,
-  "updatedAt": 1783043189599,
+  "updatedAt": 1783043223290,
   "column": "backlog",
   "rank": "a0",
   "dependsOn": []
