@@ -1,0 +1,20 @@
+{
+  "id": "965a8",
+  "title": "重设计新建会话弹窗输入框: 支持 @提及 + /斜杠命令",
+  "prompt": "需求: 让\"新建聊天线程/新建会话\"创建弹窗的输入框,像\"正在对话时的聊天输入框\"一样支持 @(文件提及)和 /(斜杠命令)。目前该弹窗用不了这两类指令。\n\n## 重要: 本任务基于 2d059 的分支\n本任务 base-ref 已设为 kanban/task/2d059(先做图片粘贴的那个任务的分支),因为两者改同一个文件 home-thread-create-dialog.tsx。请在其改动之上继续开发,避免冲突。若该分支不存在(比如 2d059 未合并),改以 main 为 base,并注意与图片改动的合并。\n\n## 现状(已诊断)\n- 目标组件: web-ui/src/components/home-agent/home-thread-create-dialog.tsx。它用 TaskPromptComposer,但**故意没传 workspaceId**(约 92 行注释\"Mentions are intentionally off here\"),所以文件提及被关掉;斜杠命令也完全没接。\n- **可直接复用的现成能力**: 正在对话时的聊天输入框 web-ui/src/components/detail-panels/kanban-chat-composer.tsx **已完整支持 @ 和 /**:\n  - @ 文件提及: 走 workspace.searchFiles.query(),约 110-266 行;\n  - / 斜杠命令: 走 runtime.getKanbanSlashCommands.query(),约 268-324 行;\n  - 补全 UI 与键盘导航(↑↓/Tab/Enter/Esc): 约 354-429 行,复用 InlineCompletionPicker(web-ui/src/components/detail-panels/inline-completion-picker.tsx)与纯逻辑模块 kanban-chat-composer-completion.ts(detectActiveKanbanComposerToken / buildMentionInsertText / buildSlashCommandInsertText / applyKanbanComposerCompletion)。\n- TaskPromptComposer(web-ui/src/components/task-prompt-composer.tsx)目前只支持 @ 提及(需传 workspaceId),并在约 87-89 行 token.kind !== 'mention' 显式过滤掉了 /。\n\n## 要求\n1. 让新建会话弹窗的输入框行为与 KanbanChatComposer 一致: 同时支持 @ 文件提及 和 / 斜杠命令,复用同一套 detectActiveKanbanComposerToken / InlineCompletionPicker / getKanbanSlashCommands / searchFiles 基础设施,不要重造一套 UI。\n2. 评估最优做法(择一,优先复用): (a) 直接在弹窗里使用/复用 KanbanChatComposer(或抽出其可复用的 composer 核心)以获得完整 @+/; 或 (b) 给 TaskPromptComposer 增加可选的斜杠命令支持并在弹窗传入 workspaceId。避免复制粘贴逻辑,遵循 DRY 与仓库\"抽取共享逻辑\"的约定。\n3. 需要把 workspaceId 传进去(弹窗当前拿不到 workspace scope 就得补上数据来源)。\n4. 语义说明(不要误解): 弹窗只是采集\"首条 prompt\",此时 agent 还没启动。@ 提及与 / 命令按现有 composer 的语义处理(补全/插入文本即可),不需要在本任务里实现\"agent 端解析执行\"。保持与现有聊天输入框相同的行为即可。\n5. 遵循仓库约定(TypeScript 无 any、按现有代码风格与设计 token/UI 基元),补充/更新相关测试;跑通 web:typecheck 与相关测试。\n6. 亲自验证: 打开新建会话弹窗,输入 @ 出现文件补全、输入 / 出现斜杠命令菜单,键盘导航与插入正常。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "bcd4d0cd-58af-4991-967b-36e566b082ed",
+  "baseRef": "kanban/task/2d059",
+  "createdAt": 1783044747918,
+  "updatedAt": 1783044747918,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
