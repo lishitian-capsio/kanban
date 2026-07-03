@@ -29,6 +29,7 @@ import {
 import { isNativeAgentSelected } from "@/runtime/native-agent";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeAgentId, RuntimeConfigResponse, RuntimeHomeChatThread } from "@/runtime/types";
+import type { TaskImage } from "@/types";
 
 const DEFAULT_THREAD_NAME = "Default";
 const EMPTY_FULLSCREEN_TABS: FullscreenTabsState = { openThreadIds: [], activeThreadId: null };
@@ -61,7 +62,12 @@ export interface UseHomeThreadsResult {
 	 * provisional `auto` title); with only a `name` it creates a blank session (no kickoff) — the
 	 * Pi tab's "New session" uses the latter. Resolves to the new thread id, or null on failure.
 	 */
-	createThread: (input: { description?: string; name?: string; agentId: RuntimeAgentId }) => Promise<string | null>;
+	createThread: (input: {
+		description?: string;
+		name?: string;
+		agentId: RuntimeAgentId;
+		images?: TaskImage[];
+	}) => Promise<string | null>;
 	renameThread: (threadId: string, name: string) => Promise<void>;
 	closeThread: (threadId: string) => Promise<void>;
 	/**
@@ -241,7 +247,13 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 			description,
 			name,
 			agentId,
-		}: { description?: string; name?: string; agentId: RuntimeAgentId }): Promise<string | null> => {
+			images,
+		}: {
+			description?: string;
+			name?: string;
+			agentId: RuntimeAgentId;
+			images?: TaskImage[];
+		}): Promise<string | null> => {
 			if (!currentProjectId) {
 				return null;
 			}
@@ -249,11 +261,13 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 				// `description` becomes the thread's kickoff prompt and the seed for a provisional
 				// title; the thread's own agent self-titles it shortly after its first turn. A
 				// `name`-only create makes a blank session (no kickoff) — the backend requires at
-				// least one of the two.
+				// least one of the two. `images` (pasted/dragged into the create dialog) ride along
+				// with the kickoff prompt so the agent's first turn sees them.
 				const response = await getRuntimeTrpcClient(currentProjectId).runtime.createHomeThread.mutate({
 					description,
 					name,
 					agentId,
+					images,
 				});
 				if (!response.ok || !response.thread) {
 					throw new Error(response.error ?? "Could not create home chat thread.");

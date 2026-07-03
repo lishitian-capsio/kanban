@@ -300,6 +300,39 @@ describe("useHomeThreads", () => {
 		expect(result.threads[1]?.name).toBe("Refactor the auth module");
 	});
 
+	it("forwards kickoff images to the createHomeThread mutation", async () => {
+		const created = createThread({ id: "thread-img", name: "Match this design", titleSource: "auto" });
+		createHomeThreadMutateMock.mockResolvedValue({ ok: true, thread: created });
+		let latest: UseHomeThreadsResult | null = null;
+
+		await act(async () => {
+			root.render(
+				<Harness
+					onResult={(result) => {
+						latest = result;
+					}}
+				/>,
+			);
+			await flushPromises();
+		});
+
+		const images = [{ id: "img-1", data: "AAAA", mimeType: "image/png", name: "mock.png" }];
+		await act(async () => {
+			await (latest as unknown as UseHomeThreadsResult).createThread({
+				description: "Match this design mockup",
+				agentId: "claude",
+				images,
+			});
+			await flushPromises();
+		});
+
+		expect(createHomeThreadMutateMock).toHaveBeenCalledWith({
+			description: "Match this design mockup",
+			agentId: "claude",
+			images,
+		});
+	});
+
 	it("refresh re-fetches the registry so an agent-set title replaces the provisional one", async () => {
 		const provisional = createThread({ id: "thread-1", name: "Fix the flaky login test…", titleSource: "auto" });
 		const retitled = createThread({ id: "thread-1", name: "Stabilize login test", titleSource: "auto" });

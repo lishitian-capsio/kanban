@@ -2,12 +2,14 @@ import { Check, MessageSquarePlus } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 
 import { AgentAvatar } from "@/components/home-agent/agent-icon";
+import { TaskPromptComposer } from "@/components/task-prompt-composer";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import { isNativeAgentSelected } from "@/runtime/native-agent";
 import type { RuntimeAgentDefinition, RuntimeAgentId } from "@/runtime/types";
+import type { TaskImage } from "@/types";
 import { isMacPlatform } from "@/utils/platform";
 
 interface HomeThreadCreateDialogProps {
@@ -15,7 +17,11 @@ interface HomeThreadCreateDialogProps {
 	onOpenChange: (open: boolean) => void;
 	agents: RuntimeAgentDefinition[];
 	defaultAgentId: RuntimeAgentId;
-	onCreate: (input: { description: string; agentId: RuntimeAgentId }) => void | Promise<unknown>;
+	onCreate: (input: {
+		description: string;
+		agentId: RuntimeAgentId;
+		images?: TaskImage[];
+	}) => void | Promise<unknown>;
 }
 
 export function HomeThreadCreateDialog({
@@ -42,6 +48,7 @@ export function HomeThreadCreateDialog({
 	const descriptionId = useId();
 	const descriptionHelpId = useId();
 	const [description, setDescription] = useState("");
+	const [images, setImages] = useState<TaskImage[]>([]);
 	const [agentId, setAgentId] = useState<RuntimeAgentId | null>(resolvedDefaultAgentId);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -49,6 +56,7 @@ export function HomeThreadCreateDialog({
 	useEffect(() => {
 		if (open) {
 			setDescription("");
+			setImages([]);
 			setAgentId(resolvedDefaultAgentId);
 			setIsSubmitting(false);
 		}
@@ -63,7 +71,7 @@ export function HomeThreadCreateDialog({
 		}
 		setIsSubmitting(true);
 		try {
-			await onCreate({ description: trimmedDescription, agentId });
+			await onCreate({ description: trimmedDescription, agentId, images: images.length > 0 ? images : undefined });
 			onOpenChange(false);
 		} finally {
 			setIsSubmitting(false);
@@ -78,31 +86,26 @@ export function HomeThreadCreateDialog({
 					<label htmlFor={descriptionId} className="text-[12px] font-medium text-text-secondary">
 						Opening prompt
 					</label>
-					<div className="rounded-lg border border-border-bright bg-surface-2 transition-colors focus-within:border-border-focus">
-						<textarea
-							id={descriptionId}
-							value={description}
-							autoFocus
-							rows={5}
-							aria-describedby={descriptionHelpId}
-							aria-required="true"
-							placeholder="Describe the work, question, or next step for this thread..."
-							onChange={(event) => {
-								setDescription(event.target.value);
-							}}
-							onKeyDown={(event) => {
-								// Enter inserts a newline; ⌘/Ctrl+Enter submits.
-								if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-									event.preventDefault();
-									void handleSubmit();
-								}
-							}}
-							className="min-h-[132px] w-full resize-none bg-transparent px-3 py-2.5 text-[13px] leading-relaxed text-text-primary placeholder:text-text-tertiary focus:outline-none"
-						/>
-					</div>
+					{/* Reuse the task composer so the kickoff prompt gets the same image
+					    affordances as a task card: paste (⌘/Ctrl+V), drag-and-drop, an
+					    attach-image button, and the thumbnail strip. Enter inserts a
+					    newline; ⌘/Ctrl+Enter submits. Mentions are intentionally off here
+					    (no workspace scope passed) — this dialog only needs the prompt +
+					    images. */}
+					<TaskPromptComposer
+						id={descriptionId}
+						value={description}
+						onValueChange={setDescription}
+						images={images}
+						onImagesChange={setImages}
+						onSubmit={() => void handleSubmit()}
+						placeholder="Describe the work, question, or next step for this thread..."
+						disabled={isSubmitting}
+						autoFocus
+					/>
 					<p id={descriptionHelpId} className="text-[11px] text-text-tertiary">
 						The thread's agent works from this opening prompt and names the thread itself. Long prompts are
-						preserved and can span multiple lines.
+						preserved and can span multiple lines. Paste or drag images to attach them.
 					</p>
 				</div>
 

@@ -716,6 +716,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 						.startTaskSession(workspaceScope, {
 							taskId: sessionId,
 							prompt: description,
+							images: body.images,
 							// Home sessions ignore baseRef (they run in the workspace path), but the
 							// request schema requires a non-empty string.
 							baseRef: "HEAD",

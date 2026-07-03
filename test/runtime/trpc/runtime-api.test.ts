@@ -2788,6 +2788,48 @@ describe("createRuntimeApi home thread handlers", () => {
 		expect(response.thread?.name).toBe("Fix the login bug");
 	});
 
+	it("forwards kickoff images to the thread's first startTaskSession", async () => {
+		const { api } = makeApiWithStore();
+		// The kickoff is fire-and-forget; spy on the sibling method so we can assert the
+		// images ride along without driving the whole agent-launch stack.
+		const startSpy = vi
+			.spyOn(api, "startTaskSession")
+			.mockResolvedValue({ ok: true, summary: null } as never);
+		const images = [{ id: "img-1", data: "AAAA", mimeType: "image/png", name: "mock.png" }];
+
+		const response = await api.createHomeThread(workspaceScope, {
+			description: "Match this mockup",
+			agentId: "claude",
+			images,
+		});
+		// Let the fire-and-forget kickoff invocation settle.
+		await Promise.resolve();
+
+		expect(response.ok).toBe(true);
+		expect(startSpy).toHaveBeenCalledTimes(1);
+		expect(startSpy).toHaveBeenCalledWith(
+			workspaceScope,
+			expect.objectContaining({
+				prompt: "Match this mockup",
+				images,
+			}),
+		);
+	});
+
+	it("does not start a session (or pass images) for a name-only thread", async () => {
+		const { api } = makeApiWithStore();
+		const startSpy = vi.spyOn(api, "startTaskSession").mockResolvedValue({ ok: true, summary: null } as never);
+
+		const response = await api.createHomeThread(workspaceScope, {
+			name: "Planning",
+			images: [{ id: "img-1", data: "AAAA", mimeType: "image/png" }],
+		});
+		await Promise.resolve();
+
+		expect(response.ok).toBe(true);
+		expect(startSpy).not.toHaveBeenCalled();
+	});
+
 	it("creates a name-only thread with a pinned manual title", async () => {
 		const { api } = makeApiWithStore();
 

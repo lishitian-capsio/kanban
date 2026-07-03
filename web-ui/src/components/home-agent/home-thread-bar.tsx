@@ -18,6 +18,7 @@ import { SessionAgentIdentity } from "@/components/home-agent/session-agent-iden
 import { cn } from "@/components/ui/cn";
 import type { HomeThread } from "@/hooks/use-home-threads";
 import type { RuntimeAgentDefinition, RuntimeAgentId, RuntimeTaskSessionSummary } from "@/runtime/types";
+import type { TaskImage } from "@/types";
 
 interface HomeThreadBarProps {
 	threads: HomeThread[];
@@ -29,7 +30,11 @@ interface HomeThreadBarProps {
 	/** Per-session summaries that drive each row's status badge (rule 1: the dropdown now shows status). */
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	onSelectThread: (threadId: string) => void;
-	onCreateThread: (input: { description: string; agentId: RuntimeAgentId }) => void | Promise<unknown>;
+	onCreateThread: (input: {
+		description: string;
+		agentId: RuntimeAgentId;
+		images?: TaskImage[];
+	}) => void | Promise<unknown>;
 	onRenameThread: (threadId: string, name: string) => void | Promise<void>;
 	onCloseThread: (threadId: string) => void | Promise<void>;
 }

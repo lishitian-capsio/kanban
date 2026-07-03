@@ -9,11 +9,12 @@ import { useState } from "react";
 
 import { HomeThreadCreateDialog } from "@/components/home-agent/home-thread-create-dialog";
 import type { RuntimeAgentDefinition, RuntimeAgentId } from "@/runtime/types";
+import type { TaskImage } from "@/types";
 
 interface HomeAddSessionCardProps {
 	agents: RuntimeAgentDefinition[];
 	defaultAgentId: RuntimeAgentId;
-	onCreate: (input: { description: string; agentId: RuntimeAgentId }) => void | Promise<unknown>;
+	onCreate: (input: { description: string; agentId: RuntimeAgentId; images?: TaskImage[] }) => void | Promise<unknown>;
 }
 
 export function HomeAddSessionCard({ agents, defaultAgentId, onCreate }: HomeAddSessionCardProps): React.ReactElement {

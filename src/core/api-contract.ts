@@ -373,6 +373,11 @@ export const runtimeHomeChatThreadCreateRequestSchema = z.object({
 	name: z.string().optional(),
 	// Optional: the agent bound to this thread. Defaults to the workspace's selectedAgentId.
 	agentId: runtimeAgentIdSchema.optional(),
+	// Optional reference images attached to the kickoff prompt (pasted or dragged into the
+	// create dialog). Threaded verbatim into the thread's first `startTaskSession` so the
+	// agent's opening turn sees them, exactly like a task card's images. Only meaningful
+	// alongside a `description` (a name-only thread starts no session).
+	images: z.array(runtimeTaskImageSchema).optional(),
 });
 export type RuntimeHomeChatThreadCreateRequest = z.infer<typeof runtimeHomeChatThreadCreateRequestSchema>;
 
