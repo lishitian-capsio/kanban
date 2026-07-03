@@ -8,9 +8,8 @@ import { FileSurfaceContext, type OpenFile } from "./use-open-file";
 // Code-split the overlay (and, through it, the heavy `@uiw/react-md-editor`) and
 // the palette so neither is in first paint — they load on first open
 // (file-surface-design §8). Importing the module is cheap; the editor chunk
-// arrives only when a file is actually opened. The docked filesystem panel
-// (`?files`) is mounted by `App` instead — it lives in the flex layout so it can
-// dock left/right, not as a portaled sibling.
+// arrives only when a file is actually opened. The filesystem panel (`?files`)
+// lives in the top-bar `FilePopover` instead, which lazy-loads its own explorer.
 const FileOverlay = lazy(() => import("./file-overlay").then((m) => ({ default: m.FileOverlay })));
 const FileQuickOpen = lazy(() => import("./file-quick-open").then((m) => ({ default: m.FileQuickOpen })));
 

@@ -37,7 +37,7 @@ export interface FileSurfaceState {
 	/**
 	 * Whether the filesystem panel is showing. URL-routed via `?files` so it
 	 * survives refresh. Independent of `fileId` — the single-doc overlay can layer
-	 * above the panel. In board mode the panel is docked (see `FileDockPanel`).
+	 * above the panel. The panel is shown in the top-bar `FilePopover`.
 	 */
 	libraryOpen: boolean;
 	/**

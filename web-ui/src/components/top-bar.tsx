@@ -9,7 +9,6 @@ import {
 	ChevronDown,
 	CircleArrowDown,
 	Command,
-	FileText,
 	GitBranch,
 	Menu,
 	Play,
@@ -34,7 +33,7 @@ import { cn } from "@/components/ui/cn";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import { useFileSurfaceActive } from "@/components/file-surface";
+import { FilePopover } from "@/components/file-surface/file-popover";
 import { VaultControlButton } from "@/components/vault-control-button";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import type { RuntimeGitSyncAction, RuntimeProjectShortcut } from "@/runtime/types";
@@ -334,7 +333,7 @@ export function TopBar({
 	databaseSettingsDisabled,
 	onToggleStorage,
 	isStorageOpen,
-	onOpenFile,
+	fileSurfaceWorkspaceId,
 	onToggleHomeChat,
 	isHomeChatOpen,
 	onOpenSettings,
@@ -391,8 +390,13 @@ export function TopBar({
 	databaseSettingsDisabled?: boolean;
 	onToggleStorage?: () => void;
 	isStorageOpen?: boolean;
-	/** Open the File surface (the binary file library; quick-open is reachable within). */
-	onOpenFile?: () => void;
+	/**
+	 * Workspace whose File surface the top-right File popover browses, or null to
+	 * hide the toggle (e.g. no project open). The popover reads/writes its own
+	 * open state from `fileSurfaceStore`, so no open/close callbacks are threaded
+	 * through the top bar.
+	 */
+	fileSurfaceWorkspaceId?: string | null;
 	onToggleHomeChat?: () => void;
 	isHomeChatOpen?: boolean;
 	onOpenSettings?: (section?: SettingsSection) => void;
@@ -413,9 +417,6 @@ export function TopBar({
 	hideProjectDependentActions?: boolean;
 }): React.ReactElement {
 	const isMobile = useIsMobile();
-	// Leaf subscription (file-surface-design §5.4): reading File-surface open-state
-	// here re-renders ONLY the top bar on open/close, never `App` or the board.
-	const isFileSurfaceActive = useFileSurfaceActive();
 	const displayWorkspacePath = workspacePath ? formatPathForDisplay(workspacePath) : null;
 	const workspaceSegments = displayWorkspacePath ? getWorkspacePathSegments(displayWorkspacePath) : [];
 	const hasAbsoluteLeadingSlash = Boolean(displayWorkspacePath?.startsWith("/"));
@@ -787,24 +788,11 @@ export function TopBar({
 						</Tooltip>
 					) : null}
 
-					{/* File surface toggle: opens the right-docked File panel. Sits beside the
-					    Kanban Agent toggle so it's reachable in both board and task (session)
-					    views — in a task view the Bot toggle is hidden, so File anchors here. */}
-					{!hideProjectDependentActions && onOpenFile ? (
-						<Button
-							variant={isFileSurfaceActive ? "primary" : "default"}
-							size="sm"
-							icon={<FileText size={14} />}
-							onClick={onOpenFile}
-							className={cn(
-								"ml-0.5 shrink-0",
-								isFileSurfaceActive ? "ring-1 ring-accent" : "kb-navbar-btn",
-								isMobile && MOBILE_TOUCH_TARGET,
-							)}
-							title="Files"
-						>
-							File
-						</Button>
+					{/* File surface toggle: an icon-only trigger that opens a Radix popover
+					    anchored under it, in BOTH board and task (session) views — the Bot
+					    toggle is hidden in a task view, so File anchors here beside it. */}
+					{!hideProjectDependentActions && fileSurfaceWorkspaceId ? (
+						<FilePopover workspaceId={fileSurfaceWorkspaceId} isMobile={isMobile} />
 					) : null}
 
 					{/* Settings: always visible */}

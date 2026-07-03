@@ -4,12 +4,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TopBar } from "@/components/top-bar";
 import { fileSurfaceStore } from "@/components/file-surface";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 vi.mock("@/stores/workspace-metadata-store", () => ({
 	useHomeGitSummaryValue: () => null,
 	useTaskWorkspaceInfoValue: (taskId: string | null) => (taskId ? { branch: "task-1" } : null),
 	useTaskWorkspaceSnapshotValue: () => null,
 }));
+
+// TopBar renders `FilePopover`, which lazy-loads the tRPC-backed filesystem
+// explorer. Stub it so opening the popover in these tests stays lightweight.
+vi.mock("@/components/file-surface/filesystem/file-system-explorer", () => ({
+	FileSystemExplorer: () => <div data-testid="fs-explorer" />,
+}));
+
+function findFileToggle(container: HTMLElement): HTMLButtonElement | null {
+	return container.querySelector<HTMLButtonElement>('[data-testid="toggle-file-surface-button"]');
+}
 
 function findButtonByText(container: HTMLElement, text: string): HTMLButtonElement | null {
 	return (Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.trim() === text) ??
@@ -38,6 +49,9 @@ describe("TopBar script shortcut onboarding", () => {
 
 	afterEach(() => {
 		act(() => {
+			// Reset the shared File-surface store so its URL-routed open state can't
+			// leak between tests.
+			fileSurfaceStore.closeLibrary();
 			root.unmount();
 		});
 		container.remove();
@@ -164,52 +178,45 @@ describe("TopBar script shortcut onboarding", () => {
 		expect(ownerBadge?.textContent).toContain("Ada Lovelace");
 	});
 
-	it("shows the File toggle in the right-side actions (before Settings) while a task is selected", async () => {
-		const onOpenFile = vi.fn();
-
+	it("shows an icon-only File popover toggle in the right-side actions before Settings", async () => {
 		await act(async () => {
 			root.render(
-				<TopBar
-					openTargetOptions={[]}
-					selectedOpenTargetId="vscode"
-					onSelectOpenTarget={() => {}}
-					onOpenWorkspace={() => {}}
-					canOpenWorkspace={false}
-					isOpeningWorkspace={false}
-					shortcuts={[]}
-					selectedTaskId="task-1"
-					selectedTaskBaseRef="main"
-					selectedTaskOwner={{ name: "Ada Lovelace", email: "ada@example.com" }}
-					onOpenFile={onOpenFile}
-					onOpenSettings={() => {}}
-				/>,
+				<TooltipProvider>
+					<TopBar
+						openTargetOptions={[]}
+						selectedOpenTargetId="vscode"
+						onSelectOpenTarget={() => {}}
+						onOpenWorkspace={() => {}}
+						canOpenWorkspace={false}
+						isOpeningWorkspace={false}
+						shortcuts={[]}
+						selectedTaskId="task-1"
+						selectedTaskBaseRef="main"
+						selectedTaskOwner={{ name: "Ada Lovelace", email: "ada@example.com" }}
+						fileSurfaceWorkspaceId="ws-1"
+						onOpenSettings={() => {}}
+					/>
+				</TooltipProvider>,
 			);
 		});
 
-		const fileButton = findButtonByText(container, "File");
-		expect(fileButton).toBeInstanceOf(HTMLButtonElement);
+		const fileToggle = findFileToggle(container);
+		expect(fileToggle).toBeInstanceOf(HTMLButtonElement);
+		// Icon-only: no "File" text label anymore.
+		expect(fileToggle?.textContent?.trim()).toBe("");
+		expect(findButtonByText(container, "File")).toBeNull();
 
-		// The File toggle now lives in the top-right actions cluster, immediately before
-		// the Settings button (it replaces the old left-group placement).
-		const settingsButton = container.querySelector<HTMLButtonElement>(
-			'[data-testid="open-settings-button"]',
-		);
+		// The toggle sits in the top-right actions cluster, before Settings.
+		const settingsButton = container.querySelector<HTMLButtonElement>('[data-testid="open-settings-button"]');
 		expect(settingsButton).toBeInstanceOf(HTMLButtonElement);
-		const relativeToSettings = (fileButton as HTMLButtonElement).compareDocumentPosition(
+		const relativeToSettings = (fileToggle as HTMLButtonElement).compareDocumentPosition(
 			settingsButton as HTMLButtonElement,
 		);
 		expect(relativeToSettings & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-
-		await act(async () => {
-			fileButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-			fileButton?.click();
-		});
-
-		expect(onOpenFile).toHaveBeenCalledTimes(1);
 	});
 
-	it("reflects the File surface active state on the File toggle", async () => {
-		const renderTopBar = () =>
+	it("hides the File toggle when no workspace is available", async () => {
+		await act(async () => {
 			root.render(
 				<TopBar
 					openTargetOptions={[]}
@@ -219,30 +226,87 @@ describe("TopBar script shortcut onboarding", () => {
 					canOpenWorkspace={false}
 					isOpeningWorkspace={false}
 					shortcuts={[]}
-					onOpenFile={() => {}}
+					fileSurfaceWorkspaceId={null}
 					onOpenSettings={() => {}}
 				/>,
 			);
-
-		await act(async () => {
-			renderTopBar();
 		});
 
-		const inactiveFileButton = findButtonByText(container, "File");
-		expect(inactiveFileButton?.className).not.toContain("ring-accent");
+		expect(findFileToggle(container)).toBeNull();
+	});
+
+	// The core of this change: in BOTH board (no selected task) and task/session
+	// (a task selected) views, clicking File opens the anchored popover — never a
+	// docked side panel.
+	it.each([
+		["board", null],
+		["session", "task-1"],
+	])("opens the File popover (not a dock) in %s mode", async (_mode, selectedTaskId) => {
+		await act(async () => {
+			root.render(
+				<TooltipProvider>
+					<TopBar
+						openTargetOptions={[]}
+						selectedOpenTargetId="vscode"
+						onSelectOpenTarget={() => {}}
+						onOpenWorkspace={() => {}}
+						canOpenWorkspace={false}
+						isOpeningWorkspace={false}
+						shortcuts={[]}
+						selectedTaskId={selectedTaskId}
+						selectedTaskBaseRef={selectedTaskId ? "main" : null}
+						fileSurfaceWorkspaceId="ws-1"
+						onOpenSettings={() => {}}
+					/>
+				</TooltipProvider>,
+			);
+		});
+
+		const fileToggle = findFileToggle(container);
+		expect(fileSurfaceStore.getSnapshot().libraryOpen).toBe(false);
+
+		await act(async () => {
+			fileToggle?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+			fileToggle?.click();
+		});
+
+		expect(fileSurfaceStore.getSnapshot().libraryOpen).toBe(true);
+		// The popover content is portaled to <body> (a Radix popover), not rendered
+		// as a docked `<aside>` sibling inside the top bar's own container.
+		expect(document.body.querySelector('[aria-label="Close Files"]')).toBeInstanceOf(HTMLButtonElement);
+		expect(container.querySelector("aside")).toBeNull();
+	});
+
+	it("reflects the File surface active state on the File toggle", async () => {
+		await act(async () => {
+			root.render(
+				<TooltipProvider>
+					<TopBar
+						openTargetOptions={[]}
+						selectedOpenTargetId="vscode"
+						onSelectOpenTarget={() => {}}
+						onOpenWorkspace={() => {}}
+						canOpenWorkspace={false}
+						isOpeningWorkspace={false}
+						shortcuts={[]}
+						fileSurfaceWorkspaceId="ws-1"
+						onOpenSettings={() => {}}
+					/>
+				</TooltipProvider>,
+			);
+		});
+
+		const inactiveToggle = findFileToggle(container);
+		expect(inactiveToggle?.className.split(/\s+/)).not.toContain("bg-surface-3");
 
 		// Opening the File surface flips the shared store; the toggle picks up the
-		// active ring via its `useFileSurfaceActive` subscription.
+		// active highlight via `FilePopover`'s `useFileSurfaceActive` subscription.
 		await act(async () => {
 			fileSurfaceStore.openLibrary();
 		});
 
-		const activeFileButton = findButtonByText(container, "File");
-		expect(activeFileButton?.className).toContain("ring-accent");
-
-		await act(async () => {
-			fileSurfaceStore.closeLibrary();
-		});
+		const activeToggle = findFileToggle(container);
+		expect(activeToggle?.className.split(/\s+/)).toContain("bg-surface-3");
 	});
 
 	it("omits the owner indicator when the selected task has no owner", async () => {
