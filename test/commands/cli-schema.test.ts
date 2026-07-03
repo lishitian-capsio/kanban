@@ -15,6 +15,7 @@ import { registerHomeThreadCommand } from "../../src/commands/home-thread";
 import { registerHooksCommand } from "../../src/commands/hooks";
 import { registerPasscodeAliasCommand, registerRemoteCommand } from "../../src/commands/remote";
 import { registerServiceCommand } from "../../src/commands/service";
+import { registerStorageCommand } from "../../src/commands/storage";
 import { registerTaskCommand } from "../../src/commands/task";
 import { registerVaultCommand } from "../../src/commands/vault";
 import { parseCliPortOption } from "../../src/core/runtime-endpoint";
@@ -41,6 +42,7 @@ function buildRealManifest(): CliSchemaManifest {
 	registerFileCommand(program);
 	registerVaultCommand(program);
 	registerDbCommand(program);
+	registerStorageCommand(program);
 	registerHomeThreadCommand(program);
 	registerHooksCommand(program);
 	registerServiceCommand(program);
@@ -79,6 +81,9 @@ const EXPECTED_COMMAND_IDS = [
 	"db.describe",
 	"db.browse",
 	"db.query",
+	"storage.connection.list",
+	"storage.list",
+	"storage.read",
 	"file.list",
 	"file.show",
 	"file.add",

@@ -17,6 +17,7 @@ import { registerHomeThreadCommand } from "./commands/home-thread";
 import { registerHooksCommand } from "./commands/hooks";
 import { registerPasscodeAliasCommand, registerRemoteCommand } from "./commands/remote";
 import { registerServiceCommand } from "./commands/service";
+import { registerStorageCommand } from "./commands/storage";
 import { registerTaskCommand } from "./commands/task";
 import { registerVaultCommand } from "./commands/vault";
 import { buildSubprocessProxyEnv, installProxyFetch } from "./config/proxy-fetch";
@@ -851,6 +852,7 @@ function createProgram(invocationArgs: string[]): Command {
 	registerFileCommand(program);
 	registerVaultCommand(program);
 	registerDbCommand(program);
+	registerStorageCommand(program);
 	registerHomeThreadCommand(program);
 	registerHooksCommand(program);
 	registerServiceCommand(program);

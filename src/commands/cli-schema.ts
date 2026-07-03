@@ -160,6 +160,22 @@ const COMMAND_SCHEMA_REGISTRY: Record<string, CommandSchemaMeta> = {
 		output: { ref: "#/schemas/DbRowsResult" },
 		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found", "write_not_allowed", "database_access_disabled"],
 	},
+	// Every `storage` subcommand is gated by the per-workspace agent-storage-access switch
+	// (`RuntimeVaultSettings.agentStorageAccessEnabled`), so each can fail with
+	// `storage_access_disabled` before doing any work — see `assertStorageAccessEnabled` in
+	// `storage.ts`. The CLI storage channel is read-only (browse/read only, no write path).
+	"storage.connection.list": {
+		output: { ref: GENERIC_OUTPUT_REF },
+		errors: [...DEFAULT_WORKSPACE_ERRORS, "storage_access_disabled"],
+	},
+	"storage.list": {
+		output: { ref: GENERIC_OUTPUT_REF },
+		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found", "storage_access_disabled"],
+	},
+	"storage.read": {
+		output: { ref: GENERIC_OUTPUT_REF },
+		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found", "storage_access_disabled"],
+	},
 	"file.list": { output: { ref: GENERIC_OUTPUT_REF }, errors: DEFAULT_WORKSPACE_ERRORS },
 	"file.show": {
 		output: { ref: "#/schemas/FileEntry" },

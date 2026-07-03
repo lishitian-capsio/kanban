@@ -99,6 +99,8 @@ describe("exitCodeForErrorCode", () => {
 	it("maps conflict/precondition codes to exit 5", () => {
 		expect(exitCodeForErrorCode("dependency_cycle")).toBe(CLI_EXIT_CONFLICT);
 		expect(exitCodeForErrorCode("write_not_allowed")).toBe(CLI_EXIT_CONFLICT);
+		expect(exitCodeForErrorCode("database_access_disabled")).toBe(CLI_EXIT_CONFLICT);
+		expect(exitCodeForErrorCode("storage_access_disabled")).toBe(CLI_EXIT_CONFLICT);
 	});
 
 	it("maps the remaining handler errors to exit 1", () => {
