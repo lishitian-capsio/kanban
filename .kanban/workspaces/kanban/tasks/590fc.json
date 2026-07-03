@@ -1,0 +1,20 @@
+{
+  "id": "590fc",
+  "title": "kanban release CLI（v1：编排发布仪式，打包委托）",
+  "prompt": "背景 / 决策：见 vault decision「Kanban release 功能 = 编排层，打包委托给项目自身」(id d10e2)。方向已定为 ① —— Kanban 只做**发布仪式的编排**，打包/构建委托给项目自身的命令或 CI，Kanban **不内置任何语言特定构建逻辑**。\n\n本任务只做 **v1：Kanban 自身的 `kanban release` CLI 命令**（Kanban 是第一个消费者/样板）。通用 per-workspace 配置是 v2，不在本任务范围。\n\n## 要实现的命令\n新增 CLI 子命令 `kanban release`，自动化我们手动发 v0.1.69 时做的仪式：\n1. **前置校验（最重要，失败即拒绝并给清晰原因）**：当前在默认分支（main）、工作树干净、本地与 `origin/<default>` 同步（ahead/behind 都为 0）。\n2. **算新版本**：支持 `--patch`（默认）/`--minor`/`--major`/`--version x.y.z`，从 `package.json` 读当前版本。\n3. **bump**：写 `package.json` 版本，并同步 `package-lock.json`（`npm install --package-lock-only` 等价）。\n4. **commit + tag**：提交 `vX.Y.Z release`，打 `vX.Y.Z` tag。\n5. **push**：推 commit + tag 到 origin；tag push 会触发已有的 `build-release.yml`（纯打包 → 建 GitHub Release 挂 .tgz）。\n6. **输出**：打印新版本、tag、以及触发的 Actions run 链接（best-effort，用 gh/GitHub API 查最近一次 build-release run；查不到不报错）。\n7. 遵循既有 CLI envelope / positional / schema 约定，纳入 `kanban schema`。\n\n## 必须编码规避的已知坑（都在决策里）\n- **绝不使用 publish.yml / 不做 npm publish**：那会发到上游 cline 的公共 `kanban` 包。release 命令只走 tag-push→build-release 这条路径。\n- **tag == package.json 版本**，保证 `npm pack` 产出的 `kanban-<version>.tgz` 名字与 `kanban update` 期望一致。\n- **git 操作用 `-c gc.auto=0`**：仓库里可能存在坏掉的 `refs/kanban/checkpoints/…` ref，会让 fetch/push 的 repack 失败；用 gc.auto=0 规避。\n- push 用现有 `runGit` 的 host-keyed 凭据注入（GitHub auth service），不要另造鉴权。\n- 发布说明沿用 `build-release.yml` 的 `generate_release_notes`，本命令**不**手工生成 changelog。\n\n## 约束\n- 干运行支持：加 `--dry-run` 打印将执行的版本/commit/tag/push 而不真正推送，方便验证。\n- 触发靠 tag push，**不做 CI 轮询**（step 6 只是打印链接）。\n- 纯逻辑（版本计算、前置校验判定、命令拼装）抽出来重点补单元测试；实际 git push / 网络不在单测里跑。\n- 遵守 AGENTS.md TypeScript 与代码质量规范；完成后确认 typecheck 通过。\n- 不做 v2 的 per-workspace 配置、不做 UI 按钮、不做 prerelease/nightly——这些是后续任务。\n\n参考：手动发布 v0.1.69 的实际流程（bump→commit a00c153f→tag v0.1.69→push→build-release.yml run）就是本命令要复刻的目标。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
+  "baseRef": "main",
+  "createdAt": 1783076336127,
+  "updatedAt": 1783076336127,
+  "column": "backlog",
+  "rank": "Zw",
+  "dependsOn": []
+}
