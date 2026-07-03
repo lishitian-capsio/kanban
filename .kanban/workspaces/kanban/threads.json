@@ -199,10 +199,10 @@
     {
       "id": "5a452b07-e2c2-4342-9923-4c9cdae4a291",
       "agentId": "claude",
-      "name": "kanban这个系统有个问题，无法回退",
+      "name": "反馈：Kanban 无法回退",
       "titleSource": "auto",
       "createdAt": 1783045838753,
-      "updatedAt": 1783045838753
+      "updatedAt": 1783046138646
     }
   ],
   "fullscreenTabs": {
