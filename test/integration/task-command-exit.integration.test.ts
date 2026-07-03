@@ -1,6 +1,5 @@
-import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -8,13 +7,11 @@ import {
 	commitAll,
 	getAvailablePort,
 	initGitRepository,
-	requestGracefulShutdown,
-	resolveShutdownIpcHookPath,
-	resolveTsxLoaderImportSpecifier,
 	runCliCommandAndCollectOutput,
 	spawnSourceCli,
+	startRuntimeServer,
+	stopRuntimeServer,
 	waitForExit,
-	waitForServerStart,
 } from "../utilities/cli-runtime";
 import { createGitTestEnv } from "../utilities/git-env";
 import { createTempDir } from "../utilities/temp-dir";
@@ -74,25 +71,9 @@ describe("source task commands", () => {
 				KANBAN_RUNTIME_PORT: port,
 			});
 
-			const serverProcess = spawn(
-				process.execPath,
-				[
-					"--require",
-					resolveShutdownIpcHookPath(),
-					"--import",
-					resolveTsxLoaderImportSpecifier(),
-					resolve(process.cwd(), "src/cli.ts"),
-					"--no-open",
-				],
-				{
-					cwd: projectPath,
-					env,
-					stdio: ["ignore", "pipe", "pipe", "ipc"],
-				},
-			);
+			const serverProcess = await startRuntimeServer({ cwd: projectPath, env });
 
 			try {
-				await waitForServerStart(serverProcess);
 
 				const commandProcess = spawnSourceCli(
 					[
@@ -127,12 +108,7 @@ describe("source task commands", () => {
 				expect(commandProcess.exitCode).toBe(0);
 				expect(stdout).toContain('"ok": true');
 			} finally {
-				await requestGracefulShutdown(serverProcess);
-				const stopped = await waitForExit(serverProcess, 5_000);
-				if (!stopped) {
-					serverProcess.kill("SIGKILL");
-					await waitForExit(serverProcess, 5_000);
-				}
+				await stopRuntimeServer(serverProcess);
 			}
 		} finally {
 			cleanupProject();
@@ -164,25 +140,9 @@ describe("source task commands", () => {
 				PATH: `${browserStubBinDir}:${process.env.PATH ?? ""}`,
 			});
 
-			const serverProcess = spawn(
-				process.execPath,
-				[
-					"--require",
-					resolveShutdownIpcHookPath(),
-					"--import",
-					resolveTsxLoaderImportSpecifier(),
-					resolve(process.cwd(), "src/cli.ts"),
-					"--no-open",
-				],
-				{
-					cwd: projectPath,
-					env,
-					stdio: ["ignore", "pipe", "pipe", "ipc"],
-				},
-			);
+			const serverProcess = await startRuntimeServer({ cwd: projectPath, env });
 
 			try {
-				await waitForServerStart(serverProcess);
 
 				for (const [args, expectedOpenCount] of [
 					[[], 1],
@@ -201,12 +161,7 @@ describe("source task commands", () => {
 					expect(readBrowserOpenLog(browserOpenLogPath)).toHaveLength(expectedOpenCount);
 				}
 			} finally {
-				await requestGracefulShutdown(serverProcess);
-				const stopped = await waitForExit(serverProcess, 5_000);
-				if (!stopped) {
-					serverProcess.kill("SIGKILL");
-					await waitForExit(serverProcess, 5_000);
-				}
+				await stopRuntimeServer(serverProcess);
 			}
 		} finally {
 			cleanupProject();
@@ -230,25 +185,9 @@ describe("source task commands", () => {
 				KANBAN_RUNTIME_PORT: port,
 			});
 
-			const serverProcess = spawn(
-				process.execPath,
-				[
-					"--require",
-					resolveShutdownIpcHookPath(),
-					"--import",
-					resolveTsxLoaderImportSpecifier(),
-					resolve(process.cwd(), "src/cli.ts"),
-					"--no-open",
-				],
-				{
-					cwd: projectPath,
-					env,
-					stdio: ["ignore", "pipe", "pipe", "ipc"],
-				},
-			);
+			const serverProcess = await startRuntimeServer({ cwd: projectPath, env });
 
 			try {
-				await waitForServerStart(serverProcess);
 
 				const taskIds: string[] = [];
 				for (const prompt of [
@@ -355,12 +294,7 @@ describe("source task commands", () => {
 				expect(listedTrash.exitCode).toBe(0);
 				expect(listedTrash.stdout).toContain('"count": 0');
 			} finally {
-				await requestGracefulShutdown(serverProcess);
-				const stopped = await waitForExit(serverProcess, 5_000);
-				if (!stopped) {
-					serverProcess.kill("SIGKILL");
-					await waitForExit(serverProcess, 5_000);
-				}
+				await stopRuntimeServer(serverProcess);
 			}
 		} finally {
 			cleanupProject();
@@ -384,25 +318,9 @@ describe("source task commands", () => {
 				KANBAN_RUNTIME_PORT: port,
 			});
 
-			const serverProcess = spawn(
-				process.execPath,
-				[
-					"--require",
-					resolveShutdownIpcHookPath(),
-					"--import",
-					resolveTsxLoaderImportSpecifier(),
-					resolve(process.cwd(), "src/cli.ts"),
-					"--no-open",
-				],
-				{
-					cwd: projectPath,
-					env,
-					stdio: ["ignore", "pipe", "pipe", "ipc"],
-				},
-			);
+			const serverProcess = await startRuntimeServer({ cwd: projectPath, env });
 
 			try {
-				await waitForServerStart(serverProcess);
 
 				const inheritedCreate = await runCliCommandAndCollectOutput({
 					args: [
@@ -452,12 +370,7 @@ describe("source task commands", () => {
 				expect(defaultPayload.ok).toBe(true);
 				expect(defaultPayload.task?.clineSettings).toEqual({});
 			} finally {
-				await requestGracefulShutdown(serverProcess);
-				const stopped = await waitForExit(serverProcess, 5_000);
-				if (!stopped) {
-					serverProcess.kill("SIGKILL");
-					await waitForExit(serverProcess, 5_000);
-				}
+				await stopRuntimeServer(serverProcess);
 			}
 		} finally {
 			cleanupProject();

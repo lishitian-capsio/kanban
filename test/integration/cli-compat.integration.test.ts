@@ -1,15 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-const requireFromHere = createRequire(import.meta.url);
-
-function resolveTsxLoaderImportSpecifier(): string {
-	return pathToFileURL(requireFromHere.resolve("tsx")).href;
-}
+import { buildSourceCliSpawn } from "../utilities/cli-runtime";
 
 describe("cli compatibility flags", () => {
 	it("rejects the removed --agent flag as an unknown option (dropped in P6)", () => {
@@ -18,21 +11,10 @@ describe("cli compatibility flags", () => {
 		// error and exits with the §6.2 usage-error code (2). Asserted on a subcommand so the
 		// parse fails deterministically before any action runs (the bare-`kanban --help` path
 		// would short-circuit to a clean help exit before flagging the unknown option).
-		const result = spawnSync(
-			process.execPath,
-			[
-				"--import",
-				resolveTsxLoaderImportSpecifier(),
-				resolve(process.cwd(), "src/cli.ts"),
-				"task",
-				"list",
-				"--agent",
-				"legacy-alias-value",
-			],
-			{
-				encoding: "utf8",
-			},
-		);
+		const { command, args } = buildSourceCliSpawn(["task", "list", "--agent", "legacy-alias-value"]);
+		const result = spawnSync(command, args, {
+			encoding: "utf8",
+		});
 
 		expect(result.status).toBe(2);
 		expect(result.stderr).toContain("unknown option");
@@ -40,11 +22,8 @@ describe("cli compatibility flags", () => {
 	});
 
 	it("emits `schema --json` as a single JSON.parse-able envelope (§7.4)", () => {
-		const result = spawnSync(
-			process.execPath,
-			["--import", resolveTsxLoaderImportSpecifier(), resolve(process.cwd(), "src/cli.ts"), "schema", "--json"],
-			{ encoding: "utf8" },
-		);
+		const { command, args } = buildSourceCliSpawn(["schema", "--json"]);
+		const result = spawnSync(command, args, { encoding: "utf8" });
 
 		expect(result.status).toBe(0);
 		// Exactly one JSON document on stdout — nothing else (§7.3).

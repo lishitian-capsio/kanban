@@ -5,6 +5,15 @@ export function createGitTestEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.Proc
 		if (key.startsWith("GIT_")) {
 			continue;
 		}
+		// Running the suite inside a Kanban agent session (or against a live
+		// runtime) leaks KANBAN_* vars — e.g. KANBAN_RUNTIME_HOST binds the
+		// spawned test server to a LAN IP instead of 127.0.0.1, and
+		// KANBAN_SESSION_* / KANBAN_INTERNAL_AUTH_TOKEN cross-wire it to the host
+		// session. Strip them so each test gets a clean runtime; tests that need a
+		// specific value pass it explicitly via `overrides` (applied last).
+		if (key.startsWith("KANBAN_")) {
+			continue;
+		}
 		sanitized[key] = value;
 	}
 	return {

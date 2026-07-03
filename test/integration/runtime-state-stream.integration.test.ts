@@ -3,9 +3,7 @@ import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { realpath } from "node:fs/promises";
 import { createServer } from "node:http";
-import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
@@ -26,10 +24,9 @@ import type {
 	RuntimeWorkspaceStateResponse,
 	RuntimeWorktreeEnsureResponse,
 } from "../../src/core/api-contract";
+import { buildSourceCliSpawn } from "../utilities/cli-runtime";
 import { createGitTestEnv } from "../utilities/git-env";
 import { createTempDir } from "../utilities/temp-dir";
-
-const requireFromHere = createRequire(import.meta.url);
 
 interface RuntimeStreamClient {
 	socket: WebSocket;
@@ -160,14 +157,6 @@ function commitAll(cwd: string, message: string): string {
 	return runGit(cwd, ["rev-parse", "HEAD"]);
 }
 
-function resolveShutdownIpcHookPath(): string {
-	return resolve(process.cwd(), "test/integration/shutdown-ipc-hook.cjs");
-}
-
-function resolveTsxLoaderImportSpecifier(): string {
-	return pathToFileURL(requireFromHere.resolve("tsx")).href;
-}
-
 async function waitForProcessStart(process: ChildProcess, timeoutMs = 10_000): Promise<{ runtimeUrl: string }> {
 	return await new Promise((resolveStart, rejectStart) => {
 		if (!process.stdout || !process.stderr) {
@@ -191,7 +180,10 @@ async function waitForProcessStart(process: ChildProcess, timeoutMs = 10_000): P
 			} else {
 				stderr += text;
 			}
-			const match = stdout.match(/Kanban Kanban running at (http:\/\/127\.0\.0\.1:\d+(?:\/[^\s]*)?)/);
+			// The banner is `Kanban running at <url>` where <url> may bind to a LAN
+			// host, not 127.0.0.1. The captured URL is only read for its pathname
+			// (workspace segment); tests connect via 127.0.0.1 + the known port.
+			const match = stdout.match(/Kanban running at (http:\/\/\S+)/);
 			if (!match || settled) {
 				return;
 			}
@@ -266,30 +258,18 @@ async function startKanbanServer(input: { cwd: string; homeDir: string; port: nu
 	runtimeUrl: string;
 	stop: () => Promise<void>;
 }> {
-	const cliEntrypoint = resolve(process.cwd(), "src/cli.ts");
-	const shutdownIpcHookPath = resolveShutdownIpcHookPath();
-	const tsxLoaderImportSpecifier = resolveTsxLoaderImportSpecifier();
-	const child = spawn(
-		process.execPath,
-		[
-			"--require",
-			shutdownIpcHookPath,
-			"--import",
-			tsxLoaderImportSpecifier,
-			cliEntrypoint,
-			"--no-open",
-			...(input.extraArgs ?? []),
-		],
-		{
-			cwd: input.cwd,
-			env: createGitTestEnv({
-				HOME: input.homeDir,
-				USERPROFILE: input.homeDir,
-				KANBAN_RUNTIME_PORT: String(input.port),
-			}),
-			stdio: ["ignore", "pipe", "pipe", "ipc"],
-		},
-	);
+	const { command, args } = buildSourceCliSpawn(["--no-open", ...(input.extraArgs ?? [])], {
+		withShutdownHook: true,
+	});
+	const child = spawn(command, args, {
+		cwd: input.cwd,
+		env: createGitTestEnv({
+			HOME: input.homeDir,
+			USERPROFILE: input.homeDir,
+			KANBAN_RUNTIME_PORT: String(input.port),
+		}),
+		stdio: ["ignore", "pipe", "pipe", "ipc"],
+	});
 	const { runtimeUrl } = await waitForProcessStart(child);
 	return {
 		runtimeUrl,

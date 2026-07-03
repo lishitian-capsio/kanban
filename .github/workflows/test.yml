@@ -61,7 +61,7 @@ jobs:
         continue-on-error: true
 
       - name: Root tests
-        run: npx vitest run
+        run: bun vitest run
 
       - name: Web UI tests
         run: |

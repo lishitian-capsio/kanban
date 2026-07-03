@@ -1,19 +1,42 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { createGitTestEnv } from "./git-env";
-
-const requireFromHere = createRequire(import.meta.url);
 
 export function resolveShutdownIpcHookPath(): string {
 	return resolve(process.cwd(), "test/integration/shutdown-ipc-hook.cjs");
 }
 
-export function resolveTsxLoaderImportSpecifier(): string {
-	return pathToFileURL(requireFromHere.resolve("tsx")).href;
+/**
+ * Resolve the Bun executable used to launch the Kanban runtime as a child
+ * process. The runtime is Bun-only (it imports `bun:` modules at startup), so
+ * the child must always run under Bun — never Node — regardless of what runs
+ * the harness. Note vitest v4 executes test files in a Node worker pool even
+ * when invoked via `bun vitest`, so `process.execPath` inside a test is
+ * typically `node`; we therefore reuse the current binary only when this
+ * process is genuinely Bun, and otherwise rely on `bun` being on PATH (CI
+ * provisions it via oven-sh/setup-bun; dev has it on PATH).
+ */
+export function resolveBunExecutable(): string {
+	if (typeof (globalThis as { Bun?: unknown }).Bun !== "undefined") {
+		return process.execPath;
+	}
+	return "bun";
+}
+
+/**
+ * Build the executable + argv for launching the source CLI (`src/cli.ts`) as a
+ * child process. Always launches under Bun (native TS, no tsx loader);
+ * `--preload` wires the IPC shutdown hook when requested.
+ */
+export function buildSourceCliSpawn(
+	args: string[],
+	options: { withShutdownHook?: boolean } = {},
+): { command: string; args: string[] } {
+	const cliEntrypoint = resolve(process.cwd(), "src/cli.ts");
+	const preload = options.withShutdownHook ? ["--preload", resolveShutdownIpcHookPath()] : [];
+	return { command: resolveBunExecutable(), args: [...preload, cliEntrypoint, ...args] };
 }
 
 export function initGitRepository(path: string): void {
@@ -101,7 +124,7 @@ export async function waitForServerStart(process: ChildProcess, timeoutMs = 10_0
 			} else {
 				stderr += text;
 			}
-			if (!stdout.includes("Kanban Kanban running at ") || settled) {
+			if (!stdout.includes("Kanban running at ") || settled) {
 				return;
 			}
 			settled = true;
@@ -164,8 +187,8 @@ export function spawnSourceCli(
 	args: string[],
 	options: { cwd: string; env: NodeJS.ProcessEnv; stdio?: ChildProcess["stdio"] },
 ): ChildProcess {
-	const cliEntrypoint = resolve(process.cwd(), "src/cli.ts");
-	return spawn(process.execPath, ["--import", resolveTsxLoaderImportSpecifier(), cliEntrypoint, ...args], {
+	const { command, args: spawnArgs } = buildSourceCliSpawn(args);
+	return spawn(command, spawnArgs, {
 		cwd: options.cwd,
 		env: options.env,
 		stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
@@ -216,23 +239,19 @@ export async function runCliCommandAndCollectOutput(options: {
  * Boot the Kanban runtime server from source (tsx) with the shutdown IPC hook
  * wired up, and resolve once it reports ready. Pair with {@link stopRuntimeServer}.
  */
-export async function startRuntimeServer(options: { cwd: string; env: NodeJS.ProcessEnv }): Promise<ChildProcess> {
-	const serverProcess = spawn(
-		process.execPath,
-		[
-			"--require",
-			resolveShutdownIpcHookPath(),
-			"--import",
-			resolveTsxLoaderImportSpecifier(),
-			resolve(process.cwd(), "src/cli.ts"),
-			"--no-open",
-		],
-		{
-			cwd: options.cwd,
-			env: options.env,
-			stdio: ["ignore", "pipe", "pipe", "ipc"],
-		},
-	);
+export async function startRuntimeServer(options: {
+	cwd: string;
+	env: NodeJS.ProcessEnv;
+	extraArgs?: string[];
+}): Promise<ChildProcess> {
+	const { command, args } = buildSourceCliSpawn(["--no-open", ...(options.extraArgs ?? [])], {
+		withShutdownHook: true,
+	});
+	const serverProcess = spawn(command, args, {
+		cwd: options.cwd,
+		env: options.env,
+		stdio: ["ignore", "pipe", "pipe", "ipc"],
+	});
 	await waitForServerStart(serverProcess);
 	return serverProcess;
 }
