@@ -3,7 +3,7 @@
   "title": "File 右边栏改为 popover (board + session 两种模式)",
   "prompt": "目标：把 File 的右侧 docked 侧边栏在【board 模式和 session 模式下都改成 popover】。原因：session 模式里 Kanban Agent 侧边栏已占一侧，File 再来个右侧栏会两边夹一个内容区，很乱；统一改成锚定在右上角 File 图标上的 popover 浮层，覆盖显示、不占布局边缘。\n\n## 设计决策（已和用户敲定）\n- File 不再做 docked 侧边栏（board 和 session 都不做）。改为 Radix Popover（@radix-ui/react-popover），锚定在右上角 File 图标，点外部/Esc/再点图标关闭。\n- File 开关做成【纯图标无文字】，放右上角、紧挨 Kanban Agent(Bot) 开关，样式对齐右上角其它图标开关（ghost + FileText 图标 + Tooltip + 打开时 active 高亮），点击 = toggle popover 开/关。\n- popover 尺寸给合适值（例如宽 ~480–640px、高 up to ~70vh，内部可滚动），别做成占满边缘的侧栏。\n- 打开要快：现 FileDockPanel/其内容是 lazy 挂载，首开会卡；参考 Kanban Agent 侧边栏 DockableChatPanel 的做法（预加载 lazy chunk 或常驻挂载切显隐）做到秒开。\n\n## 现状（代码结构，已核实）\nweb-ui/src/components/top-bar.tsx：\n- File 按钮当前在左侧组约 610–624，与 Vault/Database/Storage 三个 split button 并排(约 586–609)；File 是普通 Button，带 FileText 图标【和 \"File\" 文字】，onClick 走 onOpenFile。\n- 右上角 actions 容器约 630–815：shortcut+Run、Terminal 开关、Debug、Kanban Agent(Bot 图标, onToggleHomeChat/isHomeChatOpen, 约 785–803)、Settings(约 806)。右上角开关都是纯图标 ghost + Tooltip + active。\nweb-ui/src/App.tsx：\n- onOpenFile 约 1075：hasNoProjects || selectedCard ? undefined : () => fileSurfaceStore.openLibrary()。\n- isFileDockAvailable 约 531：!selectedCard && !hasNoProjects && !!currentProjectId。\n- FileDockPanel 约 946–1002 作为 flex sibling 挂载(board 右侧 docked)；DockableChatPanel 左；CardDetailView(session) 约 857–1010 未挂 File。\n- session/全屏另有 File tab(?chat=file)。\n复用：file-surface/file-dock-panel.tsx 内部渲染的 library/filesystem UI 内容组件应能放进 popover；use-file-dock.ts(宽度等，popover 可参考但主要用固定尺寸)；状态源 fileSurfaceStore(file-surface-store.ts)：?files、?file=<id>、?fsPath=<path>；isFileSurfaceActive hook。参考 DockableChatPanel(dockable-home-chat-panel) 的挂载/开合。\n\n## 要做的事\n1. File 开关：移到右上角紧挨 Bot 开关(Settings 之前)，改【纯图标无文字】(FileText + Tooltip \"Show/Hide Files\" + active 高亮)，点击 toggle popover。左侧组移除 File，只留 Vault/Database/Storage。\n2. 用 Radix Popover 承载 File 面板内容(复用现有 file library/filesystem UI)，在【board 和 session 两种模式】下都走这个 popover；移除/停用原来的 File docked 侧边栏(FileDockPanel 作为右侧 sibling 的挂载)。放开 session 门禁(1075 onOpenFile、531 的 !selectedCard)，让 session 也能开 File popover。\n3. 修顺带 BUG：之前 session 点 File 会误开 board 侧边栏——改 popover 后，两种模式点 File 都只开这个 popover，不再有 docked 侧栏。\n4. 提速：消除 lazy 首开卡顿，做到点击秒开(预载 chunk 或常驻挂载切显隐)。\n5. 保留：fileSurfaceStore / ?files 路由 / ?file= 单文档深链 / isFileSurfaceActive / ?fsPath 深链等行为不变。\n\n## 约束 / 验收\n- 只动 web-ui；用现有 UI 原语(Radix Popover)与图标；预计不涉及共享契约(若涉及注意 dual-lib typecheck)。\n- 右上角 File 开关：纯图标无文字，点击 toggle popover，active 态正确；左侧组不再含 File。\n- board 与 session 模式点 File 都打开【popover】而非侧边栏；不再有 File docked 侧栏；打开够快。\n- 补/更新组件测试：top-bar File 图标开关(无文字/toggle/active)；board 与 session 点 File 打开 popover(非 dock)。\n- 注意：本改动与 T4(b59c6 多 surface 分档感知前端)都碰 top-bar/File surface，实现时留意与其协调，避免冲突。\n\n参考 AGENTS.md：web-ui 样式/图标约定、Radix popover、file-surface 既有实现(含 lazy landmine)、dockable home chat panel、不要过度设计。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -13,8 +13,8 @@
   "originThreadId": "49269ceb-b13c-4019-aaaf-65bd61e653ff",
   "baseRef": "main",
   "createdAt": 1783066708524,
-  "updatedAt": 1783066708524,
-  "column": "backlog",
+  "updatedAt": 1783066781366,
+  "column": "in_progress",
   "rank": "Zw",
   "dependsOn": []
 }
