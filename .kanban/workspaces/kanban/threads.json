@@ -203,7 +203,7 @@
       "titleSource": "auto",
       "createdAt": 1783045838753,
       "updatedAt": 1783046138646,
-      "pendingNextStep": "把这个回退缺陷在看板上建一个排查任务"
+      "pendingNextStep": "把需求 11ba3「回退合并按钮」在看板上建一个排查+实现任务"
     }
   ],
   "fullscreenTabs": {
