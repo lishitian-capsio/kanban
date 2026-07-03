@@ -10,7 +10,7 @@ import { notifyError, showAppToast } from "@/components/app-toaster";
 import { ClearTrashDialog } from "@/components/clear-trash-dialog";
 import { DebugDialog } from "@/components/debug-dialog";
 import { LazyAgentTerminalPanel as AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel-lazy";
-import { FileSurfaceProvider, fileSurfaceStore } from "@/components/file-surface";
+import { FileSurfaceProvider, fileSurfaceStore, useFileDock, useFileSurfaceLibrary } from "@/components/file-surface";
 import { DockableChatPanel } from "@/components/home-agent/dockable-chat-panel";
 import { HomeChatWorkspace } from "@/components/home-agent/home-chat-workspace";
 import { HomeSidebarAgentPanel } from "@/components/home-agent/home-sidebar-agent-panel";
@@ -97,6 +97,11 @@ const GitHistoryView = lazy(() =>
 const CardDetailView = lazy(() =>
 	import("@/components/card-detail-view").then((module) => ({ default: module.CardDetailView })),
 );
+// The docked File surface (filesystem explorer). Lazy so its CodeMirror /
+// @uiw/react-md-editor chunk downloads only when the File panel is first opened.
+const FileDockPanel = lazy(() =>
+	import("@/components/file-surface/file-dock-panel").then((module) => ({ default: module.FileDockPanel })),
+);
 
 export default function App(): ReactElement {
 	const terminalThemeColors = useTerminalThemeColors();
@@ -106,6 +111,13 @@ export default function App(): ReactElement {
 	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 	const [settingsInitialSection, setSettingsInitialSection] = useState<RuntimeSettingsSection | null>(null);
 	const chatDock = useChatDock();
+	// The File surface is a docked side panel in board mode (like the Kanban Agent
+	// sidebar): `useFileDock` persists its side/width/collapsed placement, while
+	// open/close + deep-linked path come from the URL-routed `fileSurfaceStore`
+	// (`?files`/`?fsPath`). Subscribing to just the `library` slice keeps the
+	// high-frequency single-doc / palette axes from re-rendering the board.
+	const fileDock = useFileDock();
+	const fileLibrary = useFileSurfaceLibrary();
 	// Whether the home-chat fullscreen workspace is open (and which tab) is routed through the
 	// URL, so it survives refresh, supports deep links, and restores on browser back/forward.
 	const fullscreenChat = useFullscreenChatNavigation();
@@ -510,6 +522,13 @@ export default function App(): ReactElement {
 	// HomeSidebarAgentPanel renders null exactly when hasNoProjects || !currentProjectId,
 	// so mirror that gate here rather than instantiating the panel to test for null.
 	const isHomeChatAvailable = !selectedCard && !hasNoProjects && !!currentProjectId;
+	// The docked File panel is a board-mode surface (mirrors the chat panel gate and
+	// how Vault/Database collapse on entering a task). Its open state persists in the
+	// URL, so leaving/returning to board mode re-shows it.
+	const isFileDockAvailable = !selectedCard && !hasNoProjects && !!currentProjectId;
+	const handleCloseFileLibrary = useCallback(() => fileSurfaceStore.closeLibrary(), []);
+	const handleOpenFilePalette = useCallback(() => fileSurfaceStore.openPalette(), []);
+	const handleOpenFsPath = useCallback((path: string | null) => fileSurfaceStore.openFsPath(path), []);
 	// When the home chat is in its fullscreen state it covers the viewport with an
 	// opaque `fixed inset-0` overlay (the DockableChatPanel fullscreen layout, gated on
 	// this same `isFullscreen` URL axis). The board sits behind that overlay. We keep the
@@ -966,6 +985,18 @@ export default function App(): ReactElement {
 								/>
 							</DockableChatPanel>
 						) : null}
+						{isFileDockAvailable && fileLibrary.libraryOpen ? (
+							<Suspense fallback={null}>
+								<FileDockPanel
+									dock={fileDock}
+									workspaceId={currentProjectId}
+									fsPath={fileLibrary.fsPath}
+									onClose={handleCloseFileLibrary}
+									onOpenPalette={handleOpenFilePalette}
+									onOpenFsPath={handleOpenFsPath}
+								/>
+							</Suspense>
+						) : null}
 						<div className="order-2 flex flex-col flex-1 min-w-0 overflow-hidden">
 							<TopBar
 								onBack={selectedCard ? handleBack : undefined}
@@ -1042,7 +1073,7 @@ export default function App(): ReactElement {
 								databaseSettingsDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
 								onToggleStorage={hasNoProjects || selectedCard ? undefined : handleToggleStorage}
 								isStorageOpen={isStorageOpen}
-								onOpenFile={hasNoProjects ? undefined : () => fileSurfaceStore.openLibrary()}
+								onOpenFile={hasNoProjects || selectedCard ? undefined : () => fileSurfaceStore.openLibrary()}
 								onToggleHomeChat={isHomeChatAvailable ? handleToggleHomeChat : undefined}
 								isHomeChatOpen={chatDock.open}
 								hideProjectDependentActions={shouldHideProjectDependentTopBarActions}

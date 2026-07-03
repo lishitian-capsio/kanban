@@ -2,10 +2,8 @@ import {
 	buildFilesLibraryUrl,
 	buildFileUrl,
 	buildFsPathUrl,
-	type FilesSurfaceTab,
 	parseFileIdFromSearch,
 	parseFilesLibraryFromSearch,
-	parseFilesTabFromSearch,
 	parseFsPathFromSearch,
 } from "@/hooks/app-utils";
 
@@ -21,8 +19,9 @@ import {
  * the whole tree). The project's established answer is a granular external store
  * read via `useSyncExternalStore` in the leaf fiber that shows it (see
  * `perf10-runtime-store-selectors`): the provider subscribes to render the
- * overlay, and `TopBar` subscribes — independently — for the ring. Neither path
- * touches `App`.
+ * single-doc overlay, `TopBar` subscribes — independently — for the ring, and
+ * `App` subscribes to just the `library` slice (below) to place the docked
+ * filesystem panel. None re-render on the *other* axes' changes.
  *
  * The store also owns `?file=<id>` URL routing (mirroring the `?task=`/`?chat=`
  * hooks) so the surface is shareable, refresh-survivable, and back/forward
@@ -36,16 +35,11 @@ export interface FileSurfaceState {
 	/** Whether the quick-open palette ("pick a file") is showing. Not URL-routed. */
 	paletteOpen: boolean;
 	/**
-	 * Whether the library overlay (filesystem explorer + upload library) is
-	 * showing. URL-routed via `?files` so it survives refresh. Independent of
-	 * `fileId` — the single-doc overlay can layer above the library.
+	 * Whether the filesystem panel is showing. URL-routed via `?files` so it
+	 * survives refresh. Independent of `fileId` — the single-doc overlay can layer
+	 * above the panel. In board mode the panel is docked (see `FileDockPanel`).
 	 */
 	libraryOpen: boolean;
-	/**
-	 * The active sub-tab within the library overlay. Seeded from `?files=<v>`
-	 * (default "fs"). Meaningful only while `libraryOpen`.
-	 */
-	filesTab: FilesSurfaceTab;
 	/**
 	 * The filesystem explorer's currently-open repo-relative path (deep link via
 	 * `?fsPath`). File → opened in the right pane; directory → revealed/expanded.
@@ -56,6 +50,17 @@ export interface FileSurfaceState {
 export interface OpenFileOptions {
 	/** Workspace the file lives in. Defaults to the provider's current workspace. */
 	workspaceId?: string;
+}
+
+/**
+ * The slice `App` subscribes to for placing the docked filesystem panel. Kept as
+ * a stable reference (recomputed only when its fields change) so that opening a
+ * single-doc file / palette — the high-frequency axes — never re-renders `App`
+ * or the board.
+ */
+export interface FileLibrarySlice {
+	libraryOpen: boolean;
+	fsPath: string | null;
 }
 
 function readFileIdFromLocation(): string | null {
@@ -72,13 +77,6 @@ function readLibraryFromLocation(): boolean {
 	return parseFilesLibraryFromSearch(window.location.search);
 }
 
-function readFilesTabFromLocation(): FilesSurfaceTab {
-	if (typeof window === "undefined") {
-		return "fs";
-	}
-	return parseFilesTabFromSearch(window.location.search) ?? "fs";
-}
-
 function readFsPathFromLocation(): string | null {
 	if (typeof window === "undefined") {
 		return null;
@@ -87,7 +85,7 @@ function readFsPathFromLocation(): string | null {
 }
 
 // Seed synchronously from the URL so a deep link / refresh to `?file=<id>` or
-// `?files` opens the corresponding overlay on first paint with no flash.
+// `?files` opens the corresponding surface on first paint with no flash.
 // `workspaceId` is back-filled by the provider (the workspace isn't encoded in
 // the URL — it comes from the route).
 let state: FileSurfaceState = {
@@ -95,9 +93,16 @@ let state: FileSurfaceState = {
 	workspaceId: null,
 	paletteOpen: false,
 	libraryOpen: readLibraryFromLocation(),
-	filesTab: readFilesTabFromLocation(),
 	fsPath: readFsPathFromLocation(),
 };
+
+let librarySlice: FileLibrarySlice = { libraryOpen: state.libraryOpen, fsPath: state.fsPath };
+
+function refreshLibrarySlice(): void {
+	if (librarySlice.libraryOpen !== state.libraryOpen || librarySlice.fsPath !== state.fsPath) {
+		librarySlice = { libraryOpen: state.libraryOpen, fsPath: state.fsPath };
+	}
+}
 
 // The provider's current workspace, used as the default when a file is opened
 // without an explicit workspace and to back-fill a URL-seeded / popstate file.
@@ -118,12 +123,12 @@ function setState(next: FileSurfaceState): void {
 		next.workspaceId === state.workspaceId &&
 		next.paletteOpen === state.paletteOpen &&
 		next.libraryOpen === state.libraryOpen &&
-		next.filesTab === state.filesTab &&
 		next.fsPath === state.fsPath
 	) {
 		return;
 	}
 	state = next;
+	refreshLibrarySlice();
 	emit();
 }
 
@@ -149,14 +154,12 @@ function writeUrl(fileId: string | null, mode: "push" | "replace"): void {
 	}
 }
 
-function writeLibraryUrl(open: boolean, tab: FilesSurfaceTab, mode: "push" | "replace"): void {
+function writeLibraryUrl(open: boolean, mode: "push" | "replace"): void {
 	if (typeof window === "undefined") {
 		return;
 	}
 	const currentUrl = new URL(window.location.href);
-	const currentOpen = parseFilesLibraryFromSearch(currentUrl.search);
-	const currentTab = parseFilesTabFromSearch(currentUrl.search) ?? "fs";
-	if (currentOpen === open && (!open || currentTab === tab)) {
+	if (parseFilesLibraryFromSearch(currentUrl.search) === open) {
 		// Already at the target — never add a duplicate history entry.
 		return;
 	}
@@ -165,7 +168,6 @@ function writeLibraryUrl(open: boolean, tab: FilesSurfaceTab, mode: "push" | "re
 		search: currentUrl.search,
 		hash: currentUrl.hash,
 		open,
-		tab,
 	});
 	if (mode === "push") {
 		window.history.pushState(window.history.state, "", nextUrl);
@@ -203,7 +205,6 @@ function handlePopState(): void {
 		workspaceId: fileId || libraryOpen ? (state.workspaceId ?? defaultWorkspaceId) : null,
 		paletteOpen: false,
 		libraryOpen,
-		filesTab: readFilesTabFromLocation(),
 		fsPath: readFsPathFromLocation(),
 	});
 }
@@ -211,6 +212,11 @@ function handlePopState(): void {
 export const fileSurfaceStore = {
 	getSnapshot(): FileSurfaceState {
 		return state;
+	},
+
+	/** Stable-reference `library` slice for the docked panel (see `FileLibrarySlice`). */
+	getLibrarySlice(): FileLibrarySlice {
+		return librarySlice;
 	},
 
 	subscribe(listener: () => void): () => void {
@@ -261,18 +267,13 @@ export const fileSurfaceStore = {
 		setState({ ...state, paletteOpen: false });
 	},
 
-	/**
-	 * Open the library overlay. Opens on the last-selected sub-tab (default the
-	 * filesystem explorer). An explicit `tab` forces that tab.
-	 */
-	openLibrary(tab?: FilesSurfaceTab): void {
-		const nextTab = tab ?? state.filesTab;
-		writeLibraryUrl(true, nextTab, "push");
+	/** Open the docked filesystem panel. */
+	openLibrary(): void {
+		writeLibraryUrl(true, "push");
 		setState({
 			...state,
 			workspaceId: state.workspaceId ?? defaultWorkspaceId,
 			libraryOpen: true,
-			filesTab: nextTab,
 			paletteOpen: false,
 		});
 	},
@@ -281,17 +282,8 @@ export const fileSurfaceStore = {
 		if (!state.libraryOpen) {
 			return;
 		}
-		writeLibraryUrl(false, state.filesTab, "push");
+		writeLibraryUrl(false, "push");
 		setState({ ...state, libraryOpen: false });
-	},
-
-	/** Switch the active sub-tab (does not push a history entry). */
-	setFilesTab(tab: FilesSurfaceTab): void {
-		if (state.filesTab === tab && state.libraryOpen) {
-			return;
-		}
-		writeLibraryUrl(true, tab, "replace");
-		setState({ ...state, libraryOpen: true, filesTab: tab });
 	},
 
 	/**
@@ -301,13 +293,13 @@ export const fileSurfaceStore = {
 	 */
 	openFsPath(path: string | null): void {
 		writeFsPathUrl(path, "push");
-		setState({ ...state, libraryOpen: true, filesTab: "fs", fsPath: path });
+		setState({ ...state, libraryOpen: true, fsPath: path });
 	},
 };
 
 /**
  * True when any File surface UI is showing (single-doc editor overlay, the
- * binary-library overlay, or the quick-open palette). Drives the top-bar ring.
+ * filesystem panel, or the quick-open palette). Drives the top-bar ring.
  */
 export function isFileSurfaceActive(snapshot: FileSurfaceState): boolean {
 	return snapshot.fileId !== null || snapshot.paletteOpen || snapshot.libraryOpen;

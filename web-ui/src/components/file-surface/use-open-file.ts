@@ -1,6 +1,13 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
 
-import { fileSurfaceStore, isFileSurfaceActive, type OpenFileOptions } from "./file-surface-store";
+import {
+	type FileLibrarySlice,
+	fileSurfaceStore,
+	isFileSurfaceActive,
+	type OpenFileOptions,
+} from "./file-surface-store";
+
+const EMPTY_LIBRARY_SLICE: FileLibrarySlice = { libraryOpen: false, fsPath: null };
 
 /** Opens a single vault file `id` in the File surface overlay. Stable reference. */
 export type OpenFile = (fileId: string, options?: OpenFileOptions) => void;
@@ -37,5 +44,19 @@ export function useFileSurfaceActive(): boolean {
 		fileSurfaceStore.subscribe,
 		() => isFileSurfaceActive(fileSurfaceStore.getSnapshot()),
 		() => false,
+	);
+}
+
+/**
+ * The `library` slice (`libraryOpen` + `fsPath`) for placing the docked
+ * filesystem panel. `App` subscribes here rather than to the whole snapshot so
+ * the high-frequency single-doc / palette axes never re-render the board — the
+ * store hands back a stable slice reference until these two fields change.
+ */
+export function useFileSurfaceLibrary(): FileLibrarySlice {
+	return useSyncExternalStore(
+		fileSurfaceStore.subscribe,
+		fileSurfaceStore.getLibrarySlice,
+		() => EMPTY_LIBRARY_SLICE,
 	);
 }

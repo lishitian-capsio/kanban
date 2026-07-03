@@ -8,12 +8,11 @@ import { FileSurfaceContext, type OpenFile } from "./use-open-file";
 // Code-split the overlay (and, through it, the heavy `@uiw/react-md-editor`) and
 // the palette so neither is in first paint — they load on first open
 // (file-surface-design §8). Importing the module is cheap; the editor chunk
-// arrives only when a file is actually opened.
+// arrives only when a file is actually opened. The docked filesystem panel
+// (`?files`) is mounted by `App` instead — it lives in the flex layout so it can
+// dock left/right, not as a portaled sibling.
 const FileOverlay = lazy(() => import("./file-overlay").then((m) => ({ default: m.FileOverlay })));
 const FileQuickOpen = lazy(() => import("./file-quick-open").then((m) => ({ default: m.FileQuickOpen })));
-const FileLibraryOverlay = lazy(() =>
-	import("./file-library-overlay").then((m) => ({ default: m.FileLibraryOverlay })),
-);
 
 const subscribe = fileSurfaceStore.subscribe;
 const getSnapshot = fileSurfaceStore.getSnapshot;
@@ -75,22 +74,6 @@ export function FileSurfaceProvider({
 		fileSurfaceStore.closePalette();
 	}, []);
 
-	const handleCloseLibrary = useCallback(() => {
-		fileSurfaceStore.closeLibrary();
-	}, []);
-
-	const handleOpenPalette = useCallback(() => {
-		fileSurfaceStore.openPalette();
-	}, []);
-
-	const handleSelectFilesTab = useCallback((tab: Parameters<typeof fileSurfaceStore.setFilesTab>[0]) => {
-		fileSurfaceStore.setFilesTab(tab);
-	}, []);
-
-	const handleOpenFsPath = useCallback((path: string | null) => {
-		fileSurfaceStore.openFsPath(path);
-	}, []);
-
 	return (
 		<FileSurfaceContext.Provider value={openFile}>
 			{children}
@@ -113,20 +96,6 @@ export function FileSurfaceProvider({
 						recents={recents}
 						openFile={openFile}
 						onClose={handleClosePalette}
-					/>
-				</Suspense>
-			) : null}
-			{snapshot.libraryOpen ? (
-				<Suspense fallback={null}>
-					<FileLibraryOverlay
-						open
-						workspaceId={snapshot.workspaceId ?? workspaceId}
-						filesTab={snapshot.filesTab}
-						fsPath={snapshot.fsPath}
-						onClose={handleCloseLibrary}
-						onOpenPalette={handleOpenPalette}
-						onSelectTab={handleSelectFilesTab}
-						onOpenFsPath={handleOpenFsPath}
 					/>
 				</Suspense>
 			) : null}

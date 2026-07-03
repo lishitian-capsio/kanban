@@ -37,10 +37,9 @@ interface FileSystemExplorerProps {
 	/** Currently-open path (mirrors the store's `fsPath`). */
 	fsPath: string | null;
 	/**
-	 * Whether this explorer is the currently-visible surface (its tab is active and
-	 * the overlay is open). Scopes the ⌘P Quick Open hotkey so it fires only here —
-	 * the explorer stays mounted (hidden) behind the uploads tab, so mount alone
-	 * can't gate the shortcut.
+	 * Whether this explorer is the currently-visible surface (the docked File panel
+	 * is expanded, not collapsed to its edge strip). Scopes the ⌘P Quick Open hotkey
+	 * so it fires only when the explorer is actually showing.
 	 */
 	active: boolean;
 	/** Open a path in the right pane, or clear it with `null` (writes `?fsPath`). */
@@ -87,12 +86,14 @@ type PromptState =
 	| null;
 
 /**
- * The「文件系统」tab: a VS Code–style, lazily-loaded explorer over the current
- * project's repo working tree (`workspaceFs`). Left = virtualized tree with a
- * "show hidden" toggle, new file/folder + refresh actions, right-click menu, and
- * drag-to-move; right = read-only viewer. No filesystem watch (design §1) —
- * refresh is manual + on window focus. Mutations refresh only the affected
- * directory layer(s), never the whole tree.
+ * The File surface's filesystem explorer: a VS Code–style, lazily-loaded explorer
+ * over the current project's repo working tree (`workspaceFs`). Left = virtualized
+ * tree with a "show hidden" toggle, new file/folder + upload + refresh actions,
+ * right-click menu (incl. upload/download), and drag-to-move (plus OS drag-in
+ * upload); right = viewer with a download action. Upload uses `workspaceFs.
+ * uploadFile`, download the `workspaceFs` read path — both integrated here (there
+ * is no separate upload tab). No filesystem watch (design §1) — refresh is manual
+ * + on window focus. Mutations refresh only the affected directory layer(s).
  */
 export function FileSystemExplorer({
 	workspaceId,
@@ -139,9 +140,9 @@ export function FileSystemExplorer({
 	);
 
 	// ⌘/Ctrl+P opens Quick Open (VS Code's "Go to File"). Scoped to `active` so it
-	// fires only while THIS tab is the visible surface — never while the uploads tab
-	// is up (the explorer stays mounted behind it) — and can't collide with the
-	// document palette's ⌘K. `preventDefault` swallows the browser Print shortcut.
+	// fires only while the File panel is expanded and showing — not when it is
+	// collapsed to the edge strip — and can't collide with the document palette's
+	// ⌘K. `preventDefault` swallows the browser Print shortcut.
 	useHotkeys(
 		"mod+p",
 		() => setQuickOpenOpen(true),
@@ -149,7 +150,7 @@ export function FileSystemExplorer({
 		[active],
 	);
 
-	// Never leave the palette open once this surface is hidden (tab switch / close).
+	// Never leave the palette open once this surface is hidden (collapse / close).
 	useEffect(() => {
 		if (!active) {
 			setQuickOpenOpen(false);
