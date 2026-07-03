@@ -202,7 +202,8 @@
       "name": "反馈：Kanban 无法回退",
       "titleSource": "auto",
       "createdAt": 1783045838753,
-      "updatedAt": 1783046138646
+      "updatedAt": 1783046138646,
+      "pendingNextStep": "把这个回退缺陷在看板上建一个排查任务"
     }
   ],
   "fullscreenTabs": {
