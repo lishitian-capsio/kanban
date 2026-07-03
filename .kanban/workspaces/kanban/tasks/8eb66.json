@@ -1,0 +1,20 @@
+{
+  "id": "8eb66",
+  "title": "Storage 基础:给 agent 建只读 kanban storage CLI 通道 + 接通 agentStorageAccessEnabled 门",
+  "prompt": "目标:给 Kanban agent 建立感知 Storage(S3 对象存储)所需的**基础通道** —— 一个只读的 `kanban storage` CLI,并把现在休眠的 `agentStorageAccessEnabled` 门接通。这是后续\"让 agent 像感知 Tasks/Vault/Database 那样感知 Storage\"的前置;本任务只建通道 + 门,不做 prompt 注入/深度控件/前端(那些是后续独立一轮)。\n\n== 背景 ==\nStorage 是一个已存在但对 agent 完全空白的 surface:\n- 已有人类侧只读浏览能力:StorageService(src/storage/s3-service.ts)、S3ClientFactory(src/storage/s3-client.ts)、tRPC storage 路由(storage.listConnections 等,见 workspace 侧 storage api)。Bun.S3Client 是 bucket-scoped、无 ListBuckets,一个连接锁定一个桶,靠 delimiter:\"/\" 单层列前缀 + continuation token 翻页;readObject 按 content-type/扩展名预分类并对 text/binary 分别封顶。\n- 但**没有 src/commands/storage.ts、CLI 未注册、agentStorageAccessEnabled 是死字段**(仅 api-contract 定义 + vault-settings-store partial-update 分支,无任何消费点)。\n\n== 要做的(完全对照 src/commands/db.ts 的既有模式)==\n1) 新增 src/commands/storage.ts,注册到 src/cli.ts,提供**只读**子命令(命名对齐 db 的 connection list/tables/describe/query):\n   - `kanban storage connection list` —— 列出已配置的存储连接(id、桶名、endpoint 等,**绝不输出密钥**)。\n   - `kanban storage list --connection <id> [--prefix <p>] [--cursor <token>]` —— 单层列出某前缀下的对象/子前缀(delimiter:\"/\"),带 continuation token 翻页。\n   - `kanban storage read <key> --connection <id>` —— 读单个对象(复用 StorageService.readObject 的分类 + 封顶;text 直出、binary base64;超限返回 tooLarge 而不是硬读)。\n   全部复用现有 StorageService,不要新写 S3 逻辑。\n2) 访问门:接通 agentStorageAccessEnabled。仿照 db.ts 的 resolveDbWorkspace(约 97-113)—— 解析 workspace 后读该 workspace 的设置(VaultSettingsStore.get().agentStorageAccessEnabled),关闭时对**整个 storage CLI 通道**抛 CliError(\"storage_access_disabled\", \"Agent storage access is disabled for this workspace…\"),和 database_access_disabled 一致。per-workspace。\n3) 结构性只读:StorageService 本就没有写/删/presign 方法 —— 保持如此,storage.ts 不得引入任何写能力。凭证始终显式(绝不落 Bun 的 S3_*/AWS_* env 回退);下载走后端 base64,不给浏览器 presign URL(维持现状)。\n4) 输出走 CLI 统一信封(schemaVersion 2,参考 cli-command-runner.ts / cli-envelope.ts);id 类参数用 positional + 兼容旧 flag 的模式(参考 cli-positional-args.ts,注意\"在 handler 内部解析 id\"的既有坑)。\n\n== 不做(留给后续 Storage 感知一轮)==\n- 不往 append-system-prompt.ts 注入 storage 的知晓块。\n- 不做深度/主动托管、不动前端控件。\n- 不动 db/vault/task 的现有行为。\n\n== 验收 ==\n- `kanban storage connection list/list/read` 三条只读命令可用,输出 JSON 信封,无密钥泄漏。\n- 门:agentStorageAccessEnabled 关时所有 storage 子命令返回 storage_access_disabled;开时放行(有测试,参考 db access-gate 测试)。\n- 结构上无任何写路径。\n- 复用 StorageService,S3 访问用可注入的 S3ClientFactory(vitest 注入 fake,不连真实 S3;真实覆盖靠 bun/MinIO,和现有 storage 测试一致)。\n- typecheck 含 web:typecheck。\n先探清 storage 相关文件与 tRPC 方法的确切命名(记忆里 WorkspaceStorageApi 的连接方法叫 list/upsert/delete/testStorageConnection,和 db api 不同名,别搞混),再动手。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "98d352bf-cb23-490b-8d5d-8945798a7371",
+  "baseRef": "main",
+  "createdAt": 1783044709932,
+  "updatedAt": 1783044709932,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
