@@ -110,10 +110,10 @@
     {
       "id": "5fec3500-5c60-4477-8b05-794bc8dd76a7",
       "agentId": "claude",
-      "name": "Move database toggle next to button",
+      "name": "会话任务栏替代 show tips",
       "titleSource": "auto",
       "createdAt": 1782781545466,
-      "updatedAt": 1782884324858,
+      "updatedAt": 1783067133564,
       "pendingNextStep": "启动任务 3c969"
     },
     {
