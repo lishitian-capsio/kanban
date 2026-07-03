@@ -1,0 +1,20 @@
+{
+  "id": "c2683",
+  "title": "新建会话弹窗: 去掉 /斜杠命令, 保留 @提及",
+  "prompt": "需求: 新建\"聊天线程/会话\"创建弹窗(web-ui/src/components/home-agent/home-thread-create-dialog.tsx)的输入框,**去掉 / 斜杠命令**,但**保留 @ 文件提及**。对话中的聊天输入框 KanbanChatComposer 保持现状(@ + / 都不动),本任务不要改它。\n\n## 背景\n提交 868c1731 给新建弹窗接入了 @ + / (通过共享 hook useKanbanComposerCompletion + TaskPromptComposer 的 enableSlashCommands 开关)。用户反馈: 新建弹窗不需要 / 斜杠命令。\n\n## 要求\n1. 在 home-thread-create-dialog.tsx 里,给 TaskPromptComposer 关闭斜杠命令(把 enableSlashCommands 设为 false 或不传该 prop),同时**保留 workspaceId**,使 @ 文件提及仍然可用。\n2. 不要改动 KanbanChatComposer(对话中聊天输入框)的行为——它继续支持 @ 和 /。\n3. 确认共享 hook useKanbanComposerCompletion 的 enableSlashCommands 开关是 per-instance 生效的,关掉后新建弹窗输入 / 不再弹出斜杠命令菜单,而 @ 仍能触发文件补全。\n4. 遵循仓库约定(TypeScript 无 any、现有代码风格);更新/补充相关测试(如新建弹窗 composer 的测试断言 / 不再弹菜单、@ 仍可用);跑通 web:typecheck 与相关测试。\n5. 亲自验证: 打开新建会话弹窗,输入 / 不出现斜杠命令菜单;输入 @ 仍出现文件补全。对话中聊天框的 / 依旧正常。\n\n注意: 活跃的多智能体工作区,开工前先 git 同步,留意 home-thread-create-dialog.tsx / task-prompt-composer.tsx / useKanbanComposerCompletion 相关文件最新状态。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "bcd4d0cd-58af-4991-967b-36e566b082ed",
+  "baseRef": "main",
+  "createdAt": 1783069548889,
+  "updatedAt": 1783069548889,
+  "column": "backlog",
+  "rank": "Zw",
+  "dependsOn": []
+}
