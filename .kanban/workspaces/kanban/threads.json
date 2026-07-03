@@ -195,19 +195,27 @@
       "createdAt": 1782982954395,
       "updatedAt": 1782982972444,
       "pendingNextStep": "启动任务 965a8"
+    },
+    {
+      "id": "5a452b07-e2c2-4342-9923-4c9cdae4a291",
+      "agentId": "claude",
+      "name": "kanban这个系统有个问题，无法回退",
+      "titleSource": "auto",
+      "createdAt": 1783045838753,
+      "updatedAt": 1783045838753
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "14c3b7dd-36b3-4205-a132-f9be33ca0f2c",
       "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
       "1560c042-3150-49ba-a54b-0a96c1f26a27",
       "e66572b8-97c3-4325-a4ad-d747bc25f2a1",
       "bcd4d0cd-58af-4991-967b-36e566b082ed",
       "6eff6e3c-a36d-4d19-8f02-3462ec4b1e41",
       "49269ceb-b13c-4019-aaaf-65bd61e653ff",
-      "98d352bf-cb23-490b-8d5d-8945798a7371"
+      "98d352bf-cb23-490b-8d5d-8945798a7371",
+      "5a452b07-e2c2-4342-9923-4c9cdae4a291"
     ],
-    "activeThreadId": "bcd4d0cd-58af-4991-967b-36e566b082ed"
+    "activeThreadId": "5a452b07-e2c2-4342-9923-4c9cdae4a291"
   }
 }
