@@ -1,0 +1,20 @@
+{
+  "id": "4910c",
+  "title": "session 模式：File 开关移到右上角 + 点击开右侧 docked 侧边栏",
+  "prompt": "目标：在 kanban agent 的 session 模式（选中某任务/进入 agent 会话视图，即 selectedCard / CardDetailView）里，(1) 把 File 开关从 storage/database/vault 那一组挪到右上角，放在 Kanban Agent(Bot) 开关旁边；(2) 点击 File 时像 board 模式一样打开右侧 docked 侧边栏（FileDockPanel，右侧停靠）。当前 File 在 session 模式下是被禁用的，要打通。\n\n## 现状（已核实，勿重复调查）\nweb-ui/src/components/top-bar.tsx：\n- File 按钮当前在左侧组，约 610–624 行，和 Vault/Database/Storage 三个 split button 并排（这三个约 586–609）。File 是普通 Button，FileText 图标，variant 依 isFileSurfaceActive（约 418 行的 hook）在 primary/default 间切，onClick 走 onOpenFile。\n- 右上角 actions 容器约 630–815 行：依次是 shortcut+Run、Terminal 开关、Debug、Kanban Agent(Bot 图标, onToggleHomeChat/isHomeChatOpen, 约 785–803)、Settings(约 806)。\nweb-ui/src/App.tsx：\n- onOpenFile 约 1075 行：onOpenFile={hasNoProjects || selectedCard ? undefined : () => fileSurfaceStore.openLibrary()} —— 选中卡片(session 模式)时是 undefined。\n- isFileDockAvailable 约 531 行：!selectedCard && !hasNoProjects && !!currentProjectId —— 选中卡片时为 false。\n- FileDockPanel 约 946–1002 行作为 flex 布局里的 sibling 挂载（board 模式）；DockableChatPanel 在左，FileDockPanel 在右，主内容居中。\n- CardDetailView（session 模式）约 857–1010 行：当前【没有】挂 FileDockPanel。\nFile 停靠实现（已存在、可复用）：\n- web-ui/src/components/file-surface/file-dock-panel.tsx —— 依 dock.position 用 order-first/order-last 切左右。\n- web-ui/src/components/file-surface/use-file-dock.ts —— 默认 DEFAULT_FILE_DOCK_SIDE=\"right\"，宽 560px(360–960 clamp)，position/width/collapsed 存 localStorage。\n- 状态源 fileSurfaceStore（file-surface-store.ts）：?files 开关 library、?file=<id> 单文档、?fsPath=<path> 深链；isFileSurfaceActive hook。\n\n## 要做的事\n1. 移动 File 开关：把 top-bar.tsx 左侧组(610–624)的 File 按钮移到右上角 actions 容器里，紧挨 Kanban Agent(Bot) 开关（放它旁边、Settings 之前）。保持它是带 FileText 图标的按钮，保留 isFileSurfaceActive 的高亮/active 样式与 onOpenFile 行为。移走后左侧只剩 Vault/Database/Storage。\n2. 让 File 在 session 模式可用并右侧停靠：\n   - 放开 session 模式的门禁：onOpenFile（App.tsx 1075）在 selectedCard 时也提供 openLibrary；isFileDockAvailable（531）不再用 !selectedCard 一刀切禁掉（或新增一个 session 专用可用标志），使 session 模式也能开 File dock。\n   - 在 session 模式的布局里挂载 FileDockPanel，让它作为右侧 sibling 渲染，不与 CardDetailView 的内部面板冲突（复用现有 order-last 右停靠；必要时调整布局嵌套）。\n   - session 模式的 File dock 必须复用 board 模式那套：use-file-dock.ts 的右侧默认、宽度、localStorage 持久化，行为与 board 模式一致。\n3. 保留行为：fileSurfaceStore / ?files 路由 / isFileSurfaceActive / dock 的 position+width localStorage 全部不变；board 模式现有行为不能回归。\n\n## 术语确认（实现前）\n“session 模式 / kanban agent” 指的是选中任务后的 agent 会话视图（selectedCard → CardDetailView）。若代码里更贴切的目标是 home Kanban Agent 侧边栏(onToggleHomeChat 的那个 sidebar)而非 CardDetailView，请以“选中任务的会话视图”为准实现，并在实现说明里指出你判断的具体挂载点。\n\n## 约束 / 验收\n- 只动 web-ui；用现有 UI 原语与图标；若触及共享契约注意 dual-lib typecheck（本改动预计不涉及契约）。\n- board 模式：File 仍可用、右侧停靠不变；session 模式：右上角出现 File 开关，点击打开右侧 docked FileDockPanel，行为与 board 一致。\n- 左侧组不再含 File。\n- 补/更新组件测试：top-bar 里 File 开关的新位置与 active 态；session 模式下 File dock 的可用与右侧渲染。\n\n参考 AGENTS.md：web-ui 样式/图标约定、file-surface docked 面板既有实现、不要过度设计。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "49269ceb-b13c-4019-aaaf-65bd61e653ff",
+  "baseRef": "main",
+  "createdAt": 1783059225904,
+  "updatedAt": 1783059225904,
+  "column": "backlog",
+  "rank": "Zw",
+  "dependsOn": []
+}
