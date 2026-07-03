@@ -176,7 +176,7 @@
       "titleSource": "auto",
       "createdAt": 1782982437956,
       "updatedAt": 1782983212206,
-      "pendingNextStep": "建个 task：给 CLI agent 会话实现'粘贴/拖入图片→写进 worktree→注入 @路径'的桥接，先只做 claude"
+      "pendingNextStep": "启动 4910c，开 auto-review"
     },
     {
       "id": "6eff6e3c-a36d-4d19-8f02-3462ec4b1e41",
