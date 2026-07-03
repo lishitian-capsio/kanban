@@ -25,6 +25,12 @@ export interface UsePersistentTerminalSessionResult {
 	isStopping: boolean;
 	clearTerminal: () => void;
 	stopTerminal: () => Promise<void>;
+	/**
+	 * Inject text into the live PTY as if pasted at the prompt (no newline).
+	 * Returns false when the socket is not open. Used to drop an `@/path` mention
+	 * after a dragged/pasted attachment is written to disk.
+	 */
+	pasteText: (text: string) => boolean;
 }
 
 export function usePersistentTerminalSession({
@@ -183,11 +189,14 @@ export function usePersistentTerminalSession({
 		terminalRef.current?.clear();
 	}, []);
 
+	const pasteText = useCallback((text: string) => terminalRef.current?.paste(text) ?? false, []);
+
 	return {
 		containerRef,
 		lastError,
 		isStopping,
 		clearTerminal,
 		stopTerminal,
+		pasteText,
 	};
 }

@@ -24,6 +24,7 @@ import {
 	type RuntimeTaskChatMessagesRequest,
 	type RuntimeTaskChatReloadRequest,
 	type RuntimeTaskChatSendRequest,
+	type RuntimeTaskSessionAttachmentRequest,
 	type RuntimeTaskSessionInputRequest,
 	type RuntimeTaskSessionStartRequest,
 	type RuntimeTaskSessionStopRequest,
@@ -57,6 +58,7 @@ import {
 	runtimeTaskChatMessagesRequestSchema,
 	runtimeTaskChatReloadRequestSchema,
 	runtimeTaskChatSendRequestSchema,
+	runtimeTaskSessionAttachmentRequestSchema,
 	runtimeTaskSessionInputRequestSchema,
 	runtimeTaskSessionStartRequestSchema,
 	runtimeTaskSessionStopRequestSchema,
@@ -291,6 +293,22 @@ export function parseTaskChatSendRequest(value: unknown): RuntimeTaskChatSendReq
 		...parsed,
 		taskId,
 		text,
+	};
+}
+
+export function parseTaskSessionAttachmentRequest(value: unknown): RuntimeTaskSessionAttachmentRequest {
+	const parsed = parseWithSchema(runtimeTaskSessionAttachmentRequestSchema, value);
+	const taskId = parsed.taskId.trim();
+	if (!taskId) {
+		throw new Error("Task attachment taskId cannot be empty.");
+	}
+	if (!parsed.data) {
+		throw new Error("Task attachment data is required.");
+	}
+	return {
+		...parsed,
+		taskId,
+		name: parsed.name.trim(),
 	};
 }
 

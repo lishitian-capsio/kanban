@@ -66,6 +66,7 @@ import {
 	parseTaskChatMessagesRequest,
 	parseTaskChatReloadRequest,
 	parseTaskChatSendRequest,
+	parseTaskSessionAttachmentRequest,
 	parseTaskSessionInputRequest,
 	parseTaskSessionStartRequest,
 	parseTaskSessionStopRequest,
@@ -90,6 +91,7 @@ import { getSelectedCommittedProvider } from "../state/committed-provider-store"
 import { loadWorkspaceCommittedProviders } from "../state/workspace-state";
 import { buildRuntimeConfigResponse, resolveAgentCommand } from "../terminal/agent-registry";
 import { isBinaryAvailableOnPath } from "../terminal/command-discovery";
+import { writeTaskAttachment } from "../terminal/session-attachment-store";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { resolveTaskCwd } from "../workspace/task-worktree";
 import { captureTaskTurnCheckpoint } from "../workspace/turn-checkpoints";
@@ -983,6 +985,29 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					summary: null,
 					error: message,
 				};
+			}
+		},
+		writeTaskSessionAttachment: async (workspaceScope, input) => {
+			try {
+				const body = parseTaskSessionAttachmentRequest(input);
+				// Resolve the CLI agent's actual cwd from its live terminal session. The
+				// terminal manager only tracks terminal-backed agents (never pi), so a
+				// resolved worktreePath means this is a CLI session — exactly the scope
+				// that needs an on-disk file it can `@`-mention.
+				const terminalManager = await deps.getScopedTerminalManager(workspaceScope);
+				const worktreePath = terminalManager.getSummary(body.taskId)?.workspacePath ?? null;
+				if (!worktreePath) {
+					return { ok: false, error: "No active terminal session for this task." };
+				}
+				const result = await writeTaskAttachment({
+					worktreePath,
+					name: body.name,
+					data: body.data,
+				});
+				return result.ok ? { ok: true, path: result.path } : { ok: false, error: result.error };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, error: message };
 			}
 		},
 		startShellSession: async (workspaceScope, input) => {

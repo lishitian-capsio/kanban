@@ -2722,6 +2722,31 @@ export const runtimeTaskChatSendResponseSchema = z.object({
 });
 export type RuntimeTaskChatSendResponse = z.infer<typeof runtimeTaskChatSendResponseSchema>;
 
+// --- writeTaskSessionAttachment: persist a dragged/pasted file for a CLI agent -
+// A CLI/terminal agent (currently claude) can't receive binary bytes over its
+// text-only stdin, but it CAN read a file it's handed a path to. This writes the
+// uploaded bytes into the task worktree's machine-local `.kanban/attachments/`
+// dir (gitignored, cleaned up with the worktree) under a fresh UUID name, and
+// returns the absolute path the UI then injects as an `@/path` mention. `name`
+// contributes only a sanitized extension — never a path segment. Pi keeps its own
+// base64 image channel; this is only for terminal-backed sessions.
+export const runtimeTaskSessionAttachmentRequestSchema = z.object({
+	taskId: z.string(),
+	// Original filename; only its extension is used for the stored file.
+	name: z.string(),
+	// Base64-encoded file bytes.
+	data: z.string(),
+});
+export type RuntimeTaskSessionAttachmentRequest = z.infer<typeof runtimeTaskSessionAttachmentRequestSchema>;
+
+export const runtimeTaskSessionAttachmentResponseSchema = z.object({
+	ok: z.boolean(),
+	// Absolute on-disk path of the written attachment (the `@`-mention target).
+	path: z.string().optional(),
+	error: z.string().optional(),
+});
+export type RuntimeTaskSessionAttachmentResponse = z.infer<typeof runtimeTaskSessionAttachmentResponseSchema>;
+
 export const runtimeTaskChatReloadRequestSchema = z.object({
 	taskId: z.string(),
 });

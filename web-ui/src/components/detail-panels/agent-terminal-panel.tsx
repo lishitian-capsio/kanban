@@ -1,16 +1,28 @@
 import "@xterm/xterm/css/xterm.css";
 
 import { Command, Maximize2, MessageSquare, Minimize2, X } from "lucide-react";
-import type { MutableRefObject, ReactElement } from "react";
-import { useMemo } from "react";
+import type { ClipboardEvent, DragEvent, MutableRefObject, ReactElement } from "react";
+import { useCallback, useMemo, useState } from "react";
 
+import { showAppToast } from "@/components/app-toaster";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
+import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useTaskWorkspaceSnapshotValue } from "@/stores/workspace-metadata-store";
+import {
+	collectFilesFromDataTransfer,
+	processTerminalAttachments,
+	readFileAsBase64,
+} from "@/terminal/terminal-attachment-drop";
 import { usePersistentTerminalSession } from "@/terminal/use-persistent-terminal-session";
 import { isMacPlatform } from "@/utils/platform";
+
+// CLI agents that support `@/path` file mentions and so accept dragged/pasted
+// attachments. Scoped to claude this phase; a new agent is one entry + its own
+// mention formatting (see terminal-attachment-drop.ts).
+const ATTACHMENT_MENTION_AGENT_IDS = new Set<string>(["claude"]);
 
 interface AgentTerminalSessionControls {
 	clearTerminal: () => void;
@@ -18,6 +30,7 @@ interface AgentTerminalSessionControls {
 	isStopping: boolean;
 	lastError: string | null;
 	stopTerminal: () => Promise<void>;
+	pasteText: (text: string) => boolean;
 }
 
 export interface AgentTerminalPanelProps {
@@ -144,6 +157,7 @@ function AgentTerminalReviewActions({
 
 function AgentTerminalPanelLayout({
 	taskId,
+	workspaceId,
 	summary,
 	onSummary: _onSummary,
 	onCommit,
@@ -172,8 +186,76 @@ function AgentTerminalPanelLayout({
 	onToggleExpand,
 	sessionControls,
 }: AgentTerminalPanelProps & { sessionControls: AgentTerminalSessionControls }): ReactElement {
-	const { containerRef, lastError, isStopping, clearTerminal, stopTerminal } = sessionControls;
+	const { containerRef, lastError, isStopping, clearTerminal, stopTerminal, pasteText } = sessionControls;
 	const canStop = summary?.state === "running" || summary?.state === "awaiting_review";
+	// Only claude sessions get drag/paste-to-attachment (the surface understands
+	// `@/path` mentions). Other CLI agents fall through to xterm's default paste.
+	const attachmentsEnabled = Boolean(workspaceId) && ATTACHMENT_MENTION_AGENT_IDS.has(summary?.agentId ?? "");
+	const [isAttachmentDragOver, setIsAttachmentDragOver] = useState(false);
+
+	const handleAttachmentFiles = useCallback(
+		(files: File[]) => {
+			if (!attachmentsEnabled || !workspaceId || files.length === 0) {
+				return;
+			}
+			void processTerminalAttachments({
+				files,
+				upload: async (file) => {
+					const data = await readFileAsBase64(file);
+					if (data === null) {
+						return { ok: false, error: `Could not read ${file.name || "file"}.` };
+					}
+					return await getRuntimeTrpcClient(workspaceId).runtime.writeTaskSessionAttachment.mutate({
+						taskId,
+						name: file.name || "attachment",
+						data,
+					});
+				},
+				inject: (text) => {
+					pasteText(text);
+				},
+				onError: (message) => {
+					showAppToast({ intent: "danger", message }, "terminal-attachment-error");
+				},
+			});
+		},
+		[attachmentsEnabled, pasteText, taskId, workspaceId],
+	);
+
+	const handleAttachmentDrop = useCallback(
+		(event: DragEvent<HTMLDivElement>) => {
+			if (!attachmentsEnabled) {
+				return;
+			}
+			const files = collectFilesFromDataTransfer(event.dataTransfer);
+			if (files.length === 0) {
+				setIsAttachmentDragOver(false);
+				return;
+			}
+			event.preventDefault();
+			setIsAttachmentDragOver(false);
+			handleAttachmentFiles(files);
+		},
+		[attachmentsEnabled, handleAttachmentFiles],
+	);
+
+	const handleAttachmentPaste = useCallback(
+		(event: ClipboardEvent<HTMLDivElement>) => {
+			if (!attachmentsEnabled) {
+				return;
+			}
+			const files = collectFilesFromDataTransfer(event.clipboardData);
+			if (files.length === 0) {
+				// No files — let xterm handle the (text) paste normally.
+				return;
+			}
+			// Intercept before xterm's textarea handler so file bytes don't reach the PTY.
+			event.preventDefault();
+			event.stopPropagation();
+			handleAttachmentFiles(files);
+		},
+		[attachmentsEnabled, handleAttachmentFiles],
+	);
 	const statusLabel = useMemo(() => describeState(summary), [summary]);
 	const statusTagStyle = useMemo(() => getStateTagStyle(summary), [summary]);
 	const agentLabel = useMemo(() => {
@@ -310,12 +392,62 @@ function AgentTerminalPanelLayout({
 					</div>
 				</div>
 			) : null}
-			<div style={{ flex: "1 1 0", minHeight: 0, overflow: "hidden", padding: "3px 1.5px 3px 3px", position: "relative" }}>
+			<div
+				style={{ flex: "1 1 0", minHeight: 0, overflow: "hidden", padding: "3px 1.5px 3px 3px", position: "relative" }}
+				onDragEnter={
+					attachmentsEnabled
+						? (event) => {
+								event.preventDefault();
+								setIsAttachmentDragOver(true);
+							}
+						: undefined
+				}
+				onDragOver={
+					attachmentsEnabled
+						? (event) => {
+								event.preventDefault();
+								setIsAttachmentDragOver(true);
+							}
+						: undefined
+				}
+				onDragLeave={
+					attachmentsEnabled
+						? (event) => {
+								if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+									return;
+								}
+								setIsAttachmentDragOver(false);
+							}
+						: undefined
+				}
+				onDrop={attachmentsEnabled ? handleAttachmentDrop : undefined}
+				onPasteCapture={attachmentsEnabled ? handleAttachmentPaste : undefined}
+			>
 				<div
 					ref={containerRef}
 					className="kb-terminal-container"
 					style={{ height: "100%", width: "100%", background: terminalBackgroundColor }}
 				/>
+				{isAttachmentDragOver ? (
+					<div
+						style={{
+							position: "absolute",
+							inset: 3,
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							borderRadius: 6,
+							border: "2px dashed var(--color-accent)",
+							background: "rgba(0, 132, 255, 0.08)",
+							color: "var(--color-text-primary)",
+							fontSize: 13,
+							pointerEvents: "none",
+							zIndex: 2,
+						}}
+					>
+						Drop to attach — the file path is inserted for the agent to read.
+					</div>
+				) : null}
 				{!summary && !lastError && !sessionErrorMessage ? (
 					<div
 						style={{
