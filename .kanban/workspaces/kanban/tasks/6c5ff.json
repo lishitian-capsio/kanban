@@ -1,0 +1,20 @@
+{
+  "id": "6c5ff",
+  "title": "CI: run vitest under Bun (not Node) in workflows",
+  "prompt": "PR #27 CI: the Bun-install step now lets `npm run build` succeed, but the TEST step fails. Root cause is a workflow issue, not source bugs: CI runs `npx vitest run` under NODE, while Kanban's runtime is Bun-only. Fix it in the GitHub workflow(s).\n\nEvidence (all from running under Node):\n- `Cannot find package 'bun:sqlite'` (src/db/driver/sqlite-driver.ts via test/runtime/trpc/workspace-api.test.ts) and `Cannot find package 'bun:test'` (src/agent-sdk/ai/utils/oauth/__tests__/xai-oauth.test.ts) — Node cannot load `bun:` modules.\n- All 11 tests in test/integration/runtime-state-stream.integration.test.ts + task-command-exit.integration.test.ts die with: \"Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'\" — the test harness spawns the runtime server via tsx/Node (see test/utilities/cli-runtime.ts and runtime-state-stream harness ~line 219), and the Bun-only runtime imports `bun:` at startup.\n- The ENTIRE macos-latest job dies before any test: `Cannot find native binding ... @rolldown/binding-darwin-arm64` (vitest v4 / rolldown native binding under Node, npm optional-dependency bug).\n\nRequired fix — .github/workflows/test.yml (and check build-release.yml/publish.yml only if they run tests):\n1. Run the root test step under Bun instead of Node: replace `npx vitest run` with `bun vitest run` (or `bunx vitest run`). The setup-bun step is already present from the earlier CI fix — reuse it; ensure Bun is set up before the test step on BOTH ubuntu-latest and macos-latest.\n2. Ensure the integration-test harness launches the server under Bun so the spawned child process no longer hits the `bun:` ESM error. If running vitest under Bun does not automatically make the harness spawn use Bun, update the spawn in test/utilities/cli-runtime.ts / the integration harness to invoke `bun` (this is the one source/test-util touch that may be needed to complete the workflow fix).\n3. Confirm the macOS rolldown native-binding failure disappears once tests run under Bun (Bun does not use the Node rolldown native binding path). If it persists, address the optional-dependency install (e.g. clean install) in the workflow.\n\nOut of scope (do NOT fix here — these are genuine test staleness / source issues, note them but leave for a separate task): agent-registry expecting `qoder` (5→6 agents), runtime-config `.cline`→`.kanban` config path, `toWellFormed` typecheck needing tsconfig `lib: es2024`, committed-providers/network-bridge/task-worktree assertion failures. Focus this task on making CI run the suite under Bun.\n\nVerify by pushing and running `gh pr checks 27` (or re-running the failed Test workflow) until the `bun:`/rolldown/ESM-scheme failures are gone.",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "6eff6e3c-a36d-4d19-8f02-3462ec4b1e41",
+  "baseRef": "main",
+  "createdAt": 1783043756939,
+  "updatedAt": 1783043756939,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
