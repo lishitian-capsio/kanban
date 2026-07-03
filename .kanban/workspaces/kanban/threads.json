@@ -132,7 +132,7 @@
       "titleSource": "auto",
       "createdAt": 1782885250920,
       "updatedAt": 1783044673524,
-      "pendingNextStep": "开始 T1(a73ca)存储/schema/迁移这个地基任务"
+      "pendingNextStep": "先看看 8eb66 改了哪些文件和内容,没问题我再移到 done 触发后面的链条"
     },
     {
       "id": "e60ea195-0a08-4edf-a21a-f47e5911b442",
