@@ -128,10 +128,10 @@
     {
       "id": "98d352bf-cb23-490b-8d5d-8945798a7371",
       "agentId": "claude",
-      "name": "Board 作为可感知开关的surface",
+      "name": "Kanban 多 surface agent 感知重构",
       "titleSource": "auto",
       "createdAt": 1782885250920,
-      "updatedAt": 1782890675786,
+      "updatedAt": 1783044673524,
       "pendingNextStep": "开始 T1(a73ca)存储/schema/迁移这个地基任务"
     },
     {
