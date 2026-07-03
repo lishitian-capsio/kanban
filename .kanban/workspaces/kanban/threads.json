@@ -204,6 +204,14 @@
       "createdAt": 1783045838753,
       "updatedAt": 1783046138646,
       "pendingNextStep": "把需求 11ba3「回退合并按钮」在看板上建一个排查+实现任务"
+    },
+    {
+      "id": "1e918e4e-dcbb-4cb6-917b-43f928871be4",
+      "agentId": "claude",
+      "name": "讲了什么？",
+      "titleSource": "auto",
+      "createdAt": 1783076495685,
+      "updatedAt": 1783076495685
     }
   ],
   "fullscreenTabs": {
@@ -211,8 +219,9 @@
       "5fec3500-5c60-4477-8b05-794bc8dd76a7",
       "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
       "bcd4d0cd-58af-4991-967b-36e566b082ed",
-      "98d352bf-cb23-490b-8d5d-8945798a7371"
+      "98d352bf-cb23-490b-8d5d-8945798a7371",
+      "49269ceb-b13c-4019-aaaf-65bd61e653ff"
     ],
-    "activeThreadId": "98d352bf-cb23-490b-8d5d-8945798a7371"
+    "activeThreadId": "49269ceb-b13c-4019-aaaf-65bd61e653ff"
   }
 }
