@@ -607,21 +607,6 @@ export function TopBar({
 									onToggleStorage={onToggleStorage}
 								/>
 							) : null}
-							{!hideProjectDependentActions && onOpenFile ? (
-								<Button
-									variant={isFileSurfaceActive ? "primary" : "default"}
-									size="sm"
-									icon={<FileText size={14} />}
-									onClick={onOpenFile}
-									className={cn(
-										"shrink-0",
-										isFileSurfaceActive ? "ring-1 ring-accent" : "kb-navbar-btn",
-									)}
-									title="Files"
-								>
-									File
-								</Button>
-							) : null}
 						</>
 					) : null}
 				</div>
@@ -800,6 +785,26 @@ export function TopBar({
 								)}
 							/>
 						</Tooltip>
+					) : null}
+
+					{/* File surface toggle: opens the right-docked File panel. Sits beside the
+					    Kanban Agent toggle so it's reachable in both board and task (session)
+					    views — in a task view the Bot toggle is hidden, so File anchors here. */}
+					{!hideProjectDependentActions && onOpenFile ? (
+						<Button
+							variant={isFileSurfaceActive ? "primary" : "default"}
+							size="sm"
+							icon={<FileText size={14} />}
+							onClick={onOpenFile}
+							className={cn(
+								"ml-0.5 shrink-0",
+								isFileSurfaceActive ? "ring-1 ring-accent" : "kb-navbar-btn",
+								isMobile && MOBILE_TOUCH_TARGET,
+							)}
+							title="Files"
+						>
+							File
+						</Button>
 					) : null}
 
 					{/* Settings: always visible */}

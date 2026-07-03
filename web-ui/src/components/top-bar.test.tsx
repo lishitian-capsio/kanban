@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TopBar } from "@/components/top-bar";
+import { fileSurfaceStore } from "@/components/file-surface";
 
 vi.mock("@/stores/workspace-metadata-store", () => ({
 	useHomeGitSummaryValue: () => null,
@@ -163,7 +164,7 @@ describe("TopBar script shortcut onboarding", () => {
 		expect(ownerBadge?.textContent).toContain("Ada Lovelace");
 	});
 
-	it("shows the File button next to the owner badge while a task is selected", async () => {
+	it("shows the File toggle in the right-side actions (before Settings) while a task is selected", async () => {
 		const onOpenFile = vi.fn();
 
 		await act(async () => {
@@ -180,6 +181,7 @@ describe("TopBar script shortcut onboarding", () => {
 					selectedTaskBaseRef="main"
 					selectedTaskOwner={{ name: "Ada Lovelace", email: "ada@example.com" }}
 					onOpenFile={onOpenFile}
+					onOpenSettings={() => {}}
 				/>,
 			);
 		});
@@ -187,13 +189,16 @@ describe("TopBar script shortcut onboarding", () => {
 		const fileButton = findButtonByText(container, "File");
 		expect(fileButton).toBeInstanceOf(HTMLButtonElement);
 
-		const ownerBadge = Array.from(container.querySelectorAll("span")).find(
-			(span) => span.getAttribute("title") === "Created by Ada Lovelace <ada@example.com>",
+		// The File toggle now lives in the top-right actions cluster, immediately before
+		// the Settings button (it replaces the old left-group placement).
+		const settingsButton = container.querySelector<HTMLButtonElement>(
+			'[data-testid="open-settings-button"]',
 		);
-		expect(ownerBadge).toBeDefined();
-		// The File entry sits to the right of the owner badge in DOM order.
-		const relativePosition = ownerBadge?.compareDocumentPosition(fileButton as HTMLButtonElement) ?? 0;
-		expect(relativePosition & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(settingsButton).toBeInstanceOf(HTMLButtonElement);
+		const relativeToSettings = (fileButton as HTMLButtonElement).compareDocumentPosition(
+			settingsButton as HTMLButtonElement,
+		);
+		expect(relativeToSettings & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
 		await act(async () => {
 			fileButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
@@ -201,6 +206,43 @@ describe("TopBar script shortcut onboarding", () => {
 		});
 
 		expect(onOpenFile).toHaveBeenCalledTimes(1);
+	});
+
+	it("reflects the File surface active state on the File toggle", async () => {
+		const renderTopBar = () =>
+			root.render(
+				<TopBar
+					openTargetOptions={[]}
+					selectedOpenTargetId="vscode"
+					onSelectOpenTarget={() => {}}
+					onOpenWorkspace={() => {}}
+					canOpenWorkspace={false}
+					isOpeningWorkspace={false}
+					shortcuts={[]}
+					onOpenFile={() => {}}
+					onOpenSettings={() => {}}
+				/>,
+			);
+
+		await act(async () => {
+			renderTopBar();
+		});
+
+		const inactiveFileButton = findButtonByText(container, "File");
+		expect(inactiveFileButton?.className).not.toContain("ring-accent");
+
+		// Opening the File surface flips the shared store; the toggle picks up the
+		// active ring via its `useFileSurfaceActive` subscription.
+		await act(async () => {
+			fileSurfaceStore.openLibrary();
+		});
+
+		const activeFileButton = findButtonByText(container, "File");
+		expect(activeFileButton?.className).toContain("ring-accent");
+
+		await act(async () => {
+			fileSurfaceStore.closeLibrary();
+		});
 	});
 
 	it("omits the owner indicator when the selected task has no owner", async () => {

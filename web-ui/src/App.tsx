@@ -525,10 +525,11 @@ export default function App(): ReactElement {
 	// HomeSidebarAgentPanel renders null exactly when hasNoProjects || !currentProjectId,
 	// so mirror that gate here rather than instantiating the panel to test for null.
 	const isHomeChatAvailable = !selectedCard && !hasNoProjects && !!currentProjectId;
-	// The docked File panel is a board-mode surface (mirrors the chat panel gate and
-	// how Vault/Database collapse on entering a task). Its open state persists in the
-	// URL, so leaving/returning to board mode re-shows it.
-	const isFileDockAvailable = !selectedCard && !hasNoProjects && !!currentProjectId;
+	// The docked File panel is available in BOTH board and task (session) views. It mounts
+	// as a right-side sibling of the main column in the outer flex, so it docks alongside a
+	// selected task's CardDetailView exactly as it does the board. Its open state persists in
+	// the URL (`?files`), so navigating between views re-shows it.
+	const isFileDockAvailable = !hasNoProjects && !!currentProjectId;
 	const handleCloseFileLibrary = useCallback(() => fileSurfaceStore.closeLibrary(), []);
 	const handleOpenFilePalette = useCallback(() => fileSurfaceStore.openPalette(), []);
 	const handleOpenFsPath = useCallback((path: string | null) => fileSurfaceStore.openFsPath(path), []);
@@ -1072,7 +1073,7 @@ export default function App(): ReactElement {
 								databaseSettingsDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
 								onToggleStorage={hasNoProjects || selectedCard ? undefined : handleToggleStorage}
 								isStorageOpen={isStorageOpen}
-								onOpenFile={hasNoProjects || selectedCard ? undefined : () => fileSurfaceStore.openLibrary()}
+								onOpenFile={hasNoProjects ? undefined : () => fileSurfaceStore.openLibrary()}
 								onToggleHomeChat={isHomeChatAvailable ? handleToggleHomeChat : undefined}
 								isHomeChatOpen={chatDock.open}
 								hideProjectDependentActions={shouldHideProjectDependentTopBarActions}
