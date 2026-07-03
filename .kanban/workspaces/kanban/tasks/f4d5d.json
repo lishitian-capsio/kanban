@@ -3,7 +3,7 @@
   "title": "CI: 收敛出唯一的纯打包 workflow (npm pack, 不跑平台测试)",
   "prompt": "目标：在 GitHub workflow 层面【不再为发布/打包跑多平台测试矩阵】,只保留一条纯打包 workflow：checkout → 装依赖 → build → npm pack → 上传 artifact 并附到 GitHub Release。用户明确选择：只留一条纯打包 workflow,不引用 test.yml,其它 workflow 保持现状。\n\n## 现状（已核实，别重复调查）\n仓库 .github/workflows/ 下有：\n- build-release.yml —— 触发：push tag 'v*' 或 workflow_dispatch。步骤已经是：checkout(fetch-depth:0) → setup-node 22.x → setup-bun 1.3.14 → cache node_modules → npm ci||npm install → web-ui 装依赖 → npm run build(带 POSTHOG/OTEL env) → npm pack → ls kanban-*.tgz → upload-artifact → softprops/action-gh-release 附 kanban-*.tgz。【它本来就不跑任何测试】。\n- publish.yml —— npm 发布,含 jobs.test uses ./.github/workflows/test.yml（needs: test 门禁）。\n- test.yml —— macos-latest + ubuntu 的多平台 vitest 矩阵（当前在挂：mac 上 rolldown 原生绑定缺失导致 vitest 起不来；ubuntu 上 26 个测试因测试与代码漂移/环境问题失败）。\n\n## 要做的事\n1. 把 build-release.yml 作为【唯一的纯打包 workflow】收敛好：确保它就是 checkout → install → build → npm pack → 上传 artifact + 附到 Release，且【完全不引用 / 不 needs test.yml】。当前它已经满足,主要是审阅+按需精简(例如去掉与纯打包无关的冗余步骤/无用 env),不要引入对 test.yml 的依赖。\n2. 【不要改动 publish.yml 和 test.yml 之外】——用户要求其它 workflow 保持现状。也就是说：本 task 不动 test.yml，不动 publish.yml 的 needs:test 门禁（那是另一个决定）。除非收敛纯打包 workflow 时确有必要，否则不碰它们。\n   - 注意：如果发现 build-release.yml 与其它 workflow 有重复的纯打包逻辑需要合并成这一条，可以合并；但不得删除或禁用 publish.yml / test.yml 本身。\n3. 保证 npm pack 走的是已构建的 dist/（npm pack 不触发 prepublishOnly，只 tar 现有产物），build 步骤在 pack 之前先跑 npm run build。产物文件名 kanban-<version>.tgz，供 self-update 从 GitHub Releases 取用（见 AGENTS.md / self-update 说明）。\n4. 不需要让这条 workflow 跑任何 vitest / 平台测试。\n\n## 验收\n- build-release.yml 是一条自洽的纯打包 workflow，push 'v*' tag 或手动 dispatch 时能 build+pack+attach，不 needs 任何 test job。\n- publish.yml、test.yml 内容未被删除/禁用（除非确有合并必要且不改变其对外行为）。\n- 用 actionlint 或等价方式校验 workflow YAML 合法。\n\n参考：仓库 memory/AGENTS.md 中 self-update via GitHub Releases（需要把 kanban-<version>.tgz 附到 Release）。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -13,8 +13,8 @@
   "originThreadId": "49269ceb-b13c-4019-aaaf-65bd61e653ff",
   "baseRef": "main",
   "createdAt": 1783053739853,
-  "updatedAt": 1783053739853,
-  "column": "backlog",
+  "updatedAt": 1783053823190,
+  "column": "in_progress",
   "rank": "Zw",
   "dependsOn": []
 }
