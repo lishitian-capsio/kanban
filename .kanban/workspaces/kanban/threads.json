@@ -185,7 +185,7 @@
       "titleSource": "auto",
       "createdAt": 1782982535028,
       "updatedAt": 1782982578985,
-      "pendingNextStep": "给任务 3a676 开启自动提交"
+      "pendingNextStep": "启动任务 6c5ff 修 CI 测试步骤"
     },
     {
       "id": "bcd4d0cd-58af-4991-967b-36e566b082ed",
