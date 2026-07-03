@@ -1,7 +1,7 @@
 {
   "id": "532cd",
   "title": "Home 侧边栏：当前会话任务栏替代 show tips",
-  "prompt": "在 home（侧边栏）会话界面为「当前选中的会话/线程」增加一条常驻的任务栏，展示该会话 agent 关联的任务，替代现有的 “show tips” 提示。\n\n需求：\n1. 常驻栏内容：仅显示【当前选中会话/线程】关联的任务。任务与会话的关联已有基础设施——任务创建时会盖章 originThreadId（write-once，参见 src 中 task originThreadId 相关逻辑）。用它来筛选出当前线程的任务。\n2. 每个任务项至少展示标题和所在列/状态（backlog / in_progress / review / done），点击可打开任务详情。切换选中的会话时，这条栏要跟着刷新为新会话的任务。\n3. 去掉现有的 “show tips” 展示，由这条常驻任务栏取代它的位置/职责。\n4. 保留现有的 toast 通知，不要移除 toast 机制。\n\n实现要点/约束：\n- 每个线程已有 per-thread 任务计数逻辑（home-session-card-task-counts），可复用其数据来源，把“计数”扩展为“任务列表”。\n- 遵循 web-ui 既有约定：Tailwind + 设计 token（surface/text/border 等）、lucide 图标、复用 src/components/ui 原语；高频 runtime 状态订阅放在展示它的 leaf 组件里（参见 runtime-stream-store 的 per-slice 订阅规则），不要在 App 层订阅任务/会话高频 slice。\n- 只改前端展示与数据接线；如需后端补充“按 originThreadId 查任务”的读取路径，按现有 tRPC / runtime-api 约定扩展。\n\n完成后请自测：切换不同会话时任务栏正确刷新，show tips 已移除，toast 仍正常工作。",
+  "prompt": "在 home（侧边栏）会话界面为「当前选中的会话/线程」增加一条常驻的任务栏，展示该会话 agent 关联的任务，替代现有的 “show tips” 提示。\n\n== 形态 ==\n一条常驻的横向栏，内容是一行小 tab（chip）。每个 tab = 当前会话关联的一个任务：\n- 标题截断显示；\n- 标题前一个小圆点，用状态色区分列（backlog / in_progress / review / done）；\n- 行【不换行、不横向滚动】。一行放不下时，多出来的 tab 收进行尾的 [⋯] 按钮里（溢出全部进弹窗，行内只显示能放下的前几个）。\n\n== tab 可操作 ==\n- 单击 tab → 打开该任务详情。\n- hover tab 出现一个小 kebab（⋮）→ 快捷操作菜单，菜单项按任务当前状态智能显隐：\n  * Start（仅 backlog 任务）→ 启动任务，进入 in_progress\n  * 移到 Done\n  * 删除\n  * 打开详情（等同单击）\n\n== [⋯] 溢出按钮 / 弹窗 ==\n- 行尾固定一个 [⋯] 按钮，点击打开弹窗；\n- 弹窗内是该会话的【完整任务列表】（不受行宽限制的全量）；\n- 每行任务同样带上面那套操作（Start / 移到 Done / 删除 / 打开详情），行内直接摆按钮，比 tab 上更宽松，作为\"全量查看 + 管理\"入口。\n\n== 数据关联 ==\n- 只显示【当前选中会话/线程】关联的任务。关联已有基础设施：任务创建时盖章 originThreadId（write-once，见 src 中 task originThreadId 逻辑）。用它筛选当前线程的任务。\n- 切换选中的会话时，这条栏（含 [⋯] 弹窗内容）要刷新为新会话的任务。\n- 复用每个线程已有的 per-thread 任务计数逻辑（home-session-card-task-counts）的数据来源，把“计数”扩展为“任务列表”。\n\n== 其它 ==\n- 去掉现有的 “show tips” 展示，由这条常驻任务栏取代它的位置/职责。\n- 保留现有的 toast 通知，不要移除 toast 机制。\n- 操作（Start / Done / 删除）走既有 tRPC / runtime-api 路径，与看板上的对应操作复用同一后端逻辑。\n\n== 实现约束 ==\n- 遵循 web-ui 既有约定：Tailwind + 设计 token（surface/text/border/status-* 等）、lucide 图标、复用 src/components/ui 原语（Button / Dialog / DropdownMenu / Tooltip 等）；\n- 高频 runtime 状态订阅放在展示它的 leaf 组件里（见 runtime-stream-store per-slice 订阅规则），不要在 App 层订阅任务/会话高频 slice；\n- 如需后端补充“按 originThreadId 查任务”的读取路径，按现有 tRPC / runtime-api 约定扩展。\n\n== 自测 ==\n切换不同会话时任务栏与弹窗正确刷新；show tips 已移除；toast 仍正常；tab 快捷操作与弹窗内操作都能真正驱动任务状态变化；行不换行不滚动、溢出正确收进 [⋯]。",
   "startInPlanMode": false,
   "autoReviewEnabled": false,
   "autoReviewMode": "commit",
@@ -13,7 +13,7 @@
   "originThreadId": "5fec3500-5c60-4477-8b05-794bc8dd76a7",
   "baseRef": "main",
   "createdAt": 1783067147434,
-  "updatedAt": 1783067147434,
+  "updatedAt": 1783068084488,
   "column": "backlog",
   "rank": "Zw",
   "dependsOn": []
