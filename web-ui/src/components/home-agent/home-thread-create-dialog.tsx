@@ -17,6 +17,12 @@ interface HomeThreadCreateDialogProps {
 	onOpenChange: (open: boolean) => void;
 	agents: RuntimeAgentDefinition[];
 	defaultAgentId: RuntimeAgentId;
+	/**
+	 * Workspace scope that powers the opening prompt's `@` file mentions and `/`
+	 * slash commands. Without it the composer still works but those completions
+	 * stay inert.
+	 */
+	workspaceId?: string | null;
 	onCreate: (input: {
 		description: string;
 		agentId: RuntimeAgentId;
@@ -29,6 +35,7 @@ export function HomeThreadCreateDialog({
 	onOpenChange,
 	agents,
 	defaultAgentId,
+	workspaceId = null,
 	onCreate,
 }: HomeThreadCreateDialogProps): React.ReactElement {
 	// The native/main agent (pi) is always running and singular, so threads can
@@ -86,12 +93,12 @@ export function HomeThreadCreateDialog({
 					<label htmlFor={descriptionId} className="text-[12px] font-medium text-text-secondary">
 						Opening prompt
 					</label>
-					{/* Reuse the task composer so the kickoff prompt gets the same image
-					    affordances as a task card: paste (⌘/Ctrl+V), drag-and-drop, an
-					    attach-image button, and the thumbnail strip. Enter inserts a
-					    newline; ⌘/Ctrl+Enter submits. Mentions are intentionally off here
-					    (no workspace scope passed) — this dialog only needs the prompt +
-					    images. */}
+					{/* Reuse the task composer so the kickoff prompt gets the same
+					    affordances as the in-conversation chat input: image paste
+					    (⌘/Ctrl+V), drag-and-drop, an attach-image button + thumbnail
+					    strip, `@` file mentions, and `/` slash commands. Passing the
+					    workspace scope enables the mention/command completions; Enter
+					    inserts a newline, ⌘/Ctrl+Enter submits. */}
 					<TaskPromptComposer
 						id={descriptionId}
 						value={description}
@@ -102,10 +109,14 @@ export function HomeThreadCreateDialog({
 						placeholder="Describe the work, question, or next step for this thread..."
 						disabled={isSubmitting}
 						autoFocus
+						workspaceId={workspaceId}
+						enableSlashCommands
 					/>
 					<p id={descriptionHelpId} className="text-[11px] text-text-tertiary">
-						The thread's agent works from this opening prompt and names the thread itself. Long prompts are
-						preserved and can span multiple lines. Paste or drag images to attach them.
+						The thread's agent works from this opening prompt and names the thread itself. Type{" "}
+						<code className="rounded bg-surface-3 px-1 py-px font-mono text-[11px]">@</code> to reference files
+						or <code className="rounded bg-surface-3 px-1 py-px font-mono text-[11px]">/</code> for slash
+						commands. Paste or drag images to attach them.
 					</p>
 				</div>
 

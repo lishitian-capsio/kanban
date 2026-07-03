@@ -1,13 +1,9 @@
 import { ImagePlus, Paperclip } from "lucide-react";
 import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent, ReactElement } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import {
-	applyKanbanComposerCompletion,
-	buildMentionInsertText,
-	detectActiveKanbanComposerToken,
-} from "@/components/detail-panels/kanban-chat-composer-completion";
-import { type InlineCompletionItem, InlineCompletionPicker } from "@/components/inline-completion-picker";
+import { useKanbanComposerCompletion } from "@/components/detail-panels/use-kanban-composer-completion";
+import { InlineCompletionPicker } from "@/components/inline-completion-picker";
 import {
 	ACCEPTED_TASK_IMAGE_INPUT_ACCEPT,
 	collectImageFilesFromDataTransfer,
@@ -17,12 +13,8 @@ import {
 import { TaskImageStrip } from "@/components/task-image-strip";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
-import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { TaskImage } from "@/types";
-import { useDebouncedEffect } from "@/utils/react-use";
 
-const FILE_MENTION_LIMIT = 8;
-const MENTION_QUERY_DEBOUNCE_MS = 120;
 const TEXTAREA_MAX_HEIGHT = 200;
 
 interface TaskPromptComposerProps {
@@ -40,6 +32,12 @@ interface TaskPromptComposerProps {
 	autoFocus?: boolean;
 	workspaceId?: string | null;
 	showAttachImageButton?: boolean;
+	/**
+	 * Opt-in `/` slash-command completion (off by default so task-creation forms
+	 * stay mention-only). `@` file mentions are always available when a
+	 * `workspaceId` is supplied.
+	 */
+	enableSlashCommands?: boolean;
 }
 
 export function TaskPromptComposer({
@@ -57,17 +55,31 @@ export function TaskPromptComposer({
 	autoFocus = false,
 	workspaceId = null,
 	showAttachImageButton = true,
+	enableSlashCommands = false,
 }: TaskPromptComposerProps): ReactElement {
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
-	const mentionSearchRequestIdRef = useRef(0);
-	const [cursorIndex, setCursorIndex] = useState(0);
-	const [mentionItems, setMentionItems] = useState<InlineCompletionItem[]>([]);
-	const [mentionInsertTextMap, setMentionInsertTextMap] = useState(new Map<string, string>());
-	const [isMentionSearchLoading, setIsMentionSearchLoading] = useState(false);
-	const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
-	const [isSuggestionPickerOpen, setIsSuggestionPickerOpen] = useState(false);
 	const [isDragOver, setIsDragOver] = useState(false);
+
+	const {
+		setCursorIndex,
+		showCompletionPicker,
+		completionItems,
+		selectedCompletionIndex,
+		setSelectedCompletionIndex,
+		isCompletionLoading,
+		completionLoadingMessage,
+		completionEmptyMessage,
+		onSelectCompletionItem,
+		handleCompletionKeyDown,
+	} = useKanbanComposerCompletion({
+		value,
+		onValueChange,
+		textareaRef,
+		workspaceId,
+		enabled,
+		enableSlashCommands,
+	});
 
 	const autoResizeTextarea = useCallback(() => {
 		const textarea = textareaRef.current;
@@ -82,74 +94,6 @@ export function TaskPromptComposer({
 		autoResizeTextarea();
 	}, [autoResizeTextarea, value]);
 
-	const activeToken = useMemo(() => {
-		const token = detectActiveKanbanComposerToken(value, cursorIndex);
-		if (token && token.kind !== "mention") {
-			return null;
-		}
-		return token;
-	}, [cursorIndex, value]);
-
-	useEffect(() => {
-		if (!enabled || !activeToken) {
-			mentionSearchRequestIdRef.current += 1;
-			setMentionItems([]);
-			setMentionInsertTextMap(new Map());
-			setIsMentionSearchLoading(false);
-		}
-	}, [activeToken, enabled, workspaceId]);
-
-	useDebouncedEffect(
-		() => {
-			if (!enabled || !activeToken || !workspaceId) {
-				return;
-			}
-			const requestId = ++mentionSearchRequestIdRef.current;
-			setIsMentionSearchLoading(true);
-			void (async () => {
-				try {
-					const trpcClient = getRuntimeTrpcClient(workspaceId);
-					const payload = await trpcClient.workspace.searchFiles.query({
-						query: activeToken.query,
-						limit: FILE_MENTION_LIMIT,
-					});
-					if (requestId !== mentionSearchRequestIdRef.current) {
-						return;
-					}
-					const files = Array.isArray(payload.files) ? payload.files : [];
-					const insertMap = new Map<string, string>();
-					const items: InlineCompletionItem[] = files.map((file) => {
-						const insertText = buildMentionInsertText(file.path);
-						insertMap.set(file.path, insertText);
-						return { id: file.path, label: file.path };
-					});
-					setMentionItems(items);
-					setMentionInsertTextMap(insertMap);
-				} catch {
-					if (requestId === mentionSearchRequestIdRef.current) {
-						setMentionItems([]);
-						setMentionInsertTextMap(new Map());
-					}
-				} finally {
-					if (requestId === mentionSearchRequestIdRef.current) {
-						setIsMentionSearchLoading(false);
-					}
-				}
-			})();
-		},
-		MENTION_QUERY_DEBOUNCE_MS,
-		[activeToken, enabled, workspaceId],
-	);
-
-	const suggestions = useMemo(() => {
-		return enabled && activeToken ? mentionItems : [];
-	}, [activeToken, enabled, mentionItems]);
-
-	useEffect(() => {
-		setSelectedSuggestionIndex(0);
-		setIsSuggestionPickerOpen(true);
-	}, [activeToken?.kind, activeToken?.query, activeToken?.start]);
-
 	useEffect(() => {
 		if (!autoFocus || disabled || !enabled) {
 			return;
@@ -163,71 +107,21 @@ export function TaskPromptComposer({
 			textareaRef.current.setSelectionRange(cursor, cursor);
 			setCursorIndex(cursor);
 		});
-	}, [autoFocus, disabled, enabled]);
-
-	const applySuggestion = useCallback(
-		(item: InlineCompletionItem) => {
-			if (!activeToken) {
-				return;
-			}
-			const insertText = mentionInsertTextMap.get(item.id) ?? `@${item.id}`;
-			const next = applyKanbanComposerCompletion(value, activeToken, insertText);
-			onValueChange(next.value);
-			window.requestAnimationFrame(() => {
-				if (!textareaRef.current) {
-					return;
-				}
-				textareaRef.current.focus();
-				textareaRef.current.setSelectionRange(next.cursor, next.cursor);
-				setCursorIndex(next.cursor);
-			});
-		},
-		[activeToken, mentionInsertTextMap, onValueChange, value],
-	);
+	}, [autoFocus, disabled, enabled, setCursorIndex]);
 
 	const handleTextareaKeyDown = useCallback(
 		(event: KeyboardEvent<HTMLTextAreaElement>) => {
 			if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
 				event.preventDefault();
-				if (event.shiftKey) {
-					if (onSubmitAndStart) {
-						onSubmitAndStart();
-						return;
-					}
+				if (event.shiftKey && onSubmitAndStart) {
+					onSubmitAndStart();
+					return;
 				}
 				onSubmit?.();
 				return;
 			}
 
-			const canShowSuggestions = isSuggestionPickerOpen && suggestions.length > 0;
-			if (canShowSuggestions && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
-				event.preventDefault();
-				const direction = event.key === "ArrowDown" ? 1 : -1;
-				setSelectedSuggestionIndex((index) => {
-					const nextIndex = index + direction;
-					if (nextIndex < 0) {
-						return suggestions.length - 1;
-					}
-					if (nextIndex >= suggestions.length) {
-						return 0;
-					}
-					return nextIndex;
-				});
-				return;
-			}
-
-			if (canShowSuggestions && (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey))) {
-				event.preventDefault();
-				const selectedItem = suggestions[selectedSuggestionIndex] ?? suggestions[0];
-				if (selectedItem) {
-					applySuggestion(selectedItem);
-				}
-				return;
-			}
-
-			if (event.key === "Escape" && canShowSuggestions) {
-				event.preventDefault();
-				setIsSuggestionPickerOpen(false);
+			if (handleCompletionKeyDown(event)) {
 				return;
 			}
 
@@ -236,15 +130,7 @@ export function TaskPromptComposer({
 				onEscape?.();
 			}
 		},
-		[
-			applySuggestion,
-			isSuggestionPickerOpen,
-			onEscape,
-			onSubmit,
-			onSubmitAndStart,
-			selectedSuggestionIndex,
-			suggestions,
-		],
+		[handleCompletionKeyDown, onEscape, onSubmit, onSubmitAndStart],
 	);
 
 	const appendImages = useCallback(
@@ -350,20 +236,18 @@ export function TaskPromptComposer({
 		[appendImages, onImagesChange],
 	);
 
-	const showSuggestions = Boolean(enabled && isSuggestionPickerOpen && activeToken);
-
 	return (
 		<div>
 			<div className="relative" onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}>
 				<InlineCompletionPicker
-					open={showSuggestions}
-					items={suggestions}
-					selectedIndex={selectedSuggestionIndex}
-					onSelectItem={applySuggestion}
-					onHoverItem={setSelectedSuggestionIndex}
-					isLoading={isMentionSearchLoading}
-					loadingMessage="Loading files..."
-					emptyMessage="No matching files."
+					open={showCompletionPicker}
+					items={completionItems}
+					selectedIndex={selectedCompletionIndex}
+					onSelectItem={onSelectCompletionItem}
+					onHoverItem={setSelectedCompletionIndex}
+					isLoading={isCompletionLoading}
+					loadingMessage={completionLoadingMessage}
+					emptyMessage={completionEmptyMessage}
 				>
 					<textarea
 						id={id}

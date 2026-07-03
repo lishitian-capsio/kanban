@@ -14,10 +14,17 @@ import type { TaskImage } from "@/types";
 interface HomeAddSessionCardProps {
 	agents: RuntimeAgentDefinition[];
 	defaultAgentId: RuntimeAgentId;
+	/** Workspace scope forwarded to the create dialog for `@` mentions / `/` slash commands. */
+	currentProjectId: string | null;
 	onCreate: (input: { description: string; agentId: RuntimeAgentId; images?: TaskImage[] }) => void | Promise<unknown>;
 }
 
-export function HomeAddSessionCard({ agents, defaultAgentId, onCreate }: HomeAddSessionCardProps): React.ReactElement {
+export function HomeAddSessionCard({
+	agents,
+	defaultAgentId,
+	currentProjectId,
+	onCreate,
+}: HomeAddSessionCardProps): React.ReactElement {
 	const [createOpen, setCreateOpen] = useState(false);
 	return (
 		<>
@@ -37,6 +44,7 @@ export function HomeAddSessionCard({ agents, defaultAgentId, onCreate }: HomeAdd
 				onOpenChange={setCreateOpen}
 				agents={agents}
 				defaultAgentId={defaultAgentId}
+				workspaceId={currentProjectId}
 				onCreate={onCreate}
 			/>
 		</>

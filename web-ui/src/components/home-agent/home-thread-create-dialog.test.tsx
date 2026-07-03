@@ -6,11 +6,19 @@ import { HomeThreadCreateDialog } from "@/components/home-agent/home-thread-crea
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { RuntimeAgentDefinition } from "@/runtime/types";
 
-// TaskPromptComposer imports the runtime tRPC client at module load for its file
-// @-mention completion. This dialog disables mentions (no workspace scope), so the
-// client is never invoked — stub it to keep the test hermetic regardless.
+// The prompt composer reaches for the runtime tRPC client to power its `@` file
+// mentions and `/` slash commands. Hoist mockable query fns so each test can
+// drive the completion data sources without a live runtime.
+const { searchFilesMock, getKanbanSlashCommandsMock } = vi.hoisted(() => ({
+	searchFilesMock: vi.fn(),
+	getKanbanSlashCommandsMock: vi.fn(),
+}));
+
 vi.mock("@/runtime/trpc-client", () => ({
-	getRuntimeTrpcClient: () => ({ workspace: { searchFiles: { query: vi.fn(async () => ({ files: [] })) } } }),
+	getRuntimeTrpcClient: () => ({
+		workspace: { searchFiles: { query: searchFilesMock } },
+		runtime: { getKanbanSlashCommands: { query: getKanbanSlashCommandsMock } },
+	}),
 }));
 
 const agents: RuntimeAgentDefinition[] = [
@@ -27,6 +35,8 @@ const agents: RuntimeAgentDefinition[] = [
 ];
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+// The completion data sources are debounced at 120ms; wait past that plus a rAF.
+const flushCompletion = () => new Promise((resolve) => setTimeout(resolve, 180));
 
 function makePngFile(): File {
 	// A tiny non-empty PNG payload; the exact bytes are irrelevant, only that
@@ -52,7 +62,7 @@ function setControlledValue(textarea: HTMLTextAreaElement, value: string): void 
 	textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-describe("HomeThreadCreateDialog images", () => {
+describe("HomeThreadCreateDialog", () => {
 	let container: HTMLDivElement;
 	let root: Root;
 
@@ -60,6 +70,8 @@ describe("HomeThreadCreateDialog images", () => {
 		container = document.createElement("div");
 		document.body.appendChild(container);
 		root = createRoot(container);
+		searchFilesMock.mockResolvedValue({ files: [] });
+		getKanbanSlashCommandsMock.mockResolvedValue({ commands: [] });
 	});
 
 	afterEach(() => {
@@ -68,10 +80,8 @@ describe("HomeThreadCreateDialog images", () => {
 		vi.clearAllMocks();
 	});
 
-	it("shows a thumbnail for a pasted image and forwards it to onCreate", async () => {
-		const onCreate = vi.fn(async () => {});
-
-		await act(async () => {
+	function render(props: Partial<React.ComponentProps<typeof HomeThreadCreateDialog>> = {}) {
+		return act(async () => {
 			root.render(
 				<TooltipProvider>
 					<HomeThreadCreateDialog
@@ -79,12 +89,18 @@ describe("HomeThreadCreateDialog images", () => {
 						onOpenChange={() => {}}
 						agents={agents}
 						defaultAgentId="claude"
-						onCreate={onCreate}
+						onCreate={vi.fn(async () => {})}
+						{...props}
 					/>
 				</TooltipProvider>,
 			);
 			await flush();
 		});
+	}
+
+	it("shows a thumbnail for a pasted image and forwards it to onCreate", async () => {
+		const onCreate = vi.fn(async () => {});
+		await render({ onCreate });
 
 		const textarea = document.querySelector("textarea");
 		expect(textarea).not.toBeNull();
@@ -123,5 +139,39 @@ describe("HomeThreadCreateDialog images", () => {
 				images: expect.arrayContaining([expect.objectContaining({ mimeType: "image/png", name: "mock.png" })]),
 			}),
 		);
+	});
+
+	it("shows `@` file mentions from the workspace when a workspace is scoped", async () => {
+		searchFilesMock.mockResolvedValue({ files: [{ name: "readme.md", path: "docs/readme.md" }] });
+		await render({ workspaceId: "ws-1" });
+
+		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+		expect(textarea).not.toBeNull();
+
+		await act(async () => {
+			setControlledValue(textarea, "@read");
+			await flushCompletion();
+		});
+
+		expect(searchFilesMock).toHaveBeenCalledWith(expect.objectContaining({ query: "read" }));
+		expect(document.body.textContent).toContain("docs/readme.md");
+	});
+
+	it("shows `/` slash commands in the completion menu", async () => {
+		getKanbanSlashCommandsMock.mockResolvedValue({
+			commands: [{ name: "compact", description: "Compact the conversation" }],
+		});
+		await render({ workspaceId: "ws-1" });
+
+		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+		expect(textarea).not.toBeNull();
+
+		await act(async () => {
+			setControlledValue(textarea, "/comp");
+			await flushCompletion();
+		});
+
+		expect(getKanbanSlashCommandsMock).toHaveBeenCalled();
+		expect(document.body.textContent).toContain("/compact");
 	});
 });

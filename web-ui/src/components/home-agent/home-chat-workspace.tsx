@@ -261,6 +261,7 @@ export function HomeChatWorkspace({
 							<HomeAddSessionCard
 								agents={runtimeProjectConfig.agents}
 								defaultAgentId={runtimeProjectConfig.selectedAgentId}
+								currentProjectId={currentProjectId}
 								onCreate={handleCreateSession}
 							/>
 						</div>

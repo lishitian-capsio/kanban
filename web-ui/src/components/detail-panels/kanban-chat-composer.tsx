@@ -7,21 +7,13 @@ import {
 	useCallback,
 	useEffect,
 	useLayoutEffect,
-	useMemo,
 	useRef,
 	useState,
 } from "react";
 
-import {
-	type ActiveKanbanComposerToken,
-	applyKanbanComposerCompletion,
-	buildMentionInsertText,
-	buildSlashCommandInsertText,
-	detectActiveKanbanComposerToken,
-	type KanbanComposerCompletionSuggestion,
-} from "@/components/detail-panels/kanban-chat-composer-completion";
 import { KanbanChatModelSelector } from "@/components/detail-panels/kanban-chat-model-selector";
-import { type InlineCompletionItem, InlineCompletionPicker } from "@/components/inline-completion-picker";
+import { useKanbanComposerCompletion } from "@/components/detail-panels/use-kanban-composer-completion";
+import { InlineCompletionPicker } from "@/components/inline-completion-picker";
 import type { SearchSelectOption } from "@/components/search-select-dropdown";
 import { collectImageFilesFromDataTransfer, extractImagesFromDataTransfer } from "@/components/task-image-input-utils";
 import { TaskImageStrip } from "@/components/task-image-strip";
@@ -29,16 +21,11 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
-import type { RuntimeReasoningEffort, RuntimeSlashCommand, RuntimeTaskSessionMode } from "@/runtime/types";
+import type { RuntimeReasoningEffort, RuntimeTaskSessionMode } from "@/runtime/types";
 import type { TaskImage } from "@/types";
 import { isMacPlatform } from "@/utils/platform";
-import { useDebouncedEffect } from "@/utils/react-use";
 
 const CLINE_CHAT_COMPOSER_MAX_HEIGHT = 160;
-const CLINE_CHAT_COMPOSER_COMPLETION_DEBOUNCE_MS = 120;
-const CLINE_CHAT_COMPOSER_FILE_LIMIT = 8;
-const CLINE_CHAT_COMPOSER_COMMAND_LIMIT = 8;
 
 export function KanbanChatComposer({
 	taskId,
@@ -107,45 +94,27 @@ export function KanbanChatComposer({
 	modelControlSlot?: ReactElement | null;
 }): ReactElement {
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-	const mentionSearchRequestIdRef = useRef(0);
-	const slashCommandsRequestIdRef = useRef(0);
-	const slashCommandsCacheRef = useRef(new Map<string, RuntimeSlashCommand[]>());
 	const [isDragOver, setIsDragOver] = useState(false);
-	const [cursorIndex, setCursorIndex] = useState(() => draft.length);
-	const [isCompletionPickerOpen, setIsCompletionPickerOpen] = useState(true);
-	const [selectedCompletionIndex, setSelectedCompletionIndex] = useState(0);
-	const [mentionSuggestions, setMentionSuggestions] = useState<KanbanComposerCompletionSuggestion[]>([]);
-	const [slashSuggestions, setSlashSuggestions] = useState<KanbanComposerCompletionSuggestion[]>([]);
-	const [isMentionSearchLoading, setIsMentionSearchLoading] = useState(false);
-	const [isSlashSearchLoading, setIsSlashSearchLoading] = useState(false);
 	const canSubmit = canSend && !isModelSaving && (draft.trim().length > 0 || images.length > 0);
 
-	const activeToken = useMemo(() => detectActiveKanbanComposerToken(draft, cursorIndex), [cursorIndex, draft]);
-	const completionSuggestions = useMemo(() => {
-		if (!activeToken) {
-			return [] as KanbanComposerCompletionSuggestion[];
-		}
-		return activeToken.kind === "mention" ? mentionSuggestions : slashSuggestions;
-	}, [activeToken, mentionSuggestions, slashSuggestions]);
-	const completionItems: InlineCompletionItem[] = useMemo(
-		() => completionSuggestions.map((s) => ({ id: s.id, label: s.label, detail: s.detail })),
-		[completionSuggestions],
-	);
-	const isCompletionLoading = activeToken?.kind === "mention" ? isMentionSearchLoading : isSlashSearchLoading;
-	const showCompletionPicker = Boolean(activeToken && isCompletionPickerOpen);
-	const completionLoadingMessage = activeToken?.kind === "mention" ? "Loading files..." : "Loading commands...";
-	const completionEmptyMessage = useMemo(() => {
-		if (!activeToken) {
-			return null;
-		}
-		if (activeToken.kind === "mention" && !workspaceId) {
-			return "Select a workspace to mention files.";
-		}
-		if (activeToken.kind === "mention") {
-			return "No matching files.";
-		}
-		return "No matching commands.";
-	}, [activeToken, workspaceId]);
+	const {
+		setCursorIndex,
+		showCompletionPicker,
+		completionItems,
+		selectedCompletionIndex,
+		setSelectedCompletionIndex,
+		isCompletionLoading,
+		completionLoadingMessage,
+		completionEmptyMessage,
+		onSelectCompletionItem,
+		handleCompletionKeyDown,
+	} = useKanbanComposerCompletion({
+		value: draft,
+		onValueChange: onDraftChange,
+		textareaRef,
+		workspaceId,
+		enableSlashCommands: true,
+	});
 
 	useLayoutEffect(() => {
 		const textarea = textareaRef.current;
@@ -167,28 +136,6 @@ export function KanbanChatComposer({
 		}
 		textareaRef.current?.focus();
 	}, [canSend, taskId]);
-
-	useEffect(() => {
-		setCursorIndex((currentValue) => Math.min(currentValue, draft.length));
-	}, [draft.length]);
-
-	useEffect(() => {
-		setSelectedCompletionIndex(0);
-		setIsCompletionPickerOpen(true);
-	}, [activeToken?.kind, activeToken?.query, activeToken?.start]);
-
-	useEffect(() => {
-		if (!activeToken || activeToken.kind !== "mention") {
-			mentionSearchRequestIdRef.current += 1;
-			setMentionSuggestions([]);
-			setIsMentionSearchLoading(false);
-		}
-		if (!activeToken || activeToken.kind !== "slash") {
-			slashCommandsRequestIdRef.current += 1;
-			setSlashSuggestions([]);
-			setIsSlashSearchLoading(false);
-		}
-	}, [activeToken]);
 
 	const appendImages = useCallback(
 		(newImages: TaskImage[]) => {
@@ -225,163 +172,12 @@ export function KanbanChatComposer({
 		[appendImages],
 	);
 
-	useDebouncedEffect(
-		() => {
-			if (!activeToken || activeToken.kind !== "mention" || !workspaceId) {
-				return;
-			}
-			const requestId = ++mentionSearchRequestIdRef.current;
-			setIsMentionSearchLoading(true);
-			void (async () => {
-				try {
-					const payload = await getRuntimeTrpcClient(workspaceId).workspace.searchFiles.query({
-						query: activeToken.query,
-						limit: CLINE_CHAT_COMPOSER_FILE_LIMIT,
-					});
-					if (requestId !== mentionSearchRequestIdRef.current) {
-						return;
-					}
-					setMentionSuggestions(
-						payload.files.map((file) => ({
-							id: file.path,
-							kind: "mention",
-							label: file.name,
-							detail: file.path,
-							insertText: buildMentionInsertText(file.path),
-						})),
-					);
-				} catch {
-					if (requestId === mentionSearchRequestIdRef.current) {
-						setMentionSuggestions([]);
-					}
-				} finally {
-					if (requestId === mentionSearchRequestIdRef.current) {
-						setIsMentionSearchLoading(false);
-					}
-				}
-			})();
-		},
-		CLINE_CHAT_COMPOSER_COMPLETION_DEBOUNCE_MS,
-		[activeToken, workspaceId],
-	);
-
-	useDebouncedEffect(
-		() => {
-			if (!activeToken || activeToken.kind !== "slash") {
-				return;
-			}
-			const requestKey = workspaceId ?? "__global__";
-			const requestId = ++slashCommandsRequestIdRef.current;
-			const cachedCommands = slashCommandsCacheRef.current.get(requestKey);
-			const applyCommands = (commands: RuntimeSlashCommand[]) => {
-				const query = activeToken.query.trim().toLowerCase();
-				const filteredCommands = commands
-					.filter((command) => {
-						if (query.length === 0) {
-							return true;
-						}
-						const description = command.description?.toLowerCase() ?? "";
-						return command.name.toLowerCase().includes(query) || description.includes(query);
-					})
-					.slice(0, CLINE_CHAT_COMPOSER_COMMAND_LIMIT)
-					.map((command) => ({
-						id: command.name,
-						kind: "slash" as const,
-						label: `/${command.name}`,
-						detail: command.description,
-						insertText: buildSlashCommandInsertText(command.name),
-					}));
-				setSlashSuggestions(filteredCommands);
-			};
-
-			if (cachedCommands) {
-				applyCommands(cachedCommands);
-				return;
-			}
-
-			setIsSlashSearchLoading(true);
-			void (async () => {
-				try {
-					const payload = await getRuntimeTrpcClient(workspaceId).runtime.getKanbanSlashCommands.query();
-					if (requestId !== slashCommandsRequestIdRef.current) {
-						return;
-					}
-					slashCommandsCacheRef.current.set(requestKey, payload.commands);
-					applyCommands(payload.commands);
-				} catch {
-					if (requestId === slashCommandsRequestIdRef.current) {
-						setSlashSuggestions([]);
-					}
-				} finally {
-					if (requestId === slashCommandsRequestIdRef.current) {
-						setIsSlashSearchLoading(false);
-					}
-				}
-			})();
-		},
-		CLINE_CHAT_COMPOSER_COMPLETION_DEBOUNCE_MS,
-		[activeToken, workspaceId],
-	);
-
-	const applySuggestion = useCallback(
-		(suggestion: KanbanComposerCompletionSuggestion, token: ActiveKanbanComposerToken) => {
-			const next = applyKanbanComposerCompletion(draft, token, suggestion.insertText);
-			onDraftChange(next.value);
-			window.requestAnimationFrame(() => {
-				const textarea = textareaRef.current;
-				if (!textarea) {
-					return;
-				}
-				textarea.focus();
-				textarea.setSelectionRange(next.cursor, next.cursor);
-				setCursorIndex(next.cursor);
-			});
-		},
-		[draft, onDraftChange],
-	);
-
-	const handleCompletionSelect = useCallback(
-		(item: InlineCompletionItem) => {
-			const suggestion = completionSuggestions.find((s) => s.id === item.id);
-			if (suggestion && activeToken) {
-				applySuggestion(suggestion, activeToken);
-			}
-		},
-		[activeToken, applySuggestion, completionSuggestions],
-	);
-
 	const handleTextareaKeyDown = useCallback(
 		(event: KeyboardEvent<HTMLTextAreaElement>) => {
 			if (event.nativeEvent.isComposing) {
 				return;
 			}
-			const canNavigateCompletions = showCompletionPicker && completionSuggestions.length > 0;
-			if (canNavigateCompletions && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
-				event.preventDefault();
-				const direction = event.key === "ArrowDown" ? 1 : -1;
-				setSelectedCompletionIndex((currentValue) => {
-					const nextIndex = currentValue + direction;
-					if (nextIndex < 0) {
-						return completionSuggestions.length - 1;
-					}
-					if (nextIndex >= completionSuggestions.length) {
-						return 0;
-					}
-					return nextIndex;
-				});
-				return;
-			}
-			if (canNavigateCompletions && (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey))) {
-				event.preventDefault();
-				const selectedSuggestion = completionSuggestions[selectedCompletionIndex] ?? completionSuggestions[0];
-				if (selectedSuggestion && activeToken) {
-					applySuggestion(selectedSuggestion, activeToken);
-				}
-				return;
-			}
-			if (event.key === "Escape" && showCompletionPicker) {
-				event.preventDefault();
-				setIsCompletionPickerOpen(false);
+			if (handleCompletionKeyDown(event)) {
 				return;
 			}
 			if (
@@ -412,20 +208,7 @@ export function KanbanChatComposer({
 			event.preventDefault();
 			void onSend();
 		},
-		[
-			activeToken,
-			applySuggestion,
-			canCancel,
-			canSubmit,
-			completionSuggestions,
-			onCancel,
-			onModeChange,
-			onSend,
-			mode,
-			selectedCompletionIndex,
-			showCompletionPicker,
-			showModeToggle,
-		],
+		[canCancel, canSubmit, handleCompletionKeyDown, onCancel, onModeChange, onSend, mode, showModeToggle],
 	);
 
 	const handleDrop = useCallback(
@@ -464,7 +247,7 @@ export function KanbanChatComposer({
 				open={showCompletionPicker}
 				items={completionItems}
 				selectedIndex={selectedCompletionIndex}
-				onSelectItem={handleCompletionSelect}
+				onSelectItem={onSelectCompletionItem}
 				onHoverItem={setSelectedCompletionIndex}
 				isLoading={isCompletionLoading}
 				loadingMessage={completionLoadingMessage}

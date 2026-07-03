@@ -168,6 +168,7 @@ export function HomeThreadBar({
 				onOpenChange={setCreateOpen}
 				agents={agents}
 				defaultAgentId={defaultAgentId}
+				workspaceId={currentProjectId}
 				onCreate={onCreateThread}
 			/>
 			<HomeThreadRenameDialog
