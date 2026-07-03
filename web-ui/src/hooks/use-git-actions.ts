@@ -62,6 +62,7 @@ export interface UseGitActionsResult {
 	agentOpenPrTaskLoadingById: Record<string, boolean>;
 	isSwitchingHomeBranch: boolean;
 	isDiscardingHomeWorkingChanges: boolean;
+	isTagActionPending: boolean;
 	gitActionError: {
 		action: RuntimeGitSyncAction;
 		message: string;
@@ -73,6 +74,8 @@ export interface UseGitActionsResult {
 	runGitAction: (action: RuntimeGitSyncAction) => Promise<void>;
 	switchHomeBranch: (branch: string) => Promise<void>;
 	discardHomeWorkingChanges: () => Promise<void>;
+	createTag: (input: { name: string; message: string; commitish: string | null }) => Promise<void>;
+	deleteTag: (name: string) => Promise<void>;
 	handleCommitTask: (taskId: string) => void;
 	handleOpenPrTask: (taskId: string) => void;
 	handleAgentCommitTask: (taskId: string) => void;
@@ -109,6 +112,7 @@ export function useGitActions({
 	>({});
 	const [isSwitchingHomeBranch, setIsSwitchingHomeBranch] = useState(false);
 	const [isDiscardingHomeWorkingChanges, setIsDiscardingHomeWorkingChanges] = useState(false);
+	const [isTagActionPending, setIsTagActionPending] = useState(false);
 	const [gitActionError, setGitActionError] = useState<{
 		action: RuntimeGitSyncAction;
 		message: string;
@@ -496,6 +500,91 @@ export function useGitActions({
 		}
 	}, [currentProjectId, isDiscardingHomeWorkingChanges, refreshGitHistory]);
 
+	const createTag = useCallback(
+		async (input: { name: string; message: string; commitish: string | null }) => {
+			const name = input.name.trim();
+			if (!currentProjectId || isTagActionPending || !name) {
+				return;
+			}
+			setIsTagActionPending(true);
+			try {
+				const trpcClient = getRuntimeTrpcClient(currentProjectId);
+				const payload = await trpcClient.workspace.createGitTag.mutate({
+					name,
+					message: input.message.trim() || null,
+					commitish: input.commitish,
+					taskScope: gitHistoryTaskScope ?? null,
+				});
+				if (!payload.ok) {
+					showAppToast({
+						intent: "danger",
+						icon: "warning-sign",
+						message: payload.error ?? `Could not create tag ${name}.`,
+						timeout: 7000,
+					});
+					return;
+				}
+				refreshGitHistory();
+				showAppToast({ intent: "success", icon: "tick", message: `Created tag ${name}.`, timeout: 4000 });
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				showAppToast({
+					intent: "danger",
+					icon: "warning-sign",
+					message: `Could not create tag ${name}. ${message}`,
+					timeout: 7000,
+				});
+			} finally {
+				setIsTagActionPending(false);
+			}
+		},
+		[currentProjectId, gitHistoryTaskScope, isTagActionPending, refreshGitHistory],
+	);
+
+	const deleteTag = useCallback(
+		async (name: string) => {
+			const normalizedName = name.trim();
+			if (!currentProjectId || isTagActionPending || !normalizedName) {
+				return;
+			}
+			setIsTagActionPending(true);
+			try {
+				const trpcClient = getRuntimeTrpcClient(currentProjectId);
+				const payload = await trpcClient.workspace.deleteGitTag.mutate({
+					name: normalizedName,
+					taskScope: gitHistoryTaskScope ?? null,
+				});
+				if (!payload.ok) {
+					showAppToast({
+						intent: "danger",
+						icon: "warning-sign",
+						message: payload.error ?? `Could not delete tag ${normalizedName}.`,
+						timeout: 7000,
+					});
+					return;
+				}
+				refreshGitHistory();
+				showAppToast({
+					intent: "success",
+					icon: "tick",
+					message: `Deleted tag ${normalizedName}.`,
+					timeout: 4000,
+				});
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				showAppToast({
+					intent: "danger",
+					icon: "warning-sign",
+					message: `Could not delete tag ${normalizedName}. ${message}`,
+					timeout: 7000,
+				});
+			} finally {
+				setIsTagActionPending(false);
+			}
+		},
+		[currentProjectId, gitHistoryTaskScope, isTagActionPending, refreshGitHistory],
+	);
+
 	const runAutoReviewGitAction = useCallback(
 		async (taskId: string, action: TaskGitAction) => {
 			return await runTaskGitAction(taskId, action, "card");
@@ -533,6 +622,7 @@ export function useGitActions({
 		agentOpenPrTaskLoadingById,
 		isSwitchingHomeBranch,
 		isDiscardingHomeWorkingChanges,
+		isTagActionPending,
 		gitActionError,
 		gitActionErrorTitle,
 		clearGitActionError: () => {
@@ -542,6 +632,8 @@ export function useGitActions({
 		runGitAction,
 		switchHomeBranch,
 		discardHomeWorkingChanges,
+		createTag,
+		deleteTag,
 		handleCommitTask,
 		handleOpenPrTask,
 		handleAgentCommitTask,

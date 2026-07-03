@@ -429,6 +429,9 @@ export default function App(): ReactElement {
 		runGitAction,
 		switchHomeBranch,
 		discardHomeWorkingChanges,
+		createTag,
+		deleteTag,
+		isTagActionPending,
 		handleCommitTask,
 		handleOpenPrTask,
 		handleAgentCommitTask,
@@ -1060,16 +1063,12 @@ export default function App(): ReactElement {
 								onToggleVault={hasNoProjects || selectedCard ? undefined : handleToggleVault}
 								isVaultOpen={isVaultOpen}
 								agentVaultManagementEnabled={vaultSettings.agentVaultManagementEnabled}
-								onAgentVaultManagementChange={(next) =>
-									void vaultSettings.setAgentVaultManagementEnabled(next)
-								}
+								onAgentVaultManagementChange={(next) => void vaultSettings.setAgentVaultManagementEnabled(next)}
 								vaultSettingsDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
 								onToggleDatabase={hasNoProjects || selectedCard ? undefined : handleToggleDatabase}
 								isDatabaseOpen={isDatabaseOpen}
 								agentDatabaseAccessEnabled={vaultSettings.agentDatabaseAccessEnabled}
-								onAgentDatabaseAccessChange={(next) =>
-									void vaultSettings.setAgentDatabaseAccessEnabled(next)
-								}
+								onAgentDatabaseAccessChange={(next) => void vaultSettings.setAgentDatabaseAccessEnabled(next)}
 								databaseSettingsDisabled={vaultSettings.isLoading || vaultSettings.isMutating}
 								onToggleStorage={hasNoProjects || selectedCard ? undefined : handleToggleStorage}
 								isStorageOpen={isStorageOpen}
@@ -1134,6 +1133,13 @@ export default function App(): ReactElement {
 																void discardHomeWorkingChanges();
 															}}
 															isDiscardWorkingChangesPending={isDiscardingHomeWorkingChanges}
+															onCreateTag={(input) => {
+																void createTag(input);
+															}}
+															onDeleteTag={(name) => {
+																void deleteTag(name);
+															}}
+															isTagActionPending={isTagActionPending}
 														/>
 													) : (
 														<KanbanBoard
@@ -1262,7 +1268,17 @@ export default function App(): ReactElement {
 												isMoveToTrashLoading={moveToTrashLoadingById[selectedCard.card.id] ?? false}
 												gitHistoryPanel={
 													isGitHistoryOpen ? (
-														<GitHistoryView workspaceId={currentProjectId} gitHistory={gitHistory} />
+														<GitHistoryView
+															workspaceId={currentProjectId}
+															gitHistory={gitHistory}
+															onCreateTag={(input) => {
+																void createTag(input);
+															}}
+															onDeleteTag={(name) => {
+																void deleteTag(name);
+															}}
+															isTagActionPending={isTagActionPending}
+														/>
 													) : undefined
 												}
 												onCloseGitHistory={handleCloseGitHistory}

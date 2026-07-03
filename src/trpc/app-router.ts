@@ -92,6 +92,9 @@ import type {
 	RuntimeGitSummaryResponse,
 	RuntimeGitSyncAction,
 	RuntimeGitSyncResponse,
+	RuntimeGitTagCreateRequest,
+	RuntimeGitTagDeleteRequest,
+	RuntimeGitTagMutationResponse,
 	RuntimeGitUserIdentityResponse,
 	RuntimeHomeChatFullscreenTabsResponse,
 	RuntimeHomeChatFullscreenTabsSaveRequest,
@@ -305,6 +308,9 @@ import {
 	runtimeGitSummaryResponseSchema,
 	runtimeGitSyncActionSchema,
 	runtimeGitSyncResponseSchema,
+	runtimeGitTagCreateRequestSchema,
+	runtimeGitTagDeleteRequestSchema,
+	runtimeGitTagMutationResponseSchema,
 	runtimeGitUserIdentityResponseSchema,
 	runtimeHomeChatFullscreenTabsResponseSchema,
 	runtimeHomeChatFullscreenTabsSaveRequestSchema,
@@ -711,7 +717,16 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeGitCommitDiffRequest,
 		) => Promise<RuntimeGitCommitDiffResponse>;
-	} & WorkspaceDbApi & WorkspaceStorageApi;
+		createGitTag: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeGitTagCreateRequest,
+		) => Promise<RuntimeGitTagMutationResponse>;
+		deleteGitTag: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeGitTagDeleteRequest,
+		) => Promise<RuntimeGitTagMutationResponse>;
+	} & WorkspaceDbApi &
+		WorkspaceStorageApi;
 	workspaceFsApi: {
 		listDir: (scope: RuntimeTrpcWorkspaceScope, input: RuntimeFsListDirRequest) => Promise<RuntimeFsListDirResponse>;
 		listPaths: (
@@ -1323,6 +1338,18 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeGitCommitDiffResponseSchema)
 			.query(async ({ ctx, input }) => {
 				return await ctx.workspaceApi.loadCommitDiff(ctx.workspaceScope, input);
+			}),
+		createGitTag: workspaceProcedure
+			.input(runtimeGitTagCreateRequestSchema)
+			.output(runtimeGitTagMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.createGitTag(ctx.workspaceScope, input);
+			}),
+		deleteGitTag: workspaceProcedure
+			.input(runtimeGitTagDeleteRequestSchema)
+			.output(runtimeGitTagMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.workspaceApi.deleteGitTag(ctx.workspaceScope, input);
 			}),
 	}),
 	workspaceFs: t.router({

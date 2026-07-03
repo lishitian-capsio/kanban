@@ -1,5 +1,19 @@
 import { Fzf } from "fzf";
-import { AlertCircle, ArrowDown, ArrowUp, Cloud, FileText, GitBranch, Info, Locate, Lock, Search } from "lucide-react";
+import {
+	AlertCircle,
+	ArrowDown,
+	ArrowUp,
+	Cloud,
+	FileText,
+	GitBranch,
+	Info,
+	Locate,
+	Lock,
+	Plus,
+	Search,
+	Tag,
+	Trash2,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { classifyGitRefDisposition } from "@/components/git-history/git-ref-classification";
@@ -73,6 +87,8 @@ export function GitRefsPanel({
 	onSelectRef,
 	onSelectWorkingCopy,
 	onCheckoutRef,
+	onCreateTag,
+	onDeleteTag,
 }: {
 	refs: RuntimeGitRef[];
 	selectedRefName: string | null;
@@ -84,6 +100,8 @@ export function GitRefsPanel({
 	onSelectRef: (ref: RuntimeGitRef) => void;
 	onSelectWorkingCopy?: () => void;
 	onCheckoutRef?: (branchName: string) => void;
+	onCreateTag?: () => void;
+	onDeleteTag?: (tagName: string) => void;
 }): React.ReactElement {
 	const [searchQuery, setSearchQuery] = useState("");
 
@@ -98,6 +116,7 @@ export function GitRefsPanel({
 	const detachedRef = visibleRefs.find((r) => r.type === "detached");
 	const branchRefs = visibleRefs.filter((r) => r.type === "branch");
 	const remoteRefs = visibleRefs.filter((r) => r.type === "remote");
+	const tagRefs = visibleRefs.filter((r) => r.type === "tag");
 	const headBranch = branchRefs.find((r) => r.isHead);
 	const otherBranches = branchRefs.filter((r) => !r.isHead);
 	const searchableRefs = useMemo(() => [...otherBranches, ...remoteRefs], [otherBranches, remoteRefs]);
@@ -280,9 +299,7 @@ export function GitRefsPanel({
 									key={ref.name}
 									isSelected={isSelected}
 									onSelect={() => onSelectRef(ref)}
-									onDoubleClick={
-										onCheckoutRef && isSwitchable ? () => onCheckoutRef(ref.name) : undefined
-									}
+									onDoubleClick={onCheckoutRef && isSwitchable ? () => onCheckoutRef(ref.name) : undefined}
 								>
 									<GitBranch size={12} />
 									<span className="kb-line-clamp-1" style={{ flex: 1 }}>
@@ -293,18 +310,14 @@ export function GitRefsPanel({
 										)}
 									</span>
 									{isSwitchable ? (
-										<AheadBehindIndicator
-											ahead={ref.ahead}
-											behind={ref.behind}
-											isSelected={isSelected}
-										/>
+										<AheadBehindIndicator ahead={ref.ahead} behind={ref.behind} isSelected={isSelected} />
 									) : (
 										<Tooltip
 											side="bottom"
 											content={
 												<div style={{ maxWidth: 240, whiteSpace: "normal", lineHeight: 1.4 }}>
-													Kanban&rsquo;s board data branch. Its history is viewable here, but
-													it can&rsquo;t be checked out into your code working tree.
+													Kanban&rsquo;s board data branch. Its history is viewable here, but it
+													can&rsquo;t be checked out into your code working tree.
 												</div>
 											}
 										>
@@ -354,6 +367,71 @@ export function GitRefsPanel({
 								No matching branches
 							</div>
 						) : null}
+
+						{tagRefs.length > 0 || onCreateTag ? (
+							<div
+								style={{
+									display: "flex",
+									alignItems: "center",
+									gap: 4,
+									padding: "10px 6px 0 8px",
+								}}
+							>
+								<span
+									style={{
+										flex: 1,
+										fontSize: 10,
+										fontWeight: 600,
+										letterSpacing: "0.05em",
+										textTransform: "uppercase",
+										color: "var(--color-text-tertiary)",
+									}}
+								>
+									Tags
+								</span>
+								{onCreateTag ? (
+									<Tooltip content="Create tag" side="bottom">
+										<Button
+											variant="ghost"
+											size="sm"
+											icon={<Plus size={14} />}
+											aria-label="Create tag"
+											onClick={onCreateTag}
+										/>
+									</Tooltip>
+								) : null}
+							</div>
+						) : null}
+
+						{tagRefs.map((ref) => {
+							const isSelected = !isWorkingCopySelected && selectedRefName === ref.name;
+							return (
+								<RefRow
+									key={`tag:${ref.name}`}
+									isSelected={isSelected}
+									onSelect={() => onSelectRef(ref)}
+									trailing={
+										onDeleteTag ? (
+											<Button
+												variant="ghost"
+												size="sm"
+												icon={<Trash2 size={12} />}
+												aria-label={`Delete tag ${ref.name}`}
+												onClick={(event) => {
+													event.stopPropagation();
+													onDeleteTag(ref.name);
+												}}
+											/>
+										) : null
+									}
+								>
+									<Tag size={12} />
+									<span className="kb-line-clamp-1" style={{ flex: 1 }}>
+										{ref.name}
+									</span>
+								</RefRow>
+							);
+						})}
 					</>
 				)}
 			</div>
@@ -383,12 +461,14 @@ function RefRow({
 	selectedClassName,
 	onSelect,
 	onDoubleClick,
+	trailing,
 	children,
 }: {
 	isSelected: boolean;
 	selectedClassName?: string;
 	onSelect: () => void;
 	onDoubleClick?: () => void;
+	trailing?: React.ReactNode;
 	children: React.ReactNode;
 }): React.ReactElement {
 	const resolvedSelectedClass = selectedClassName ?? "kb-git-ref-row-selected";
@@ -432,6 +512,7 @@ function RefRow({
 			>
 				{children}
 			</button>
+			{trailing}
 		</div>
 	);
 }

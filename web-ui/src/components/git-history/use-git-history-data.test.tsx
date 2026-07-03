@@ -6,6 +6,7 @@ import { useGitHistoryData } from "@/components/git-history/use-git-history-data
 import type {
 	RuntimeGitCommitDiffResponse,
 	RuntimeGitLogResponse,
+	RuntimeGitRef,
 	RuntimeGitRefsResponse,
 	RuntimeGitSyncSummary,
 	RuntimeWorkspaceChangesResponse,
@@ -148,10 +149,12 @@ function HookHarness({
 	taskScope,
 	enabled = true,
 	onRender,
+	onApi,
 }: {
 	taskScope: { taskId: string; baseRef: string } | null;
 	enabled?: boolean;
 	onRender: (snapshot: HookSnapshot) => void;
+	onApi?: (api: { selectRef: (ref: RuntimeGitRef) => void; refs: RuntimeGitRef[] }) => void;
 }): null {
 	const gitHistory = useGitHistoryData({
 		workspaceId: "project-1",
@@ -160,6 +163,7 @@ function HookHarness({
 		enabled,
 	});
 
+	onApi?.({ selectRef: gitHistory.selectRef, refs: gitHistory.refs });
 	onRender({
 		refs: gitHistory.refs.map((ref) => ref.name),
 		activeRefName: gitHistory.activeRef?.name ?? null,
@@ -408,6 +412,59 @@ describe("useGitHistoryData", () => {
 			activeRefName: "main",
 			commits: ["remotehash1", "homehash1", "basehash1"],
 			selectedCommitHash: "homehash1",
+		});
+	});
+
+	it("carries tag refs through and loads a tag's history scoped to the tag name", async () => {
+		const snapshots: HookSnapshot[] = [];
+		const holder: { api: { selectRef: (ref: RuntimeGitRef) => void; refs: RuntimeGitRef[] } | null } = { api: null };
+
+		getGitRefsQueryMock.mockResolvedValue({
+			ok: true,
+			refs: [
+				{ name: "main", type: "branch", hash: "homehash1", isHead: true },
+				{ name: "v1.0.0", type: "tag", hash: "taghash1", isHead: false },
+			],
+		} satisfies RuntimeGitRefsResponse);
+		getGitLogQueryMock.mockImplementation(async ({ ref }: { ref?: string | null }) =>
+			ref === "v1.0.0"
+				? createLogResponse("taghash1", "Tagged commit")
+				: createLogResponse("homehash1", "Home commit"),
+		);
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					taskScope={null}
+					onRender={(snapshot) => {
+						snapshots.push(snapshot);
+					}}
+					onApi={(next) => {
+						holder.api = next;
+					}}
+				/>,
+			);
+			await flushPromises();
+		});
+
+		// The tag flows through the hook untouched (not filtered like an internal branch).
+		expect(snapshots.at(-1)?.refs).toContain("v1.0.0");
+
+		const tagRef = holder.api?.refs.find((ref) => ref.name === "v1.0.0");
+		expect(tagRef).toBeDefined();
+		await act(async () => {
+			holder.api?.selectRef(tagRef as RuntimeGitRef);
+			await flushPromises();
+		});
+
+		// Selecting the tag drives a log request scoped to the tag name and resolves its commit.
+		expect(getGitLogQueryMock).toHaveBeenCalledWith(
+			expect.objectContaining({ ref: "v1.0.0", refs: ["v1.0.0"] }),
+			expect.anything(),
+		);
+		expect(snapshots.at(-1)).toMatchObject({
+			activeRefName: "v1.0.0",
+			selectedCommitHash: "taghash1",
 		});
 	});
 });

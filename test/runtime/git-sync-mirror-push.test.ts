@@ -43,10 +43,21 @@ const mirrors: RuntimeExtraPushRemote[] = [
 	{ name: "backup", url: "https://example.com/o/r.git" },
 ];
 
+function allPushCalls(): string[][] {
+	return runGitMock.mock.calls.map((call) => call[1] as string[]).filter((args) => args[0] === "push");
+}
+
+// A mirror push targets an explicit remote URL; the primary push has none.
+function isMirrorPush(args: string[]): boolean {
+	return args.some((arg) => arg.startsWith("http"));
+}
+
 function mirrorPushCalls(): string[][] {
-	return runGitMock.mock.calls
-		.map((call) => call[1] as string[])
-		.filter((args) => args[0] === "push" && args.length > 1);
+	return allPushCalls().filter(isMirrorPush);
+}
+
+function primaryPushCall(): string[] | undefined {
+	return allPushCalls().find((args) => !isMirrorPush(args));
 }
 
 beforeEach(() => {
@@ -64,9 +75,12 @@ describe("runGitSyncAction mirror push", () => {
 		const result = await runGitSyncAction({ cwd: "/repo-a", action: "push", mirrorRemotes: mirrors });
 
 		expect(result.ok).toBe(true);
+		// The primary push carries `--follow-tags` so locally-created annotated tags go
+		// out with the branch on the normal unified push (no dedicated tag-push path).
+		expect(primaryPushCall()).toEqual(["push", "--follow-tags"]);
 		expect(mirrorPushCalls()).toEqual([
-			["push", "https://gitee.com/o/r.git", "main:main"],
-			["push", "https://example.com/o/r.git", "main:main"],
+			["push", "--follow-tags", "https://gitee.com/o/r.git", "main:main"],
+			["push", "--follow-tags", "https://example.com/o/r.git", "main:main"],
 		]);
 		expect(result.output).toContain("gitee");
 		expect(result.output).toContain("2/2");
@@ -80,10 +94,10 @@ describe("runGitSyncAction mirror push", () => {
 		// behind the current branch still gets the branch pushed. The mirror stage is
 		// gated only on the primary push *succeeding*, never on it transferring commits.
 		runGitMock.mockImplementation(async (_cwd, args) => {
-			// Primary push (no refspec) is a no-op success.
-			if (args[0] === "push" && args.length === 1) return gitOk("Everything up-to-date");
+			// Primary push (no remote URL) is a no-op success.
+			if (args[0] === "push" && !isMirrorPush(args)) return gitOk("Everything up-to-date");
 			// Mirrors are behind, so their pushes actually transfer commits.
-			if (args[0] === "push" && args.length > 1) return gitOk("abc123..def456  main -> main");
+			if (args[0] === "push" && isMirrorPush(args)) return gitOk("abc123..def456  main -> main");
 			return defaultDispatch(args);
 		});
 
@@ -93,15 +107,15 @@ describe("runGitSyncAction mirror push", () => {
 		expect(result.output).toContain("Everything up-to-date");
 		// Both mirrors are pushed the current branch despite the primary being a no-op.
 		expect(mirrorPushCalls()).toEqual([
-			["push", "https://gitee.com/o/r.git", "main:main"],
-			["push", "https://example.com/o/r.git", "main:main"],
+			["push", "--follow-tags", "https://gitee.com/o/r.git", "main:main"],
+			["push", "--follow-tags", "https://example.com/o/r.git", "main:main"],
 		]);
 		expect(result.output).toContain("2/2");
 	});
 
 	it("keeps ok=true and reports the failure when a mirror push fails", async () => {
 		runGitMock.mockImplementation(async (_cwd, args) => {
-			if (args[0] === "push" && args[1] === "https://gitee.com/o/r.git") {
+			if (args[0] === "push" && args.includes("https://gitee.com/o/r.git")) {
 				return gitFail("remote: authentication failed");
 			}
 			return defaultDispatch(args);
@@ -118,7 +132,7 @@ describe("runGitSyncAction mirror push", () => {
 
 	it("does not mirror when the primary push fails", async () => {
 		runGitMock.mockImplementation(async (_cwd, args) => {
-			if (args[0] === "push" && args.length === 1) return gitFail("rejected");
+			if (args[0] === "push" && !isMirrorPush(args)) return gitFail("rejected");
 			return defaultDispatch(args);
 		});
 

@@ -285,7 +285,9 @@ export async function runGitSyncAction(options: {
 	const argsByAction: Record<RuntimeGitSyncAction, string[]> = {
 		fetch: ["fetch", "--all", "--prune"],
 		pull: ["pull", "--ff-only"],
-		push: ["push"],
+		// `--follow-tags` carries locally-created annotated tags out with the branch on
+		// the normal unified push, so tag management needs no dedicated push endpoint.
+		push: ["push", "--follow-tags"],
 	};
 	const commandResult = await runGit(options.cwd, argsByAction[options.action]);
 	const nextSummary = await getGitSyncSummary(options.cwd);
@@ -304,7 +306,7 @@ export async function runGitSyncAction(options: {
 	const branch = nextSummary.currentBranch ?? initialSummary.currentBranch;
 	if (options.action === "push" && branch && options.mirrorRemotes && options.mirrorRemotes.length > 0) {
 		const mirrorResults = await pushToMirrorRemotes(options.mirrorRemotes, branch, async (remote, ref) => {
-			const push = await runGit(options.cwd, ["push", remote.url, `${ref}:${ref}`]);
+			const push = await runGit(options.cwd, ["push", "--follow-tags", remote.url, `${ref}:${ref}`]);
 			return { ok: push.ok, error: push.ok ? undefined : (push.error ?? "Push failed.") };
 		});
 		const mirrorOutput = formatMirrorPushOutput(mirrorResults);

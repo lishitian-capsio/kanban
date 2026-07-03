@@ -15,6 +15,10 @@ import {
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
+	Dialog,
+	DialogBody,
+	DialogFooter,
+	DialogHeader,
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { ResizeHandle } from "@/resize/resize-handle";
@@ -75,6 +79,11 @@ interface GitHistoryViewProps {
 	onCheckoutBranch?: (branch: string) => void;
 	onDiscardWorkingChanges?: () => void;
 	isDiscardWorkingChangesPending?: boolean;
+	/** Create a local tag at the given commitish (null ⇒ HEAD). Enables tag UI when set. */
+	onCreateTag?: (input: { name: string; message: string; commitish: string | null }) => void;
+	/** Delete a local tag by name. Enables the tag delete affordance when set. */
+	onDeleteTag?: (name: string) => void;
+	isTagActionPending?: boolean;
 }
 
 export function GitHistoryView({
@@ -83,8 +92,34 @@ export function GitHistoryView({
 	onCheckoutBranch,
 	onDiscardWorkingChanges,
 	isDiscardWorkingChangesPending = false,
+	onCreateTag,
+	onDeleteTag,
+	isTagActionPending = false,
 }: GitHistoryViewProps): React.ReactElement {
 	const [isDiscardAlertOpen, setIsDiscardAlertOpen] = useState(false);
+	const [isCreateTagOpen, setIsCreateTagOpen] = useState(false);
+	const [tagName, setTagName] = useState("");
+	const [tagMessage, setTagMessage] = useState("");
+	const [tagToDelete, setTagToDelete] = useState<string | null>(null);
+
+	// The create dialog tags whatever commit is currently selected in the history
+	// (falling back to HEAD when the working copy / no commit is selected).
+	const tagTargetCommit = gitHistory.viewMode === "commit" ? gitHistory.selectedCommit : null;
+
+	const openCreateTag = useCallback(() => {
+		setTagName("");
+		setTagMessage("");
+		setIsCreateTagOpen(true);
+	}, []);
+
+	const submitCreateTag = useCallback(() => {
+		const name = tagName.trim();
+		if (!name || !onCreateTag) {
+			return;
+		}
+		onCreateTag({ name, message: tagMessage, commitish: tagTargetCommit?.hash ?? null });
+		setIsCreateTagOpen(false);
+	}, [onCreateTag, tagMessage, tagName, tagTargetCommit?.hash]);
 	const [historyLayoutWidth, setHistoryLayoutWidth] = useState<number | null>(null);
 	const historyLayoutRef = useRef<HTMLDivElement | null>(null);
 	const { startDrag: startRefsPanelResize } = useResizeDrag();
@@ -196,6 +231,8 @@ export function GitHistoryView({
 				onSelectRef={gitHistory.selectRef}
 				onSelectWorkingCopy={gitHistory.hasWorkingCopy ? gitHistory.selectWorkingCopy : undefined}
 				onCheckoutRef={onCheckoutBranch}
+				onCreateTag={onCreateTag ? openCreateTag : undefined}
+				onDeleteTag={onDeleteTag ? setTagToDelete : undefined}
 			/>
 			<ResizeHandle
 				orientation="vertical"
@@ -295,6 +332,104 @@ export function GitHistoryView({
 						>
 							{isDiscardWorkingChangesPending ? <Spinner size={14} /> : null}
 							Discard All
+						</Button>
+					</AlertDialogAction>
+				</AlertDialogFooter>
+			</AlertDialog>
+
+			<Dialog
+				open={isCreateTagOpen}
+				onOpenChange={(open) => {
+					if (!open) setIsCreateTagOpen(false);
+				}}
+			>
+				<DialogHeader title="Create tag" />
+				<DialogBody className="flex flex-col gap-3">
+					<label className="flex flex-col gap-1">
+						<span className="text-xs font-medium text-text-secondary">Tag name</span>
+						<input
+							autoFocus
+							className="h-8 w-full rounded-md border border-border bg-surface-2 px-3 text-sm text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
+							placeholder="v1.0.0"
+							value={tagName}
+							onChange={(e) => setTagName(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") {
+									e.preventDefault();
+									submitCreateTag();
+								}
+							}}
+						/>
+					</label>
+					<label className="flex flex-col gap-1">
+						<span className="text-xs font-medium text-text-secondary">
+							Message <span className="text-text-tertiary">(optional — annotated tag)</span>
+						</span>
+						<input
+							className="h-8 w-full rounded-md border border-border bg-surface-2 px-3 text-sm text-text-primary placeholder:text-text-tertiary focus:border-border-focus focus:outline-none"
+							placeholder="Leave empty for a lightweight tag"
+							value={tagMessage}
+							onChange={(e) => setTagMessage(e.target.value)}
+						/>
+					</label>
+					<div className="text-xs text-text-tertiary">
+						Target:{" "}
+						{tagTargetCommit ? (
+							<>
+								<code className="font-mono text-text-secondary">{tagTargetCommit.shortHash}</code>{" "}
+								{tagTargetCommit.message}
+							</>
+						) : (
+							<span className="text-text-secondary">HEAD (current branch tip)</span>
+						)}
+					</div>
+				</DialogBody>
+				<DialogFooter>
+					<Button variant="default" onClick={() => setIsCreateTagOpen(false)} disabled={isTagActionPending}>
+						Cancel
+					</Button>
+					<Button variant="primary" onClick={submitCreateTag} disabled={isTagActionPending || !tagName.trim()}>
+						{isTagActionPending ? <Spinner size={14} /> : null}
+						Create tag
+					</Button>
+				</DialogFooter>
+			</Dialog>
+
+			<AlertDialog
+				open={tagToDelete !== null}
+				onOpenChange={(open) => {
+					if (!open) setTagToDelete(null);
+				}}
+			>
+				<AlertDialogHeader>
+					<AlertDialogTitle>Delete tag?</AlertDialogTitle>
+				</AlertDialogHeader>
+				<AlertDialogBody>
+					<AlertDialogDescription>
+						Delete the local tag <code className="font-mono">{tagToDelete}</code>? This only removes it locally; a
+						tag already pushed to a remote is unaffected.
+					</AlertDialogDescription>
+				</AlertDialogBody>
+				<AlertDialogFooter>
+					<AlertDialogCancel asChild>
+						<Button variant="default" onClick={() => setTagToDelete(null)} disabled={isTagActionPending}>
+							Cancel
+						</Button>
+					</AlertDialogCancel>
+					<AlertDialogAction asChild>
+						<Button
+							variant="danger"
+							disabled={isTagActionPending}
+							onClick={() => {
+								const name = tagToDelete;
+								setTagToDelete(null);
+								if (name) {
+									onDeleteTag?.(name);
+								}
+							}}
+						>
+							{isTagActionPending ? <Spinner size={14} /> : null}
+							Delete tag
 						</Button>
 					</AlertDialogAction>
 				</AlertDialogFooter>

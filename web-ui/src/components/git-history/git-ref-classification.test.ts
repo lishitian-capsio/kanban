@@ -36,4 +36,13 @@ describe("classifyGitRefDisposition", () => {
 	it("does not hide or lock detached HEAD refs", () => {
 		expect(classifyGitRefDisposition("a1b2c3d", "detached")).toBe("switchable");
 	});
+
+	it("treats tags as visible but non-switchable (history-only)", () => {
+		expect(classifyGitRefDisposition("v1.0.0", "tag")).toBe("non-switchable");
+		expect(classifyGitRefDisposition("release-2024", "tag")).toBe("non-switchable");
+	});
+
+	it("hides internal board-archive tags", () => {
+		expect(classifyGitRefDisposition("kanban/board-archive/1718000000", "tag")).toBe("hidden");
+	});
 });

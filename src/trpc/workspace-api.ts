@@ -43,6 +43,7 @@ import {
 } from "../workspace/get-workspace-changes";
 import { getCommitDiff, getGitLog, getGitRefs } from "../workspace/git-history";
 import { discardGitChanges, getGitSyncSummary, runGitCheckoutAction, runGitSyncAction } from "../workspace/git-sync";
+import { createGitTag, deleteGitTag } from "../workspace/git-tag";
 import { readGitRemoteUrl, readGitUserIdentity, writeGitRemoteUrl, writeGitUserIdentity } from "../workspace/git-utils";
 import { normalizeExtraPushRemotes } from "../workspace/mirror-push";
 import { searchWorkspaceFiles } from "../workspace/search-workspace-files";
@@ -691,6 +692,59 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 				cwd: diffCwd,
 				commitHash: input.commitHash,
 			});
+		},
+		createGitTag: async (workspaceScope, input) => {
+			try {
+				const taskScope = normalizeOptionalTaskWorkspaceScopeInput(input.taskScope ?? null);
+				let tagCwd = workspaceScope.workspacePath;
+				if (taskScope) {
+					tagCwd = await resolveTaskCwd({
+						cwd: workspaceScope.workspacePath,
+						taskId: taskScope.taskId,
+						baseRef: taskScope.baseRef,
+						ensure: false,
+					});
+				}
+				const response = await createGitTag({
+					cwd: tagCwd,
+					name: input.name,
+					commitish: input.commitish ?? null,
+					message: input.message ?? null,
+				});
+				if (response.ok) {
+					void deps.broadcastRuntimeWorkspaceStateUpdated(
+						workspaceScope.workspaceId,
+						workspaceScope.workspacePath,
+					);
+				}
+				return response;
+			} catch (error) {
+				return { ok: false, name: input.name, error: error instanceof Error ? error.message : String(error) };
+			}
+		},
+		deleteGitTag: async (workspaceScope, input) => {
+			try {
+				const taskScope = normalizeOptionalTaskWorkspaceScopeInput(input.taskScope ?? null);
+				let tagCwd = workspaceScope.workspacePath;
+				if (taskScope) {
+					tagCwd = await resolveTaskCwd({
+						cwd: workspaceScope.workspacePath,
+						taskId: taskScope.taskId,
+						baseRef: taskScope.baseRef,
+						ensure: false,
+					});
+				}
+				const response = await deleteGitTag({ cwd: tagCwd, name: input.name });
+				if (response.ok) {
+					void deps.broadcastRuntimeWorkspaceStateUpdated(
+						workspaceScope.workspaceId,
+						workspaceScope.workspacePath,
+					);
+				}
+				return response;
+			} catch (error) {
+				return { ok: false, name: input.name, error: error instanceof Error ? error.message : String(error) };
+			}
 		},
 	};
 }

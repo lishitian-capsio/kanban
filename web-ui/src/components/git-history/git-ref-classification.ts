@@ -47,11 +47,18 @@ function toLogicalBranchName(name: string, type: RuntimeGitRef["type"]): string 
  */
 export function classifyGitRefDisposition(name: string, type: RuntimeGitRef["type"]): GitRefDisposition {
 	const branchName = toLogicalBranchName(name, type);
-	if (branchName === BOARD_BRANCH_NAME) {
-		return "non-switchable";
-	}
+	// Internal noise (task worktree branches, archived board branches/tags) is hidden
+	// regardless of ref kind — a `kanban/board-archive/<ts>` archive *tag* is dropped
+	// the same way its branch counterpart is.
 	if (branchName.startsWith(TASK_BRANCH_PREFIX) || branchName.startsWith(BOARD_ARCHIVE_BRANCH_PREFIX)) {
 		return "hidden";
+	}
+	// Tags are viewable history anchors, never checked out into the code working tree.
+	if (type === "tag") {
+		return "non-switchable";
+	}
+	if (branchName === BOARD_BRANCH_NAME) {
+		return "non-switchable";
 	}
 	return "switchable";
 }

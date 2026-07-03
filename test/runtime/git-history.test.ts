@@ -142,6 +142,34 @@ describe.sequential("git history runtime", () => {
 		}
 	});
 
+	it("lists tags, resolving annotated tags to their commit and keeping lightweight tags", async () => {
+		const { path: repoPath, cleanup } = createTempDir("kanban-git-history-tags-");
+		try {
+			initRepository(repoPath);
+			writeFileSync(join(repoPath, "a.txt"), "one\n", "utf8");
+			const firstCommit = commitAll(repoPath, "first");
+			writeFileSync(join(repoPath, "b.txt"), "two\n", "utf8");
+			const headCommit = commitAll(repoPath, "second");
+
+			// Annotated tag at an older commit — its objectname is the tag object, so the
+			// ref hash must be the *dereferenced* commit, not the tag object sha.
+			runGit(repoPath, ["tag", "-a", "v1.0.0", "-m", "release 1.0.0", firstCommit]);
+			// Lightweight tag at HEAD — objectname already points at the commit.
+			runGit(repoPath, ["tag", "light"]);
+
+			const refsResponse = await getGitRefs(repoPath);
+			expect(refsResponse.ok).toBe(true);
+
+			const annotated = refsResponse.refs.find((ref) => ref.name === "v1.0.0");
+			expect(annotated).toMatchObject({ name: "v1.0.0", type: "tag", hash: firstCommit, isHead: false });
+
+			const lightweight = refsResponse.refs.find((ref) => ref.name === "light");
+			expect(lightweight).toMatchObject({ name: "light", type: "tag", hash: headCommit, isHead: false });
+		} finally {
+			cleanup();
+		}
+	});
+
 	it("reads ahead and behind counts from tracked branches", { timeout: 15_000 }, async () => {
 		const { path: sandboxRoot, cleanup } = createTempDir("kanban-git-history-refs-");
 		try {

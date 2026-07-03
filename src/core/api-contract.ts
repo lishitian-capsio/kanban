@@ -2881,7 +2881,7 @@ export type RuntimeGitCommit = z.infer<typeof runtimeGitCommitSchema>;
 
 export const runtimeGitRefSchema = z.object({
 	name: z.string(),
-	type: z.enum(["branch", "remote", "detached"]),
+	type: z.enum(["branch", "remote", "detached", "tag"]),
 	hash: z.string(),
 	isHead: z.boolean(),
 	upstreamName: z.string().optional(),
@@ -2889,6 +2889,31 @@ export const runtimeGitRefSchema = z.object({
 	behind: z.number().optional(),
 });
 export type RuntimeGitRef = z.infer<typeof runtimeGitRefSchema>;
+
+// Local git tag management. Tags are created/deleted only locally; they reach a
+// remote through the existing unified push (`git push --follow-tags`), never via a
+// dedicated push/remote-delete endpoint. `commitish` defaults to HEAD; a non-empty
+// `message` creates an annotated tag, an empty/omitted one a lightweight tag.
+export const runtimeGitTagCreateRequestSchema = z.object({
+	name: z.string(),
+	commitish: z.string().nullable().optional(),
+	message: z.string().nullable().optional(),
+	taskScope: runtimeTaskWorkspaceInfoRequestSchema.nullable().optional(),
+});
+export type RuntimeGitTagCreateRequest = z.infer<typeof runtimeGitTagCreateRequestSchema>;
+
+export const runtimeGitTagDeleteRequestSchema = z.object({
+	name: z.string(),
+	taskScope: runtimeTaskWorkspaceInfoRequestSchema.nullable().optional(),
+});
+export type RuntimeGitTagDeleteRequest = z.infer<typeof runtimeGitTagDeleteRequestSchema>;
+
+export const runtimeGitTagMutationResponseSchema = z.object({
+	ok: z.boolean(),
+	name: z.string(),
+	error: z.string().optional(),
+});
+export type RuntimeGitTagMutationResponse = z.infer<typeof runtimeGitTagMutationResponseSchema>;
 
 export const runtimeGitLogRequestSchema = z.object({
 	ref: z.string().nullable().optional(),

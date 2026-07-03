@@ -125,10 +125,14 @@ export async function getGitRefs(cwd: string): Promise<RuntimeGitRefsResponse> {
 	const [headResult, branchResult, headRefResult] = await Promise.all([
 		runGit(repoRoot, ["rev-parse", "HEAD"]),
 		runGit(repoRoot, [
+			// `%(objecttype)` distinguishes annotated tags (`tag`) from lightweight ones
+			// (`commit`); `%(*objectname)` is the commit an annotated tag dereferences to
+			// (empty for everything else). Branch/remote fields are unchanged.
 			"for-each-ref",
-			"--format=%(refname)\x1f%(refname:short)\x1f%(objectname)\x1f%(upstream:short)\x1f%(upstream:track)",
+			"--format=%(refname)\x1f%(refname:short)\x1f%(objectname)\x1f%(upstream:short)\x1f%(upstream:track)\x1f%(objecttype)\x1f%(*objectname)",
 			"refs/heads/",
 			"refs/remotes/",
+			"refs/tags/",
 		]),
 		runGit(repoRoot, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
 	]);
@@ -157,7 +161,7 @@ export async function getGitRefs(cwd: string): Promise<RuntimeGitRefsResponse> {
 	interface BranchEntry {
 		fullName: string;
 		name: string;
-		type: "branch" | "remote";
+		type: "branch" | "remote" | "tag";
 		hash: string;
 		upstream: string | null;
 		ahead?: number;
@@ -174,16 +178,25 @@ export async function getGitRefs(cwd: string): Promise<RuntimeGitRefsResponse> {
 			const parts = trimmed.split("\x1f");
 			const fullName = parts[0];
 			const name = parts[1];
-			const hash = parts[2];
+			const objectName = parts[2];
 			const upstream = parts[3] || null;
 			const trackDescriptor = parts[4] || null;
-			if (!fullName || !name || !hash) {
+			const derefObjectName = parts[6] || null;
+			if (!fullName || !name || !objectName) {
 				continue;
 			}
 			if (fullName.endsWith("/HEAD")) {
 				continue;
 			}
-			const type = fullName.startsWith("refs/remotes/") ? "remote" : "branch";
+			const type = fullName.startsWith("refs/tags/")
+				? "tag"
+				: fullName.startsWith("refs/remotes/")
+					? "remote"
+					: "branch";
+			// For an annotated tag, `objectName` is the tag object; the ref should point
+			// at the commit it dereferences to. Lightweight tags have no deref, so fall
+			// back to `objectName` (already the commit).
+			const hash = type === "tag" ? (derefObjectName ?? objectName) : objectName;
 			branches.push({
 				fullName,
 				name,
