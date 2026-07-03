@@ -3,7 +3,7 @@
   "title": "CI: 彻底停跑 test.yml (移除多平台 build-check-test)",
   "prompt": "目标：让 CI 彻底不再跑多平台的 build-check-test 矩阵(macos+ubuntu 的 typecheck+vitest)。用户明确选择：彻底不跑 test.yml,只靠 build-release.yml 的 npm pack 出包。\n\n## 背景 / 现状(已核实,别重复调查)\n.github/workflows/ 下：\n- ci.yml —— 触发 push/PR 到 main;内容只有一个 job(test: uses: ./.github/workflows/test.yml)。它唯一作用就是调 test.yml 的矩阵。\n- publish.yml —— 手动 dispatch 发 npm;有一个 test job(uses: ./.github/workflows/test.yml),且 publish job 通过 needs: test 门禁依赖它。\n- test.yml —— 可复用(reusable)工作流,被上面两个 uses 调用,内含 macos-latest + ubuntu 的 build-check-test(npm run build + typecheck + bun vitest run)。当前在挂：macos 上有真实 TS 编译错误(根 tsconfig 是 ES2022,但 vendored omp 用了 ES2024 的 String.prototype.toWellFormed;外加 special.ts / auth-storage.ts 两个 vendored 类型错)。\n- build-release.yml —— 由另一个 task(f4d5d)负责收敛,本 task 不要碰它。它是 ubuntu-only 的纯打包(build + npm pack + Release),不跑测试。\n\n## 要做的事\n1. ci.yml：移除对 test.yml 的引用。由于 ci.yml 内容只有这一个 test job,移除后就空了——直接删除 ci.yml 整个文件(push/PR 上不再有任何 CI check)。\n2. publish.yml：移除其中的 test job,以及 publish job 上的 needs: test 门禁,让 npm 发布不再被多平台矩阵卡住。保留 publish.yml 的实际发布能力(checkout、校验 tag 是否等于 package version、build、npm publish、创建 Release、Slack 通知等步骤全部保留),只去掉 test 门禁。\n3. test.yml：它是 reusable 工作流。移除上面两处引用后,确认它是否还有独立触发(on: push / pull_request / schedule 等)。如果它是纯 workflow_call/reusable、没有独立触发,那它已不会再运行——为干净起见删除 test.yml。删除前先 grep 全仓库确认没有其它地方 uses: 它;若有未知引用,则只移除引用并保留文件。\n4. 不改任何源码,也不动 tsconfig(用户选择不跑 typecheck,所以 toWellFormed / 两个 vendored 类型错本 task 不处理,作为遗留 tech debt 保留)。\n5. 不要碰 build-release.yml(由 f4d5d 负责)。\n\n## 验收\n- push/PR 到 main 不再触发 macos/ubuntu 的 build-check-test(ci.yml 已删或不再引用 test.yml)。\n- publish.yml 手动跑时不再 needs test,发布步骤完整可用。\n- 全仓库无残留对已删 workflow 的 uses: 引用。\n- 用 actionlint 或等价方式校验剩余 workflow YAML 合法。\n\n参考 AGENTS.md：不要碰 vendored src/agent-sdk/;npm pack 出的 kanban-<version>.tgz 供 self-update 用。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -13,8 +13,8 @@
   "originThreadId": "49269ceb-b13c-4019-aaaf-65bd61e653ff",
   "baseRef": "main",
   "createdAt": 1783054738417,
-  "updatedAt": 1783054768222,
-  "column": "backlog",
+  "updatedAt": 1783054781388,
+  "column": "in_progress",
   "rank": "Zw",
   "dependsOn": []
 }
