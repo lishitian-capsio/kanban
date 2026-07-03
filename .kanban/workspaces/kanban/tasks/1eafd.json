@@ -3,7 +3,7 @@
   "title": "Kanban 增加 git tag 管理 (列出/展示/创建/推送/删除)",
   "prompt": "目标：给 Kanban 增加 git tag 管理，作为现有 git-history/refs 机制的自然延伸。git 仓库本身是唯一数据源，全程用 runGit，不新增任何存储。\n\n【重要范围约定】tag 只做本地的增删改查（list/create/delete，本地 git 操作）。推送不单独做——tag 跟随现有的统一 push（git-sync 的 push action）一起走。前端不出现单独的 push-tag / 远程删除 tag 按钮。\n\n## 现状（已摸清，别重复调查）\n后端：\n- src/workspace/git-history.ts —— getGitRefs() 现用 git for-each-ref 只圈 refs/heads/ 和 refs/remotes/，没带 tags；输出 %(refname)/%(refname:short)/%(objectname)/%(upstream:short)/%(upstream:track)。\n- src/workspace/git-sync.ts —— 统一 push 在这里：argsByAction.push = [\"push\"]（约 288 行），成功后再对 mirrorRemotes 用 push <url> <ref>:<ref> 镜像（约 305-314 行）。这就是\"统一 push\"。\n- src/trpc/workspace-api.ts 暴露给前端；src/workspace/git-utils.ts runGit 带 host-keyed 凭证注入。\n契约：RuntimeGitRef（src/core/api-contract.ts / runtime-contract），type 现为 \"branch\" | \"remote\" | \"detached\"。\n前端（web-ui/src/components/git-history/）：git-ref-classification.ts（switchable/non-switchable/hidden，隐藏 kanban/task/*、kanban/board-archive/*，锁 kanban/board）、git-refs-panel.tsx（按 type 分组渲染 detached/branch(GitBranch)/remote(Cloud)，fzf 搜 branch+remote，双击 checkout，已有删除按钮 Trash2）、git-commit-list-panel.tsx、git-commit-diff-panel.tsx、use-git-history-data.ts、git-history-view.tsx。测试：git-ref-classification.test.ts、git-refs-panel.test.tsx、use-git-history-data.test.tsx。\n\n## 后端要做\n1. 列出 tag：getGitRefs（或新增 getGitTags）让 for-each-ref 覆盖 refs/tags/。处理 annotated vs lightweight：加 %(objecttype)（tag=annotated，commit=lightweight）与 %(*objectname)（annotated 解引用后的 commit SHA，lightweight 为空）；hash 取值优先 %(*objectname)，否则 %(objectname)，保证落到真实 commit。前缀区分：refs/tags/ => type \"tag\"；refs/remotes/ => \"remote\"；否则 \"branch\"。\n2. 创建 tag（本地）：新 tRPC mutation，runGit git tag <name> [<commitish 默认 HEAD>]，默认 annotated（-a -m <message>；message 空则 lightweight）。校验名字/commitish（git check-ref-format），拒绝 shell 注入。\n3. 删除 tag（本地）：runGit git tag -d <name>。不做远程删除。\n4. 【统一 push 带上 tag】把 git-sync 的 push 从 [\"push\"] 改为 [\"push\", \"--follow-tags\"]，镜像 push 同样带 --follow-tags；这样本地建好的 annotated tag 会在用户执行常规统一 push 时随 commit 一起推出去。不新增任何 push-tag 端点/动作。\n5. 隐藏内部 tag：kanban/board-archive/* 属内部归档 tag，像现有 board-archive 分支一样从用户列表 hidden。\n\n## 契约\n- RuntimeGitRef.type 加 \"tag\"（共享契约，注意 dual-lib typecheck：后端无 DOM、web:typecheck 有 DOM，两边都要过）。\n- 为本地创建/删除 tag 加 request/response schema。不加 push/remote-delete 的 schema。\n\n## 前端要做\n1. git-refs-panel.tsx：新增 tagRefs = visibleRefs.filter(r => r.type === \"tag\")，加 Tags 分组，用 lucide 的 Tag 图标，和 branch/remote 段并列。\n2. git-ref-classification.ts：tag 的 disposition 定为 non-switchable（只看历史、不双击切分支）；kanban/board-archive/* tag 归 hidden。\n3. 选中 tag：复用现有 commit list / diff 流程（tag.hash 已是 commit）。\n4. 创建 tag UI：按钮 + dialog（tag 名、可选 message、目标=当前选中 commit 或 HEAD）。删除 tag UI：本地删除 + 二次确认（AlertDialog）。均为本地操作，不出现 push/远程删除按钮。tag 的推送由现有统一 push 按钮负责（--follow-tags），无需在 tag UI 里做。\n5. 搜索：tag 是否进 fzf 自定，可先不进。\n6. 测试：更新 git-ref-classification.test.ts、git-refs-panel.test.tsx、use-git-history-data.test.tsx，覆盖 tag 分类、annotated 解引用后的 hash、Tags 分组渲染、本地创建/删除路径；后端补 getGitRefs 含 tag、git-sync push 带 --follow-tags 的单测。\n\n## 约束 / 验收\n- tag 只本地增删改查；推送完全跟随 git-sync 统一 push（--follow-tags），无独立 push/远程删除。\n- 全程 runGit，无额外存储；不碰 vendored src/agent-sdk/。\n- 后端单测 + 前端组件测试齐全（注意 workspace-api 那类 bun:sqlite landmine 按现有约定处理）。\n- 说明：推送形如 vX.Y.Z 的 annotated tag 会随统一 push 出去并自然触发现有 build-release.yml 打包（GitHub 那边的事，本 task 不实现 Release）。\n\n参考 AGENTS.md：git-utils 是 leaf、host-keyed 注入、dual-lib typecheck、web-ui UI 原语与图标约定。",
   "startInPlanMode": false,
-  "autoReviewEnabled": true,
+  "autoReviewEnabled": false,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -13,8 +13,8 @@
   "originThreadId": "49269ceb-b13c-4019-aaaf-65bd61e653ff",
   "baseRef": "main",
   "createdAt": 1783055800278,
-  "updatedAt": 1783056018594,
-  "column": "in_progress",
+  "updatedAt": 1783056060074,
+  "column": "review",
   "rank": "Zw",
   "dependsOn": []
 }
