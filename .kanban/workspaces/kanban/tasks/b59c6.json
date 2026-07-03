@@ -1,0 +1,20 @@
+{
+  "id": "b59c6",
+  "title": "T4 前端:Tasks 升为一等 surface + 统一分档感知控件(三档+主动托管)",
+  "prompt": "「Kanban 多 surface 分档感知」T4(前端)。依赖 T1(agentSurfaces 契约/tRPC),与 T2/T3 可并行。把 Board 从\"隐式默认地基\"提成和 Vault/Database/File 平级的一等 surface,三个内容 surface 的感知控件统一成\"三档深度 + 主动托管小开关\"。原型见本 thread 发布的前端 artifact,按它实现。\n\n== 现状 ==\n- App.tsx 主内容区(约 1080-1130):isVaultOpen ? Vault : isDatabaseOpen ? Database : isGitHistoryOpen ? Git : <KanbanBoard>。Board 是兜底默认,无顶栏按钮,靠\"← Back to board\"回。\n- top-bar.tsx:VaultControlButton / DatabaseControlButton = split-button + popover + 共享布尔 AgentAccessSwitch;File = 普通 Button。无 Board 按钮。\n- 相关:web-ui/src/components/vault-control-button.tsx、components/database/database-control-button.tsx、components/ui/agent-access-switch.tsx、components/vault/data/use-vault-settings.ts。\n\n== 已定稿的 spec ==\n1) 命名:内容 surface 定名 Tasks(顶栏控件、文案、设置键 agentSurfaces.tasks)。KanbanBoard 组件仍叫 board(Tasks 的默认视图)。底座/分支/存储 board 命名不动。\n2) Tasks 一等控件:top-bar 新增 Tasks split-button(和 Vault/Database 同构)。显式化\"打开哪个 surface\"(新增 isTasksOpen 或收敛成 activeSurface);Board 从隐式兜底变显式选中(仍可作默认选中,开箱即用是看板)。保留\"← Back to board\"心智。\n3) 统一感知控件(替换布尔 AgentAccessSwitch):**分段式**三档(Off / Read-only / Read & write)+ 下方 **Proactive** 开关;**Proactive 仅在 depth=readwrite 时可用,否则灰置(不隐藏)**。Vault/Tasks 三档全显;**Database 只渲染 Off / Read-only 两段(只读封顶,无 Proactive)**。\n4) Off 档在该 surface 顶栏按钮上给\"变暗\"视觉信号(一眼看出 agent 对它无感知)。\n5) 接线:扩展 use-vault-settings.ts 读写 agentSurfaces;每个控件独立 partial 保存自己 surface 的 {depth,proactive}。App.tsx 现在传 agentVaultManagementEnabled/agentDatabaseAccessEnabled 的 props(约 581-598、1025-1036)改为传各 surface 的 depth/proactive。\n6) File 不动(底座,无感知控件)。Storage 顶栏控件本轮不做(等 Storage 感知一轮)。\n\n== 验收 ==\n- 顶栏出现 Tasks 控件,与 Vault/Database 同构;点主体切看板,点 ▾ 出感知控件。\n- Tasks/Vault 可设 Off/Read-only/Read&write + Proactive(仅读写档可用);Database 仅 Off/Read-only。Off 档按钮变暗。即时保存、刷新后保留(随仓库走)。\n- 默认态(Tasks 读写+主动)看板照常显示,老用户无感。\n- web-ui 规范:Tailwind、复用 ui 基元、Radix、无 any、无 console.*。组件测试(参考 vault-control-button 测试);typecheck 含 web:typecheck。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "98d352bf-cb23-490b-8d5d-8945798a7371",
+  "baseRef": "main",
+  "createdAt": 1783045825492,
+  "updatedAt": 1783045825492,
+  "column": "backlog",
+  "rank": "Zx",
+  "dependsOn": []
+}
