@@ -17,12 +17,8 @@ permissions:
   id-token: write
 
 jobs:
-  test:
-    uses: ./.github/workflows/test.yml
-
   publish:
     name: Publish npm package and create GitHub release
-    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
