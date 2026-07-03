@@ -1,0 +1,20 @@
+{
+  "id": "1eafd",
+  "title": "Kanban 增加 git tag 管理 (列出/展示/创建/推送/删除)",
+  "prompt": "目标：给 Kanban 增加 git tag 管理能力，作为现有 git-history/refs 机制的自然延伸。git 仓库本身是唯一数据源，全程用 runGit，不新增任何存储/数据库。本 task 一次做全：读取+展示 + 创建/推送/删除。\n\n## 现状（已摸清，别重复调查）\n后端：\n- src/workspace/git-history.ts —— getGitRefs() 目前用 git for-each-ref 只圈了 refs/heads/ 和 refs/remotes/（分支+远程），故意没带 tags。它还输出 %(refname)/%(refname:short)/%(objectname)/%(upstream:short)/%(upstream:track)。getGitLog()/getCommitDiff() 是 commit 列表和单 commit diff，都是 runGit 薄壳。\n- src/trpc/workspace-api.ts —— 暴露这些给前端。\n- src/workspace/git-utils.ts —— runGit，带 host-keyed 凭证注入（github/gitee），所以 push 会自动带凭证。\n契约类型：RuntimeGitRef（src/core/api-contract.ts / runtime-contract），type 联合当前是 \"branch\" | \"remote\" | \"detached\"。\n前端（web-ui/src/components/git-history/）：\n- git-ref-classification.ts —— 纯函数，按 name+type 判定 switchable / non-switchable / hidden；现在用来隐藏 kanban/task/* 与 kanban/board-archive/* 分支、锁住 kanban/board。\n- git-refs-panel.tsx —— 按 ref.type 分组渲染：detached / branch（GitBranch 图标）/ remote（Cloud 图标）；fzf 搜索 branch+remote；双击 checkout（switchable）；已有删除分支按钮（Trash2）。\n- git-commit-list-panel.tsx / git-commit-diff-panel.tsx / use-git-history-data.ts / git-history-view.tsx。\n- 测试：git-ref-classification.test.ts、git-refs-panel.test.tsx、use-git-history-data.test.tsx。\n\n## 后端要做\n1. 列出 tag：在 getGitRefs（或新增 getGitTags）里让 for-each-ref 覆盖 refs/tags/。tag 特有的坑必须处理——annotated vs lightweight：\n   - 加 %(objecttype)（tag=annotated，commit=lightweight）和 %(*objectname)（annotated 解引用后的 commit SHA，lightweight 为空）。\n   - 输出的 hash 取值：%(*objectname) 有值就用它，否则用 %(objectname)，保证 tag 的 hash 落到真实 commit（这样前端点 tag 能复用 commit diff 流程）。\n   - refname 前缀区分：refs/tags/ => type \"tag\"；refs/remotes/ => \"remote\"；否则 \"branch\"。\n2. 创建 tag：新 tRPC mutation，用 runGit：git tag <name> [<commitish 默认 HEAD>]；支持 annotated（-a -m <message>，message 可空则 lightweight）。名字/commitish 做校验，拒绝 shell 注入与非法 ref 名（git check-ref-format）。\n3. 推送 tag：git push <remote 默认 origin> <tag>（走现有凭证注入）。\n4. 删除 tag：本地 git tag -d <name>；远程 git push <remote> --delete <tag>（远程删除要在 UI 上二次确认）。\n5. 内部 tag 噪音：kanban/board-archive/* 是内部归档 tag（board 分支改名留的），要像现有 board-archive 分支一样从用户列表隐藏。\n\n## 契约\n- RuntimeGitRef 的 type 联合加 \"tag\"（共享契约，注意 dual-lib typecheck：后端 tsconfig 无 DOM、web:typecheck 有 DOM，改动要两边都过）。\n- 为创建/推送/删除加对应的 request/response schema。\n\n## 前端要做\n1. git-refs-panel.tsx：新增 tagRefs = visibleRefs.filter(r => r.type === \"tag\")，加一个 Tags 分组，用 lucide 的 Tag 图标，和 branch/remote 段并列。\n2. git-ref-classification.ts：tag 的 disposition 定为 non-switchable（只看历史、不双击切分支，避免 detached HEAD 复杂度）；kanban/board-archive/* tag 归为 hidden。\n3. 选中 tag：复用现有 commit list / diff 流程（tag.hash 已是 commit）。\n4. 创建 tag UI：加按钮 + dialog（tag 名、可选 message、目标=当前选中 commit 或 HEAD、可勾选是否推送到远程）。推送/删除动作照抄现有 checkout/删除分支按钮的模式；远程删除用 AlertDialog 二次确认。\n5. 搜索：tag 是否进 fzf 自定，先可不进或单独分组内搜。\n6. 测试：更新 git-ref-classification.test.ts、git-refs-panel.test.tsx、use-git-history-data.test.tsx，覆盖 tag 分类、annotated 解引用后的 hash、Tags 分组渲染、创建/推送/删除路径。\n\n## 约束 / 验收\n- 全程 runGit，无额外存储；push 依赖现有 host-keyed 凭证注入，不要新造凭证逻辑。\n- 不碰 vendored src/agent-sdk/。\n- 后端单测 + 前端组件测试齐全；bun vitest 相关用例通过（注意 workspace-api 那类 bun:sqlite landmine，按现有约定处理）。\n- 说明：推送形如 vX.Y.Z 的 tag 会自然触发现有 build-release.yml 打包（那是 GitHub 那边的事，Kanban 只负责把 tag 推上去，无需在本 task 里实现 Release）。\n\n参考 AGENTS.md：git-utils 是 leaf、host-keyed 注入、dual-lib typecheck、web-ui UI 原语与图标约定。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "49269ceb-b13c-4019-aaaf-65bd61e653ff",
+  "baseRef": "main",
+  "createdAt": 1783055800278,
+  "updatedAt": 1783055800278,
+  "column": "backlog",
+  "rank": "Zw",
+  "dependsOn": []
+}
