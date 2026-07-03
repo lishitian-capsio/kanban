@@ -15,6 +15,7 @@ import {
 	findCardSelection,
 	getTaskColumnId,
 	moveTaskToColumn,
+	removeTask,
 	updateTask,
 } from "@/state/board-state";
 import { clearTaskWorkspaceInfo, setTaskWorkspaceInfo } from "@/stores/workspace-metadata-store";
@@ -83,6 +84,8 @@ export interface UseBoardInteractionsResult {
 	handleCardSelect: (taskId: string) => void;
 	handleMoveToTrash: () => void;
 	handleMoveReviewCardToTrash: (taskId: string) => void;
+	handleMoveTaskToDone: (taskId: string) => void;
+	handleDeleteTask: (taskId: string) => void;
 	handleRestoreTaskFromTrash: (taskId: string) => void;
 	handleCancelAutomaticTaskAction: (taskId: string) => void;
 	handleOpenClearTrash: () => void;
@@ -771,6 +774,57 @@ export function useBoardInteractions({
 		[requestMoveTaskToTrashWithAnimation, setTaskMoveToTrashLoading],
 	);
 
+	// Generic "move to Done" for any column (Done and trash are one terminal bucket).
+	// Reuses the exact board trash path (working-change warning + linked-task restarts)
+	// so a task-bar action behaves identically to dragging the card to Done.
+	const handleMoveTaskToDone = useCallback(
+		(taskId: string) => {
+			const columnId = getTaskColumnId(board, taskId);
+			if (!columnId || columnId === "trash") {
+				return;
+			}
+			if (moveToTrashLoadingByIdRef.current[taskId]) {
+				return;
+			}
+			setTaskMoveToTrashLoading(taskId, true);
+			void requestMoveTaskToTrashWithAnimation(taskId, columnId).finally(() => {
+				setTaskMoveToTrashLoading(taskId, false);
+			});
+		},
+		[board, requestMoveTaskToTrashWithAnimation, setTaskMoveToTrashLoading],
+	);
+
+	// Permanently remove a task (not just move to Done): drop it from the board, clear
+	// any selection/metadata, and stop + clean up its workspace. Mirrors the per-task
+	// side effects of clearing trash, for a single task.
+	const handleDeleteTask = useCallback(
+		(taskId: string) => {
+			const selection = findCardSelection(board, taskId);
+			if (!selection) {
+				return;
+			}
+			setBoard((currentBoard) => {
+				const removed = removeTask(currentBoard, taskId);
+				return removed.removed ? removed.board : currentBoard;
+			});
+			setSessions((currentSessions) => {
+				if (!currentSessions[taskId]) {
+					return currentSessions;
+				}
+				const nextSessions = { ...currentSessions };
+				delete nextSessions[taskId];
+				return nextSessions;
+			});
+			setSelectedTaskId((currentSelectedTaskId) => (currentSelectedTaskId === taskId ? null : currentSelectedTaskId));
+			clearTaskWorkspaceInfo(taskId);
+			void (async () => {
+				await stopTaskSession(taskId);
+				await cleanupTaskWorkspace(taskId);
+			})();
+		},
+		[board, cleanupTaskWorkspace, setBoard, setSelectedTaskId, setSessions, stopTaskSession],
+	);
+
 	const handleRestoreTaskFromTrash = useCallback(
 		(taskId: string) => {
 			const programmaticMoveAttempt = tryProgrammaticCardMove(taskId, "trash", "review");
@@ -893,6 +947,8 @@ export function useBoardInteractions({
 		handleCardSelect,
 		handleMoveToTrash,
 		handleMoveReviewCardToTrash,
+		handleMoveTaskToDone,
+		handleDeleteTask,
 		handleRestoreTaskFromTrash,
 		handleCancelAutomaticTaskAction,
 		handleOpenClearTrash,

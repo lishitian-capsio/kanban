@@ -14,6 +14,7 @@ import { useState } from "react";
 
 import { HomeAgentConversation } from "@/components/home-agent/home-agent-conversation";
 import { HomeThreadBar } from "@/components/home-agent/home-thread-bar";
+import type { HomeThreadTaskActions } from "@/components/home-agent/thread-tasks";
 import { PiConversationSurface } from "@/components/home-agent/pi-conversation-surface";
 import { getActiveHighlightClass } from "@/components/home-agent/session-active-highlight";
 import { cn } from "@/components/ui/cn";
@@ -31,6 +32,7 @@ interface HomeSidebarAgentPanelProps {
 	homeThreads: UseHomeThreadsResult;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	workspaceGit: RuntimeGitRepositoryInfo | null;
+	threadTaskActions: HomeThreadTaskActions;
 }
 
 export function HomeSidebarAgentPanel({
@@ -40,6 +42,7 @@ export function HomeSidebarAgentPanel({
 	homeThreads,
 	taskSessions,
 	workspaceGit,
+	threadTaskActions,
 }: HomeSidebarAgentPanelProps): ReactElement | null {
 	// A bump to the kanban session-context version signals session-affecting state changed
 	// server-side (e.g. a thread self-titling); re-fetch the registry so the agent-set title
@@ -117,6 +120,7 @@ export function HomeSidebarAgentPanel({
 							runtimeProjectConfig={runtimeProjectConfig}
 							taskSessions={taskSessions}
 							workspaceGit={workspaceGit}
+							threadTaskActions={threadTaskActions}
 							onClearNextStep={homeThreads.clearNextStep}
 						/>
 					</div>

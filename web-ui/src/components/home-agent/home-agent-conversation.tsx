@@ -21,7 +21,8 @@ import {
 } from "@/components/detail-panels/kanban-agent-chat-panel";
 import { AgentAvatar, resolveAgentLabel } from "@/components/home-agent/agent-icon";
 import { HomeNextStepSuggestion } from "@/components/home-agent/home-next-step-suggestion";
-import { TerminalAgentHints } from "@/components/home-agent/terminal-agent-hints";
+import { HomeThreadTaskBar } from "@/components/home-agent/home-thread-task-bar";
+import type { HomeThreadTaskActions } from "@/components/home-agent/thread-tasks";
 import { createIdleTaskSession } from "@/hooks/app-utils";
 import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
 import { type HomeAgentActiveThread, useHomeAgentSession } from "@/hooks/use-home-agent-session";
@@ -43,6 +44,8 @@ interface HomeAgentConversationProps {
 	runtimeProjectConfig: RuntimeConfigResponse;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	workspaceGit: RuntimeGitRepositoryInfo | null;
+	/** Quick actions for the persistent thread task bar (start / done / delete / open). */
+	threadTaskActions: HomeThreadTaskActions;
 	/** Optimistically clear the thread's pending next-step chip when the user sends a message. */
 	onClearNextStep: (threadId: string) => void;
 }
@@ -53,6 +56,7 @@ export function HomeAgentConversation({
 	runtimeProjectConfig,
 	taskSessions,
 	workspaceGit,
+	threadTaskActions,
 	onClearNextStep,
 }: HomeAgentConversationProps): ReactElement {
 	const isMobile = useIsMobile();
@@ -245,7 +249,7 @@ export function HomeAgentConversation({
 
 	return (
 		<div className="flex h-full w-full min-h-0 flex-col gap-2">
-			{activeAgentId && activeAgentId !== "pi" ? <TerminalAgentHints /> : null}
+			<HomeThreadTaskBar threadId={activeThread?.id ?? null} actions={threadTaskActions} />
 			<div className="flex min-h-0 flex-1 [&>*]:w-full [&>*]:self-stretch">{body}</div>
 		</div>
 	);

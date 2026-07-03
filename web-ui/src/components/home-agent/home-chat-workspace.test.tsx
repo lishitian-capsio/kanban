@@ -114,6 +114,12 @@ describe("HomeChatWorkspace", () => {
 					homeThreads={options.homeThreads}
 					taskSessions={options.taskSessions ?? {}}
 					workspaceGit={null}
+					threadTaskActions={{
+						onStartTask: vi.fn(),
+						onMoveTaskToDone: vi.fn(),
+						onDeleteTask: vi.fn(),
+						onOpenTask: vi.fn(),
+					}}
 					fullscreenChatTab={options.fullscreenChatTab ?? "home"}
 					onNavigateFullscreenTab={options.onNavigateFullscreenTab ?? vi.fn()}
 					onReplaceFullscreenTab={options.onReplaceFullscreenTab ?? vi.fn()}

@@ -27,6 +27,7 @@ import { HomeAgentConversation } from "@/components/home-agent/home-agent-conver
 import { HomeSessionCard } from "@/components/home-agent/home-session-card";
 import { PiConversationSurface } from "@/components/home-agent/pi-conversation-surface";
 import { SessionTabStrip } from "@/components/home-agent/session-tab-strip";
+import type { HomeThreadTaskActions } from "@/components/home-agent/thread-tasks";
 import type { UseHomeThreadsResult } from "@/hooks/use-home-threads";
 import { useRefreshHomeThreadsOnSessionContextBump } from "@/hooks/use-refresh-home-threads-on-context-bump";
 import { estimateTaskSessionGeometry } from "@/runtime/task-session-geometry";
@@ -39,6 +40,8 @@ interface HomeChatWorkspaceProps {
 	homeThreads: UseHomeThreadsResult;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	workspaceGit: RuntimeGitRepositoryInfo | null;
+	/** Quick actions for the persistent thread task bar (start / done / delete / open). */
+	threadTaskActions: HomeThreadTaskActions;
 	// The active fullscreen tab, routed through the URL (see use-fullscreen-chat-navigation):
 	// the reserved "home" (launcher) / "pi" anchors, or a session thread id. This workspace is
 	// a controlled component — it renders the tab named here and asks the parent to change it.
@@ -55,6 +58,7 @@ export function HomeChatWorkspace({
 	homeThreads,
 	taskSessions,
 	workspaceGit,
+	threadTaskActions,
 	fullscreenChatTab,
 	onNavigateFullscreenTab,
 	onReplaceFullscreenTab,
@@ -275,6 +279,7 @@ export function HomeChatWorkspace({
 						runtimeProjectConfig={runtimeProjectConfig}
 						taskSessions={taskSessions}
 						workspaceGit={workspaceGit}
+						threadTaskActions={threadTaskActions}
 						onClearNextStep={homeThreads.clearNextStep}
 					/>
 				</div>
