@@ -1,0 +1,20 @@
+{
+  "id": "be5ff",
+  "title": "新建会话弹窗: 支持粘贴/拖拽非图片文件(延迟落盘+@路径)",
+  "prompt": "需求: 让\"新建聊天线程/会话\"创建弹窗(web-ui/src/components/home-agent/home-thread-create-dialog.tsx)的输入框支持粘贴/拖拽**非图片文件**(文档等),体验与现有图片附件一致(粘贴 ⌘/Ctrl+V、拖拽、附件条展示、可移除)。目前图片可用(base64 塞进首条 prompt),但文件不支持。\n\n## 关键约束与设计\n创建弹窗在\"创建线程\"那一刻**还没有 session/worktree**,所以文件不能像图片那样直接内嵌 base64 交给 agent。正确做法是**延迟落盘 + @路径注入**,复用现有的 CLI 会话文件附件机制:\n- 参考提交 f5a1bccf 与 AGENTS.md 'terminal-agent drag/drop attachments' 说明:CLI(claude)会话里,文件写到 <worktree>/.kanban/attachments/<uuid>.<ext>,并把 @/abs/path 注入。核心在 src/terminal/session-attachment-store.ts(writeTaskSessionAttachment,做路径安全/大小上限)、web-ui/src/.../terminal-attachment-drop.ts(前端拖放→上传→注入编排)、ATTACHMENT_MENTION_AGENT_IDS(当前仅 claude)。\n- 新建弹窗的流程是先创建线程再启动会话(createHomeThread → startTaskSession kickoff)。因此:在弹窗收集文件(内存/base64) → 通过 createHomeThread 请求把文件带到后端 → 在会话/worktree 建好、启动 kickoff **之前/之时**,把这些文件写进新 worktree 的 .kanban/attachments/,并把对应 @路径 追加进 kickoff 首条 prompt(与图片一起),使 agent 能读到。\n\n## 要求\n1. 前端: 在 home-thread-create-dialog.tsx 的输入框加入非图片文件的粘贴/拖拽收集与展示(附件条,可删除),与图片并存;沿用现有附件 UI 风格。评估复用 TaskPromptComposer 是否已有/可扩展文件(非图片)附件能力,避免重造。\n2. 传输: 扩展 RuntimeHomeChatThreadCreateRequest schema(src/core/api-contract.ts)与 createHomeThread tRPC mutation,携带文件附件(注意大小上限与二进制编码方式;沿用 writeTaskSessionAttachment 的安全/大小策略)。\n3. 落盘+注入: 在线程会话启动路径(startTaskSession / kickoff)里,把文件写入新 worktree 的 .kanban/attachments/,并把 @路径 注入首条 prompt。复用 session-attachment-store.ts,不要另写一套。\n4. 适用范围: 仅对支持该机制的 CLI agent(ATTACHMENT_MENTION_AGENT_IDS,当前 claude)启用文件附件;不支持的 agent 优雅降级(不显示/提示不可用)。图片行为保持不变。\n5. 弹窗关闭/提交后重置附件状态;附件是 machine-local(worktree 内 .kanban 被 gitignore),随 worktree 生命周期,无需额外清理。\n6. 遵循仓库约定(TypeScript 无 any、现有风格、设计 token/UI 基元);注意 AGENTS.md 'Dual-lib typecheck trap';补充/更新相关测试(附件写盘的路径安全/大小上限、@路径注入、schema);跑通 web:typecheck 与相关测试。\n7. 亲自验证: 打开新建会话弹窗(选 claude),粘贴/拖拽一个非图片文件 → 出现附件条 → 创建线程 → 确认文件已写入新 worktree 的 .kanban/attachments/ 且首条 prompt 含对应 @路径,agent 能引用到。图片仍正常。\n\n注意: 活跃多智能体工作区,开工前先 git 同步;留意 home-thread-create-dialog.tsx / task-prompt-composer.tsx / session-attachment-store.ts / terminal-attachment-drop.ts / createHomeThread / startTaskSession 相关文件的最新状态,避免与并发任务冲突。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "bcd4d0cd-58af-4991-967b-36e566b082ed",
+  "baseRef": "main",
+  "createdAt": 1783077872348,
+  "updatedAt": 1783077872348,
+  "column": "backlog",
+  "rank": "Zv",
+  "dependsOn": []
+}
