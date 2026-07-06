@@ -216,10 +216,11 @@
     {
       "id": "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
       "agentId": "claude",
-      "name": "如何把kanban agent与飞书结合？",
+      "name": "会话绑定 IM 渠道(飞书/钉钉)",
       "titleSource": "auto",
       "createdAt": 1783319473324,
-      "updatedAt": 1783319473324
+      "updatedAt": 1783323566725,
+      "pendingNextStep": "按阶段 1 把这个需求拆成可并行的 Kanban 任务并配好依赖"
     }
   ],
   "fullscreenTabs": {
