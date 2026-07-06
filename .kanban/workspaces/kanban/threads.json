@@ -110,11 +110,11 @@
     {
       "id": "5fec3500-5c60-4477-8b05-794bc8dd76a7",
       "agentId": "claude",
-      "name": "会话任务栏替代 show tips",
+      "name": "重设计 Session tasks 弹窗",
       "titleSource": "auto",
       "createdAt": 1782781545466,
-      "updatedAt": 1783067133564,
-      "pendingNextStep": "Start task 532cd now"
+      "updatedAt": 1783324626728,
+      "pendingNextStep": "以计划模式启动任务 #6291e，先让 agent 给出弹窗重设计方案"
     },
     {
       "id": "e5060a7c-ba48-41e0-b356-495436c7d21d",
