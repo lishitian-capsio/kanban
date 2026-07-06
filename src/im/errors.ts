@@ -25,3 +25,17 @@ export class ImCredentialUnavailableError extends ImError {
 		super(`no outbound credential configured for IM platform "${platform}"`);
 	}
 }
+
+/**
+ * The platform's send API accepted the request but reported a failure (a non-success status code
+ * in its response body, e.g. a non-zero DingTalk `errcode`). Never carries message content.
+ */
+export class ImSendFailedError extends ImError {
+	constructor(
+		readonly platform: string,
+		readonly code: number,
+		readonly detail?: string,
+	) {
+		super(`IM platform "${platform}" rejected the send (code ${code}${detail ? `: ${detail}` : ""})`);
+	}
+}
