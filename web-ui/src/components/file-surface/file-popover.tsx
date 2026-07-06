@@ -13,7 +13,7 @@
 // the trigger must always be present. We preload the explorer chunk on mount so
 // the first open is instant ("秒开").
 import * as RadixPopover from "@radix-ui/react-popover";
-import { FileText, Search, X } from "lucide-react";
+import { FileText, Paperclip, Search, X } from "lucide-react";
 import type React from "react";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -43,6 +43,14 @@ const FileSystemExplorerLazy = lazy(() =>
 	importFileSystemExplorer().then((module) => ({ default: module.FileSystemExplorer })),
 );
 
+// The Attachments surface is a secondary tab — lazy without a mount-time preload
+// (it shares FileViewerPane / CodeMirror with the explorer chunk anyway).
+const AttachmentsBrowserLazy = lazy(() =>
+	import("./filesystem/attachments-browser").then((module) => ({ default: module.AttachmentsBrowser })),
+);
+
+type FileSurfaceTab = "files" | "attachments";
+
 const MOBILE_TOUCH_TARGET = "min-w-[44px] min-h-[44px]";
 
 interface FilePopoverProps {
@@ -60,6 +68,7 @@ interface FilePopoverProps {
 export function FilePopover({ workspaceId, isMobile = false }: FilePopoverProps): React.ReactElement {
 	const isActive = useFileSurfaceActive();
 	const { libraryOpen, fsPath } = useFileSurfaceLibrary();
+	const [tab, setTab] = useState<FileSurfaceTab>("files");
 
 	// Preload the heavy explorer chunk after mount so the first open is instant.
 	useEffect(() => {
@@ -102,6 +111,19 @@ export function FilePopover({ workspaceId, isMobile = false }: FilePopoverProps)
 
 	const requestClose = useCallback(() => guard(() => fileSurfaceStore.closeLibrary()), [guard]);
 
+	// Switching tabs unmounts the explorer, so route it through the dirty guard —
+	// leaving an unsaved edit prompts to discard first (same as closing the popover).
+	const switchTab = useCallback(
+		(next: FileSurfaceTab) => {
+			if (next === "files") {
+				setTab("files");
+				return;
+			}
+			guard(() => setTab(next));
+		},
+		[guard],
+	);
+
 	const handleOpenChange = useCallback(
 		(nextOpen: boolean) => {
 			if (nextOpen) {
@@ -113,12 +135,17 @@ export function FilePopover({ workspaceId, isMobile = false }: FilePopoverProps)
 		[requestClose],
 	);
 
-	// ⌘/Ctrl+K jumps to the document quick-open palette while the popover is open.
+	// ⌘/Ctrl+K jumps to the document quick-open palette while the Files tab is open.
 	useHotkeys(
 		"mod+k",
 		() => fileSurfaceStore.openPalette(),
-		{ enabled: libraryOpen, enableOnFormTags: true, enableOnContentEditable: true, preventDefault: true },
-		[libraryOpen],
+		{
+			enabled: libraryOpen && tab === "files",
+			enableOnFormTags: true,
+			enableOnContentEditable: true,
+			preventDefault: true,
+		},
+		[libraryOpen, tab],
 	);
 
 	return (
@@ -156,20 +183,33 @@ export function FilePopover({ workspaceId, isMobile = false }: FilePopoverProps)
 					}}
 				>
 					<div className="flex h-full min-h-0 w-full flex-col gap-2 p-2">
-						{/* Header: identity left, quick-open + close right. */}
+						{/* Header: Files / Attachments tabs left, quick-open + close right. */}
 						<div className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-surface-2 p-1">
-							<span className="mr-auto truncate pl-1.5 text-[13px] font-semibold text-text-primary">
-								Files
-							</span>
-							<Button
-								variant="ghost"
-								size="sm"
-								icon={<Search size={14} />}
-								onClick={() => fileSurfaceStore.openPalette()}
-							>
-								Open
-								<Kbd className="ml-1.5">⌘K</Kbd>
-							</Button>
+							<div className="mr-auto flex items-center gap-0.5">
+								<TabButton
+									label="Files"
+									icon={<FileText size={13} />}
+									selected={tab === "files"}
+									onClick={() => switchTab("files")}
+								/>
+								<TabButton
+									label="Attachments"
+									icon={<Paperclip size={13} />}
+									selected={tab === "attachments"}
+									onClick={() => switchTab("attachments")}
+								/>
+							</div>
+							{tab === "files" ? (
+								<Button
+									variant="ghost"
+									size="sm"
+									icon={<Search size={14} />}
+									onClick={() => fileSurfaceStore.openPalette()}
+								>
+									Open
+									<Kbd className="ml-1.5">⌘K</Kbd>
+								</Button>
+							) : null}
 							<div aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-border" />
 							<Tooltip content="Close Files">
 								<button
@@ -184,21 +224,31 @@ export function FilePopover({ workspaceId, isMobile = false }: FilePopoverProps)
 						</div>
 						<div className="flex min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-surface-0">
 							<Suspense fallback={null}>
-								<FileSystemExplorerLazy
-									workspaceId={workspaceId}
-									fsPath={fsPath}
-									active={libraryOpen}
-									onOpenPath={(path) => fileSurfaceStore.openFsPath(path)}
-									onDirtyChange={setDirty}
-									guardNavigation={guard}
-								/>
+								{tab === "files" ? (
+									<FileSystemExplorerLazy
+										workspaceId={workspaceId}
+										fsPath={fsPath}
+										active={libraryOpen && tab === "files"}
+										onOpenPath={(path) => fileSurfaceStore.openFsPath(path)}
+										onDirtyChange={setDirty}
+										guardNavigation={guard}
+									/>
+								) : (
+									<AttachmentsBrowserLazy
+										workspaceId={workspaceId}
+										active={libraryOpen && tab === "attachments"}
+									/>
+								)}
 							</Suspense>
 						</div>
 					</div>
 				</RadixPopover.Content>
 			</RadixPopover.Portal>
 
-			<AlertDialog open={pendingDiscard !== null} onOpenChange={(next) => (next ? undefined : setPendingDiscard(null))}>
+			<AlertDialog
+				open={pendingDiscard !== null}
+				onOpenChange={(next) => (next ? undefined : setPendingDiscard(null))}
+			>
 				<AlertDialogHeader>
 					<AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
 				</AlertDialogHeader>
@@ -221,5 +271,34 @@ export function FilePopover({ workspaceId, isMobile = false }: FilePopoverProps)
 				</AlertDialogFooter>
 			</AlertDialog>
 		</RadixPopover.Root>
+	);
+}
+
+function TabButton({
+	label,
+	icon,
+	selected,
+	onClick,
+}: {
+	label: string;
+	icon: React.ReactNode;
+	selected: boolean;
+	onClick: () => void;
+}): React.ReactElement {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			aria-pressed={selected}
+			className={cn(
+				"flex cursor-pointer items-center gap-1.5 rounded-sm px-2 py-1 text-[13px] font-semibold transition-colors",
+				selected
+					? "bg-surface-0 text-text-primary"
+					: "text-text-secondary hover:bg-surface-3 hover:text-text-primary",
+			)}
+		>
+			{icon}
+			{label}
+		</button>
 	);
 }

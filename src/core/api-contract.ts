@@ -2795,6 +2795,57 @@ export const runtimeWorkspaceAttachmentDeleteResponseSchema = z.object({
 });
 export type RuntimeWorkspaceAttachmentDeleteResponse = z.infer<typeof runtimeWorkspaceAttachmentDeleteResponseSchema>;
 
+// --- listWorkspaceAttachments: the grouped "Attachments" management surface ------
+// Lists every uploaded chat attachment under the workspace repo root's machine-local
+// `.kanban/attachments/`, grouped by scope (a home-thread id or a task id). Each scope
+// is enriched with its human-readable session name when it maps to a known home thread
+// (else the raw scopeId is shown). This is the ONLY read window opened into `.kanban`:
+// the general file explorer keeps the whole `.kanban` dir hidden. `path` is the
+// repo-relative POSIX path, so the existing `workspaceFs.readFile`/`downloadEntry`
+// endpoints handle preview and download without a dedicated attachment read path.
+export const runtimeWorkspaceAttachmentFileSchema = z.object({
+	// Stored filename (embeds the sanitized original name).
+	fileName: z.string(),
+	// Repo-relative POSIX path (`.kanban/attachments/<scopeId>/<fileName>`).
+	path: z.string(),
+	// Size in bytes.
+	size: z.number(),
+	// Last-modified time (ms since epoch).
+	mtimeMs: z.number(),
+});
+export type RuntimeWorkspaceAttachmentFile = z.infer<typeof runtimeWorkspaceAttachmentFileSchema>;
+
+export const runtimeWorkspaceAttachmentScopeSchema = z.object({
+	// The scope directory name (a home-thread id or a task id).
+	scopeId: z.string(),
+	// Human-readable session name when the scope maps to a known home thread; else null.
+	name: z.string().nullable(),
+	// Whether `scopeId` matches the synthetic default home thread.
+	isDefaultThread: z.boolean(),
+	// The attachments in this scope, newest first.
+	files: z.array(runtimeWorkspaceAttachmentFileSchema),
+});
+export type RuntimeWorkspaceAttachmentScope = z.infer<typeof runtimeWorkspaceAttachmentScopeSchema>;
+
+export const runtimeWorkspaceAttachmentsListResponseSchema = z.object({
+	ok: z.boolean(),
+	scopes: z.array(runtimeWorkspaceAttachmentScopeSchema),
+	error: z.string().optional(),
+});
+export type RuntimeWorkspaceAttachmentsListResponse = z.infer<typeof runtimeWorkspaceAttachmentsListResponseSchema>;
+
+// --- deleteWorkspaceAttachment: remove a SINGLE attachment file from a scope -----
+// The restricted per-file delete for the management surface (whole-scope removal
+// reuses deleteWorkspaceAttachmentScope). `fileName` must be a bare name; the store
+// refuses any separator/traversal and only ever touches a direct child of the scope.
+export const runtimeWorkspaceAttachmentDeleteFileRequestSchema = z.object({
+	scopeId: z.string(),
+	fileName: z.string(),
+});
+export type RuntimeWorkspaceAttachmentDeleteFileRequest = z.infer<
+	typeof runtimeWorkspaceAttachmentDeleteFileRequestSchema
+>;
+
 export const runtimeTaskChatReloadRequestSchema = z.object({
 	taskId: z.string(),
 });

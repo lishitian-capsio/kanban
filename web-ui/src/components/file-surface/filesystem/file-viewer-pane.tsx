@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { RuntimeFsReadFileResponse } from "@/runtime/types";
 
+import { CodeEditorLazy } from "./code-editor-lazy";
 import { FsFileEditor } from "./fs-file-editor";
 import { resolveMediaMime, resolveViewerKind } from "./fs-language-map";
 import { useFsFile } from "./use-fs-file";
@@ -22,6 +23,12 @@ interface FileViewerPaneProps {
 	onDownload: (path: string) => void;
 	/** True while a download payload is being fetched (disables the download button). */
 	isDownloading: boolean;
+	/**
+	 * Render text/markdown as a read-only viewer instead of the editable FsFileEditor.
+	 * Used by the Attachments surface, where files live under `.kanban/` and the write
+	 * path is (correctly) refused — so offering an editor would be a dead end.
+	 */
+	readOnly?: boolean;
 }
 
 function baseName(path: string): string {
@@ -49,13 +56,14 @@ export function FileViewerPane({
 	onDirtyChange,
 	onDownload,
 	isDownloading,
+	readOnly = false,
 }: FileViewerPaneProps): React.ReactElement {
 	const { data, isLoading, errorMessage, refetch } = useFsFile(workspaceId, path);
 
 	// A read-only view (no path, loading, error, oversized, or a media/binary file)
 	// has no draft, so it can never be dirty — clear any latched flag from a prior
 	// editable file that this render is replacing.
-	const editable = Boolean(data?.ok && !data.tooLarge && path && !data.binary);
+	const editable = Boolean(!readOnly && data?.ok && !data.tooLarge && path && !data.binary);
 	useEffect(() => {
 		if (!editable) {
 			onDirtyChange(false);
@@ -141,6 +149,7 @@ export function FileViewerPane({
 						mediaSrc={mediaSrc}
 						refetch={refetch}
 						onDirtyChange={onDirtyChange}
+						readOnly={readOnly}
 					/>
 				)}
 			</div>
@@ -156,6 +165,7 @@ function ViewerBody({
 	mediaSrc,
 	refetch,
 	onDirtyChange,
+	readOnly,
 }: {
 	workspaceId: string | null;
 	path: string;
@@ -164,9 +174,21 @@ function ViewerBody({
 	mediaSrc: string | null;
 	refetch: () => Promise<RuntimeFsReadFileResponse | null>;
 	onDirtyChange: (dirty: boolean) => void;
+	readOnly: boolean;
 }): React.ReactElement {
 	const kind = resolveViewerKind(name, data.binary);
 	const content = data.content ?? "";
+
+	// Read-only surfaces (e.g. Attachments) show text/markdown through the lazy
+	// CodeMirror viewer with editing disabled — the write path for these files is
+	// refused server-side, so an editor would be a dead end.
+	if (readOnly && (kind === "markdown" || kind === "code")) {
+		return (
+			<div className="h-full overflow-auto">
+				<CodeEditorLazy value={content} fileName={name} />
+			</div>
+		);
+	}
 
 	// Text/markdown files are editable (design §5.1); the editor owns the draft +
 	// save + mtime-conflict handling. FsFileEditor is remounted per path by the

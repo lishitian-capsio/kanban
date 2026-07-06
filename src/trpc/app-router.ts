@@ -182,9 +182,11 @@ import type {
 	RuntimeVaultViewsListResponse,
 	RuntimeVaultViewUpdateRequest,
 	RuntimeVaultViewUpdateResponse,
+	RuntimeWorkspaceAttachmentDeleteFileRequest,
 	RuntimeWorkspaceAttachmentDeleteRequest,
 	RuntimeWorkspaceAttachmentDeleteResponse,
 	RuntimeWorkspaceAttachmentRequest,
+	RuntimeWorkspaceAttachmentsListResponse,
 	RuntimeWorkspaceChangesRequest,
 	RuntimeWorkspaceChangesResponse,
 	RuntimeWorkspaceFileSearchRequest,
@@ -416,9 +418,11 @@ import {
 	runtimeVaultViewsListResponseSchema,
 	runtimeVaultViewUpdateRequestSchema,
 	runtimeVaultViewUpdateResponseSchema,
+	runtimeWorkspaceAttachmentDeleteFileRequestSchema,
 	runtimeWorkspaceAttachmentDeleteRequestSchema,
 	runtimeWorkspaceAttachmentDeleteResponseSchema,
 	runtimeWorkspaceAttachmentRequestSchema,
+	runtimeWorkspaceAttachmentsListResponseSchema,
 	runtimeWorkspaceChangesRequestSchema,
 	runtimeWorkspaceChangesResponseSchema,
 	runtimeWorkspaceFileSearchRequestSchema,
@@ -482,6 +486,11 @@ export interface RuntimeTrpcContext {
 		deleteWorkspaceAttachmentScope: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeWorkspaceAttachmentDeleteRequest,
+		) => Promise<RuntimeWorkspaceAttachmentDeleteResponse>;
+		listWorkspaceAttachments: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeWorkspaceAttachmentsListResponse>;
+		deleteWorkspaceAttachment: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeWorkspaceAttachmentDeleteFileRequest,
 		) => Promise<RuntimeWorkspaceAttachmentDeleteResponse>;
 		reloadTaskChatSession: (
 			scope: RuntimeTrpcWorkspaceScope,
@@ -945,6 +954,17 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeWorkspaceAttachmentDeleteResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.deleteWorkspaceAttachmentScope(ctx.workspaceScope, input);
+			}),
+		listWorkspaceAttachments: workspaceProcedure
+			.output(runtimeWorkspaceAttachmentsListResponseSchema)
+			.query(async ({ ctx }) => {
+				return await ctx.runtimeApi.listWorkspaceAttachments(ctx.workspaceScope);
+			}),
+		deleteWorkspaceAttachment: workspaceProcedure
+			.input(runtimeWorkspaceAttachmentDeleteFileRequestSchema)
+			.output(runtimeWorkspaceAttachmentDeleteResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.deleteWorkspaceAttachment(ctx.workspaceScope, input);
 			}),
 		abortTaskChatTurn: workspaceProcedure
 			.input(runtimeTaskChatAbortRequestSchema)

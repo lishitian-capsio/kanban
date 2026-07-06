@@ -70,6 +70,7 @@ import {
 	parseTaskSessionInputRequest,
 	parseTaskSessionStartRequest,
 	parseTaskSessionStopRequest,
+	parseWorkspaceAttachmentDeleteFileRequest,
 	parseWorkspaceAttachmentDeleteRequest,
 	parseWorkspaceAttachmentRequest,
 } from "../core/api-validation";
@@ -95,7 +96,9 @@ import { buildRuntimeConfigResponse, resolveAgentCommand } from "../terminal/age
 import { isBinaryAvailableOnPath } from "../terminal/command-discovery";
 import {
 	deleteAttachmentScope,
+	deleteScopeAttachmentFile,
 	isValidAttachmentScopeId,
+	listAllAttachmentScopes,
 	writeScopeAttachment,
 } from "../terminal/session-attachment-store";
 import type { TerminalSessionManager } from "../terminal/session-manager";
@@ -1063,6 +1066,64 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				// re-validates scopeId before touching disk.
 				await deleteAttachmentScope({ root: workspaceScope.workspacePath, scopeId: body.scopeId });
 				return { ok: true };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, error: message };
+			}
+		},
+		listWorkspaceAttachments: async (workspaceScope) => {
+			try {
+				// The one sanctioned read window into `.kanban`: enumerate the attachment
+				// scope dirs under the repo root and enrich each with its home-thread name.
+				// Home-thread attachments live at the repo root (see writeWorkspaceAttachment);
+				// task attachments live inside their own worktrees, so they never appear here.
+				const listings = await listAllAttachmentScopes(workspaceScope.workspacePath);
+				const threadNames = new Map<string, string>();
+				try {
+					const threads = await deps.getScopedHomeThreadStore(workspaceScope).list();
+					for (const thread of threads) {
+						threadNames.set(thread.id, thread.name);
+					}
+				} catch (error) {
+					// A registry read failure only costs the human-readable names; the raw
+					// scopeId is still shown so the surface never fails wholesale.
+					log.warn("failed to load home threads for attachment listing", {
+						workspaceId: workspaceScope.workspaceId,
+						error,
+					});
+				}
+				const scopes = listings.map((listing) => {
+					const isDefaultThread = listing.scopeId === DEFAULT_HOME_THREAD_ID;
+					return {
+						scopeId: listing.scopeId,
+						name: threadNames.get(listing.scopeId) ?? (isDefaultThread ? "Home" : null),
+						isDefaultThread,
+						files: listing.entries.map((entry) => ({
+							fileName: entry.fileName,
+							// Repo-relative POSIX path so the existing workspaceFs read/download
+							// endpoints (which don't block `.kanban` reads) handle preview + download.
+							path: `.kanban/attachments/${listing.scopeId}/${entry.fileName}`,
+							size: entry.size,
+							mtimeMs: entry.mtimeMs,
+						})),
+					};
+				});
+				return { ok: true, scopes };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, scopes: [], error: message };
+			}
+		},
+		deleteWorkspaceAttachment: async (workspaceScope, input) => {
+			try {
+				const body = parseWorkspaceAttachmentDeleteFileRequest(input);
+				// Restricted single-file delete: the store refuses any separator/traversal in
+				// fileName and only ever removes a direct child of the validated scope dir.
+				const result = await deleteScopeAttachmentFile(
+					{ root: workspaceScope.workspacePath, scopeId: body.scopeId },
+					body.fileName,
+				);
+				return result.ok ? { ok: true } : { ok: false, error: result.error };
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				return { ok: false, error: message };

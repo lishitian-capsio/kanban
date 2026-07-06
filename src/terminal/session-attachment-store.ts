@@ -1,3 +1,4 @@
+import type { Dirent } from "node:fs";
 import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -67,6 +68,16 @@ export interface ScopeAttachmentEntry {
 	path: string;
 	/** Size in bytes. */
 	size: number;
+	/** Last-modified time (ms since epoch), for display/sorting. */
+	mtimeMs: number;
+}
+
+/** All attachments in one scope directory, for the grouped management surface. */
+export interface AttachmentScopeListing {
+	/** The scope directory name (a home-thread id or a task id). */
+	scopeId: string;
+	/** The attachments in this scope, newest first. */
+	entries: ScopeAttachmentEntry[];
 }
 
 /**
@@ -167,13 +178,87 @@ export async function listScopeAttachments(scope: AttachmentScope): Promise<Scop
 		try {
 			const info = await stat(path);
 			if (info.isFile()) {
-				entries.push({ fileName, path, size: info.size });
+				entries.push({ fileName, path, size: info.size, mtimeMs: info.mtimeMs });
 			}
 		} catch {
 			// A file that vanished between readdir and stat is simply skipped.
 		}
 	}
 	return entries;
+}
+
+/**
+ * List every attachment scope under `<root>/.kanban/attachments/`, each with its
+ * files (newest first). Skips subdirectory names that are not safe scope ids (so a
+ * hand-created stray directory can never widen the surface) and returns an empty
+ * array when the attachments directory does not exist. This backs the grouped
+ * "Attachments" management surface — the ONLY read window opened into `.kanban`.
+ */
+export async function listAllAttachmentScopes(root: string): Promise<AttachmentScopeListing[]> {
+	const attachmentsRoot = join(root, ...ATTACHMENTS_DIR_SEGMENTS);
+	let dirents: Dirent[];
+	try {
+		dirents = await readdir(attachmentsRoot, { withFileTypes: true });
+	} catch {
+		return [];
+	}
+	const listings: AttachmentScopeListing[] = [];
+	for (const dirent of dirents) {
+		if (!dirent.isDirectory() || !isValidAttachmentScopeId(dirent.name)) {
+			continue;
+		}
+		const entries = await listScopeAttachments({ root, scopeId: dirent.name });
+		if (entries.length === 0) {
+			continue;
+		}
+		entries.sort((a, b) => b.mtimeMs - a.mtimeMs);
+		listings.push({ scopeId: dirent.name, entries });
+	}
+	return listings;
+}
+
+/**
+ * Delete a SINGLE attachment file from `<root>/.kanban/attachments/<scopeId>/`.
+ * This is the deliberately-restricted deletion path for the management surface —
+ * NOT the generic `fsDeleteEntry`, which refuses any `.kanban` path. `fileName`
+ * must be a bare name (no separators, no `.`/`..`), so it can only ever name a
+ * direct child of the validated scope directory; anything else is refused without
+ * touching disk. A missing file resolves `{ ok: true }` (idempotent). To remove an
+ * entire scope use {@link deleteAttachmentScope}.
+ */
+export async function deleteScopeAttachmentFile(
+	scope: AttachmentScope,
+	fileName: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+	let directory: string;
+	try {
+		directory = resolveAttachmentScopeDir(scope);
+	} catch (error) {
+		return { ok: false, error: error instanceof Error ? error.message : String(error) };
+	}
+	// A file name must be a single safe path segment: no separators (which could
+	// point outside the scope dir) and not `.`/`..`. The stored-name allowlist is a
+	// superset of what we ever write, so a legitimate attachment always passes.
+	if (fileName.length === 0 || fileName === "." || fileName === ".." || /[\\/]/.test(fileName)) {
+		return { ok: false, error: "Invalid attachment file name." };
+	}
+	const absolutePath = join(directory, fileName);
+	try {
+		const info = await stat(absolutePath);
+		if (!info.isFile()) {
+			return { ok: false, error: "Not an attachment file." };
+		}
+	} catch {
+		// Already gone: treat as a successful delete so the UI can prune it.
+		return { ok: true };
+	}
+	try {
+		await rm(absolutePath, { force: true });
+		return { ok: true };
+	} catch (error) {
+		log.warn("failed to delete scope attachment file", { error, scopeId: scope.scopeId, fileName });
+		return { ok: false, error: "Failed to delete the attachment." };
+	}
 }
 
 /**

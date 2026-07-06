@@ -30,6 +30,7 @@ import {
 	type RuntimeTaskSessionStopRequest,
 	type RuntimeTaskWorkspaceInfoRequest,
 	type RuntimeTerminalWsClientMessage,
+	type RuntimeWorkspaceAttachmentDeleteFileRequest,
 	type RuntimeWorkspaceAttachmentDeleteRequest,
 	type RuntimeWorkspaceAttachmentRequest,
 	type RuntimeWorkspaceChangesRequest,
@@ -66,6 +67,7 @@ import {
 	runtimeTaskSessionStopRequestSchema,
 	runtimeTaskWorkspaceInfoRequestSchema,
 	runtimeTerminalWsClientMessageSchema,
+	runtimeWorkspaceAttachmentDeleteFileRequestSchema,
 	runtimeWorkspaceAttachmentDeleteRequestSchema,
 	runtimeWorkspaceAttachmentRequestSchema,
 	runtimeWorkspaceChangesRequestSchema,
@@ -340,6 +342,21 @@ export function parseWorkspaceAttachmentDeleteRequest(value: unknown): RuntimeWo
 		throw new Error("Workspace attachment scopeId cannot be empty.");
 	}
 	return { scopeId };
+}
+
+export function parseWorkspaceAttachmentDeleteFileRequest(value: unknown): RuntimeWorkspaceAttachmentDeleteFileRequest {
+	const parsed = parseWithSchema(runtimeWorkspaceAttachmentDeleteFileRequestSchema, value);
+	const scopeId = parsed.scopeId.trim();
+	if (!scopeId) {
+		throw new Error("Workspace attachment scopeId cannot be empty.");
+	}
+	const fileName = parsed.fileName.trim();
+	if (!fileName) {
+		throw new Error("Workspace attachment fileName cannot be empty.");
+	}
+	// Safety of scopeId + fileName as path segments is enforced by the store
+	// (resolveAttachmentScopeDir + deleteScopeAttachmentFile).
+	return { scopeId, fileName };
 }
 
 export function parseHomeChatThreadCreateRequest(value: unknown): RuntimeHomeChatThreadCreateRequest {
