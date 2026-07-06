@@ -1,0 +1,20 @@
+{
+  "id": "e801b",
+  "title": "地基: 附件按会话(threadId)隔离存储 + 会话删除时连带清理",
+  "prompt": "目标: 把 home 会话上传附件的存储从\"共享平铺目录\"改为\"按会话隔离\",并在会话生命周期结束时自动清理。这是 be5ff / 45d69 / e2956 的共享地基,先做,其余建立在它之上。\n\n## 现状\n- src/terminal/session-attachment-store.ts 的 writeTaskSessionAttachment 把文件写到 <cwd>/.kanban/attachments/<uuid>.<ext>(平铺)。\n- 对 task 会话:cwd=worktree,天然按任务隔离,worktree 删除即清理。\n- 对 home 线程会话:cwd=仓库根(见 runtime-api.ts:296-302,home 会话 cwd=workspaceScope.workspacePath),所有 home 会话的附件混在同一个 <仓库根>/.kanban/attachments/,不隔离、不清理、无限堆积。\n\n## 要求\n1. 存储按会话隔离: 让附件写入带上会话标识的子目录,例如 <cwd>/.kanban/attachments/<scopeId>/<uuid>.<ext>。scopeId 用会话/线程标识:home 线程用 threadId(从 home-agent session id 解析,见 src/core/home-agent-session.ts parseHomeAgentSessionId);task 会话可用 taskId(或维持现状,因 worktree 已隔离,但建议统一带 scope 子目录以便管理)。路径安全: scopeId 必须经校验(禁止路径穿越),仍固定在 attachments 目录下。\n2. 更新所有写入调用方走新签名(需要传入 scopeId/会话上下文): 现有的终端拖拽附件路径(提交 f5a1bccf,terminal-attachment-drop.ts / 后端 writeTaskSessionAttachment 调用点)。保证现有拖拽功能不回退。\n3. 生命周期清理: 当一个 home 线程被关闭/删除时(HomeThreadStore 的 onCloseSession / 硬关闭路径,见 AGENTS.md 'home multi-thread' 与 runtime-server.ts getScopedHomeThreadStore),连带删除该线程的 <仓库根>/.kanban/attachments/<threadId>/ 目录。这替代定时 GC。task 会话的附件继续随 worktree 删除。\n4. 提供一个按 workspaceId+scopeId 解析/操作附件目录的内部工具(供 e2956 的 File popover 管理与 be5ff 的新建弹窗上传复用),避免各处硬拼路径。\n5. 遵循仓库约定(TypeScript 无 any、现有风格);补充/更新测试(scopeId 路径安全、按会话写入、关闭线程连带删除);跑通 typecheck 与相关测试。\n6. 亲自验证: home 会话 A、B 各上传文件 → 落在各自 <threadId> 子目录;关闭会话 A → 其附件目录被删,B 不受影响;task 会话附件仍随 worktree 清理。\n\n注意: 活跃多智能体工作区,开工前 git 同步;这是 be5ff/45d69/e2956 的前置,改动集中在 session-attachment-store.ts 与其调用方及 home 线程关闭路径。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "bcd4d0cd-58af-4991-967b-36e566b082ed",
+  "baseRef": "main",
+  "createdAt": 1783314075339,
+  "updatedAt": 1783314075339,
+  "column": "backlog",
+  "rank": "Zt",
+  "dependsOn": []
+}
