@@ -30,6 +30,7 @@ import {
 	type RuntimeTaskSessionStopRequest,
 	type RuntimeTaskWorkspaceInfoRequest,
 	type RuntimeTerminalWsClientMessage,
+	type RuntimeWorkspaceAttachmentDeleteRequest,
 	type RuntimeWorkspaceAttachmentRequest,
 	type RuntimeWorkspaceChangesRequest,
 	type RuntimeWorkspaceFileSearchRequest,
@@ -65,6 +66,7 @@ import {
 	runtimeTaskSessionStopRequestSchema,
 	runtimeTaskWorkspaceInfoRequestSchema,
 	runtimeTerminalWsClientMessageSchema,
+	runtimeWorkspaceAttachmentDeleteRequestSchema,
 	runtimeWorkspaceAttachmentRequestSchema,
 	runtimeWorkspaceChangesRequestSchema,
 	runtimeWorkspaceFileSearchRequestSchema,
@@ -316,13 +318,28 @@ export function parseTaskSessionAttachmentRequest(value: unknown): RuntimeTaskSe
 
 export function parseWorkspaceAttachmentRequest(value: unknown): RuntimeWorkspaceAttachmentRequest {
 	const parsed = parseWithSchema(runtimeWorkspaceAttachmentRequestSchema, value);
+	const scopeId = parsed.scopeId.trim();
+	if (!scopeId) {
+		throw new Error("Workspace attachment scopeId cannot be empty.");
+	}
 	if (!parsed.data) {
 		throw new Error("Workspace attachment data is required.");
 	}
+	// Safety of scopeId as a path segment is enforced by the store (resolveAttachmentScopeDir).
 	return {
+		scopeId,
 		data: parsed.data,
 		name: parsed.name.trim(),
 	};
+}
+
+export function parseWorkspaceAttachmentDeleteRequest(value: unknown): RuntimeWorkspaceAttachmentDeleteRequest {
+	const parsed = parseWithSchema(runtimeWorkspaceAttachmentDeleteRequestSchema, value);
+	const scopeId = parsed.scopeId.trim();
+	if (!scopeId) {
+		throw new Error("Workspace attachment scopeId cannot be empty.");
+	}
+	return { scopeId };
 }
 
 export function parseHomeChatThreadCreateRequest(value: unknown): RuntimeHomeChatThreadCreateRequest {
@@ -332,8 +349,10 @@ export function parseHomeChatThreadCreateRequest(value: unknown): RuntimeHomeCha
 	if (!description && !name) {
 		throw new Error("Home chat thread requires a description or a name.");
 	}
+	const id = parsed.id?.trim();
 	return {
 		...parsed,
+		...(id ? { id } : { id: undefined }),
 		...(description ? { description } : { description: undefined }),
 		...(name ? { name } : { name: undefined }),
 		...(parsed.agentId ? { agentId: parsed.agentId } : {}),

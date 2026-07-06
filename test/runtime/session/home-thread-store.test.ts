@@ -55,6 +55,15 @@ describe("HomeThreadStore", () => {
 		expect(thread.titleSource).toBe("auto");
 	});
 
+	it("honors a client-supplied id instead of generating one", async () => {
+		const { store } = makeStore();
+		const thread = await store.create({ agentId: "claude", name: "Preseeded", id: "client-uuid" });
+		expect(thread.id).toBe("client-uuid");
+		// A later close derives the session id (and thus the attachments scope) from this id.
+		const closed = await store.close("client-uuid");
+		expect(closed.id).toBe("client-uuid");
+	});
+
 	it("renames a thread and pins it manual", async () => {
 		const { store } = makeStore();
 		const created = await store.create({ agentId: "pi", name: "Old", titleSource: "auto" });

@@ -65,6 +65,13 @@ interface HomeThreadCreateDialogProps {
 	 */
 	workspaceId?: string | null;
 	onCreate: (input: {
+		/**
+		 * Client-generated thread id. Pre-session attachments are uploaded into this
+		 * thread's attachments scope BEFORE it exists, so the created thread must adopt
+		 * the same id for the injected `@/path` mentions to resolve and for the files to
+		 * be cleaned up on close.
+		 */
+		threadId: string;
 		description: string;
 		agentId: RuntimeAgentId;
 		images?: TaskImage[];
@@ -100,8 +107,14 @@ export function HomeThreadCreateDialog({
 	const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
 	const [agentId, setAgentId] = useState<RuntimeAgentId | null>(resolvedDefaultAgentId);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	// The thread id is minted up front so pre-session attachments upload into this
+	// thread's FINAL attachments scope; the created thread adopts the same id.
+	const [threadId, setThreadId] = useState<string>(() => safeRandomUUID());
+	// Set true on submit so closing the dialog afterwards doesn't delete the scope the
+	// new thread now owns. Reset on each open.
+	const [submitted, setSubmitted] = useState(false);
 
-	// Reset the form each time the dialog opens.
+	// Reset the form each time the dialog opens (with a fresh thread id).
 	useEffect(() => {
 		if (open) {
 			setDescription("");
@@ -109,6 +122,8 @@ export function HomeThreadCreateDialog({
 			setAttachments([]);
 			setAgentId(resolvedDefaultAgentId);
 			setIsSubmitting(false);
+			setSubmitted(false);
+			setThreadId(safeRandomUUID());
 		}
 	}, [open, resolvedDefaultAgentId]);
 
@@ -138,6 +153,7 @@ export function HomeThreadCreateDialog({
 					let result: { ok: boolean; path?: string; error?: string };
 					try {
 						result = await getRuntimeTrpcClient(workspaceId).runtime.writeWorkspaceAttachment.mutate({
+							scopeId: threadId,
 							name: fileName,
 							data,
 						});
@@ -158,7 +174,7 @@ export function HomeThreadCreateDialog({
 				}
 			})();
 		},
-		[attachmentsEnabled, workspaceId],
+		[attachmentsEnabled, workspaceId, threadId],
 	);
 
 	const handleRemoveAttachment = useCallback(
@@ -181,15 +197,48 @@ export function HomeThreadCreateDialog({
 		}
 		setIsSubmitting(true);
 		try {
-			await onCreate({ description: trimmedDescription, agentId, images: images.length > 0 ? images : undefined });
+			// Mark submitted first so the ensuing close doesn't delete the attachments
+			// scope the new thread now owns.
+			setSubmitted(true);
+			await onCreate({
+				threadId,
+				description: trimmedDescription,
+				agentId,
+				images: images.length > 0 ? images : undefined,
+			});
 			onOpenChange(false);
+		} catch (error) {
+			// Creation failed: the thread doesn't exist, so the pre-session uploads are
+			// orphaned — allow the next close to clean them up.
+			setSubmitted(false);
+			showAppToast(
+				{ intent: "danger", message: error instanceof Error ? error.message : String(error) },
+				"home-thread-create-error",
+			);
 		} finally {
 			setIsSubmitting(false);
 		}
 	};
 
+	// Cancelling the dialog after uploading (but not submitting) would orphan the
+	// files in `.kanban/attachments/<threadId>/` — no thread will ever adopt the scope
+	// to clean it on close. Delete the scope on that cancel, best-effort.
+	const handleOpenChange = useCallback(
+		(next: boolean) => {
+			if (!next && !submitted && attachments.length > 0 && workspaceId) {
+				void getRuntimeTrpcClient(workspaceId)
+					.runtime.deleteWorkspaceAttachmentScope.mutate({ scopeId: threadId })
+					.catch(() => {
+						// Best-effort cleanup; a failed delete just leaves a small orphan dir.
+					});
+			}
+			onOpenChange(next);
+		},
+		[submitted, attachments.length, workspaceId, threadId, onOpenChange],
+	);
+
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange} contentClassName="max-w-md">
+		<Dialog open={open} onOpenChange={handleOpenChange} contentClassName="max-w-md">
 			<DialogHeader title="New chat thread" icon={<MessageSquarePlus size={16} />} />
 			<DialogBody className="flex flex-col gap-5">
 				<div className="flex flex-col gap-2">
@@ -287,7 +336,7 @@ export function HomeThreadCreateDialog({
 					<Kbd>↵</Kbd>
 					to create
 				</span>
-				<Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+				<Button variant="ghost" size="sm" onClick={() => handleOpenChange(false)}>
 					Cancel
 				</Button>
 				<Button variant="primary" size="sm" disabled={!canSubmit} onClick={() => void handleSubmit()}>

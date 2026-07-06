@@ -9,10 +9,16 @@ import type { RuntimeAgentDefinition } from "@/runtime/types";
 // The prompt composer reaches for the runtime tRPC client to power its `@` file
 // mentions and `/` slash commands. Hoist mockable query fns so each test can
 // drive the completion data sources without a live runtime.
-const { searchFilesMock, getKanbanSlashCommandsMock, writeWorkspaceAttachmentMock } = vi.hoisted(() => ({
+const {
+	searchFilesMock,
+	getKanbanSlashCommandsMock,
+	writeWorkspaceAttachmentMock,
+	deleteWorkspaceAttachmentScopeMock,
+} = vi.hoisted(() => ({
 	searchFilesMock: vi.fn(),
 	getKanbanSlashCommandsMock: vi.fn(),
 	writeWorkspaceAttachmentMock: vi.fn(),
+	deleteWorkspaceAttachmentScopeMock: vi.fn(),
 }));
 
 vi.mock("@/runtime/trpc-client", () => ({
@@ -21,6 +27,7 @@ vi.mock("@/runtime/trpc-client", () => ({
 		runtime: {
 			getKanbanSlashCommands: { query: getKanbanSlashCommandsMock },
 			writeWorkspaceAttachment: { mutate: writeWorkspaceAttachmentMock },
+			deleteWorkspaceAttachmentScope: { mutate: deleteWorkspaceAttachmentScopeMock },
 		},
 	}),
 }));
@@ -97,6 +104,7 @@ describe("HomeThreadCreateDialog", () => {
 		searchFilesMock.mockResolvedValue({ files: [] });
 		getKanbanSlashCommandsMock.mockResolvedValue({ commands: [] });
 		writeWorkspaceAttachmentMock.mockResolvedValue({ ok: true, path: "/repo/.kanban/attachments/abc.txt" });
+		deleteWorkspaceAttachmentScopeMock.mockResolvedValue({ ok: true });
 	});
 
 	afterEach(() => {
@@ -214,8 +222,12 @@ describe("HomeThreadCreateDialog", () => {
 		});
 
 		// The bytes are persisted via the workspace-scoped mutation (never the
-		// task-session one — there is no session yet).
-		expect(writeWorkspaceAttachmentMock).toHaveBeenCalledWith(expect.objectContaining({ name: "notes.txt" }));
+		// task-session one — there is no session yet), scoped to the client-generated
+		// thread id so the created thread later owns and cleans them up.
+		expect(writeWorkspaceAttachmentMock).toHaveBeenCalledWith(
+			expect.objectContaining({ name: "notes.txt", scopeId: expect.any(String) }),
+		);
+		expect(writeWorkspaceAttachmentMock.mock.calls[0]?.[0]?.scopeId).toBeTruthy();
 		// The returned absolute path is injected into the opening prompt as a mention.
 		expect(textarea.value).toContain("@/repo/.kanban/attachments/abc.txt");
 		// A removable chip shows the original filename.
@@ -230,6 +242,61 @@ describe("HomeThreadCreateDialog", () => {
 		});
 		expect(textarea.value).not.toContain("@/repo/.kanban/attachments/abc.txt");
 		expect(document.querySelector('button[aria-label="Remove notes.txt"]')).toBeNull();
+	});
+
+	it("submits with the same threadId used to scope the upload, and does not delete the scope", async () => {
+		const onCreate = vi.fn(async () => {});
+		const onOpenChange = vi.fn();
+		await render({ workspaceId: "ws-1", onCreate, onOpenChange });
+
+		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+		await act(async () => {
+			dispatchFileDrop(textarea, makeTextFile("notes.txt"));
+			await flushAttachment();
+		});
+		const uploadScopeId = writeWorkspaceAttachmentMock.mock.calls[0]?.[0]?.scopeId as string;
+		expect(uploadScopeId).toBeTruthy();
+
+		await act(async () => {
+			setControlledValue(textarea, "Do the thing");
+			await flush();
+		});
+		const createButton = Array.from(document.querySelectorAll("button")).find(
+			(button) => button.textContent?.trim() === "Create",
+		);
+		await act(async () => {
+			createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+			await flush();
+		});
+
+		// The thread adopts the id that scoped the pre-session upload.
+		expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ threadId: uploadScopeId }));
+		// Submitting must NOT clean up the scope — the new thread owns it now.
+		expect(deleteWorkspaceAttachmentScopeMock).not.toHaveBeenCalled();
+	});
+
+	it("deletes the attachments scope when cancelled after uploading (no orphan)", async () => {
+		const onOpenChange = vi.fn();
+		await render({ workspaceId: "ws-1", onOpenChange });
+
+		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+		await act(async () => {
+			dispatchFileDrop(textarea, makeTextFile("notes.txt"));
+			await flushAttachment();
+		});
+		const uploadScopeId = writeWorkspaceAttachmentMock.mock.calls[0]?.[0]?.scopeId as string;
+
+		// Cancel the dialog.
+		const cancelButton = Array.from(document.querySelectorAll("button")).find(
+			(button) => button.textContent?.trim() === "Cancel",
+		);
+		await act(async () => {
+			cancelButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+			await flush();
+		});
+
+		expect(deleteWorkspaceAttachmentScopeMock).toHaveBeenCalledWith({ scopeId: uploadScopeId });
+		expect(onOpenChange).toHaveBeenCalledWith(false);
 	});
 
 	it("does not attach files when the selected agent has no `@/path` support", async () => {

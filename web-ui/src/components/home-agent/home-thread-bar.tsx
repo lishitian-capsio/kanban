@@ -31,6 +31,7 @@ interface HomeThreadBarProps {
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	onSelectThread: (threadId: string) => void;
 	onCreateThread: (input: {
+		threadId: string;
 		description: string;
 		agentId: RuntimeAgentId;
 		images?: TaskImage[];

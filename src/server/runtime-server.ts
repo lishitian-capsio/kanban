@@ -45,6 +45,7 @@ import {
 	loadWorkspaceBoardById,
 	loadWorkspaceContextById,
 } from "../state/workspace-state";
+import { deleteAttachmentScope } from "../terminal/session-attachment-store";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { createTerminalWebSocketBridge } from "../terminal/ws-server";
 import { type RuntimeTrpcContext, type RuntimeTrpcWorkspaceScope, runtimeAppRouter } from "../trpc/app-router";
@@ -211,6 +212,12 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 					// Route cleanup to the agent that actually backs the session, so
 					// closing a thread never lazily spins up the other manager.
 					const parts = parseHomeAgentSessionId(sessionId);
+					// Delete the thread's attachments scope. Home threads run in the repo
+					// root, so their files live at `<repoRoot>/.kanban/attachments/<threadId>/`.
+					// A missing directory (thread never had attachments) is a no-op.
+					if (parts?.threadId) {
+						await deleteAttachmentScope({ root: scope.workspacePath, scopeId: parts.threadId });
+					}
 					if (parts?.agentId === "pi") {
 						await piTaskSessionServiceByWorkspaceId.get(scope.workspaceId)?.closeTaskSession(sessionId);
 						return;

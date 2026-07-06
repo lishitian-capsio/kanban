@@ -2793,9 +2793,7 @@ describe("createRuntimeApi home thread handlers", () => {
 		const { api } = makeApiWithStore();
 		// The kickoff is fire-and-forget; spy on the sibling method so we can assert the
 		// images ride along without driving the whole agent-launch stack.
-		const startSpy = vi
-			.spyOn(api, "startTaskSession")
-			.mockResolvedValue({ ok: true, summary: null } as never);
+		const startSpy = vi.spyOn(api, "startTaskSession").mockResolvedValue({ ok: true, summary: null } as never);
 		const images = [{ id: "img-1", data: "AAAA", mimeType: "image/png", name: "mock.png" }];
 
 		const response = await api.createHomeThread(workspaceScope, {
@@ -2951,36 +2949,68 @@ describe("createRuntimeApi writeWorkspaceAttachment", () => {
 		});
 	}
 
-	it("writes the file into the workspace repo root's .kanban/attachments and returns the absolute path", async () => {
+	it("writes the file into the scope subdir of the repo root's .kanban/attachments and returns the absolute path", async () => {
 		const api = makeApi();
 		const payload = Buffer.from("hello attachment", "utf8");
 
 		const response = await api.writeWorkspaceAttachment(
 			{ workspaceId: "workspace-1", workspacePath: repoRoot },
-			{ name: "spec.pdf", data: payload.toString("base64") },
+			{ scopeId: "thread-abc", name: "spec.pdf", data: payload.toString("base64") },
 		);
 
 		expect(response.ok).toBe(true);
-		const attachmentsDir = join(repoRoot, ".kanban", "attachments");
-		const files = readdirSync(attachmentsDir);
+		const scopeDir = join(repoRoot, ".kanban", "attachments", "thread-abc");
+		const files = readdirSync(scopeDir);
 		expect(files).toHaveLength(1);
-		// UUID basename + sanitized extension; NEVER the caller-supplied "spec".
-		expect(files[0]).toMatch(/^[0-9a-f-]{36}\.pdf$/);
-		expect(response.path).toBe(join(attachmentsDir, files[0] as string));
+		// Readable sanitized base name + short uuid + sanitized extension.
+		expect(files[0]).toMatch(/^spec-[0-9a-f]{8}\.pdf$/);
+		expect(response.path).toBe(join(scopeDir, files[0] as string));
+		expect(response.fileName).toBe(files[0]);
 		expect(readFileSync(response.path as string).equals(payload)).toBe(true);
 	});
 
-	it("neutralizes path traversal in the supplied name (file stays inside attachments)", async () => {
+	it("isolates two scopes under the same repo root", async () => {
+		const api = makeApi();
+		const scope = { workspaceId: "workspace-1", workspacePath: repoRoot } as const;
+
+		await api.writeWorkspaceAttachment(scope, {
+			scopeId: "thread-a",
+			name: "a.txt",
+			data: Buffer.from("a").toString("base64"),
+		});
+		await api.writeWorkspaceAttachment(scope, {
+			scopeId: "thread-b",
+			name: "b.txt",
+			data: Buffer.from("b").toString("base64"),
+		});
+
+		expect(readdirSync(join(repoRoot, ".kanban", "attachments", "thread-a"))).toHaveLength(1);
+		expect(readdirSync(join(repoRoot, ".kanban", "attachments", "thread-b"))).toHaveLength(1);
+	});
+
+	it("neutralizes path traversal in the supplied name (file stays inside the scope dir)", async () => {
 		const api = makeApi();
 
 		const response = await api.writeWorkspaceAttachment(
 			{ workspaceId: "workspace-1", workspacePath: repoRoot },
-			{ name: "../../../../etc/passwd.txt", data: Buffer.from("x").toString("base64") },
+			{ scopeId: "thread-abc", name: "../../../../etc/passwd.txt", data: Buffer.from("x").toString("base64") },
 		);
 
 		expect(response.ok).toBe(true);
-		expect(response.path?.startsWith(join(repoRoot, ".kanban", "attachments"))).toBe(true);
-		expect(readdirSync(join(repoRoot, ".kanban", "attachments"))).toHaveLength(1);
+		expect(response.path?.startsWith(join(repoRoot, ".kanban", "attachments", "thread-abc"))).toBe(true);
+		expect(readdirSync(join(repoRoot, ".kanban", "attachments", "thread-abc"))).toHaveLength(1);
+	});
+
+	it("rejects an unsafe scopeId without writing", async () => {
+		const api = makeApi();
+
+		const response = await api.writeWorkspaceAttachment(
+			{ workspaceId: "workspace-1", workspacePath: repoRoot },
+			{ scopeId: "../evil", name: "a.txt", data: Buffer.from("x").toString("base64") },
+		);
+
+		expect(response.ok).toBe(false);
+		expect(existsSync(join(repoRoot, ".kanban", "attachments"))).toBe(false);
 	});
 
 	it("returns ok:false for an empty payload", async () => {
@@ -2988,10 +3018,64 @@ describe("createRuntimeApi writeWorkspaceAttachment", () => {
 
 		const response = await api.writeWorkspaceAttachment(
 			{ workspaceId: "workspace-1", workspacePath: repoRoot },
-			{ name: "empty.txt", data: "" },
+			{ scopeId: "thread-abc", name: "empty.txt", data: "" },
 		);
 
 		expect(response.ok).toBe(false);
 		expect(response.error).toBeTruthy();
+	});
+});
+
+describe("createRuntimeApi deleteWorkspaceAttachmentScope", () => {
+	let repoRoot: string;
+
+	beforeEach(() => {
+		repoRoot = mkdtempSync(join(tmpdir(), "kanban-ws-attachment-del-"));
+	});
+
+	afterEach(() => {
+		rmSync(repoRoot, { recursive: true, force: true });
+	});
+
+	function makeApi(): RuntimeTrpcContext["runtimeApi"] {
+		return createTestRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => ({}) as never),
+			getScopedPiTaskSessionService: vi.fn(async () => ({}) as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+	}
+
+	it("removes only the target scope directory", async () => {
+		const api = makeApi();
+		const scope = { workspaceId: "workspace-1", workspacePath: repoRoot } as const;
+		await api.writeWorkspaceAttachment(scope, {
+			scopeId: "keep",
+			name: "a.txt",
+			data: Buffer.from("a").toString("base64"),
+		});
+		await api.writeWorkspaceAttachment(scope, {
+			scopeId: "drop",
+			name: "b.txt",
+			data: Buffer.from("b").toString("base64"),
+		});
+
+		const response = await api.deleteWorkspaceAttachmentScope(scope, { scopeId: "drop" });
+
+		expect(response.ok).toBe(true);
+		expect(existsSync(join(repoRoot, ".kanban", "attachments", "drop"))).toBe(false);
+		expect(existsSync(join(repoRoot, ".kanban", "attachments", "keep"))).toBe(true);
+	});
+
+	it("is a no-op for a missing scope directory", async () => {
+		const api = makeApi();
+		const response = await api.deleteWorkspaceAttachmentScope(
+			{ workspaceId: "workspace-1", workspacePath: repoRoot },
+			{ scopeId: "never-existed" },
+		);
+		expect(response.ok).toBe(true);
 	});
 });

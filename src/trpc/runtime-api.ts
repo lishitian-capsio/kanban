@@ -70,6 +70,7 @@ import {
 	parseTaskSessionInputRequest,
 	parseTaskSessionStartRequest,
 	parseTaskSessionStopRequest,
+	parseWorkspaceAttachmentDeleteRequest,
 	parseWorkspaceAttachmentRequest,
 } from "../core/api-validation";
 import {
@@ -92,7 +93,11 @@ import { getSelectedCommittedProvider } from "../state/committed-provider-store"
 import { loadWorkspaceCommittedProviders } from "../state/workspace-state";
 import { buildRuntimeConfigResponse, resolveAgentCommand } from "../terminal/agent-registry";
 import { isBinaryAvailableOnPath } from "../terminal/command-discovery";
-import { writeTaskAttachment } from "../terminal/session-attachment-store";
+import {
+	deleteAttachmentScope,
+	isValidAttachmentScopeId,
+	writeScopeAttachment,
+} from "../terminal/session-attachment-store";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { resolveTaskCwd } from "../workspace/task-worktree";
 import { captureTaskTurnCheckpoint } from "../workspace/turn-checkpoints";
@@ -695,6 +700,11 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		createHomeThread: async (workspaceScope, input) => {
 			try {
 				const body = parseHomeChatThreadCreateRequest(input);
+				// A client-supplied id becomes both a session-id segment (colon-delimited) and
+				// an attachments scope directory, so it must be a safe single path segment.
+				if (body.id && !isValidAttachmentScopeId(body.id)) {
+					return { ok: false, thread: null, error: "Invalid thread id." };
+				}
 				const agentId = body.agentId ?? (await deps.loadScopedRuntimeConfig(workspaceScope)).selectedAgentId;
 				const description = body.description?.trim();
 				// A description-seeded thread starts with a provisional `auto` title (a cleaned
@@ -707,6 +717,9 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 					agentId,
 					name,
 					titleSource,
+					// Honor a client-supplied id so pre-session attachments already written to
+					// `.kanban/attachments/<id>/` belong to this thread and are cleaned on close.
+					...(body.id ? { id: body.id } : {}),
 				});
 				// Kick off the thread's first turn with the description as the opening message so
 				// the agent both does the requested work and self-titles. Fire-and-forget: the
@@ -1000,12 +1013,19 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				if (!worktreePath) {
 					return { ok: false, error: "No active terminal session for this task." };
 				}
-				const result = await writeTaskAttachment({
-					worktreePath,
+				// Isolate attachments per owner: a home-thread session scopes to its
+				// threadId, a real task scopes to its taskId. So home threads (which share
+				// the repo-root cwd) never mix their files, and each set is cleaned up with
+				// its owner (thread close / worktree delete).
+				const scopeId = parseHomeAgentSessionId(body.taskId)?.threadId ?? body.taskId;
+				const result = await writeScopeAttachment({
+					scope: { root: worktreePath, scopeId },
 					name: body.name,
 					data: body.data,
 				});
-				return result.ok ? { ok: true, path: result.path } : { ok: false, error: result.error };
+				return result.ok
+					? { ok: true, path: result.path, fileName: result.fileName }
+					: { ok: false, error: result.error };
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				return { ok: false, error: message };
@@ -1014,19 +1034,35 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		writeWorkspaceAttachment: async (workspaceScope, input) => {
 			try {
 				const body = parseWorkspaceAttachmentRequest(input);
-				// The new-thread create dialog has no live session yet, so the file
-				// can't be resolved from a terminal session's cwd. A home-thread
-				// session runs directly in the workspace repo root (see the home cwd
-				// branch in startTaskSession), so write there — the injected
-				// `@/path` mention resolves once the session starts with
-				// cwd = workspacePath. The store neutralizes path traversal and caps
-				// the size exactly as the task-session variant does.
-				const result = await writeTaskAttachment({
-					worktreePath: workspaceScope.workspacePath,
+				// The new-thread create dialog has no live session yet, so the file can't
+				// be resolved from a terminal session's cwd. A home-thread session runs
+				// directly in the workspace repo root (see the home cwd branch in
+				// startTaskSession), so write there under the client-supplied scopeId (the
+				// future thread id). The injected `@/path` mention resolves once the session
+				// starts with cwd = workspacePath, and the files are cleaned up when the
+				// thread is closed (or when the dialog is cancelled — see
+				// deleteWorkspaceAttachmentScope). The store validates scopeId and caps size.
+				const result = await writeScopeAttachment({
+					scope: { root: workspaceScope.workspacePath, scopeId: body.scopeId },
 					name: body.name,
 					data: body.data,
 				});
-				return result.ok ? { ok: true, path: result.path } : { ok: false, error: result.error };
+				return result.ok
+					? { ok: true, path: result.path, fileName: result.fileName }
+					: { ok: false, error: result.error };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, error: message };
+			}
+		},
+		deleteWorkspaceAttachmentScope: async (workspaceScope, input) => {
+			try {
+				const body = parseWorkspaceAttachmentDeleteRequest(input);
+				// Drop a pre-session upload scope whose thread was never created (dialog
+				// cancelled). Home-thread attachments live at the repo root; the store
+				// re-validates scopeId before touching disk.
+				await deleteAttachmentScope({ root: workspaceScope.workspacePath, scopeId: body.scopeId });
+				return { ok: true };
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				return { ok: false, error: message };

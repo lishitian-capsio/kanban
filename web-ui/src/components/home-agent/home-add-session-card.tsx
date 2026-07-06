@@ -16,7 +16,12 @@ interface HomeAddSessionCardProps {
 	defaultAgentId: RuntimeAgentId;
 	/** Workspace scope forwarded to the create dialog for `@` mentions / `/` slash commands. */
 	currentProjectId: string | null;
-	onCreate: (input: { description: string; agentId: RuntimeAgentId; images?: TaskImage[] }) => void | Promise<unknown>;
+	onCreate: (input: {
+		threadId: string;
+		description: string;
+		agentId: RuntimeAgentId;
+		images?: TaskImage[];
+	}) => void | Promise<unknown>;
 }
 
 export function HomeAddSessionCard({

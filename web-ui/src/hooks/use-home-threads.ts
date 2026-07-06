@@ -244,11 +244,18 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 
 	const createThread = useCallback(
 		async ({
+			threadId,
 			description,
 			name,
 			agentId,
 			images,
 		}: {
+			/**
+			 * Optional client-generated thread id. The create dialog mints it up front so
+			 * pre-session attachments upload into the thread's final attachments scope; the
+			 * created thread adopts this id. Omit for name-only / programmatic creates.
+			 */
+			threadId?: string;
 			description?: string;
 			name?: string;
 			agentId: RuntimeAgentId;
@@ -264,6 +271,7 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 				// least one of the two. `images` (pasted/dragged into the create dialog) ride along
 				// with the kickoff prompt so the agent's first turn sees them.
 				const response = await getRuntimeTrpcClient(currentProjectId).runtime.createHomeThread.mutate({
+					...(threadId ? { id: threadId } : {}),
 					description,
 					name,
 					agentId,

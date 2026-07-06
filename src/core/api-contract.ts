@@ -362,6 +362,12 @@ export const runtimeHomeChatThreadsListResponseSchema = z.object({
 export type RuntimeHomeChatThreadsListResponse = z.infer<typeof runtimeHomeChatThreadsListResponseSchema>;
 
 export const runtimeHomeChatThreadCreateRequestSchema = z.object({
+	// Optional client-supplied thread id. The create dialog generates this up front so
+	// pre-session file attachments can be written into the thread's final attachments
+	// scope (`.kanban/attachments/<id>/`) BEFORE the thread exists; the created thread
+	// then adopts the same id, so a later hard-close cleans those files up. Omit to let
+	// the server mint one (the historical behavior). Must be a safe scope id segment.
+	id: z.string().optional(),
 	// A free-text description of what the thread is for. When present it becomes the
 	// thread's kickoff prompt (the agent's first message) and the seed for a provisional
 	// `auto` title; the thread's own agent then summarizes a concise title shortly after
@@ -2725,14 +2731,16 @@ export type RuntimeTaskChatSendResponse = z.infer<typeof runtimeTaskChatSendResp
 // --- writeTaskSessionAttachment: persist a dragged/pasted file for a CLI agent -
 // A CLI/terminal agent (currently claude) can't receive binary bytes over its
 // text-only stdin, but it CAN read a file it's handed a path to. This writes the
-// uploaded bytes into the task worktree's machine-local `.kanban/attachments/`
-// dir (gitignored, cleaned up with the worktree) under a fresh UUID name, and
-// returns the absolute path the UI then injects as an `@/path` mention. `name`
-// contributes only a sanitized extension — never a path segment. Pi keeps its own
-// base64 image channel; this is only for terminal-backed sessions.
+// uploaded bytes into the session cwd's machine-local `.kanban/attachments/<scope>/`
+// dir (gitignored) under a `<sanitized-name>-<shortuuid>.<ext>` filename, and returns
+// the absolute path the UI then injects as an `@/path` mention. The scope is derived
+// server-side from `taskId` (a home-thread session → its threadId; a real task → its
+// taskId), so home threads and tasks never share an attachments directory. `name`
+// contributes only a sanitized base name + extension — never a path segment. Pi keeps
+// its own base64 image channel; this is only for terminal-backed sessions.
 export const runtimeTaskSessionAttachmentRequestSchema = z.object({
 	taskId: z.string(),
-	// Original filename; only its extension is used for the stored file.
+	// Original filename; its sanitized base name + extension are embedded in the stored file.
 	name: z.string(),
 	// Base64-encoded file bytes.
 	data: z.string(),
@@ -2743,26 +2751,49 @@ export const runtimeTaskSessionAttachmentResponseSchema = z.object({
 	ok: z.boolean(),
 	// Absolute on-disk path of the written attachment (the `@`-mention target).
 	path: z.string().optional(),
+	// Stored filename (embeds the sanitized original name), for list/management surfaces.
+	fileName: z.string().optional(),
 	error: z.string().optional(),
 });
 export type RuntimeTaskSessionAttachmentResponse = z.infer<typeof runtimeTaskSessionAttachmentResponseSchema>;
 
 // --- writeWorkspaceAttachment: persist a dragged/pasted file BEFORE a session ---
 // The new-thread create dialog needs the same file-attachment affordance as an
-// active terminal session, but there is no live session yet, so there is no
-// session cwd to resolve. A home-thread session runs directly in the workspace
-// repo root (see startTaskSession's home cwd branch), so the file is written into
-// that repo root's machine-local `.kanban/attachments/` and the returned absolute
-// path is injected as an `@/path` mention into the opening prompt — it resolves
-// once the session starts with cwd = workspacePath. Scoped by workspace only;
-// `name` contributes only a sanitized extension. Response reuses the task variant.
+// active terminal session, but there is no live session yet. A home-thread session
+// runs directly in the workspace repo root (see startTaskSession's home cwd branch),
+// so the file is written into that repo root's `.kanban/attachments/<scopeId>/` and
+// the returned absolute path is injected as an `@/path` mention into the opening
+// prompt — it resolves once the session starts with cwd = workspacePath. `scopeId` is
+// the client-generated thread id (the dialog passes the same id to `createHomeThread`),
+// so the pre-session upload lands in the thread's FINAL attachments scope and is cleaned
+// up on hard-close. `name` contributes only a sanitized base + extension. Response
+// reuses the task variant.
 export const runtimeWorkspaceAttachmentRequestSchema = z.object({
-	// Original filename; only its extension is used for the stored file.
+	// Client-generated scope id (the future thread id). Validated as a safe path segment.
+	scopeId: z.string(),
+	// Original filename; its sanitized base name + extension are embedded in the stored file.
 	name: z.string(),
 	// Base64-encoded file bytes.
 	data: z.string(),
 });
 export type RuntimeWorkspaceAttachmentRequest = z.infer<typeof runtimeWorkspaceAttachmentRequestSchema>;
+
+// --- deleteWorkspaceAttachmentScope: drop an unclaimed pre-session upload scope ----
+// The create dialog uploads into `.kanban/attachments/<scopeId>/` before the thread
+// exists. If the dialog is cancelled, those files would otherwise leak (no thread will
+// ever adopt the scope to clean them on close), so the dialog calls this to remove the
+// whole scope directory. Also the foundation for attachment management (e2956).
+export const runtimeWorkspaceAttachmentDeleteRequestSchema = z.object({
+	// The scope directory to remove. Validated as a safe path segment.
+	scopeId: z.string(),
+});
+export type RuntimeWorkspaceAttachmentDeleteRequest = z.infer<typeof runtimeWorkspaceAttachmentDeleteRequestSchema>;
+
+export const runtimeWorkspaceAttachmentDeleteResponseSchema = z.object({
+	ok: z.boolean(),
+	error: z.string().optional(),
+});
+export type RuntimeWorkspaceAttachmentDeleteResponse = z.infer<typeof runtimeWorkspaceAttachmentDeleteResponseSchema>;
 
 export const runtimeTaskChatReloadRequestSchema = z.object({
 	taskId: z.string(),

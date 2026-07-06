@@ -90,6 +90,12 @@ export interface CreateThreadRequest {
 	name: string;
 	/** How `name` was set. Defaults to `manual` (pinned) when omitted. */
 	titleSource?: RuntimeHomeChatThreadTitleSource;
+	/**
+	 * Optional client-supplied thread id. The create dialog generates this up front so
+	 * pre-session attachments can be written into the thread's final attachments scope
+	 * before the thread exists; the thread then adopts the same id. Omit to mint one.
+	 */
+	id?: string;
 }
 
 export interface SetAutoTitleResult {
@@ -141,7 +147,7 @@ export class HomeThreadStore {
 	}
 
 	async create(request: CreateThreadRequest): Promise<RuntimeHomeChatThread> {
-		const id = this.generateId();
+		const id = request.id ?? this.generateId();
 		const now = this.now();
 		const titleSource = request.titleSource ?? "manual";
 		await this.persistence.mutate((current) =>
