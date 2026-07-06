@@ -1,0 +1,20 @@
+{
+  "id": "e2956",
+  "title": "File popover: 附件(.kanban/attachments)管理入口 — 只暴露该子目录",
+  "prompt": "需求: 在 File popover(右上角文件浏览器)里增加一个\"Attachments\"入口,用来查看/下载/删除上传的聊天附件(落在 <仓库根>/.kanban/attachments/ 的文件)。目标是给这些附件一个统一的查看+删除位置,复用 File popover 现成能力。\n\n## 关键约束(务必遵守)\nFile popover 目前**有意屏蔽整个 .kanban**,不能简单放开:\n- src/workspace/workspace-fs-api.ts:80 有 ALWAYS_HIDDEN_NAMES = { '.git', '.kanban' },在 fsListDir(约 551 行)与 Quick Open listPaths(isReservedRelPath 约 599-602 行)每一层都过滤掉 .kanban;\n- .kanban 下任何增删改被 ReservedPathError 结构性拒绝(assertNotReservedPath 约 275-281、238-243 行)。\n- 原因: .kanban 里还有 sessions/meta/board 数据/锁文件等运行时内部状态。**绝不能整体放开 .kanban** —— 只能精确地\"开一道口子\"给 .kanban/attachments/ 这一个子目录,其余 .kanban 继续隐藏且禁改。\n\n## 方案\n1. 后端: 新增**专用**的附件 API(列出 / 下载 / 删除),**只作用于 <repoRoot>/.kanban/attachments/**:\n   - 列表: 读取该目录下的文件,返回文件名、大小、mtime(可考虑扩展名/类型);目录不存在时返回空。\n   - 删除: 硬删除该目录内指定文件;必须做路径安全 —— 只允许删除 attachments 目录**直接子文件**,拒绝任何路径穿越(.. / 绝对路径 / 子目录逃逸),不要复用会命中 ReservedPathError 的通用 fsDeleteEntry;要么给通用守卫加一个**仅限 .kanban/attachments 直接子文件**的白名单例外,要么单独实现受限的删除函数。\n   - 下载/预览: 尽量复用现有 fsDownloadEntry / 预览逻辑(.md 文本、.docx 二进制只读),同样限定在该目录。\n   - cwd/根: 由 workspaceId 解析 repoPath(home 会话 cwd = 仓库根),attachments 固定在 <repoPath>/.kanban/attachments/。\n2. 前端: 在 File popover 里加一个\"Attachments\"分区/入口(不要把 .kanban 整个显示到文件树里),列出附件并支持删除、下载/预览。沿用现有 File popover 的 UI 风格与预览组件。\n3. 不改变 .kanban 其余部分的隐藏与禁改行为;ALWAYS_HIDDEN_NAMES 对 .kanban 的整体屏蔽保持不变,只针对 attachments 子目录做受控例外。\n4. 遵循仓库约定(TypeScript 无 any、现有风格、设计 token/UI 基元);补充/更新相关测试(尤其删除的路径安全:只允许 attachments 直接子文件、拒绝穿越;列表在目录不存在时为空);跑通 typecheck / web:typecheck 与相关测试。\n5. 亲自验证: 上传若干附件后,在 File popover 的 Attachments 入口能看到它们(文件名/大小/时间),能下载/预览、能删除;删除后磁盘文件确实消失;.kanban 其余目录仍不可见、不可改。\n\n## 可选(如果不增加太多复杂度)\n附带一个轻量 GC: home 线程附件写在仓库根、不随 worktree 清理会长期堆积。可评估加一个简单回收(如超过 N 天自动清理),但以\"手动在 File popover 删除\"为主,GC 非必需,若实现请说明策略与默认值。\n\n注意: 活跃多智能体工作区,开工前先 git 同步;留意 workspace-fs-api.ts / file-surface(FilePopover/FileTree/file-viewer-pane)/ session-attachment-store.ts 最新状态。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "bcd4d0cd-58af-4991-967b-36e566b082ed",
+  "baseRef": "main",
+  "createdAt": 1783313598815,
+  "updatedAt": 1783313598815,
+  "column": "backlog",
+  "rank": "Zu",
+  "dependsOn": []
+}
