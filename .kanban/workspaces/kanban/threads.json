@@ -208,10 +208,10 @@
     {
       "id": "5c1abf3d-f8d3-4fb3-a2d0-98cdcaeaa102",
       "agentId": "claude",
-      "name": "@/home/developer/code/kanban/.kanban/attachments/abe750fb-4…",
+      "name": "SAP 合作对齐清单回应处理",
       "titleSource": "auto",
       "createdAt": 1783306807043,
-      "updatedAt": 1783306807043
+      "updatedAt": 1783306882669
     }
   ],
   "fullscreenTabs": {
@@ -220,8 +220,9 @@
       "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
       "bcd4d0cd-58af-4991-967b-36e566b082ed",
       "98d352bf-cb23-490b-8d5d-8945798a7371",
-      "5c1abf3d-f8d3-4fb3-a2d0-98cdcaeaa102"
+      "5c1abf3d-f8d3-4fb3-a2d0-98cdcaeaa102",
+      "5a452b07-e2c2-4342-9923-4c9cdae4a291"
     ],
-    "activeThreadId": "5c1abf3d-f8d3-4fb3-a2d0-98cdcaeaa102"
+    "activeThreadId": "5a452b07-e2c2-4342-9923-4c9cdae4a291"
   }
 }
