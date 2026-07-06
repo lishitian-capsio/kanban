@@ -38,7 +38,7 @@ export function inferLarkKindLabel(chatId: string): string {
 }
 
 export function describeImChannel(target: ImChannelTarget): { platformLabel: string; kindLabel: string } {
-	const platformLabel = IM_PLATFORM_LABELS[target.platform] ?? target.platform;
+	const platformLabel = IM_PLATFORM_LABELS[target.platform];
 	// DingTalk delivery is a webhook robot bound to one conversation — no chat-kind concept.
 	const kindLabel = target.platform === "lark" ? inferLarkKindLabel(target.chatId) : "群";
 	return { platformLabel, kindLabel };

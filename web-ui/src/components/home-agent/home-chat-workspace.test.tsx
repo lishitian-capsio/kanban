@@ -69,6 +69,8 @@ function makeHomeThreads(threads: HomeThread[], overrides: Partial<UseHomeThread
 		createThread: vi.fn(),
 		renameThread: vi.fn(),
 		closeThread: vi.fn(),
+		bindThreadImChannel: vi.fn(),
+		unbindThreadImChannel: vi.fn(),
 		clearNextStep: vi.fn(),
 		refresh: vi.fn(),
 		isLoading: false,

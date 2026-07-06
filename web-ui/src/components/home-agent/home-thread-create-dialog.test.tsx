@@ -340,4 +340,40 @@ describe("HomeThreadCreateDialog", () => {
 
 		expect(writeWorkspaceAttachmentMock).not.toHaveBeenCalled();
 	});
+
+	it("passes the bound IM channel through onCreate", async () => {
+		const onCreate = vi.fn(async () => {});
+		await render({ onCreate });
+
+		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+		await act(async () => {
+			setControlledValue(textarea, "Ship it");
+			await flush();
+		});
+
+		// Type an IM chat id into the (default lark) picker.
+		const imInput = document.querySelector('input[aria-label="IM chat ID"]') as HTMLInputElement;
+		expect(imInput).not.toBeNull();
+		await act(async () => {
+			const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+			setter?.call(imInput, "oc_team");
+			imInput.dispatchEvent(new Event("input", { bubbles: true }));
+			await flush();
+		});
+
+		const createButton = Array.from(document.querySelectorAll("button")).find(
+			(button) => button.textContent?.trim() === "Create",
+		);
+		await act(async () => {
+			createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+			await flush();
+		});
+
+		expect(onCreate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				description: "Ship it",
+				imChannel: { platform: "lark", chatId: "oc_team" },
+			}),
+		);
+	});
 });

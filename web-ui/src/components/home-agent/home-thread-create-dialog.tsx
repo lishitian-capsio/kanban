@@ -4,6 +4,8 @@ import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import { showAppToast } from "@/components/app-toaster";
 import { AgentAvatar } from "@/components/home-agent/agent-icon";
+import type { ImChannelTarget } from "@/components/im/im-channel";
+import { ImChannelPicker } from "@/components/im/im-channel-picker";
 import { PromptAttachmentChips } from "@/components/prompt-attachments/prompt-attachment-chips";
 import {
 	appendMentionToPrompt,
@@ -44,6 +46,8 @@ interface HomeThreadCreateDialogProps {
 		description: string;
 		agentId: RuntimeAgentId;
 		images?: TaskImage[];
+		/** Optional IM channel bound to the new thread (best-effort, bound after create). */
+		imChannel?: ImChannelTarget | null;
 	}) => void | Promise<unknown>;
 }
 
@@ -78,6 +82,7 @@ export function HomeThreadCreateDialog({
 	// The thread id is minted up front so pre-session attachments upload into this
 	// thread's FINAL attachments scope; the created thread adopts the same id.
 	const [threadId, setThreadId] = useState<string>(() => safeRandomUUID());
+	const [imChannel, setImChannel] = useState<ImChannelTarget | null>(null);
 
 	// Non-image file attachments are only meaningful for CLI agents that read
 	// `@/path` mentions (currently claude) and only with a workspace to write into.
@@ -109,6 +114,7 @@ export function HomeThreadCreateDialog({
 			setAgentId(resolvedDefaultAgentId);
 			setIsSubmitting(false);
 			setThreadId(safeRandomUUID());
+			setImChannel(null);
 		}
 	}, [open, resolvedDefaultAgentId]);
 
@@ -129,6 +135,7 @@ export function HomeThreadCreateDialog({
 				description: trimmedDescription,
 				agentId,
 				images: images.length > 0 ? images : undefined,
+				imChannel: imChannel ?? undefined,
 			});
 			onOpenChange(false);
 		} catch (error) {
@@ -226,6 +233,11 @@ export function HomeThreadCreateDialog({
 							})}
 						</div>
 					)}
+				</div>
+
+				<div className="flex flex-col gap-2">
+					<span className="text-[12px] font-medium text-text-secondary">绑定 IM(可选)</span>
+					<ImChannelPicker value={imChannel} onChange={setImChannel} disabled={isSubmitting} />
 				</div>
 			</DialogBody>
 			<DialogFooter>

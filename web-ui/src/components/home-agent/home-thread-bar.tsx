@@ -7,7 +7,7 @@
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { createHomeAgentSessionId } from "@runtime-home-agent-session";
-import { ChevronDown, Pencil, Plus, X } from "lucide-react";
+import { ChevronDown, Pencil, Plus, Radio, X } from "lucide-react";
 import { useState } from "react";
 import { deriveHomeSessionCardStatus } from "@/components/home-agent/home-session-card-derive";
 import { HomeThreadCloseDialog } from "@/components/home-agent/home-thread-close-dialog";
@@ -15,6 +15,8 @@ import { HomeThreadCreateDialog } from "@/components/home-agent/home-thread-crea
 import { HomeThreadRenameDialog } from "@/components/home-agent/home-thread-rename-dialog";
 import { getActiveHighlightClass } from "@/components/home-agent/session-active-highlight";
 import { SessionAgentIdentity } from "@/components/home-agent/session-agent-identity";
+import type { ImChannelTarget } from "@/components/im/im-channel";
+import { ImChannelBindDialog } from "@/components/im/im-channel-bind-dialog";
 import { cn } from "@/components/ui/cn";
 import type { HomeThread } from "@/hooks/use-home-threads";
 import type { RuntimeAgentDefinition, RuntimeAgentId, RuntimeTaskSessionSummary } from "@/runtime/types";
@@ -38,6 +40,8 @@ interface HomeThreadBarProps {
 	}) => void | Promise<unknown>;
 	onRenameThread: (threadId: string, name: string) => void | Promise<void>;
 	onCloseThread: (threadId: string) => void | Promise<void>;
+	onBindThreadImChannel: (threadId: string, channel: ImChannelTarget) => void | Promise<void>;
+	onUnbindThreadImChannel: (threadId: string) => void | Promise<void>;
 }
 
 export function HomeThreadBar({
@@ -51,11 +55,14 @@ export function HomeThreadBar({
 	onCreateThread,
 	onRenameThread,
 	onCloseThread,
+	onBindThreadImChannel,
+	onUnbindThreadImChannel,
 }: HomeThreadBarProps): React.ReactElement | null {
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [createOpen, setCreateOpen] = useState(false);
 	const [renameTarget, setRenameTarget] = useState<HomeThread | null>(null);
 	const [closeTarget, setCloseTarget] = useState<HomeThread | null>(null);
+	const [imChannelTarget, setImChannelTarget] = useState<HomeThread | null>(null);
 
 	const activeThread = threads.find((thread) => thread.id === activeThreadId) ?? threads[0] ?? null;
 	if (!activeThread) {
@@ -125,6 +132,21 @@ export function HomeThreadBar({
 										<span className="flex shrink-0 items-center gap-0.5">
 											<button
 												type="button"
+												aria-label="绑定 IM"
+												className={cn(
+													"cursor-pointer rounded-sm p-1 hover:bg-surface-4 hover:text-text-primary",
+													thread.imChannel ? "text-accent" : "text-text-tertiary",
+												)}
+												onClick={(event) => {
+													event.stopPropagation();
+													setMenuOpen(false);
+													setImChannelTarget(thread);
+												}}
+											>
+												<Radio size={12} />
+											</button>
+											<button
+												type="button"
 												aria-label="Rename thread"
 												className="cursor-pointer rounded-sm p-1 text-text-tertiary hover:bg-surface-4 hover:text-text-primary"
 												onClick={(event) => {
@@ -189,6 +211,16 @@ export function HomeThreadBar({
 					}
 				}}
 				onClose={onCloseThread}
+			/>
+			<ImChannelBindDialog
+				thread={imChannelTarget}
+				onOpenChange={(open) => {
+					if (!open) {
+						setImChannelTarget(null);
+					}
+				}}
+				onBind={onBindThreadImChannel}
+				onUnbind={onUnbindThreadImChannel}
 			/>
 		</div>
 	);
