@@ -1,0 +1,20 @@
+{
+  "id": "45d69",
+  "title": "修复: CLI 终端粘贴(Ctrl/Cmd+V)文件/图片不附加",
+  "prompt": "Bug: 在 CLI/terminal agent(claude)的会话终端里,粘贴(Ctrl/Cmd+V)文件或图片**不会**触发附件流程(不写盘、不注入 @路径);而拖拽(drag-drop)是正常的。\n\n## 根因(已诊断)\nxterm.js 内部的 paste 处理调用了 ev.stopPropagation(),把 paste 事件吃掉,导致外层 React 的 onPasteCapture 附件处理器收不到。\n- xterm 在其 textarea 上监听 paste 并 stopPropagation:node_modules/@xterm/xterm 的 Clipboard.ts:44、CoreBrowserTerminal.ts:343-344。\n- 附件逻辑挂在外层 div 的 onPasteCapture={handleAttachmentPaste}:web-ui/src/components/detail-panels/agent-terminal-panel.tsx(handler 定义约 238-254,挂载点约 420 行)——收不到被拦截的事件。\n- 对比:drop 能用,因为 xterm 不处理 drop,drop 冒泡到外层 onDrop(handler 约 221-236,挂载点约 419 行),走 collectFilesFromDataTransfer → 写盘 → 注入 @路径。\n\n## 修复思路\n不要依赖 React 的 onPaste/onPasteCapture 冒泡(会被 xterm 抢先 stopPropagation)。改为在 xterm 拦截之前用**捕获阶段的原生监听**接住 paste:\n- 在 xterm 的 textarea(term.textarea)或终端容器上 addEventListener('paste', handler, { capture: true })(捕获阶段先于 xterm 的目标阶段/冒泡处理器执行)。\n- handler 里检查 clipboardData 是否含文件/图片(注意 clipboardData.items 中 kind==='file' 的 image/... 与非图片文件;OS 复制的\"文件\"与剪贴板\"图片\"在 DataTransfer 上的表现不同,两者都要覆盖)。\n- 若有文件/图片:preventDefault() + stopImmediatePropagation(),复用现有拖拽那条附件路径(collectFilesFromDataTransfer + terminal-attachment-drop.ts 的上传+注入编排 + writeTaskSessionAttachment)。\n- 若为纯文本:不拦截,放行给 xterm 正常粘贴(保持终端粘贴文本行为不变)。\n- 保持现有 gate(ATTACHMENT_MENTION_AGENT_IDS,当前 claude;需要 workspaceId)与 drop 一致。\n- 记得在组件卸载/终端重建时移除该原生监听,避免泄漏。\n\n## 要求\n1. 让 CLI 终端里 Ctrl/Cmd+V 粘贴文件与图片都能像拖拽一样:写入 <cwd>/.kanban/attachments/ 并把 @路径 注入终端输入(与 drop 完全一致的落盘+注入逻辑,DRY,不要另写一套)。\n2. 纯文本粘贴行为不变(仍由 xterm 处理)。\n3. 兼顾任务(worktree cwd)与 home 线程(仓库根 cwd)两类 CLI 会话。\n4. 遵循仓库约定(TypeScript 无 any、现有风格);补充/更新相关测试(纯逻辑部分:剪贴板含文件→走附件、纯文本→放行);跑通 web:typecheck 与相关测试。\n5. 亲自验证: 在 CLI(claude)会话终端里,复制一个文件后 Ctrl/Cmd+V → 出现 @路径注入且文件已写入 .kanban/attachments/;粘贴一张剪贴板图片同样生效;粘贴纯文本仍正常。\n\n注意: 活跃多智能体工作区,开工前先 git 同步;留意 agent-terminal-panel.tsx / terminal-attachment-drop.ts / session-attachment-store.ts 最新状态。参考 AGENTS.md 'terminal-agent drag/drop attachments' 与 'KanbanChatComposer 是 pi-only' 两条说明。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "bcd4d0cd-58af-4991-967b-36e566b082ed",
+  "baseRef": "main",
+  "createdAt": 1783307179076,
+  "updatedAt": 1783307179076,
+  "column": "backlog",
+  "rank": "Zv",
+  "dependsOn": []
+}
