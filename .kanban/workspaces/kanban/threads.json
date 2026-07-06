@@ -212,6 +212,14 @@
       "titleSource": "auto",
       "createdAt": 1783306807043,
       "updatedAt": 1783306882669
+    },
+    {
+      "id": "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
+      "agentId": "claude",
+      "name": "如何把kanban agent与飞书结合？",
+      "titleSource": "auto",
+      "createdAt": 1783319473324,
+      "updatedAt": 1783319473324
     }
   ],
   "fullscreenTabs": {
@@ -219,8 +227,9 @@
       "5fec3500-5c60-4477-8b05-794bc8dd76a7",
       "bcd4d0cd-58af-4991-967b-36e566b082ed",
       "98d352bf-cb23-490b-8d5d-8945798a7371",
-      "815c2d5d-1b77-4ef2-99bb-d5c73582390c"
+      "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
+      "9ed2b30b-108d-4520-babc-c313e0d7dbd8"
     ],
-    "activeThreadId": "815c2d5d-1b77-4ef2-99bb-d5c73582390c"
+    "activeThreadId": "9ed2b30b-108d-4520-babc-c313e0d7dbd8"
   }
 }
