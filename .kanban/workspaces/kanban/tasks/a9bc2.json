@@ -1,0 +1,20 @@
+{
+  "id": "a9bc2",
+  "title": "新建会话弹窗: 支持非图片文件(随创建落到该会话目录+@路径)",
+  "prompt": "需求: 让新建\"聊天线程/会话\"创建弹窗(web-ui/src/components/home-agent/home-thread-create-dialog.tsx)的输入框支持粘贴/拖拽**非图片文件**(文档等),体验与图片一致(粘贴/拖拽/附件条/可删)。目前图片可用(base64 进 prompt),文件不支持。\n\n## 前置: 依赖地基任务 e801b(附件按会话隔离)\n附件按会话隔离存储: <仓库根>/.kanban/attachments/<threadId>/…(见 e801b)。复用 e801b 提供的\"按 workspaceId+scopeId 写入/解析附件目录\"工具,不要自己硬拼路径。\n\n## 关键约束: 创建弹窗此刻还没有 threadId\n新建线程会话不开 worktree,cwd=仓库根(runtime-api.ts:296-302)。但提交前 threadId 尚未生成,文件不能在粘贴当下就写盘。正确流程:\n1. 弹窗内先把文件收集在内存(base64/字节),显示可删除附件条(图片行为不变)。\n2. 提交时随 createHomeThread 把文件传给后端(扩展 RuntimeHomeChatThreadCreateRequest schema + mutation 携带附件;大小上限/编码复用 e801b/session-attachment-store 策略)。\n3. 后端生成 threadId 后把文件写入 <仓库根>/.kanban/attachments/<threadId>/,并把 @绝对路径 追加进该线程 kickoff 首条 prompt(与图片一起)。\n\n## 要求\n1. 前端: 弹窗输入框加入非图片文件的粘贴/拖拽收集与展示(与图片并存可删),沿用现有附件 UI。\n2. 传输+落盘+注入: 按上面流程走 createHomeThread → 写入 <threadId> 目录 → kickoff 注入 @路径,复用 e801b 工具与 session-attachment-store,不要另写。\n3. 适用范围: 仅对 ATTACHMENT_MENTION_AGENT_IDS(当前 claude)启用;其他 agent 优雅降级。图片不变。\n4. 关闭/提交后重置附件状态;清理由 e801b 负责,本任务不做 GC。\n5. 遵循仓库约定(无 any、现有风格);注意 AGENTS.md 'Dual-lib typecheck trap';补充/更新测试(schema 携带附件、写入 <threadId>、@路径注入);跑通 web:typecheck 与相关测试。\n6. 亲自验证: 新建弹窗(claude)粘/拖非图片文件 → 附件条 → 创建 → 文件在 <仓库根>/.kanban/attachments/<threadId>/ 且 prompt 含 @路径 → 启动后 agent 能读到。图片仍正常。\n\n注意: 依赖 e801b 先完成;活跃多智能体工作区,开工前 git 同步。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "bcd4d0cd-58af-4991-967b-36e566b082ed",
+  "baseRef": "main",
+  "createdAt": 1783314215676,
+  "updatedAt": 1783314215676,
+  "column": "backlog",
+  "rank": "Zs",
+  "dependsOn": []
+}
