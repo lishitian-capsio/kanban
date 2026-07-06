@@ -1,9 +1,16 @@
 import { safeRandomUUID } from "@runtime-safe-uuid";
-import { Check, FileText, MessageSquarePlus, X } from "lucide-react";
+import { Check, MessageSquarePlus } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import { showAppToast } from "@/components/app-toaster";
 import { AgentAvatar } from "@/components/home-agent/agent-icon";
+import { PromptAttachmentChips } from "@/components/prompt-attachments/prompt-attachment-chips";
+import {
+	appendMentionToPrompt,
+	removeMentionFromPrompt,
+} from "@/components/prompt-attachments/prompt-attachment-mentions";
+import type { PromptAttachment } from "@/components/prompt-attachments/use-prompt-file-attachments";
+import { usePromptFileAttachments } from "@/components/prompt-attachments/use-prompt-file-attachments";
 import { TaskPromptComposer } from "@/components/task-prompt-composer";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
@@ -11,47 +18,9 @@ import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/
 import { Kbd } from "@/components/ui/kbd";
 import { agentSupportsFileAttachments } from "@/runtime/attachment-agents";
 import { isNativeAgentSelected } from "@/runtime/native-agent";
-import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeAgentDefinition, RuntimeAgentId } from "@/runtime/types";
-import { buildAttachmentMentionText, readFileAsBase64 } from "@/terminal/terminal-attachment-drop";
 import type { TaskImage } from "@/types";
 import { isMacPlatform } from "@/utils/platform";
-
-/** A file attachment persisted to disk and mentioned as `@/path` in the prompt. */
-interface PromptAttachment {
-	id: string;
-	/** Display name (original filename) shown on the chip. */
-	name: string;
-	/** Absolute on-disk path the mention points at. */
-	path: string;
-	/** Exact `@/path ` text injected into the prompt, so removal can strip it. */
-	mentionText: string;
-}
-
-/** Append a mention to the prompt, keeping a single separating space. */
-function appendMentionToPrompt(prompt: string, mention: string): string {
-	if (prompt.length === 0 || /\s$/.test(prompt)) {
-		return `${prompt}${mention}`;
-	}
-	return `${prompt} ${mention}`;
-}
-
-/**
- * Remove the first occurrence of an injected mention from the prompt. Falls back to
- * the space-trimmed form in case the user edited the trailing space away.
- */
-function removeMentionFromPrompt(prompt: string, mention: string): string {
-	const index = prompt.indexOf(mention);
-	if (index >= 0) {
-		return `${prompt.slice(0, index)}${prompt.slice(index + mention.length)}`;
-	}
-	const trimmed = mention.trimEnd();
-	const trimmedIndex = trimmed.length > 0 ? prompt.indexOf(trimmed) : -1;
-	if (trimmedIndex >= 0) {
-		return `${prompt.slice(0, trimmedIndex)}${prompt.slice(trimmedIndex + trimmed.length)}`;
-	}
-	return prompt;
-}
 
 interface HomeThreadCreateDialogProps {
 	open: boolean;
@@ -104,89 +73,44 @@ export function HomeThreadCreateDialog({
 	const descriptionHelpId = useId();
 	const [description, setDescription] = useState("");
 	const [images, setImages] = useState<TaskImage[]>([]);
-	const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
 	const [agentId, setAgentId] = useState<RuntimeAgentId | null>(resolvedDefaultAgentId);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	// The thread id is minted up front so pre-session attachments upload into this
 	// thread's FINAL attachments scope; the created thread adopts the same id.
 	const [threadId, setThreadId] = useState<string>(() => safeRandomUUID());
-	// Set true on submit so closing the dialog afterwards doesn't delete the scope the
-	// new thread now owns. Reset on each open.
-	const [submitted, setSubmitted] = useState(false);
-
-	// Reset the form each time the dialog opens (with a fresh thread id).
-	useEffect(() => {
-		if (open) {
-			setDescription("");
-			setImages([]);
-			setAttachments([]);
-			setAgentId(resolvedDefaultAgentId);
-			setIsSubmitting(false);
-			setSubmitted(false);
-			setThreadId(safeRandomUUID());
-		}
-	}, [open, resolvedDefaultAgentId]);
 
 	// Non-image file attachments are only meaningful for CLI agents that read
 	// `@/path` mentions (currently claude) and only with a workspace to write into.
 	// The file lands in the workspace repo root's `.kanban/attachments/`, which is
-	// exactly the cwd this thread's session will run in, so the mention resolves.
+	// exactly the cwd this thread's session will run in, so the mention resolves —
+	// so here (unlike the task create dialog) the mention is injected at UPLOAD time.
 	const attachmentsEnabled = Boolean(workspaceId) && agentSupportsFileAttachments(agentId);
 
-	const handleFilesSelected = useCallback(
-		(files: File[]) => {
-			if (!attachmentsEnabled || !workspaceId || files.length === 0) {
-				return;
-			}
-			// Upload sequentially so injected mentions land in a stable order.
-			void (async () => {
-				for (const file of files) {
-					const fileName = file.name || "attachment";
-					const data = await readFileAsBase64(file);
-					if (data === null) {
-						showAppToast(
-							{ intent: "danger", message: `Could not read ${fileName}.` },
-							"home-thread-attachment-error",
-						);
-						continue;
-					}
-					let result: { ok: boolean; path?: string; error?: string };
-					try {
-						result = await getRuntimeTrpcClient(workspaceId).runtime.writeWorkspaceAttachment.mutate({
-							scopeId: threadId,
-							name: fileName,
-							data,
-						});
-					} catch (error) {
-						result = { ok: false, error: error instanceof Error ? error.message : String(error) };
-					}
-					if (result.ok && result.path) {
-						const path = result.path;
-						const mentionText = buildAttachmentMentionText(path);
-						setDescription((prev) => appendMentionToPrompt(prev, mentionText));
-						setAttachments((prev) => [...prev, { id: safeRandomUUID(), name: fileName, path, mentionText }]);
-					} else {
-						showAppToast(
-							{ intent: "danger", message: result.error ?? `Could not attach ${fileName}.` },
-							"home-thread-attachment-error",
-						);
-					}
-				}
-			})();
-		},
-		[attachmentsEnabled, workspaceId, threadId],
-	);
+	const { attachments, handleFilesSelected, handleRemoveAttachment, markSubmitted, cleanupOrphanScope } =
+		usePromptFileAttachments({
+			workspaceId,
+			scopeId: threadId,
+			enabled: attachmentsEnabled,
+			toastId: "home-thread-attachment-error",
+			onAttached: useCallback((attachment: PromptAttachment) => {
+				setDescription((prev) => appendMentionToPrompt(prev, attachment.mentionText));
+			}, []),
+			onRemoved: useCallback((attachment: PromptAttachment) => {
+				setDescription((prev) => removeMentionFromPrompt(prev, attachment.mentionText));
+			}, []),
+		});
 
-	const handleRemoveAttachment = useCallback(
-		(id: string) => {
-			const chip = attachments.find((attachment) => attachment.id === id);
-			setAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
-			if (chip) {
-				setDescription((prev) => removeMentionFromPrompt(prev, chip.mentionText));
-			}
-		},
-		[attachments],
-	);
+	// Reset the form each time the dialog opens (with a fresh thread id). The
+	// attachment chips reset themselves when the thread id (scope) changes.
+	useEffect(() => {
+		if (open) {
+			setDescription("");
+			setImages([]);
+			setAgentId(resolvedDefaultAgentId);
+			setIsSubmitting(false);
+			setThreadId(safeRandomUUID());
+		}
+	}, [open, resolvedDefaultAgentId]);
 
 	const trimmedDescription = description.trim();
 	const canSubmit = trimmedDescription.length > 0 && !isSubmitting && agentId !== null;
@@ -199,7 +123,7 @@ export function HomeThreadCreateDialog({
 		try {
 			// Mark submitted first so the ensuing close doesn't delete the attachments
 			// scope the new thread now owns.
-			setSubmitted(true);
+			markSubmitted();
 			await onCreate({
 				threadId,
 				description: trimmedDescription,
@@ -210,7 +134,7 @@ export function HomeThreadCreateDialog({
 		} catch (error) {
 			// Creation failed: the thread doesn't exist, so the pre-session uploads are
 			// orphaned — allow the next close to clean them up.
-			setSubmitted(false);
+			markSubmitted(false);
 			showAppToast(
 				{ intent: "danger", message: error instanceof Error ? error.message : String(error) },
 				"home-thread-create-error",
@@ -225,16 +149,12 @@ export function HomeThreadCreateDialog({
 	// to clean it on close. Delete the scope on that cancel, best-effort.
 	const handleOpenChange = useCallback(
 		(next: boolean) => {
-			if (!next && !submitted && attachments.length > 0 && workspaceId) {
-				void getRuntimeTrpcClient(workspaceId)
-					.runtime.deleteWorkspaceAttachmentScope.mutate({ scopeId: threadId })
-					.catch(() => {
-						// Best-effort cleanup; a failed delete just leaves a small orphan dir.
-					});
+			if (!next) {
+				cleanupOrphanScope();
 			}
 			onOpenChange(next);
 		},
-		[submitted, attachments.length, workspaceId, threadId, onOpenChange],
+		[cleanupOrphanScope, onOpenChange],
 	);
 
 	return (
@@ -266,29 +186,7 @@ export function HomeThreadCreateDialog({
 						autoFocus
 						workspaceId={workspaceId}
 					/>
-					{attachments.length > 0 ? (
-						<div className="flex flex-wrap gap-1.5">
-							{attachments.map((attachment) => (
-								<span
-									key={attachment.id}
-									className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-surface-2 px-2 py-1 text-[12px] text-text-secondary"
-								>
-									<FileText size={13} className="shrink-0 text-text-tertiary" />
-									<span className="max-w-[180px] truncate" title={attachment.path}>
-										{attachment.name}
-									</span>
-									<button
-										type="button"
-										onClick={() => handleRemoveAttachment(attachment.id)}
-										aria-label={`Remove ${attachment.name}`}
-										className="shrink-0 cursor-pointer text-text-tertiary transition-colors hover:text-text-primary"
-									>
-										<X size={12} />
-									</button>
-								</span>
-							))}
-						</div>
-					) : null}
+					<PromptAttachmentChips attachments={attachments} onRemove={handleRemoveAttachment} />
 					<p id={descriptionHelpId} className="text-[11px] text-text-tertiary">
 						The thread's agent works from this opening prompt and names the thread itself. Type{" "}
 						<code className="rounded bg-surface-3 px-1 py-px font-mono text-[11px]">@</code> to reference files.

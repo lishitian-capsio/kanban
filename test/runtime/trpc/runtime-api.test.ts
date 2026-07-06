@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeConfigState } from "../../../src/config/runtime-config";
 import type { RuntimeHomeChatThreadsData, RuntimeTaskSessionSummary } from "../../../src/core/api-contract";
 import { createHomeAgentSessionId } from "../../../src/core/home-agent-session";
+import { writeScopeAttachment } from "../../../src/terminal/session-attachment-store";
 
 const agentRegistryMocks = vi.hoisted(() => ({
 	resolveAgentCommand: vi.fn(),
@@ -696,6 +697,59 @@ describe("createRuntimeApi startTaskSession", () => {
 		expect(terminalManager.startTaskSession).toHaveBeenCalledWith(
 			expect.objectContaining({ agentId: "claude", providerId: "my-relay" }),
 		);
+	});
+
+	it("relocates staged attachments into the worktree and injects @-mentions into the kickoff prompt", async () => {
+		const repoRoot = mkdtempSync(join(tmpdir(), "kanban-start-repo-"));
+		const worktree = mkdtempSync(join(tmpdir(), "kanban-start-wt-"));
+		try {
+			// Stage a file under the repo root, exactly as the create dialog would
+			// (workspace-scoped upload keyed by the pre-minted task id).
+			const staged = await writeScopeAttachment({
+				scope: { root: repoRoot, scopeId: "task-attach" },
+				name: "notes.txt",
+				data: Buffer.from("hello").toString("base64"),
+			});
+			expect(staged.ok).toBe(true);
+
+			taskWorktreeMocks.resolveTaskCwd.mockResolvedValue(worktree);
+			const terminalManager = {
+				startTaskSession: vi.fn(async () => createSummary({ agentId: "claude" })),
+				applyTurnCheckpoint: vi.fn(),
+			};
+			const api = createTestRuntimeApi({
+				getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+				loadScopedRuntimeConfig: vi.fn(async () => ({
+					...createRuntimeConfigState(),
+					selectedAgentId: "claude" as const,
+				})),
+				setActiveRuntimeConfig: vi.fn(),
+				getScopedTerminalManager: vi.fn(async () => terminalManager as never),
+				getScopedPiTaskSessionService: vi.fn(async () => createPiTaskSessionServiceMock() as never),
+				resolveInteractiveShellCommand: vi.fn(),
+				runCommand: vi.fn(),
+			});
+
+			const response = await api.startTaskSession(
+				{ workspaceId: "workspace-1", workspacePath: repoRoot },
+				{ taskId: "task-attach", baseRef: "main", prompt: "do work", agentId: "claude" },
+			);
+			expect(response.ok).toBe(true);
+
+			// The kickoff prompt passed to the terminal manager gained the worktree
+			// `@`-mention (not the staging path).
+			const call = terminalManager.startTaskSession.mock.calls[0]?.[0] as { prompt?: string } | undefined;
+			const worktreeDir = join(worktree, ".kanban", "attachments", "task-attach");
+			expect(call?.prompt).toContain("do work");
+			expect(call?.prompt).toContain("Attached files: @");
+			expect(call?.prompt).toContain(worktreeDir);
+			// File physically relocated into the worktree; staging removed.
+			expect(readdirSync(worktreeDir)).toHaveLength(1);
+			expect(existsSync(join(repoRoot, ".kanban", "attachments", "task-attach"))).toBe(false);
+		} finally {
+			rmSync(repoRoot, { recursive: true, force: true });
+			rmSync(worktree, { recursive: true, force: true });
+		}
 	});
 
 	it("routes agent provider CRUD by (agentId, providerId)", async () => {

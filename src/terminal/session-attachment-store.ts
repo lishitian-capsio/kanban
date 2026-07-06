@@ -1,5 +1,5 @@
 import type { Dirent } from "node:fs";
-import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { safeRandomUUID } from "../core/safe-uuid";
@@ -315,6 +315,54 @@ export async function writeScopeAttachment(input: WriteScopeAttachmentInput): Pr
 		log.error("failed to write scope attachment", { error, scopeId: input.scope.scopeId });
 		return { ok: false, error: "Failed to save the attachment." };
 	}
+}
+
+/**
+ * Move every file from one scope directory to another, preserving the stored
+ * filenames, then remove the (now empty) source scope directory. Returns the
+ * relocated files with their NEW absolute paths.
+ *
+ * This backs the deferred-write for task-create attachments: files are staged
+ * under the repo root (`from`) before a task's worktree exists, then relocated
+ * into `<worktree>/.kanban/attachments/<taskId>/` (`to`) once the worktree is
+ * created at task start, so they live with — and are cleaned up with — the
+ * worktree. A missing/empty source is a no-op that returns `[]`. Both scope ids
+ * are validated (via {@link resolveAttachmentScopeDir}) before any I/O.
+ */
+export async function relocateAttachmentScope(input: {
+	from: AttachmentScope;
+	to: AttachmentScope;
+}): Promise<ScopeAttachmentEntry[]> {
+	// Resolve both dirs first so an unsafe scope id throws before any file moves.
+	const fromDir = resolveAttachmentScopeDir(input.from);
+	const toDir = resolveAttachmentScopeDir(input.to);
+
+	const sources = await listScopeAttachments(input.from);
+	if (sources.length === 0) {
+		return [];
+	}
+
+	await mkdir(toDir, { recursive: true });
+	const relocated: ScopeAttachmentEntry[] = [];
+	for (const entry of sources) {
+		const destination = join(toDir, entry.fileName);
+		try {
+			await rename(entry.path, destination);
+		} catch (error) {
+			// `rename` fails across filesystems (EXDEV); fall back to copy + unlink.
+			if ((error as NodeJS.ErrnoException)?.code === "EXDEV") {
+				await copyFile(entry.path, destination);
+				await unlink(entry.path);
+			} else {
+				throw error;
+			}
+		}
+		relocated.push({ fileName: entry.fileName, path: destination, size: entry.size });
+	}
+
+	// The files are gone; drop the emptied source scope directory.
+	await deleteAttachmentScope(input.from);
+	return relocated;
 }
 
 /**

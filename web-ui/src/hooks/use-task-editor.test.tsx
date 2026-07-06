@@ -38,6 +38,7 @@ interface HookSnapshot {
 	isInlineTaskCreateOpen: boolean;
 	newTaskPrompt: string;
 	newTaskImages: TaskImage[];
+	newTaskId: string;
 	newTaskBranchRef: string;
 	newTaskAgentId: RuntimeAgentId | undefined;
 	newTaskAgentSettings: RuntimeTaskAgentSettings | undefined;
@@ -98,6 +99,7 @@ function HookHarness({
 			isInlineTaskCreateOpen: editor.isInlineTaskCreateOpen,
 			newTaskPrompt: editor.newTaskPrompt,
 			newTaskImages: editor.newTaskImages,
+			newTaskId: editor.newTaskId,
 			newTaskBranchRef: editor.newTaskBranchRef,
 			newTaskAgentId: editor.newTaskAgentId,
 			newTaskAgentSettings: editor.newTaskAgentSettings,
@@ -134,6 +136,7 @@ function HookHarness({
 		editor.isInlineTaskCreateOpen,
 		editor.newTaskPrompt,
 		editor.newTaskImages,
+		editor.newTaskId,
 		editor.newTaskBranchRef,
 		editor.newTaskAgentId,
 		editor.newTaskAgentSettings,
@@ -375,6 +378,45 @@ describe("useTaskEditor", () => {
 			(card) => card.prompt === "Owned task",
 		);
 		expect(created?.owner).toEqual(owner);
+	});
+
+	it("adopts the pre-minted newTaskId as the created card id and regenerates it afterwards", async () => {
+		let latestSnapshot: HookSnapshot | null = null;
+
+		await act(async () => {
+			root.render(
+				<HookHarness
+					initialBoard={createBoard()}
+					onSnapshot={(snapshot) => {
+						latestSnapshot = snapshot;
+					}}
+				/>,
+			);
+		});
+
+		await act(async () => {
+			requireSnapshot(latestSnapshot).handleOpenCreateTask();
+		});
+		// Capture the pre-minted id the create dialog would have scoped attachments to.
+		const scopedTaskId = requireSnapshot(latestSnapshot).newTaskId;
+		expect(scopedTaskId).toBeTruthy();
+
+		await act(async () => {
+			requireSnapshot(latestSnapshot).setNewTaskPrompt("Task with attachment");
+		});
+		let createdTaskId: string | null = null;
+		await act(async () => {
+			createdTaskId = requireSnapshot(latestSnapshot).handleCreateTask();
+		});
+
+		// The card adopts exactly that id, so its staged attachments belong to it.
+		expect(createdTaskId).toBe(scopedTaskId);
+		const created = requireSnapshot(latestSnapshot).board.columns[0]?.cards.find(
+			(card) => card.prompt === "Task with attachment",
+		);
+		expect(created?.id).toBe(scopedTaskId);
+		// A fresh id is minted for the next task so scopes never collide.
+		expect(requireSnapshot(latestSnapshot).newTaskId).not.toBe(scopedTaskId);
 	});
 
 	it("leaves a newly created task ownerless when no creator identity is configured", async () => {

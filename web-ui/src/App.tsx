@@ -331,6 +331,7 @@ export default function App(): ReactElement {
 		setNewTaskPrompt,
 		newTaskImages,
 		setNewTaskImages,
+		newTaskId,
 		newTaskStartInPlanMode,
 		setNewTaskStartInPlanMode,
 		newTaskAutoReviewEnabled,
@@ -1336,6 +1337,7 @@ export default function App(): ReactElement {
 							autoReviewMode={newTaskAutoReviewMode}
 							onAutoReviewModeChange={setNewTaskAutoReviewMode}
 							workspaceId={currentProjectId}
+							taskId={newTaskId}
 							branchRef={newTaskBranchRef}
 							branchOptions={createTaskBranchOptions}
 							onBranchRefChange={setNewTaskBranchRef}

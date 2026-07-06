@@ -102,6 +102,7 @@ import {
 	writeScopeAttachment,
 } from "../terminal/session-attachment-store";
 import type { TerminalSessionManager } from "../terminal/session-manager";
+import { materializeTaskAttachmentsIntoPrompt } from "../terminal/task-attachment-launch";
 import { resolveTaskCwd } from "../workspace/task-worktree";
 import { captureTaskTurnCheckpoint } from "../workspace/turn-checkpoints";
 import type { RuntimeTrpcContext, RuntimeTrpcWorkspaceScope } from "./app-router";
@@ -404,6 +405,22 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				// Throttle the spawn + adapter-file-write burst so a bulk start doesn't
 				// fire N concurrent CLI process launches at once (host-wide CPU guard).
 				const committedProvider = await loadSelectedCommittedProvider(workspaceScope, effectiveAgentId);
+				// Deferred-write for task-create file attachments: non-image files dropped
+				// into the create dialog were staged under the repo root before this task's
+				// worktree existed. Now that the worktree (taskCwd) is ready, relocate them
+				// into it and append their `@/path` mentions to the kickoff prompt (CLI
+				// agents that read mentions only — a no-op otherwise). Home sessions are
+				// excluded: their files already live in the repo-root cwd (mention injected
+				// at upload), so they must not be routed through the worktree relocate.
+				const effectivePrompt = isHomeAgentSessionId(body.taskId)
+					? body.prompt
+					: await materializeTaskAttachmentsIntoPrompt({
+							prompt: body.prompt,
+							agentId: effectiveAgentId,
+							workspaceRoot: workspaceScope.workspacePath,
+							worktreeCwd: taskCwd,
+							taskId: body.taskId,
+						});
 				const summary = await limitAgentStart(() =>
 					terminalManager.startTaskSession({
 						taskId: body.taskId,
@@ -418,7 +435,7 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 						committedProvider,
 						autonomousModeEnabled: scopedRuntimeConfig.agentAutonomousModeEnabled,
 						cwd: taskCwd,
-						prompt: body.prompt,
+						prompt: effectivePrompt,
 						images: body.images,
 						startInPlanMode: body.startInPlanMode,
 						resumeFromTrash: body.resumeFromTrash,

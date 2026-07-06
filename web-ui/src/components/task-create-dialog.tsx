@@ -21,11 +21,14 @@ import { useHotkeys } from "react-hotkeys-hook";
 
 import type { BranchSelectOption } from "@/components/branch-select-dropdown";
 import { BranchSelectDropdown } from "@/components/branch-select-dropdown";
+import { PromptAttachmentChips } from "@/components/prompt-attachments/prompt-attachment-chips";
+import { usePromptFileAttachments } from "@/components/prompt-attachments/use-prompt-file-attachments";
 import { TaskAgentModelPicker, useTaskAgentModelPicker } from "@/components/task-agent-model-picker";
 import { TaskPromptComposer } from "@/components/task-prompt-composer";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
+import { agentSupportsFileAttachments } from "@/runtime/attachment-agents";
 import type { RuntimeAgentId, RuntimeReasoningEffort, RuntimeTaskAgentSettings } from "@/runtime/types";
 import { LocalStorageKey } from "@/storage/local-storage-store";
 import type { TaskAutoReviewMode, TaskImage } from "@/types";
@@ -115,6 +118,7 @@ export function TaskCreateDialog({
 	onAutoReviewModeChange,
 	startInPlanModeDisabled = false,
 	workspaceId,
+	taskId,
 	branchRef,
 	branchOptions,
 	onBranchRefChange,
@@ -145,6 +149,13 @@ export function TaskCreateDialog({
 	onAutoReviewModeChange: (value: TaskAutoReviewMode) => void;
 	startInPlanModeDisabled?: boolean;
 	workspaceId: string | null;
+	/**
+	 * The task id minted up front by the caller (single source of truth: the same
+	 * id the created card adopts). Non-image file attachments dropped/pasted into
+	 * the composer are staged under this id so they relocate into the task's
+	 * worktree — and get `@`-mentioned in its kickoff prompt — at start.
+	 */
+	taskId: string;
 	branchRef: string;
 	branchOptions: BranchSelectOption[];
 	onBranchRefChange: (value: string) => void;
@@ -192,6 +203,22 @@ export function TaskCreateDialog({
 		defaultAgentId,
 		defaultModelId,
 	});
+
+	// Non-image file attachments are only meaningful for CLI agents that read
+	// `@/path` mentions (currently claude) and only with a workspace to write into.
+	// Unlike the new-thread dialog, no mention is injected at upload time: the
+	// task's worktree does not exist yet, so files are staged under the pre-minted
+	// task id and the backend relocates them into the worktree + injects the
+	// `@/path` mention into the kickoff prompt at start.
+	const effectiveAttachmentAgentId = agentId ?? defaultAgentId ?? undefined;
+	const attachmentsEnabled = Boolean(workspaceId) && agentSupportsFileAttachments(effectiveAttachmentAgentId);
+	const { attachments, handleFilesSelected, handleRemoveAttachment, markSubmitted, cleanupOrphanScope } =
+		usePromptFileAttachments({
+			workspaceId,
+			scopeId: taskId,
+			enabled: attachmentsEnabled,
+			toastId: "task-create-attachment-error",
+		});
 
 	const detectedItems = useMemo(() => parseListItems(prompt), [prompt]);
 	const validTaskCount = useMemo(() => taskPrompts.filter((p) => p.trim()).length, [taskPrompts]);
@@ -281,25 +308,30 @@ export function TaskCreateDialog({
 	}, [onImagesChange, onPromptChange]);
 
 	const handleCreateSingle = useCallback(() => {
+		// The task adopts the pre-minted id, so its staged attachments are owned now
+		// and must not be cleaned up when the dialog closes.
+		markSubmitted();
 		const createdTaskId = onCreate({ keepDialogOpen: createMore });
 		if (createMore && createdTaskId) {
 			resetForCreateMore();
 		}
-	}, [createMore, onCreate, resetForCreateMore]);
+	}, [createMore, markSubmitted, onCreate, resetForCreateMore]);
 
 	const handleCreateAndStartSingle = useCallback(() => {
+		markSubmitted();
 		const createdTaskId = onCreateAndStart?.({ keepDialogOpen: createMore });
 		if (createMore && createdTaskId) {
 			resetForCreateMore();
 		}
-	}, [createMore, onCreateAndStart, resetForCreateMore]);
+	}, [createMore, markSubmitted, onCreateAndStart, resetForCreateMore]);
 
 	const handleCreateStartAndOpenSingle = useCallback(() => {
+		markSubmitted();
 		const createdTaskId = onCreateStartAndOpen?.({ keepDialogOpen: createMore });
 		if (createMore && createdTaskId) {
 			resetForCreateMore();
 		}
-	}, [createMore, onCreateStartAndOpen, resetForCreateMore]);
+	}, [createMore, markSubmitted, onCreateStartAndOpen, resetForCreateMore]);
 
 	const handleRunSingleStartAction = useCallback(
 		(action: TaskCreateStartAction) => {
@@ -415,6 +447,20 @@ export function TaskCreateDialog({
 		[open, mode, handleRunSingleStartAction, onCreateStartAndOpen],
 	);
 
+	// On a user-initiated dismiss (Cancel/Escape/overlay), drop any staged
+	// attachments the still-uncreated task never claimed, so they don't orphan.
+	// Programmatic close after create goes through `open` (not `onOpenChange`), so
+	// a created task's files are never touched here.
+	const handleDialogOpenChange = useCallback(
+		(next: boolean) => {
+			if (!next) {
+				cleanupOrphanScope();
+			}
+			onOpenChange(next);
+		},
+		[cleanupOrphanScope, onOpenChange],
+	);
+
 	const dialogTitle = mode === "multi" ? `New tasks${validTaskCount > 0 ? ` (${validTaskCount})` : ""}` : "New task";
 
 	const taskCountLabel = validTaskCount === 1 ? "task" : "tasks";
@@ -424,7 +470,7 @@ export function TaskCreateDialog({
 	const secondaryStartShortcutModifier = secondaryStartAction === "start" ? "mod" : "alt";
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange} contentClassName="max-w-2xl">
+		<Dialog open={open} onOpenChange={handleDialogOpenChange} contentClassName="max-w-2xl">
 			<DialogHeader title={dialogTitle} icon={<PencilLine size={16} />} />
 			<DialogBody>
 				{mode === "single" ? (
@@ -435,12 +481,18 @@ export function TaskCreateDialog({
 							onValueChange={onPromptChange}
 							images={images}
 							onImagesChange={onImagesChange}
+							onFilesSelected={attachmentsEnabled ? handleFilesSelected : undefined}
 							onSubmit={handleCreateSingle}
 							onSubmitAndStart={() => handleRunSingleStartAction("start")}
 							placeholder="Describe the task..."
 							autoFocus
 							workspaceId={workspaceId}
 							showAttachImageButton={false}
+						/>
+						<PromptAttachmentChips
+							attachments={attachments}
+							onRemove={handleRemoveAttachment}
+							className="mt-1.5"
 						/>
 						<div className="flex items-center justify-between mt-1.5">
 							<p className="text-[11px] text-text-tertiary">
@@ -449,7 +501,7 @@ export function TaskCreateDialog({
 								<code className="rounded bg-surface-3 px-1 py-px font-mono text-[11px]">
 									{pasteShortcutLabel}
 								</code>{" "}
-								to add images.
+								to add images{attachmentsEnabled ? " or files" : ""}.
 							</p>
 							{detectedItems.length >= 2 ? (
 								<button

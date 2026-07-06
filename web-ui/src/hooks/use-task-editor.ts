@@ -1,3 +1,4 @@
+import { safeRandomUUID } from "@runtime-safe-uuid";
 import { deriveTaskTitleFromPrompt } from "@runtime-task-title";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -42,6 +43,8 @@ export interface UseTaskEditorResult {
 	setNewTaskPrompt: Dispatch<SetStateAction<string>>;
 	newTaskImages: TaskImage[];
 	setNewTaskImages: Dispatch<SetStateAction<TaskImage[]>>;
+	/** Pre-minted id for the next task, used to scope create-dialog file attachments. */
+	newTaskId: string;
 	newTaskStartInPlanMode: boolean;
 	setNewTaskStartInPlanMode: Dispatch<SetStateAction<boolean>>;
 	newTaskAutoReviewEnabled: boolean;
@@ -99,6 +102,10 @@ export function useTaskEditor({
 	const [isInlineTaskCreateOpen, setIsInlineTaskCreateOpen] = useState(false);
 	const [newTaskPrompt, setNewTaskPrompt] = useState("");
 	const [newTaskImages, setNewTaskImages] = useState<TaskImage[]>([]);
+	// The next task's id, minted up front so the create dialog can stage file
+	// attachments under it before the card (and its worktree) exist. Consumed by
+	// `handleCreateTask` as the card id, then regenerated for the following task.
+	const [newTaskId, setNewTaskId] = useState<string>(() => safeRandomUUID());
 	const [newTaskStartInPlanMode, setNewTaskStartInPlanMode] = useBooleanLocalStorageValue(
 		TASK_START_IN_PLAN_MODE_STORAGE_KEY,
 		false,
@@ -212,6 +219,8 @@ export function useTaskEditor({
 
 		setNewTaskAgentId(undefined);
 		setNewTaskKanbanSettings(undefined);
+		// Fresh scope for this dialog session's attachments.
+		setNewTaskId(safeRandomUUID());
 		setIsInlineTaskCreateOpen(true);
 	}, []);
 
@@ -347,6 +356,9 @@ export function useTaskEditor({
 			const baseRef = newTaskBranchRef || resolvedDefaultTaskBranchRef;
 			const title = deriveTaskTitleFromPrompt(prompt);
 			const created = addTaskToColumnWithResult(board, "backlog", {
+				// Adopt the pre-minted id so any file attachments staged under it (in the
+				// create dialog) belong to this task and relocate into its worktree at start.
+				id: newTaskId,
 				title,
 				prompt,
 				startInPlanMode: newTaskStartInPlanMode,
@@ -374,6 +386,9 @@ export function useTaskEditor({
 
 			setNewTaskPrompt("");
 			setNewTaskImages([]);
+			// Regenerate the id so the next task (Create more, or the next open) gets a
+			// fresh attachment scope and never collides with the one just created.
+			setNewTaskId(safeRandomUUID());
 			setNewTaskBranchRef(baseRef);
 			setNewTaskAgentId(undefined);
 			setNewTaskKanbanSettings(undefined);
@@ -391,6 +406,7 @@ export function useTaskEditor({
 			newTaskAutoReviewMode,
 			newTaskBranchRef,
 			newTaskAgentSettings,
+			newTaskId,
 			newTaskImages,
 			newTaskPrompt,
 			newTaskStartInPlanMode,
@@ -499,6 +515,7 @@ export function useTaskEditor({
 		setNewTaskPrompt,
 		newTaskImages,
 		setNewTaskImages,
+		newTaskId,
 		newTaskStartInPlanMode,
 		setNewTaskStartInPlanMode,
 		newTaskAutoReviewEnabled,

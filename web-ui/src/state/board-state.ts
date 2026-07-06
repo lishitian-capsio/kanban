@@ -21,6 +21,12 @@ import {
 } from "@/types";
 
 export interface TaskDraft {
+	/**
+	 * Optional pre-minted task id. Used by the create dialog so an id can be minted
+	 * up front (to scope pre-session file attachments) and adopted by the card here.
+	 * When omitted, a fresh id is generated.
+	 */
+	id?: string;
 	title?: string;
 	prompt: string;
 	startInPlanMode?: boolean;
@@ -336,6 +342,7 @@ export function addTaskToColumnWithResult(
 		board,
 		columnId,
 		{
+			taskId: draft.id,
 			title: draft.title,
 			prompt,
 			startInPlanMode: draft.startInPlanMode,
