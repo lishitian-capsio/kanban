@@ -7,7 +7,15 @@
  * platform — a Lark/DingTalk adapter is a later, separate registration (mirrors how DB engines
  * and host-keyed git credential injectors plug in).
  */
-export { ImError, UnsupportedImPlatformError } from "./errors";
+export { ImCredentialUnavailableError, ImError, UnsupportedImPlatformError } from "./errors";
+export { sendImCard, sendImText } from "./im-dispatch";
+export {
+	LarkApiError,
+	LarkCredentialFormatError,
+	LarkImProvider,
+	registerLarkImProvider,
+} from "./lark";
+export type { LarkBotCredential, LarkFetch, LarkImProviderOptions, LarkReceiveIdType } from "./lark";
 export {
 	clearPersistedImCredentials,
 	getImCredentialsFilePath,
