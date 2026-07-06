@@ -53,6 +53,18 @@ export interface CreateRuntimeStateHubDependencies {
 		| "buildWorkspaceStateSnapshot"
 		| "refreshProjectTaskCountsIfChanged"
 	>;
+	/**
+	 * Optional observer of session-summary transitions, fired for BOTH terminal (CLI) and pi
+	 * agents from the same seam the hub already uses to broadcast summaries. Carries the prior
+	 * and current summary so the observer can classify the transition itself (e.g. the IM task
+	 * notifier). Called synchronously and fire-and-forget; a throwing observer is swallowed so it
+	 * can never break state broadcasts. `previous` is null on the first observation of a task.
+	 */
+	onTaskSessionTransition?: (event: {
+		workspaceId: string;
+		previous: RuntimeTaskSessionSummary | null;
+		next: RuntimeTaskSessionSummary;
+	}) => void;
 }
 
 export interface RuntimeStateHub {
@@ -90,6 +102,9 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 	const piSummaryUnsubscribeByWorkspaceId = new Map<string, () => void>();
 	const piMessageUnsubscribeByWorkspaceId = new Map<string, () => void>();
 	const piPreviousSummaryByWorkspaceId = new Map<string, Map<string, RuntimeTaskSessionSummary>>();
+	// Terminal agents have no snapshot-replay use for prior summaries (unlike pi), but the IM task
+	// notifier needs prev→next transitions for CLI agents too, so we track them here in parallel.
+	const terminalPreviousSummaryByWorkspaceId = new Map<string, Map<string, RuntimeTaskSessionSummary>>();
 	const pendingTaskSessionSummariesByWorkspaceId = new Map<string, Map<string, RuntimeTaskSessionSummary>>();
 	const taskSessionBroadcastTimersByWorkspaceId = new Map<string, NodeJS.Timeout>();
 	const runtimeStateClientsByWorkspaceId = new Map<string, Set<WebSocket>>();
@@ -122,6 +137,21 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			client.send(JSON.stringify(payload));
 		} catch {
 			// Ignore websocket write errors; close handlers clean up disconnected sockets.
+		}
+	};
+
+	const emitTaskSessionTransition = (
+		workspaceId: string,
+		previous: RuntimeTaskSessionSummary | null,
+		next: RuntimeTaskSessionSummary,
+	) => {
+		if (!deps.onTaskSessionTransition) {
+			return;
+		}
+		try {
+			deps.onTaskSessionTransition({ workspaceId, previous, next });
+		} catch {
+			// A transition observer (e.g. IM notifier) must never break state broadcasts.
 		}
 	};
 
@@ -354,6 +384,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			}
 		}
 		terminalMessageUnsubscribeByWorkspaceId.delete(workspaceId);
+		terminalPreviousSummaryByWorkspaceId.delete(workspaceId);
 		// Pi service cleanup
 		const unsubscribePiSummary = piSummaryUnsubscribeByWorkspaceId.get(workspaceId);
 		if (unsubscribePiSummary) {
@@ -615,8 +646,13 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			if (terminalSummaryUnsubscribeByWorkspaceId.has(workspaceId)) {
 				return;
 			}
+			const previousSummariesByTaskId = new Map<string, RuntimeTaskSessionSummary>();
+			terminalPreviousSummaryByWorkspaceId.set(workspaceId, previousSummariesByTaskId);
 			const unsubscribe = manager.onSummary((summary) => {
+				const previousSummary = previousSummariesByTaskId.get(summary.taskId) ?? null;
+				previousSummariesByTaskId.set(summary.taskId, summary);
 				queueTaskSessionSummaryBroadcast(workspaceId, summary);
+				emitTaskSessionTransition(workspaceId, previousSummary, summary);
 			});
 			terminalSummaryUnsubscribeByWorkspaceId.set(workspaceId, unsubscribe);
 			// CLI/terminal agents expose the same agent-agnostic transcript as pi;
@@ -656,6 +692,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 				) {
 					broadcastTaskReadyForReview(workspaceId, summary.taskId);
 				}
+				emitTaskSessionTransition(workspaceId, previousSummary ?? null, summary);
 			});
 			piSummaryUnsubscribeByWorkspaceId.set(workspaceId, unsubscribe);
 			const unsubscribeMessage = service.onMessage((taskId, message) => {
@@ -701,6 +738,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 				}
 			}
 			terminalMessageUnsubscribeByWorkspaceId.clear();
+			terminalPreviousSummaryByWorkspaceId.clear();
 			// Pi service cleanup
 			for (const unsubscribe of piSummaryUnsubscribeByWorkspaceId.values()) {
 				try {

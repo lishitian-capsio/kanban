@@ -18,14 +18,6 @@ export {
 export { DingtalkImProvider, registerDingtalkImProvider } from "./dingtalk/dingtalk-provider";
 export type { DingtalkApiResponse, DingtalkTransport } from "./dingtalk/dingtalk-transport";
 export { ImCredentialUnavailableError, ImError, ImSendFailedError, UnsupportedImPlatformError } from "./errors";
-export { sendImCard, sendImText } from "./im-dispatch";
-export {
-	LarkApiError,
-	LarkCredentialFormatError,
-	LarkImProvider,
-	registerLarkImProvider,
-} from "./lark";
-export type { LarkBotCredential, LarkFetch, LarkImProviderOptions, LarkReceiveIdType } from "./lark";
 export {
 	clearPersistedImCredentials,
 	getImCredentialsFilePath,
@@ -34,6 +26,7 @@ export {
 	statImCredentialsMtimeMs,
 	writePersistedImCredentials,
 } from "./im-credential-store";
+export { sendImCard, sendImText } from "./im-dispatch";
 export type { ImProvider } from "./im-provider";
 export {
 	getImProvider,
@@ -42,6 +35,13 @@ export {
 	requireImProvider,
 	unregisterImProvider,
 } from "./im-provider-registry";
+export type { BuiltImTaskMessage, ImTaskEventKind, ImTaskMessageContext } from "./im-task-event";
+export { buildImTaskMessage, classifyImTaskEvent, isImTaskCardKind } from "./im-task-event";
+export type { ImTaskEventNotifierDeps, ImTaskRoute } from "./im-task-notifier";
+export { ImTaskEventNotifier } from "./im-task-notifier";
+export { resolveTaskRouteFromBoard, resolveThreadImChannelFromThreads } from "./im-task-route-resolver";
+export type { LarkBotCredential, LarkFetch, LarkImProviderOptions, LarkReceiveIdType } from "./lark";
+export { LarkApiError, LarkCredentialFormatError, LarkImProvider, registerLarkImProvider } from "./lark";
 export type {
 	ImCard,
 	ImCardButton,

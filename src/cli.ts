@@ -46,6 +46,9 @@ import {
 } from "./core/runtime-endpoint";
 import { getGiteeAuthService } from "./gitee-auth";
 import { getGitHubAuthService } from "./github-auth";
+import { ImTaskEventNotifier } from "./im/im-task-notifier";
+import { resolveTaskRouteFromBoard, resolveThreadImChannelFromThreads } from "./im/im-task-route-resolver";
+import { registerLarkImProvider } from "./im/lark";
 import { configureLogging, createLogger } from "./logging";
 import { resolveAndPersistInternalToken } from "./security/internal-token-store";
 import { disablePasscode, setInternalToken, setPasscode } from "./security/passcode-manager";
@@ -437,6 +440,12 @@ async function startServer(): Promise<{
 	registerGitCredentialInjector("github", () => getGitHubAuthService().getGitInjection());
 	registerGitCredentialInjector("gitee", () => getGiteeAuthService().getGitInjection());
 
+	// Register the Lark outbound adapter so the IM task notifier has at least one platform to
+	// deliver to. Safe to call unconditionally: the provider resolves its machine-local credential
+	// lazily at send time and outbound is a no-op (logged, never thrown) when unconfigured, so this
+	// stays inert until a home thread is actually bound to a Lark channel.
+	registerLarkImProvider();
+
 	// Load the Windows PTY backend (`bun-pty`, ConPTY) once, up front, so that
 	// PtySession.spawn stays synchronous for terminal/agent sessions. No-op on
 	// POSIX, where Bun's native Terminal API is the backend. A failure here is
@@ -494,6 +503,7 @@ async function startServer(): Promise<{
 		{ shutdownRuntimeServer },
 		{ collectProjectWorktreeTaskIdsForRemoval, createWorkspaceRegistry },
 		{ clearPendingUpdateNotification, getPendingUpdateNotification },
+		{ loadWorkspaceBoardById, loadWorkspaceHomeThreads },
 	] = await Promise.all([
 		import("./projects/project-path.js"),
 		import("./server/directory-picker.js"),
@@ -503,6 +513,7 @@ async function startServer(): Promise<{
 		import("./server/shutdown-coordinator.js"),
 		import("./server/workspace-registry.js"),
 		import("./update/update.js"),
+		import("./state/workspace-state.js"),
 	]);
 	let runtimeStateHub: RuntimeStateHub | undefined;
 	const workspaceRegistry = await createWorkspaceRegistry({
@@ -515,8 +526,21 @@ async function startServer(): Promise<{
 			runtimeStateHub?.trackTerminalManager(workspaceId, manager);
 		},
 	});
+	// Route high-signal task lifecycle transitions (started / ready-for-review / needs-attention /
+	// error / complete) to the IM channel a task's originating home thread is bound to. Resolvers
+	// read the live board (task → originThreadId + title) and the threads doc (thread → imChannel);
+	// the notifier dedups (at-least-once idempotent) and dispatches best-effort — a failed send is
+	// logged, never thrown. It deliberately never reacts to per-token chat messages.
+	const imTaskNotifier = new ImTaskEventNotifier({
+		resolveTaskRoute: async (workspaceId, taskId) =>
+			resolveTaskRouteFromBoard(await loadWorkspaceBoardById(workspaceId), taskId),
+		resolveThreadImChannel: async (workspaceId, threadId) =>
+			resolveThreadImChannelFromThreads(await loadWorkspaceHomeThreads(workspaceId), threadId),
+	});
 	runtimeStateHub = createRuntimeStateHub({
 		workspaceRegistry,
+		onTaskSessionTransition: ({ workspaceId, previous, next }) =>
+			imTaskNotifier.handleTransition(workspaceId, previous, next),
 	});
 	const runtimeHub = runtimeStateHub;
 	for (const { workspaceId, terminalManager } of workspaceRegistry.listManagedWorkspaces()) {
