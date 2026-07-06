@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	buildAttachmentMentionText,
 	collectFilesFromDataTransfer,
+	handleTerminalPasteEvent,
 	processTerminalAttachments,
 	type TerminalAttachmentUploadResult,
 } from "./terminal-attachment-drop";
@@ -54,6 +55,151 @@ describe("collectFilesFromDataTransfer", () => {
 		const doc = fakeFile("c.txt");
 		const files = collectFilesFromDataTransfer(fakeDataTransfer({ items: [], files: [doc] }));
 		expect(files).toEqual([doc]);
+	});
+});
+
+describe("handleTerminalPasteEvent", () => {
+	function fakePasteEvent(dataTransfer: DataTransfer | null): {
+		event: Parameters<typeof handleTerminalPasteEvent>[0];
+		calls: { preventDefault: number; stopImmediatePropagation: number };
+	} {
+		const calls = { preventDefault: 0, stopImmediatePropagation: 0 };
+		return {
+			calls,
+			event: {
+				clipboardData: dataTransfer,
+				preventDefault: () => {
+					calls.preventDefault += 1;
+				},
+				stopImmediatePropagation: () => {
+					calls.stopImmediatePropagation += 1;
+				},
+			},
+		};
+	}
+
+	it("intercepts a clipboard paste containing a file and blocks xterm", () => {
+		const pdf = fakeFile("report.pdf");
+		const onFiles = vi.fn();
+		const { event, calls } = fakePasteEvent(fakeDataTransfer({ items: [{ kind: "file", file: pdf }] }));
+
+		const intercepted = handleTerminalPasteEvent(event, onFiles);
+
+		expect(intercepted).toBe(true);
+		expect(calls.preventDefault).toBe(1);
+		expect(calls.stopImmediatePropagation).toBe(1);
+		expect(onFiles).toHaveBeenCalledWith([pdf]);
+	});
+
+	it("intercepts a pasted clipboard image (kind=file, image/*)", () => {
+		const image = fakeFile("image.png");
+		const onFiles = vi.fn();
+		// A clipboard image arrives via items (kind=file); files is usually empty.
+		const { event, calls } = fakePasteEvent(fakeDataTransfer({ items: [{ kind: "file", file: image }], files: [] }));
+
+		const intercepted = handleTerminalPasteEvent(event, onFiles);
+
+		expect(intercepted).toBe(true);
+		expect(onFiles).toHaveBeenCalledWith([image]);
+		expect(calls.preventDefault).toBe(1);
+	});
+
+	it("passes a pure-text paste through to xterm (no interception)", () => {
+		const onFiles = vi.fn();
+		const { event, calls } = fakePasteEvent(fakeDataTransfer({ items: [{ kind: "string", file: null }] }));
+
+		const intercepted = handleTerminalPasteEvent(event, onFiles);
+
+		expect(intercepted).toBe(false);
+		expect(onFiles).not.toHaveBeenCalled();
+		expect(calls.preventDefault).toBe(0);
+		expect(calls.stopImmediatePropagation).toBe(0);
+	});
+
+	it("passes through when there is no clipboard data", () => {
+		const onFiles = vi.fn();
+		const { event, calls } = fakePasteEvent(null);
+
+		const intercepted = handleTerminalPasteEvent(event, onFiles);
+
+		expect(intercepted).toBe(false);
+		expect(onFiles).not.toHaveBeenCalled();
+		expect(calls.preventDefault).toBe(0);
+	});
+});
+
+// Verifies the actual bug fix: a CAPTURE-phase listener on the container must run
+// before — and be able to block — xterm's bubble-phase paste handler registered on
+// a descendant textarea (which calls stopPropagation and swallows the event). Uses
+// real jsdom DOM dispatch so it proves the event-ordering guarantee, not a mock.
+describe("capture-phase paste interception (jsdom)", () => {
+	function pasteEventWith(dataTransfer: DataTransfer | null): Event {
+		const event = new Event("paste", { bubbles: true, cancelable: true });
+		Object.defineProperty(event, "clipboardData", { value: dataTransfer, configurable: true });
+		return event;
+	}
+
+	function buildTerminalDom(): { container: HTMLDivElement; textarea: HTMLTextAreaElement; cleanup: () => void } {
+		const container = document.createElement("div");
+		// Mirror xterm's structure: textarea nested a couple levels under the container.
+		const element = document.createElement("div");
+		const textarea = document.createElement("textarea");
+		element.appendChild(textarea);
+		container.appendChild(element);
+		document.body.appendChild(container);
+		return { container, textarea, cleanup: () => container.remove() };
+	}
+
+	it("intercepts a file paste before xterm's handler and prevents the default", () => {
+		const { container, textarea, cleanup } = buildTerminalDom();
+		const onFiles = vi.fn();
+		let xtermHandled = false;
+		// xterm: bubble-phase listener on the textarea that stops propagation.
+		textarea.addEventListener("paste", (event) => {
+			xtermHandled = true;
+			event.stopPropagation();
+		});
+		// Our fix: capture-phase listener on the container.
+		container.addEventListener(
+			"paste",
+			(event) => {
+				handleTerminalPasteEvent(event as unknown as Parameters<typeof handleTerminalPasteEvent>[0], onFiles);
+			},
+			{ capture: true },
+		);
+
+		const png = fakeFile("shot.png");
+		const event = pasteEventWith(fakeDataTransfer({ items: [{ kind: "file", file: png }] }));
+		textarea.dispatchEvent(event);
+
+		expect(onFiles).toHaveBeenCalledWith([png]);
+		expect(xtermHandled).toBe(false); // blocked before reaching xterm
+		expect(event.defaultPrevented).toBe(true);
+		cleanup();
+	});
+
+	it("lets a plain-text paste fall through to xterm untouched", () => {
+		const { container, textarea, cleanup } = buildTerminalDom();
+		const onFiles = vi.fn();
+		let xtermHandled = false;
+		textarea.addEventListener("paste", () => {
+			xtermHandled = true;
+		});
+		container.addEventListener(
+			"paste",
+			(event) => {
+				handleTerminalPasteEvent(event as unknown as Parameters<typeof handleTerminalPasteEvent>[0], onFiles);
+			},
+			{ capture: true },
+		);
+
+		const event = pasteEventWith(fakeDataTransfer({ items: [{ kind: "string", file: null }] }));
+		textarea.dispatchEvent(event);
+
+		expect(onFiles).not.toHaveBeenCalled();
+		expect(xtermHandled).toBe(true); // xterm still pastes the text
+		expect(event.defaultPrevented).toBe(false);
+		cleanup();
 	});
 });
 

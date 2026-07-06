@@ -1,8 +1,8 @@
 import "@xterm/xterm/css/xterm.css";
 
 import { Command, Maximize2, MessageSquare, Minimize2, X } from "lucide-react";
-import type { ClipboardEvent, DragEvent, MutableRefObject, ReactElement } from "react";
-import { useCallback, useMemo, useState } from "react";
+import type { DragEvent, MutableRefObject, ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { showAppToast } from "@/components/app-toaster";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import type { RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useTaskWorkspaceSnapshotValue } from "@/stores/workspace-metadata-store";
 import {
 	collectFilesFromDataTransfer,
+	handleTerminalPasteEvent,
 	processTerminalAttachments,
 	readFileAsBase64,
 } from "@/terminal/terminal-attachment-drop";
@@ -235,23 +236,26 @@ function AgentTerminalPanelLayout({
 		[attachmentsEnabled, handleAttachmentFiles],
 	);
 
-	const handleAttachmentPaste = useCallback(
-		(event: ClipboardEvent<HTMLDivElement>) => {
-			if (!attachmentsEnabled) {
-				return;
-			}
-			const files = collectFilesFromDataTransfer(event.clipboardData);
-			if (files.length === 0) {
-				// No files — let xterm handle the (text) paste normally.
-				return;
-			}
-			// Intercept before xterm's textarea handler so file bytes don't reach the PTY.
-			event.preventDefault();
-			event.stopPropagation();
-			handleAttachmentFiles(files);
-		},
-		[attachmentsEnabled, handleAttachmentFiles],
-	);
+	// Paste-to-attachment must be a CAPTURE-phase NATIVE listener on the terminal
+	// container: xterm registers its own bubble-phase `paste` handlers directly on
+	// its textarea/element and calls `stopPropagation()`, so React's
+	// `onPasteCapture` on an outer div never sees a file paste. Attaching on the
+	// container (an ancestor of xterm's textarea) with `capture: true` runs before
+	// xterm's target-phase handlers; `handleTerminalPasteEvent` then intercepts
+	// file/image pastes and lets plain text fall through to xterm untouched.
+	useEffect(() => {
+		const container = containerRef.current;
+		if (!attachmentsEnabled || !container) {
+			return;
+		}
+		const onNativePaste = (event: globalThis.ClipboardEvent): void => {
+			handleTerminalPasteEvent(event, handleAttachmentFiles);
+		};
+		container.addEventListener("paste", onNativePaste, { capture: true });
+		return () => {
+			container.removeEventListener("paste", onNativePaste, { capture: true });
+		};
+	}, [attachmentsEnabled, containerRef, handleAttachmentFiles]);
 	const statusLabel = useMemo(() => describeState(summary), [summary]);
 	const statusTagStyle = useMemo(() => getStateTagStyle(summary), [summary]);
 	const agentLabel = useMemo(() => {
@@ -389,7 +393,13 @@ function AgentTerminalPanelLayout({
 				</div>
 			) : null}
 			<div
-				style={{ flex: "1 1 0", minHeight: 0, overflow: "hidden", padding: "3px 1.5px 3px 3px", position: "relative" }}
+				style={{
+					flex: "1 1 0",
+					minHeight: 0,
+					overflow: "hidden",
+					padding: "3px 1.5px 3px 3px",
+					position: "relative",
+				}}
 				onDragEnter={
 					attachmentsEnabled
 						? (event) => {
@@ -417,7 +427,6 @@ function AgentTerminalPanelLayout({
 						: undefined
 				}
 				onDrop={attachmentsEnabled ? handleAttachmentDrop : undefined}
-				onPasteCapture={attachmentsEnabled ? handleAttachmentPaste : undefined}
 			>
 				<div
 					ref={containerRef}
@@ -458,9 +467,7 @@ function AgentTerminalPanelLayout({
 						}}
 					>
 						<Spinner size={16} />
-						<span style={{ color: "var(--color-text-secondary)", fontSize: 13 }}>
-							Starting session…
-						</span>
+						<span style={{ color: "var(--color-text-secondary)", fontSize: 13 }}>Starting session…</span>
 					</div>
 				) : null}
 			</div>

@@ -45,6 +45,40 @@ export function collectFilesFromDataTransfer(dataTransfer: DataTransfer | null):
 	return files;
 }
 
+/** Minimal shape of a paste event this module needs, so the decision logic is
+ * testable without a DOM. Satisfied by both a native `ClipboardEvent` and React's
+ * synthetic one. */
+export interface TerminalPasteEventLike {
+	clipboardData: DataTransfer | null;
+	preventDefault(): void;
+	stopImmediatePropagation(): void;
+}
+
+/**
+ * Decide whether a paste into the terminal carries files (OS-copied files or a
+ * clipboard image) and should become attachments, or is plain text that xterm
+ * should paste normally.
+ *
+ * When files are present it intercepts: `preventDefault()` +
+ * `stopImmediatePropagation()` stop the file bytes reaching xterm's own
+ * bubble-phase paste handlers (which live on the same textarea/element and would
+ * otherwise swallow the event), then hands the files to `onFiles`. When there are
+ * none it returns `false` and touches nothing, leaving xterm's text paste intact.
+ *
+ * Must be wired as a CAPTURE-phase native listener on an ancestor of the xterm
+ * textarea so it runs before xterm's target-phase handlers.
+ */
+export function handleTerminalPasteEvent(event: TerminalPasteEventLike, onFiles: (files: File[]) => void): boolean {
+	const files = collectFilesFromDataTransfer(event.clipboardData);
+	if (files.length === 0) {
+		return false;
+	}
+	event.preventDefault();
+	event.stopImmediatePropagation();
+	onFiles(files);
+	return true;
+}
+
 /**
  * Format the text injected into the terminal for a written attachment path.
  * Reuses the composer's mention builder (quotes paths containing spaces) and
