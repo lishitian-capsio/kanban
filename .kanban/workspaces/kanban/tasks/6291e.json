@@ -2,7 +2,7 @@
   "id": "6291e",
   "title": "重新设计 Session tasks 弹窗：任务关系 + 管理 + 布局 + 进度",
   "prompt": "重新设计 home thread 的 Session tasks 弹窗（当前由任务栏上的 [⋯] 触发的 dialog，见 home-thread-task-bar 相关实现：per-thread 任务 chips + kebab + [⋯]dialog）。\n\n背景与边界：\n- 单行任务栏（一栏 chips）保持简洁，【不在栏里表示任务之间的依赖关系】；任务间关系统一收进这个弹窗里表示。\n- 该弹窗按 originThreadId 过滤，展示当前 thread 下的任务。\n\n本次重设计要达成四点：\n1) 呈现任务间关系：在弹窗里可视化任务的依赖/链接关系（依赖树或列表+连线），能看出谁依赖谁、方向、以及某任务在等待哪个前置任务。\n2) 更强的管理操作：支持在弹窗内直接进行链接/解链、启动任务、移动列（backlog/in_progress/review/done）、切换自动 review（commit/pr）等，减少来回操作。\n3) 信息密度与布局：更清晰的分组/分区布局，容纳更多任务信息而不显拥挤。\n4) 状态与进度可视：每个任务的运行状态、所在列、provider·model、token/进度等一眼可见。\n\n请先调研现有实现：home thread 任务栏与其 [⋯] 弹窗组件、任务 chips、按 originThreadId 过滤的逻辑，以及 board 上任务依赖（dependsOn / task link / 依赖箭头）的数据来源与既有可视化，复用 runtime store 的相关 slice。注意：任务的列状态由客户端（App handlers）驱动（见 home-thread-task-bar 的 LANDMINE：board 列状态是 CLIENT-owned，通过 App handlers 驱动而非后端）。\n\n先给出弹窗重设计的方案与信息架构（关系视图 + 管理操作 + 布局分区），再实现。保持与现有设计系统一致（Radix + Tailwind tokens、Dialog 原语）。",
-  "startInPlanMode": false,
+  "startInPlanMode": true,
   "autoReviewEnabled": false,
   "autoReviewMode": "commit",
   "agentId": "claude",
@@ -13,8 +13,8 @@
   "originThreadId": "5fec3500-5c60-4477-8b05-794bc8dd76a7",
   "baseRef": "main",
   "createdAt": 1783324612052,
-  "updatedAt": 1783324612052,
-  "column": "backlog",
-  "rank": "Zp",
+  "updatedAt": 1783325179549,
+  "column": "in_progress",
+  "rank": "Zw",
   "dependsOn": []
 }
