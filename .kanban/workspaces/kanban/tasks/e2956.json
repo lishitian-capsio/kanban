@@ -16,5 +16,11 @@
   "updatedAt": 1783314138777,
   "column": "backlog",
   "rank": "Zu",
-  "dependsOn": []
+  "dependsOn": [
+    {
+      "id": "d9e2a2de",
+      "toTaskId": "e801b",
+      "createdAt": 1783314200551
+    }
+  ]
 }
