@@ -16,14 +16,14 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { HomeThreadTaskChip, MeasureChip } from "@/components/home-agent/home-thread-task-chip";
 import { HomeThreadTaskListDialog } from "@/components/home-agent/home-thread-task-list-dialog";
 import { computeVisibleChipCount } from "@/components/home-agent/thread-task-bar-overflow";
-import { type HomeThreadTaskActions, useHomeThreadTasks } from "@/components/home-agent/thread-tasks";
+import { type SessionTaskDialogActions, useHomeThreadTasks } from "@/components/home-agent/thread-tasks";
 import { useMeasure } from "@/utils/react-use";
 
 const CHIP_GAP = 4; // matches the flex `gap-1` on the row
 
 interface HomeThreadTaskBarProps {
 	threadId: string | null;
-	actions: HomeThreadTaskActions;
+	actions: SessionTaskDialogActions;
 }
 
 export function HomeThreadTaskBar({ threadId, actions }: HomeThreadTaskBarProps): React.ReactElement | null {
@@ -91,7 +91,12 @@ export function HomeThreadTaskBar({ threadId, actions }: HomeThreadTaskBarProps)
 				))}
 			</div>
 
-			<HomeThreadTaskListDialog open={isListOpen} onOpenChange={setIsListOpen} tasks={tasks} actions={actions} />
+			<HomeThreadTaskListDialog
+				open={isListOpen}
+				onOpenChange={setIsListOpen}
+				threadId={threadId}
+				actions={actions}
+			/>
 		</div>
 	);
 }

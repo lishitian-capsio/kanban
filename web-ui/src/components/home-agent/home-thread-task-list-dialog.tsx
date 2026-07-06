@@ -1,86 +1,145 @@
-// The overflow dialog behind the task bar's trailing "⋯" button: the thread's FULL
-// task list (unbounded by row width), one row per task with the same status-aware
-// actions the chip kebab offers, laid out as roomy inline buttons — the "view all +
-// manage" entry point. The list is derived by the parent from live workspace state,
-// so rows update as tasks move columns; "Open details" also closes the dialog since
-// it navigates away.
+// The "Session tasks" dialog behind the task bar's trailing "⋯" button: the
+// thread's FULL task list (unbounded by row width), redesigned as a dense,
+// column-partitioned manager.
+//
+// Layout: tasks grouped by board column (Backlog → In progress → Review → Done),
+// each row surfacing live status/provider·model/tokens, its dependency
+// relationships (directional pills), and inline management — start / move-to-done /
+// restore / open / delete, link/unlink, and an auto-review toggle. The bar passes
+// only `threadId` + the action set; the dialog reads the thread's cards and their
+// dependency graph itself (it's a leaf, only mounted when open). "Open details"
+// closes the dialog since it navigates away; the mutating actions keep it open so
+// several tasks can be managed in a row.
 
 import { ListChecks } from "lucide-react";
+import { useMemo } from "react";
 
-import { Button } from "@/components/ui/button";
+import { SessionTasksColumnGroup } from "@/components/home-agent/session-tasks-column-group";
+import type { LinkCandidate } from "@/components/home-agent/session-task-link-control";
+import { type SessionTaskDialogActions, useHomeThreadTaskCards } from "@/components/home-agent/thread-tasks";
+import { useThreadTaskGraph } from "@/components/home-agent/use-thread-task-graph";
 import { Dialog, DialogBody, DialogHeader } from "@/components/ui/dialog";
-import { buildThreadTaskActions } from "@/components/home-agent/thread-task-action-list";
-import { columnDotColor, columnStatusLabel } from "@/components/home-agent/thread-task-status";
-import type { HomeThreadTask, HomeThreadTaskActions } from "@/components/home-agent/thread-tasks";
+import type { RuntimeBoardCard, RuntimeBoardColumnId } from "@/runtime/types";
 
 interface HomeThreadTaskListDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	tasks: HomeThreadTask[];
-	actions: HomeThreadTaskActions;
+	threadId: string | null;
+	actions: SessionTaskDialogActions;
+}
+
+// Canonical top-to-bottom column order for the grouped sections.
+const COLUMN_ORDER: RuntimeBoardColumnId[] = ["backlog", "in_progress", "review", "trash"];
+
+/**
+ * Eligible link targets per task. A dependency is one-way and must pair a backlog
+ * task with a non-backlog one, so a task's candidates are the thread's tasks on the
+ * opposite side of the backlog split (excluding done/trash, itself, and any task it
+ * is already linked to). The board handler still re-validates and toasts on reject.
+ */
+function buildLinkCandidates(
+	cardsWithColumn: { card: RuntimeBoardCard; columnId: RuntimeBoardColumnId }[],
+	linkedPartnersByTaskId: Map<string, Set<string>>,
+): Map<string, LinkCandidate[]> {
+	const result = new Map<string, LinkCandidate[]>();
+	for (const source of cardsWithColumn) {
+		if (source.columnId === "trash") {
+			continue;
+		}
+		const sourceIsBacklog = source.columnId === "backlog";
+		const alreadyLinked = linkedPartnersByTaskId.get(source.card.id);
+		const candidates: LinkCandidate[] = [];
+		for (const target of cardsWithColumn) {
+			if (target.card.id === source.card.id || target.columnId === "trash") {
+				continue;
+			}
+			const targetIsBacklog = target.columnId === "backlog";
+			if (targetIsBacklog === sourceIsBacklog) {
+				continue;
+			}
+			if (alreadyLinked?.has(target.card.id)) {
+				continue;
+			}
+			candidates.push({ id: target.card.id, title: target.card.title, columnId: target.columnId });
+		}
+		if (candidates.length > 0) {
+			result.set(source.card.id, candidates);
+		}
+	}
+	return result;
 }
 
 export function HomeThreadTaskListDialog({
 	open,
 	onOpenChange,
-	tasks,
+	threadId,
 	actions,
 }: HomeThreadTaskListDialogProps): React.ReactElement {
+	const threadCards = useHomeThreadTaskCards(threadId);
+	const graph = useThreadTaskGraph(threadId);
+
 	// "Open details" navigates to the detail view, so close the dialog with it; the
 	// mutating actions keep the dialog open so several tasks can be managed in a row.
-	const dialogActions: HomeThreadTaskActions = {
-		...actions,
-		onOpenTask: (taskId) => {
-			onOpenChange(false);
-			actions.onOpenTask(taskId);
-		},
-	};
+	const dialogActions = useMemo<SessionTaskDialogActions>(
+		() => ({
+			...actions,
+			onOpenTask: (taskId) => {
+				onOpenChange(false);
+				actions.onOpenTask(taskId);
+			},
+		}),
+		[actions, onOpenChange],
+	);
+
+	const cardsByColumn = useMemo(() => {
+		const map = new Map<RuntimeBoardColumnId, RuntimeBoardCard[]>();
+		for (const { card, columnId } of threadCards) {
+			const list = map.get(columnId);
+			if (list) {
+				list.push(card);
+			} else {
+				map.set(columnId, [card]);
+			}
+		}
+		return map;
+	}, [threadCards]);
+
+	const candidatesByTaskId = useMemo(() => {
+		const linkedPartnersByTaskId = new Map<string, Set<string>>();
+		for (const [taskId, links] of graph) {
+			const partners = new Set<string>();
+			for (const ref of links.waitingOn) {
+				partners.add(ref.taskId);
+			}
+			for (const ref of links.blocking) {
+				partners.add(ref.taskId);
+			}
+			linkedPartnersByTaskId.set(taskId, partners);
+		}
+		return buildLinkCandidates(threadCards, linkedPartnersByTaskId);
+	}, [threadCards, graph]);
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange} contentClassName="max-w-md">
+		<Dialog open={open} onOpenChange={onOpenChange} contentClassName="max-w-2xl">
 			<DialogHeader title="Session tasks" icon={<ListChecks size={16} />} />
-			<DialogBody className="p-2">
-				{tasks.length === 0 ? (
+			<DialogBody className="max-h-[70vh] overflow-y-auto p-3">
+				{threadCards.length === 0 ? (
 					<p className="px-2 py-6 text-center text-sm text-text-secondary">
 						This session hasn't created any tasks yet.
 					</p>
 				) : (
-					<ul className="m-0 flex list-none flex-col gap-1 p-0">
-						{tasks.map((task) => (
-							<li
-								key={task.id}
-								className="flex items-center gap-2 rounded-md border border-border bg-surface-2 px-2 py-1.5"
-							>
-								<span
-									aria-hidden
-									className="block h-2 w-2 shrink-0 rounded-full"
-									style={{ backgroundColor: columnDotColor(task.columnId) }}
-								/>
-								<span className="min-w-0 flex-1">
-									<span className="block truncate text-[13px] text-text-primary" title={task.title}>
-										{task.title}
-									</span>
-									<span className="block text-[11px] text-text-tertiary">
-										{columnStatusLabel(task.columnId)}
-									</span>
-								</span>
-								<span className="flex shrink-0 items-center gap-1">
-									{buildThreadTaskActions(task, dialogActions).map((action) => (
-										<Button
-											key={action.key}
-											variant={action.danger ? "danger" : "ghost"}
-											size="sm"
-											icon={action.icon}
-											onClick={action.run}
-											aria-label={`${action.label}: ${task.title}`}
-										>
-											{action.label}
-										</Button>
-									))}
-								</span>
-							</li>
+					<div className="flex flex-col gap-4">
+						{COLUMN_ORDER.map((columnId) => (
+							<SessionTasksColumnGroup
+								key={columnId}
+								columnId={columnId}
+								cards={cardsByColumn.get(columnId) ?? []}
+								graph={graph}
+								candidatesByTaskId={candidatesByTaskId}
+								actions={dialogActions}
+							/>
 						))}
-					</ul>
+					</div>
 				)}
 			</DialogBody>
 		</Dialog>

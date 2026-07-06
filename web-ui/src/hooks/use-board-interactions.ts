@@ -20,7 +20,7 @@ import {
 } from "@/state/board-state";
 import { clearTaskWorkspaceInfo, setTaskWorkspaceInfo } from "@/stores/workspace-metadata-store";
 import type { SendTerminalInputOptions } from "@/terminal/terminal-input";
-import type { BoardCard, BoardColumnId, BoardData } from "@/types";
+import type { BoardCard, BoardColumnId, BoardData, TaskAutoReviewMode } from "@/types";
 import { resolveTaskAutoReviewMode } from "@/types";
 import { getNextDetailTaskIdAfterTrashMove } from "@/utils/detail-view-task-order";
 import {
@@ -88,6 +88,7 @@ export interface UseBoardInteractionsResult {
 	handleDeleteTask: (taskId: string) => void;
 	handleRestoreTaskFromTrash: (taskId: string) => void;
 	handleCancelAutomaticTaskAction: (taskId: string) => void;
+	handleSetTaskAutoReview: (taskId: string, enabled: boolean, mode: TaskAutoReviewMode) => void;
 	handleOpenClearTrash: () => void;
 	handleConfirmClearTrash: () => void;
 	handleAddReviewComments: (taskId: string, text: string) => Promise<void>;
@@ -851,18 +852,21 @@ export function useBoardInteractions({
 		[board, resumeTaskFromTrash, setBoard, tryProgrammaticCardMove],
 	);
 
-	const handleCancelAutomaticTaskAction = useCallback(
-		(taskId: string) => {
+	// Write a task's auto-review settings (enable/disable + commit|pr mode), preserving
+	// every other card field. The board is client-owned React state, so this is a plain
+	// `updateTask` → `setBoard`; the workspace-sync path persists it.
+	const handleSetTaskAutoReview = useCallback(
+		(taskId: string, enabled: boolean, mode: TaskAutoReviewMode) => {
 			setBoard((currentBoard) => {
 				const selection = findCardSelection(currentBoard, taskId);
-				if (!selection || selection.card.autoReviewEnabled !== true) {
+				if (!selection) {
 					return currentBoard;
 				}
 				const updated = updateTask(currentBoard, taskId, {
 					prompt: selection.card.prompt,
 					startInPlanMode: selection.card.startInPlanMode,
-					autoReviewEnabled: false,
-					autoReviewMode: resolveTaskAutoReviewMode(selection.card.autoReviewMode),
+					autoReviewEnabled: enabled,
+					autoReviewMode: resolveTaskAutoReviewMode(mode),
 					images: selection.card.images,
 					agentId: selection.card.agentId,
 					agentSettings: selection.card.agentSettings,
@@ -872,6 +876,17 @@ export function useBoardInteractions({
 			});
 		},
 		[setBoard],
+	);
+
+	const handleCancelAutomaticTaskAction = useCallback(
+		(taskId: string) => {
+			const selection = findCardSelection(board, taskId);
+			if (!selection || selection.card.autoReviewEnabled !== true) {
+				return;
+			}
+			handleSetTaskAutoReview(taskId, false, resolveTaskAutoReviewMode(selection.card.autoReviewMode));
+		},
+		[board, handleSetTaskAutoReview],
 	);
 
 	const handleOpenClearTrash = useCallback(() => {
@@ -951,6 +966,7 @@ export function useBoardInteractions({
 		handleDeleteTask,
 		handleRestoreTaskFromTrash,
 		handleCancelAutomaticTaskAction,
+		handleSetTaskAutoReview,
 		handleOpenClearTrash,
 		handleConfirmClearTrash,
 		handleAddReviewComments,

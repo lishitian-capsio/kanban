@@ -14,7 +14,7 @@ import { FileSurfaceProvider } from "@/components/file-surface";
 import { DockableChatPanel } from "@/components/home-agent/dockable-chat-panel";
 import { HomeChatWorkspace } from "@/components/home-agent/home-chat-workspace";
 import { HomeSidebarAgentPanel } from "@/components/home-agent/home-sidebar-agent-panel";
-import type { HomeThreadTaskActions } from "@/components/home-agent/thread-tasks";
+import type { SessionTaskDialogActions } from "@/components/home-agent/thread-tasks";
 import { SidebarProjectSwitcher } from "@/components/home-agent/project-switcher";
 import { KanbanBoard } from "@/components/kanban-board";
 import { LazyViewFallback } from "@/components/lazy-fallback";
@@ -714,6 +714,7 @@ export default function App(): ReactElement {
 		handleDeleteTask,
 		handleRestoreTaskFromTrash,
 		handleCancelAutomaticTaskAction,
+		handleSetTaskAutoReview,
 		handleOpenClearTrash,
 		handleConfirmClearTrash,
 		handleAddReviewComments,
@@ -757,16 +758,31 @@ export default function App(): ReactElement {
 		setSelectedTaskId,
 	});
 
-	// Quick actions the home thread task bar drives, wired to the same board handlers
-	// used by column drags so behaviour matches the kanban board exactly.
-	const homeThreadTaskActions = useMemo<HomeThreadTaskActions>(
+	// Quick actions the home thread task bar + "Session tasks" dialog drive, wired to the
+	// same board handlers used by column drags so behaviour matches the kanban board
+	// exactly. The bar/chip use the base members; the dialog additionally uses the
+	// restore / link / auto-review members.
+	const homeThreadTaskActions = useMemo<SessionTaskDialogActions>(
 		() => ({
 			onStartTask: handleStartTaskFromBoard,
 			onMoveTaskToDone: handleMoveTaskToDone,
 			onDeleteTask: handleDeleteTask,
 			onOpenTask: (taskId: string) => setSelectedTaskId(taskId),
+			onRestoreTask: handleRestoreTaskFromTrash,
+			onCreateDependency: handleCreateDependency,
+			onDeleteDependency: handleDeleteDependency,
+			onSetAutoReview: handleSetTaskAutoReview,
 		}),
-		[handleStartTaskFromBoard, handleMoveTaskToDone, handleDeleteTask, setSelectedTaskId],
+		[
+			handleStartTaskFromBoard,
+			handleMoveTaskToDone,
+			handleDeleteTask,
+			setSelectedTaskId,
+			handleRestoreTaskFromTrash,
+			handleCreateDependency,
+			handleDeleteDependency,
+			handleSetTaskAutoReview,
+		],
 	);
 
 	useAppHotkeys({

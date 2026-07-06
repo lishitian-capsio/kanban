@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { collectThreadTasks } from "@/components/home-agent/thread-tasks";
+import { collectThreadTaskCards, collectThreadTasks } from "@/components/home-agent/thread-tasks";
 import type { RuntimeBoardData } from "@/runtime/types";
 
 function makeBoard(): RuntimeBoardData {
@@ -55,5 +55,25 @@ describe("collectThreadTasks", () => {
 		expect(collectThreadTasks(null, "t1")).toEqual([]);
 		expect(collectThreadTasks(makeBoard(), "")).toEqual([]);
 		expect(collectThreadTasks(makeBoard(), "   ")).toEqual([]);
+	});
+});
+
+describe("collectThreadTaskCards", () => {
+	it("returns the full cards with their column id, in board order", () => {
+		const cards = collectThreadTaskCards(makeBoard(), "t1");
+		expect(cards.map(({ card, columnId }) => [card.id, columnId])).toEqual([
+			["b1", "backlog"],
+			["p1", "in_progress"],
+			["r1", "review"],
+			["d1", "trash"],
+		]);
+		// Full card carried through (not just id/title/column).
+		expect(cards[0]?.card).toMatchObject({ id: "b1", title: "Backlog one", prompt: "" });
+	});
+
+	it("filters by originThreadId and returns [] for a null board or blank id", () => {
+		expect(collectThreadTaskCards(makeBoard(), "t2").map(({ card }) => card.id)).toEqual(["b2"]);
+		expect(collectThreadTaskCards(null, "t1")).toEqual([]);
+		expect(collectThreadTaskCards(makeBoard(), "  ")).toEqual([]);
 	});
 });

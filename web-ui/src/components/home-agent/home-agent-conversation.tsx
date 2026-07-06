@@ -22,7 +22,7 @@ import {
 import { AgentAvatar, resolveAgentLabel } from "@/components/home-agent/agent-icon";
 import { HomeNextStepSuggestion } from "@/components/home-agent/home-next-step-suggestion";
 import { HomeThreadTaskBar } from "@/components/home-agent/home-thread-task-bar";
-import type { HomeThreadTaskActions } from "@/components/home-agent/thread-tasks";
+import type { SessionTaskDialogActions } from "@/components/home-agent/thread-tasks";
 import { createIdleTaskSession } from "@/hooks/app-utils";
 import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
 import { type HomeAgentActiveThread, useHomeAgentSession } from "@/hooks/use-home-agent-session";
@@ -44,8 +44,8 @@ interface HomeAgentConversationProps {
 	runtimeProjectConfig: RuntimeConfigResponse;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	workspaceGit: RuntimeGitRepositoryInfo | null;
-	/** Quick actions for the persistent thread task bar (start / done / delete / open). */
-	threadTaskActions: HomeThreadTaskActions;
+	/** Quick actions for the persistent thread task bar + "Session tasks" dialog. */
+	threadTaskActions: SessionTaskDialogActions;
 	/** Optimistically clear the thread's pending next-step chip when the user sends a message. */
 	onClearNextStep: (threadId: string) => void;
 }

@@ -119,6 +119,10 @@ describe("HomeChatWorkspace", () => {
 						onMoveTaskToDone: vi.fn(),
 						onDeleteTask: vi.fn(),
 						onOpenTask: vi.fn(),
+						onRestoreTask: vi.fn(),
+						onCreateDependency: vi.fn(),
+						onDeleteDependency: vi.fn(),
+						onSetAutoReview: vi.fn(),
 					}}
 					fullscreenChatTab={options.fullscreenChatTab ?? "home"}
 					onNavigateFullscreenTab={options.onNavigateFullscreenTab ?? vi.fn()}

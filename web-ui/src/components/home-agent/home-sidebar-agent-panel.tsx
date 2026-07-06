@@ -14,7 +14,7 @@ import { useState } from "react";
 
 import { HomeAgentConversation } from "@/components/home-agent/home-agent-conversation";
 import { HomeThreadBar } from "@/components/home-agent/home-thread-bar";
-import type { HomeThreadTaskActions } from "@/components/home-agent/thread-tasks";
+import type { SessionTaskDialogActions } from "@/components/home-agent/thread-tasks";
 import { PiConversationSurface } from "@/components/home-agent/pi-conversation-surface";
 import { getActiveHighlightClass } from "@/components/home-agent/session-active-highlight";
 import { cn } from "@/components/ui/cn";
@@ -32,7 +32,7 @@ interface HomeSidebarAgentPanelProps {
 	homeThreads: UseHomeThreadsResult;
 	taskSessions: Record<string, RuntimeTaskSessionSummary>;
 	workspaceGit: RuntimeGitRepositoryInfo | null;
-	threadTaskActions: HomeThreadTaskActions;
+	threadTaskActions: SessionTaskDialogActions;
 }
 
 export function HomeSidebarAgentPanel({
