@@ -7,6 +7,7 @@ import { InlineCompletionPicker } from "@/components/inline-completion-picker";
 import {
 	ACCEPTED_TASK_IMAGE_INPUT_ACCEPT,
 	collectImageFilesFromDataTransfer,
+	collectNonImageFilesFromDataTransfer,
 	extractImagesFromDataTransfer,
 	fileToTaskImage,
 } from "@/components/task-image-input-utils";
@@ -38,6 +39,13 @@ interface TaskPromptComposerProps {
 	 * `workspaceId` is supplied.
 	 */
 	enableSlashCommands?: boolean;
+	/**
+	 * Opt-in handler for dropped/pasted NON-image files. When provided, such files
+	 * are routed here (instead of being ignored) so the caller can persist them and
+	 * inject an `@/path` mention — images still flow to the base64 strip. Left
+	 * undefined by default, so composers without file support behave as before.
+	 */
+	onFilesSelected?: (files: File[]) => void;
 }
 
 export function TaskPromptComposer({
@@ -56,6 +64,7 @@ export function TaskPromptComposer({
 	workspaceId = null,
 	showAttachImageButton = true,
 	enableSlashCommands = false,
+	onFilesSelected,
 }: TaskPromptComposerProps): ReactElement {
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -145,44 +154,57 @@ export function TaskPromptComposer({
 
 	const handlePaste = useCallback(
 		(event: ClipboardEvent<HTMLTextAreaElement>) => {
-			if (!onImagesChange || !event.clipboardData) {
+			if (!event.clipboardData) {
 				return;
 			}
-			const imageFiles = collectImageFilesFromDataTransfer(event.clipboardData);
-			if (imageFiles.length === 0) {
+			const imageFiles = onImagesChange ? collectImageFilesFromDataTransfer(event.clipboardData) : [];
+			// Grab the File refs synchronously; the clipboard is cleared after dispatch.
+			const otherFiles = onFilesSelected ? collectNonImageFilesFromDataTransfer(event.clipboardData) : [];
+			if (imageFiles.length === 0 && otherFiles.length === 0) {
 				return;
 			}
 			event.preventDefault();
-			void (async () => {
-				const newImages = await extractImagesFromDataTransfer(event.clipboardData);
-				appendImages(newImages);
-			})();
+			if (imageFiles.length > 0) {
+				void (async () => {
+					const newImages = await extractImagesFromDataTransfer(event.clipboardData);
+					appendImages(newImages);
+				})();
+			}
+			if (otherFiles.length > 0) {
+				onFilesSelected?.(otherFiles);
+			}
 		},
-		[appendImages, onImagesChange],
+		[appendImages, onImagesChange, onFilesSelected],
 	);
 
 	const handleDrop = useCallback(
 		(event: DragEvent<HTMLDivElement>) => {
 			setIsDragOver(false);
-			if (!onImagesChange || !event.dataTransfer) {
+			if (!event.dataTransfer) {
 				return;
 			}
-			const imageFiles = collectImageFilesFromDataTransfer(event.dataTransfer);
-			if (imageFiles.length === 0) {
+			const imageFiles = onImagesChange ? collectImageFilesFromDataTransfer(event.dataTransfer) : [];
+			const otherFiles = onFilesSelected ? collectNonImageFilesFromDataTransfer(event.dataTransfer) : [];
+			if (imageFiles.length === 0 && otherFiles.length === 0) {
 				return;
 			}
 			event.preventDefault();
-			void (async () => {
-				const newImages = await extractImagesFromDataTransfer(event.dataTransfer);
-				appendImages(newImages);
-			})();
+			if (imageFiles.length > 0) {
+				void (async () => {
+					const newImages = await extractImagesFromDataTransfer(event.dataTransfer);
+					appendImages(newImages);
+				})();
+			}
+			if (otherFiles.length > 0) {
+				onFilesSelected?.(otherFiles);
+			}
 		},
-		[appendImages, onImagesChange],
+		[appendImages, onImagesChange, onFilesSelected],
 	);
 
 	const handleDragOver = useCallback(
 		(event: DragEvent<HTMLDivElement>) => {
-			if (!onImagesChange) {
+			if (!onImagesChange && !onFilesSelected) {
 				return;
 			}
 			const hasFiles = event.dataTransfer.types.includes("Files");
@@ -192,7 +214,7 @@ export function TaskPromptComposer({
 			event.preventDefault();
 			setIsDragOver(true);
 		},
-		[onImagesChange],
+		[onImagesChange, onFilesSelected],
 	);
 
 	const handleDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
@@ -283,7 +305,7 @@ export function TaskPromptComposer({
 					<div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-md bg-accent/5">
 						<div className="flex items-center gap-1.5 text-[12px] text-accent font-medium">
 							<ImagePlus size={14} />
-							<span>Drop image here</span>
+							<span>{onFilesSelected ? "Drop image or file here" : "Drop image here"}</span>
 						</div>
 					</div>
 				) : null}

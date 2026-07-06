@@ -30,6 +30,7 @@ import {
 	type RuntimeTaskSessionStopRequest,
 	type RuntimeTaskWorkspaceInfoRequest,
 	type RuntimeTerminalWsClientMessage,
+	type RuntimeWorkspaceAttachmentRequest,
 	type RuntimeWorkspaceChangesRequest,
 	type RuntimeWorkspaceFileSearchRequest,
 	type RuntimeWorkspaceStateSaveRequest,
@@ -64,6 +65,7 @@ import {
 	runtimeTaskSessionStopRequestSchema,
 	runtimeTaskWorkspaceInfoRequestSchema,
 	runtimeTerminalWsClientMessageSchema,
+	runtimeWorkspaceAttachmentRequestSchema,
 	runtimeWorkspaceChangesRequestSchema,
 	runtimeWorkspaceFileSearchRequestSchema,
 	runtimeWorkspaceStateSaveRequestSchema,
@@ -308,6 +310,17 @@ export function parseTaskSessionAttachmentRequest(value: unknown): RuntimeTaskSe
 	return {
 		...parsed,
 		taskId,
+		name: parsed.name.trim(),
+	};
+}
+
+export function parseWorkspaceAttachmentRequest(value: unknown): RuntimeWorkspaceAttachmentRequest {
+	const parsed = parseWithSchema(runtimeWorkspaceAttachmentRequestSchema, value);
+	if (!parsed.data) {
+		throw new Error("Workspace attachment data is required.");
+	}
+	return {
+		data: parsed.data,
 		name: parsed.name.trim(),
 	};
 }

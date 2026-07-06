@@ -8,6 +8,7 @@ import { showAppToast } from "@/components/app-toaster";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
+import { agentSupportsFileAttachments } from "@/runtime/attachment-agents";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeTaskSessionSummary } from "@/runtime/types";
 import { useTaskWorkspaceSnapshotValue } from "@/stores/workspace-metadata-store";
@@ -18,11 +19,6 @@ import {
 } from "@/terminal/terminal-attachment-drop";
 import { usePersistentTerminalSession } from "@/terminal/use-persistent-terminal-session";
 import { isMacPlatform } from "@/utils/platform";
-
-// CLI agents that support `@/path` file mentions and so accept dragged/pasted
-// attachments. Scoped to claude this phase; a new agent is one entry + its own
-// mention formatting (see terminal-attachment-drop.ts).
-const ATTACHMENT_MENTION_AGENT_IDS = new Set<string>(["claude"]);
 
 interface AgentTerminalSessionControls {
 	clearTerminal: () => void;
@@ -190,7 +186,7 @@ function AgentTerminalPanelLayout({
 	const canStop = summary?.state === "running" || summary?.state === "awaiting_review";
 	// Only claude sessions get drag/paste-to-attachment (the surface understands
 	// `@/path` mentions). Other CLI agents fall through to xterm's default paste.
-	const attachmentsEnabled = Boolean(workspaceId) && ATTACHMENT_MENTION_AGENT_IDS.has(summary?.agentId ?? "");
+	const attachmentsEnabled = Boolean(workspaceId) && agentSupportsFileAttachments(summary?.agentId);
 	const [isAttachmentDragOver, setIsAttachmentDragOver] = useState(false);
 
 	const handleAttachmentFiles = useCallback(

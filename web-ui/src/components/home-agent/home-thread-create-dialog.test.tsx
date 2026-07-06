@@ -9,15 +9,19 @@ import type { RuntimeAgentDefinition } from "@/runtime/types";
 // The prompt composer reaches for the runtime tRPC client to power its `@` file
 // mentions and `/` slash commands. Hoist mockable query fns so each test can
 // drive the completion data sources without a live runtime.
-const { searchFilesMock, getKanbanSlashCommandsMock } = vi.hoisted(() => ({
+const { searchFilesMock, getKanbanSlashCommandsMock, writeWorkspaceAttachmentMock } = vi.hoisted(() => ({
 	searchFilesMock: vi.fn(),
 	getKanbanSlashCommandsMock: vi.fn(),
+	writeWorkspaceAttachmentMock: vi.fn(),
 }));
 
 vi.mock("@/runtime/trpc-client", () => ({
 	getRuntimeTrpcClient: () => ({
 		workspace: { searchFiles: { query: searchFilesMock } },
-		runtime: { getKanbanSlashCommands: { query: getKanbanSlashCommandsMock } },
+		runtime: {
+			getKanbanSlashCommands: { query: getKanbanSlashCommandsMock },
+			writeWorkspaceAttachment: { mutate: writeWorkspaceAttachmentMock },
+		},
 	}),
 }));
 
@@ -56,6 +60,26 @@ function dispatchImagePaste(textarea: HTMLTextAreaElement, file: File): void {
 	textarea.dispatchEvent(event);
 }
 
+function makeTextFile(name = "notes.txt"): File {
+	return new File([new Uint8Array([104, 101, 108, 108, 111])], name, { type: "text/plain" });
+}
+
+function dispatchFileDrop(target: HTMLElement, file: File): void {
+	const event = new Event("drop", { bubbles: true, cancelable: true });
+	Object.defineProperty(event, "dataTransfer", {
+		value: {
+			items: [{ kind: "file", type: file.type, getAsFile: () => file }],
+			files: [file],
+			types: ["Files"],
+		},
+	});
+	target.dispatchEvent(event);
+}
+
+// FileReader + the upload mutation both resolve asynchronously; give the microtask
+// queue a couple of macrotasks to settle before asserting on the injected mention.
+const flushAttachment = () => new Promise((resolve) => setTimeout(resolve, 30));
+
 function setControlledValue(textarea: HTMLTextAreaElement, value: string): void {
 	const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
 	setter?.call(textarea, value);
@@ -72,6 +96,7 @@ describe("HomeThreadCreateDialog", () => {
 		root = createRoot(container);
 		searchFilesMock.mockResolvedValue({ files: [] });
 		getKanbanSlashCommandsMock.mockResolvedValue({ commands: [] });
+		writeWorkspaceAttachmentMock.mockResolvedValue({ ok: true, path: "/repo/.kanban/attachments/abc.txt" });
 	});
 
 	afterEach(() => {
@@ -175,5 +200,77 @@ describe("HomeThreadCreateDialog", () => {
 		// commands and no menu appears — while `@` mentions (below) stay available.
 		expect(getKanbanSlashCommandsMock).not.toHaveBeenCalled();
 		expect(document.body.textContent).not.toContain("/compact");
+	});
+
+	it("uploads a dropped non-image file, injects an @/path mention, and shows a removable chip", async () => {
+		await render({ workspaceId: "ws-1" });
+
+		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+		expect(textarea).not.toBeNull();
+
+		await act(async () => {
+			dispatchFileDrop(textarea, makeTextFile("notes.txt"));
+			await flushAttachment();
+		});
+
+		// The bytes are persisted via the workspace-scoped mutation (never the
+		// task-session one — there is no session yet).
+		expect(writeWorkspaceAttachmentMock).toHaveBeenCalledWith(expect.objectContaining({ name: "notes.txt" }));
+		// The returned absolute path is injected into the opening prompt as a mention.
+		expect(textarea.value).toContain("@/repo/.kanban/attachments/abc.txt");
+		// A removable chip shows the original filename.
+		expect(document.body.textContent).toContain("notes.txt");
+
+		// Removing the chip strips the injected mention back out of the prompt.
+		const removeButton = document.querySelector('button[aria-label="Remove notes.txt"]');
+		expect(removeButton).not.toBeNull();
+		await act(async () => {
+			removeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+			await flush();
+		});
+		expect(textarea.value).not.toContain("@/repo/.kanban/attachments/abc.txt");
+		expect(document.querySelector('button[aria-label="Remove notes.txt"]')).toBeNull();
+	});
+
+	it("does not attach files when the selected agent has no `@/path` support", async () => {
+		const codexAgents: RuntimeAgentDefinition[] = [
+			{
+				id: "codex",
+				label: "Codex",
+				binary: "codex",
+				command: "codex",
+				defaultArgs: [],
+				installed: true,
+				configured: true,
+				resolvedExecutablePath: null,
+			},
+		];
+		await render({ workspaceId: "ws-1", agents: codexAgents, defaultAgentId: "codex" });
+
+		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+		expect(textarea).not.toBeNull();
+
+		await act(async () => {
+			dispatchFileDrop(textarea, makeTextFile("notes.txt"));
+			await flushAttachment();
+		});
+
+		// Non-supporting agent: the file channel is inert, no upload, no chip.
+		expect(writeWorkspaceAttachmentMock).not.toHaveBeenCalled();
+		expect(document.querySelector('button[aria-label="Remove notes.txt"]')).toBeNull();
+	});
+
+	it("does not attach files without a workspace scope", async () => {
+		await render();
+
+		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+		expect(textarea).not.toBeNull();
+
+		await act(async () => {
+			dispatchFileDrop(textarea, makeTextFile("notes.txt"));
+			await flushAttachment();
+		});
+
+		expect(writeWorkspaceAttachmentMock).not.toHaveBeenCalled();
 	});
 });

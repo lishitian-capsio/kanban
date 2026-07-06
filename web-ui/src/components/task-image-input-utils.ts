@@ -77,6 +77,37 @@ export function collectImageFilesFromDataTransfer(dataTransfer: DataTransfer): F
 	return files;
 }
 
+/**
+ * Synchronously collect the NON-image files from a DataTransfer — the counterpart
+ * to {@link collectImageFilesFromDataTransfer}. Used to route dropped/pasted
+ * documents to a file-attachment channel (persist + `@/path` mention) while images
+ * still flow to the in-prompt base64 strip. Same `items`-then-`files` scan; must be
+ * called synchronously during the event.
+ */
+export function collectNonImageFilesFromDataTransfer(dataTransfer: DataTransfer): File[] {
+	const files: File[] = [];
+	if (dataTransfer.items && dataTransfer.items.length > 0) {
+		for (let i = 0; i < dataTransfer.items.length; i++) {
+			const item = dataTransfer.items[i];
+			if (!item || item.kind !== "file") {
+				continue;
+			}
+			const file = item.getAsFile();
+			if (file && !isAcceptedTaskImageFile(file)) {
+				files.push(file);
+			}
+		}
+	}
+	if (files.length === 0) {
+		for (const file of Array.from(dataTransfer.files)) {
+			if (!isAcceptedTaskImageFile(file)) {
+				files.push(file);
+			}
+		}
+	}
+	return files;
+}
+
 export async function extractImagesFromDataTransfer(dataTransfer: DataTransfer): Promise<TaskImage[]> {
 	const files = collectImageFilesFromDataTransfer(dataTransfer);
 	const images: TaskImage[] = [];

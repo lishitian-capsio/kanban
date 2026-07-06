@@ -70,6 +70,7 @@ import {
 	parseTaskSessionInputRequest,
 	parseTaskSessionStartRequest,
 	parseTaskSessionStopRequest,
+	parseWorkspaceAttachmentRequest,
 } from "../core/api-validation";
 import {
 	createHomeAgentSessionId,
@@ -1001,6 +1002,27 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 				}
 				const result = await writeTaskAttachment({
 					worktreePath,
+					name: body.name,
+					data: body.data,
+				});
+				return result.ok ? { ok: true, path: result.path } : { ok: false, error: result.error };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, error: message };
+			}
+		},
+		writeWorkspaceAttachment: async (workspaceScope, input) => {
+			try {
+				const body = parseWorkspaceAttachmentRequest(input);
+				// The new-thread create dialog has no live session yet, so the file
+				// can't be resolved from a terminal session's cwd. A home-thread
+				// session runs directly in the workspace repo root (see the home cwd
+				// branch in startTaskSession), so write there — the injected
+				// `@/path` mention resolves once the session starts with
+				// cwd = workspacePath. The store neutralizes path traversal and caps
+				// the size exactly as the task-session variant does.
+				const result = await writeTaskAttachment({
+					worktreePath: workspaceScope.workspacePath,
 					name: body.name,
 					data: body.data,
 				});

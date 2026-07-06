@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -2923,6 +2924,74 @@ describe("createRuntimeApi home thread handlers", () => {
 
 		expect(response.ok).toBe(false);
 		expect(response.thread).toBeNull();
+		expect(response.error).toBeTruthy();
+	});
+});
+
+describe("createRuntimeApi writeWorkspaceAttachment", () => {
+	let repoRoot: string;
+
+	beforeEach(() => {
+		repoRoot = mkdtempSync(join(tmpdir(), "kanban-ws-attachment-"));
+	});
+
+	afterEach(() => {
+		rmSync(repoRoot, { recursive: true, force: true });
+	});
+
+	function makeApi(): RuntimeTrpcContext["runtimeApi"] {
+		return createTestRuntimeApi({
+			getActiveWorkspaceId: vi.fn(() => "workspace-1"),
+			loadScopedRuntimeConfig: vi.fn(async () => createRuntimeConfigState()),
+			setActiveRuntimeConfig: vi.fn(),
+			getScopedTerminalManager: vi.fn(async () => ({}) as never),
+			getScopedPiTaskSessionService: vi.fn(async () => ({}) as never),
+			resolveInteractiveShellCommand: vi.fn(),
+			runCommand: vi.fn(),
+		});
+	}
+
+	it("writes the file into the workspace repo root's .kanban/attachments and returns the absolute path", async () => {
+		const api = makeApi();
+		const payload = Buffer.from("hello attachment", "utf8");
+
+		const response = await api.writeWorkspaceAttachment(
+			{ workspaceId: "workspace-1", workspacePath: repoRoot },
+			{ name: "spec.pdf", data: payload.toString("base64") },
+		);
+
+		expect(response.ok).toBe(true);
+		const attachmentsDir = join(repoRoot, ".kanban", "attachments");
+		const files = readdirSync(attachmentsDir);
+		expect(files).toHaveLength(1);
+		// UUID basename + sanitized extension; NEVER the caller-supplied "spec".
+		expect(files[0]).toMatch(/^[0-9a-f-]{36}\.pdf$/);
+		expect(response.path).toBe(join(attachmentsDir, files[0] as string));
+		expect(readFileSync(response.path as string).equals(payload)).toBe(true);
+	});
+
+	it("neutralizes path traversal in the supplied name (file stays inside attachments)", async () => {
+		const api = makeApi();
+
+		const response = await api.writeWorkspaceAttachment(
+			{ workspaceId: "workspace-1", workspacePath: repoRoot },
+			{ name: "../../../../etc/passwd.txt", data: Buffer.from("x").toString("base64") },
+		);
+
+		expect(response.ok).toBe(true);
+		expect(response.path?.startsWith(join(repoRoot, ".kanban", "attachments"))).toBe(true);
+		expect(readdirSync(join(repoRoot, ".kanban", "attachments"))).toHaveLength(1);
+	});
+
+	it("returns ok:false for an empty payload", async () => {
+		const api = makeApi();
+
+		const response = await api.writeWorkspaceAttachment(
+			{ workspaceId: "workspace-1", workspacePath: repoRoot },
+			{ name: "empty.txt", data: "" },
+		);
+
+		expect(response.ok).toBe(false);
 		expect(response.error).toBeTruthy();
 	});
 });

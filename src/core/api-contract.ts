@@ -2747,6 +2747,23 @@ export const runtimeTaskSessionAttachmentResponseSchema = z.object({
 });
 export type RuntimeTaskSessionAttachmentResponse = z.infer<typeof runtimeTaskSessionAttachmentResponseSchema>;
 
+// --- writeWorkspaceAttachment: persist a dragged/pasted file BEFORE a session ---
+// The new-thread create dialog needs the same file-attachment affordance as an
+// active terminal session, but there is no live session yet, so there is no
+// session cwd to resolve. A home-thread session runs directly in the workspace
+// repo root (see startTaskSession's home cwd branch), so the file is written into
+// that repo root's machine-local `.kanban/attachments/` and the returned absolute
+// path is injected as an `@/path` mention into the opening prompt — it resolves
+// once the session starts with cwd = workspacePath. Scoped by workspace only;
+// `name` contributes only a sanitized extension. Response reuses the task variant.
+export const runtimeWorkspaceAttachmentRequestSchema = z.object({
+	// Original filename; only its extension is used for the stored file.
+	name: z.string(),
+	// Base64-encoded file bytes.
+	data: z.string(),
+});
+export type RuntimeWorkspaceAttachmentRequest = z.infer<typeof runtimeWorkspaceAttachmentRequestSchema>;
+
 export const runtimeTaskChatReloadRequestSchema = z.object({
 	taskId: z.string(),
 });
