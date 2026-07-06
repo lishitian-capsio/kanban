@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { imChannelTargetSchema } from "../im/types.js";
 import { resolveTaskTitle } from "./task-title.js";
 
 export const runtimeWorkspaceFileStatusSchema = z.enum([
@@ -330,6 +331,11 @@ export const runtimeHomeChatThreadSchema = z.object({
 	// it, and it is cleared when the user sends a message in the thread (the agent's next turn).
 	// Optional + nullable so existing persisted threads (no field) load cleanly.
 	pendingNextStep: z.string().nullable().optional(),
+	// The IM channel this thread is bound to, so outbound notifications can be delivered to it
+	// (requirement ac99c). The binding descriptor is the platform-agnostic `ImChannelTarget`
+	// from the IM abstraction (T1). Optional + nullable so existing persisted threads (no field)
+	// load unchanged and behave exactly as before when unbound; `unbind` sets it back to `null`.
+	imChannel: imChannelTargetSchema.nullable().optional(),
 });
 export type RuntimeHomeChatThread = z.infer<typeof runtimeHomeChatThreadSchema>;
 
@@ -415,7 +421,35 @@ export const runtimeHomeChatThreadSetNextStepRequestSchema = z.object({
 });
 export type RuntimeHomeChatThreadSetNextStepRequest = z.infer<typeof runtimeHomeChatThreadSetNextStepRequestSchema>;
 
-// Shared by create/rename/close — each returns the affected thread (close → the removed thread).
+// Bind a thread to an IM channel (requirement ac99c). Reuses the platform-agnostic
+// `ImChannelTarget` descriptor from the IM abstraction (T1) verbatim.
+export const runtimeHomeChatThreadBindImChannelRequestSchema = z.object({
+	id: z.string(),
+	channel: imChannelTargetSchema,
+});
+export type RuntimeHomeChatThreadBindImChannelRequest = z.infer<
+	typeof runtimeHomeChatThreadBindImChannelRequestSchema
+>;
+
+// Unbind / query a thread's IM channel — both are keyed on the thread id alone.
+export const runtimeHomeChatThreadImChannelIdRequestSchema = z.object({
+	id: z.string(),
+});
+export type RuntimeHomeChatThreadImChannelIdRequest = z.infer<
+	typeof runtimeHomeChatThreadImChannelIdRequestSchema
+>;
+
+// Query response: the thread's current IM channel binding, or `null` when unbound / unknown.
+export const runtimeHomeChatThreadImChannelResponseSchema = z.object({
+	ok: z.boolean(),
+	imChannel: imChannelTargetSchema.nullable(),
+	error: z.string().optional(),
+});
+export type RuntimeHomeChatThreadImChannelResponse = z.infer<
+	typeof runtimeHomeChatThreadImChannelResponseSchema
+>;
+
+// Shared by create/rename/close/bind/unbind — each returns the affected thread (close → the removed thread).
 export const runtimeHomeChatThreadMutationResponseSchema = z.object({
 	ok: z.boolean(),
 	thread: runtimeHomeChatThreadSchema.nullable(),

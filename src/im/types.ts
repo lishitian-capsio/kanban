@@ -27,13 +27,20 @@ export type ImPlatform = z.infer<typeof imPlatformSchema>;
 /**
  * A concrete delivery target: the platform plus its native chat identifier (Lark `chat_id` /
  * `open_id`, DingTalk conversation id, …). This doubles as the "channel binding" a session
- * stores when bound to an IM channel.
+ * stores when bound to an IM channel — see the `imChannel` field on a home chat thread
+ * (`runtimeHomeChatThreadSchema`), which persists exactly this descriptor.
+ *
+ * A zod schema (not a bare interface) so on-disk / wire bindings can be validated; the type is
+ * inferred from it to keep a single source of truth.
  */
-export interface ImChannelTarget {
-	platform: ImPlatform;
+export const imChannelTargetSchema = z.object({
+	platform: imPlatformSchema,
 	/** The platform-native chat / conversation identifier. */
-	chatId: string;
-}
+	chatId: z.string().min(1),
+});
+
+/** A concrete delivery target / channel binding (see {@link imChannelTargetSchema}). */
+export type ImChannelTarget = z.infer<typeof imChannelTargetSchema>;
 
 /** A plain-text outbound message — the minimal payload for {@link ImProvider.sendMessage}. */
 export interface ImTextMessage {

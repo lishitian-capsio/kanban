@@ -98,8 +98,11 @@ import type {
 	RuntimeGitUserIdentityResponse,
 	RuntimeHomeChatFullscreenTabsResponse,
 	RuntimeHomeChatFullscreenTabsSaveRequest,
+	RuntimeHomeChatThreadBindImChannelRequest,
 	RuntimeHomeChatThreadCloseRequest,
 	RuntimeHomeChatThreadCreateRequest,
+	RuntimeHomeChatThreadImChannelIdRequest,
+	RuntimeHomeChatThreadImChannelResponse,
 	RuntimeHomeChatThreadMutationResponse,
 	RuntimeHomeChatThreadRenameRequest,
 	RuntimeHomeChatThreadSetNextStepRequest,
@@ -319,8 +322,11 @@ import {
 	runtimeGitUserIdentityResponseSchema,
 	runtimeHomeChatFullscreenTabsResponseSchema,
 	runtimeHomeChatFullscreenTabsSaveRequestSchema,
+	runtimeHomeChatThreadBindImChannelRequestSchema,
 	runtimeHomeChatThreadCloseRequestSchema,
 	runtimeHomeChatThreadCreateRequestSchema,
+	runtimeHomeChatThreadImChannelIdRequestSchema,
+	runtimeHomeChatThreadImChannelResponseSchema,
 	runtimeHomeChatThreadMutationResponseSchema,
 	runtimeHomeChatThreadRenameRequestSchema,
 	runtimeHomeChatThreadSetNextStepRequestSchema,
@@ -521,6 +527,18 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatThreadSetNextStepRequest,
 		) => Promise<RuntimeHomeChatThreadMutationResponse>;
+		bindHomeThreadImChannel: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeHomeChatThreadBindImChannelRequest,
+		) => Promise<RuntimeHomeChatThreadMutationResponse>;
+		unbindHomeThreadImChannel: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeHomeChatThreadImChannelIdRequest,
+		) => Promise<RuntimeHomeChatThreadMutationResponse>;
+		getHomeThreadImChannel: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeHomeChatThreadImChannelIdRequest,
+		) => Promise<RuntimeHomeChatThreadImChannelResponse>;
 		closeHomeThread: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatThreadCloseRequest,
@@ -1004,6 +1022,24 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeHomeChatThreadMutationResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.setHomeThreadNextStep(ctx.workspaceScope, input);
+			}),
+		bindHomeThreadImChannel: workspaceProcedure
+			.input(runtimeHomeChatThreadBindImChannelRequestSchema)
+			.output(runtimeHomeChatThreadMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.bindHomeThreadImChannel(ctx.workspaceScope, input);
+			}),
+		unbindHomeThreadImChannel: workspaceProcedure
+			.input(runtimeHomeChatThreadImChannelIdRequestSchema)
+			.output(runtimeHomeChatThreadMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.unbindHomeThreadImChannel(ctx.workspaceScope, input);
+			}),
+		getHomeThreadImChannel: workspaceProcedure
+			.input(runtimeHomeChatThreadImChannelIdRequestSchema)
+			.output(runtimeHomeChatThreadImChannelResponseSchema)
+			.query(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.getHomeThreadImChannel(ctx.workspaceScope, input);
 			}),
 		closeHomeThread: workspaceProcedure
 			.input(runtimeHomeChatThreadCloseRequestSchema)

@@ -6,6 +6,7 @@ import type {
 	RuntimeHomeChatThreadTitleSource,
 } from "../core/api-contract";
 import { DEFAULT_HOME_THREAD_ID } from "../core/home-agent-session";
+import type { ImChannelTarget } from "../im/types";
 
 /**
  * Pure, I/O-free operations over the persisted home chat thread registry.
@@ -149,6 +150,41 @@ export function setHomeThreadNextStep(
 	return {
 		...data,
 		threads: data.threads.map((thread) => (thread.id === id ? { ...thread, pendingNextStep: next } : thread)),
+	};
+}
+
+function imChannelsEqual(a: ImChannelTarget | null, b: ImChannelTarget | null): boolean {
+	if (a === null || b === null) {
+		return a === b;
+	}
+	return a.platform === b.platform && a.chatId === b.chatId;
+}
+
+/**
+ * Bind a thread to an IM channel, or unbind it when `channel` is `null` (requirement ac99c).
+ * Bumps `updatedAt` on a real change. Returns the SAME data reference when the binding is
+ * unchanged (treating an absent field and `null` as equivalent), so an unbind on an already-
+ * unbound thread does not rewrite `threads.json`. Throws if the thread is missing.
+ */
+export function setHomeThreadImChannel(
+	data: RuntimeHomeChatThreadsData,
+	id: string,
+	channel: ImChannelTarget | null,
+	now: number,
+): RuntimeHomeChatThreadsData {
+	const existing = data.threads.find((thread) => thread.id === id);
+	if (!existing) {
+		throw new Error(`Home chat thread "${id}" not found.`);
+	}
+	const next = channel ?? null;
+	if (imChannelsEqual(existing.imChannel ?? null, next)) {
+		return data;
+	}
+	return {
+		...data,
+		threads: data.threads.map((thread) =>
+			thread.id === id ? { ...thread, imChannel: next, updatedAt: now } : thread,
+		),
 	};
 }
 

@@ -8,6 +8,7 @@ import type {
 	RuntimeHomeChatThreadTitleSource,
 } from "../core/api-contract";
 import { createHomeAgentSessionId } from "../core/home-agent-session";
+import type { ImChannelTarget } from "../im/types";
 import { loadWorkspaceHomeThreads, mutateWorkspaceHomeThreads } from "../state/workspace-state";
 import {
 	closeHomeThread,
@@ -18,6 +19,7 @@ import {
 	type SetHomeThreadAutoTitleResult,
 	setHomeFullscreenTabs,
 	setHomeThreadAutoTitle,
+	setHomeThreadImChannel,
 	setHomeThreadNextStep,
 } from "./home-thread-registry";
 
@@ -207,6 +209,40 @@ export class HomeThreadStore {
 			throw new Error(`Home chat thread "${id}" not found after setNextStep.`);
 		}
 		return updated;
+	}
+
+	/**
+	 * Bind a thread to an IM channel (requirement ac99c) so outbound notifications can be
+	 * delivered to it. Returns the updated thread. Throws if the thread is missing.
+	 */
+	async bindImChannel(id: string, channel: ImChannelTarget): Promise<RuntimeHomeChatThread> {
+		return this.setImChannel(id, channel);
+	}
+
+	/** Remove a thread's IM channel binding. Returns the updated thread. Throws if missing. */
+	async unbindImChannel(id: string): Promise<RuntimeHomeChatThread> {
+		return this.setImChannel(id, null);
+	}
+
+	private async setImChannel(id: string, channel: ImChannelTarget | null): Promise<RuntimeHomeChatThread> {
+		const now = this.now();
+		const next = await this.persistence.mutate((current) => setHomeThreadImChannel(current, id, channel, now));
+		const updated = next.threads.find((thread) => thread.id === id);
+		if (!updated) {
+			// Unreachable: setHomeThreadImChannel throws when the id is missing.
+			throw new Error(`Home chat thread "${id}" not found after setImChannel.`);
+		}
+		return updated;
+	}
+
+	/**
+	 * Query a thread's current IM channel binding. Returns `null` when the thread is unbound OR
+	 * unknown (a read never throws — absence of a binding is the answer). The full binding is
+	 * also present on each thread returned by {@link list}; this is the targeted single-thread read.
+	 */
+	async getImChannel(id: string): Promise<ImChannelTarget | null> {
+		const data = await this.persistence.load();
+		return data.threads.find((thread) => thread.id === id)?.imChannel ?? null;
 	}
 
 	async close(id: string): Promise<RuntimeHomeChatThread> {

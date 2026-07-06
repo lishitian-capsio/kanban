@@ -156,6 +156,42 @@ describe("HomeThreadStore", () => {
 		expect(onCloseSession).toHaveBeenCalledTimes(1);
 	});
 
+	describe("IM channel binding", () => {
+		it("binds a thread to an IM channel and reflects it in getImChannel + list", async () => {
+			const { store } = makeStore();
+			const created = await store.create({ agentId: "pi", name: "Bindable" });
+
+			const bound = await store.bindImChannel(created.id, { platform: "lark", chatId: "oc_abc" });
+
+			expect(bound.imChannel).toEqual({ platform: "lark", chatId: "oc_abc" });
+			expect(await store.getImChannel(created.id)).toEqual({ platform: "lark", chatId: "oc_abc" });
+			expect((await store.list())[0]?.imChannel).toEqual({ platform: "lark", chatId: "oc_abc" });
+		});
+
+		it("unbinds a thread's IM channel", async () => {
+			const { store } = makeStore();
+			const created = await store.create({ agentId: "pi", name: "Bindable" });
+			await store.bindImChannel(created.id, { platform: "dingtalk", chatId: "cid_1" });
+
+			const unbound = await store.unbindImChannel(created.id);
+
+			expect(unbound.imChannel).toBeNull();
+			expect(await store.getImChannel(created.id)).toBeNull();
+		});
+
+		it("returns null from getImChannel for an unbound or unknown thread", async () => {
+			const { store } = makeStore();
+			const created = await store.create({ agentId: "pi", name: "Unbound" });
+			expect(await store.getImChannel(created.id)).toBeNull();
+			expect(await store.getImChannel("does-not-exist")).toBeNull();
+		});
+
+		it("throws when binding a thread that does not exist", async () => {
+			const { store } = makeStore();
+			await expect(store.bindImChannel("missing", { platform: "lark", chatId: "x" })).rejects.toThrow();
+		});
+	});
+
 	it("lists threads sorted by creation time", async () => {
 		const persistence = inMemoryPersistence({
 			threads: [

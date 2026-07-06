@@ -7,8 +7,10 @@ import {
 	type RuntimeFetchRemoteModelsRequest,
 	type RuntimeGitCheckoutRequest,
 	type RuntimeHomeChatFullscreenTabsSaveRequest,
+	type RuntimeHomeChatThreadBindImChannelRequest,
 	type RuntimeHomeChatThreadCloseRequest,
 	type RuntimeHomeChatThreadCreateRequest,
+	type RuntimeHomeChatThreadImChannelIdRequest,
 	type RuntimeHomeChatThreadRenameRequest,
 	type RuntimeHomeChatThreadSetNextStepRequest,
 	type RuntimeHomeChatThreadSetTitleRequest,
@@ -44,8 +46,10 @@ import {
 	runtimeFetchRemoteModelsRequestSchema,
 	runtimeGitCheckoutRequestSchema,
 	runtimeHomeChatFullscreenTabsSaveRequestSchema,
+	runtimeHomeChatThreadBindImChannelRequestSchema,
 	runtimeHomeChatThreadCloseRequestSchema,
 	runtimeHomeChatThreadCreateRequestSchema,
+	runtimeHomeChatThreadImChannelIdRequestSchema,
 	runtimeHomeChatThreadRenameRequestSchema,
 	runtimeHomeChatThreadSetNextStepRequestSchema,
 	runtimeHomeChatThreadSetTitleRequestSchema,
@@ -432,6 +436,33 @@ export function parseHomeChatThreadSetNextStepRequest(value: unknown): RuntimeHo
 	return {
 		id,
 		suggestion,
+	};
+}
+
+export function parseHomeChatThreadBindImChannelRequest(value: unknown): RuntimeHomeChatThreadBindImChannelRequest {
+	const parsed = parseWithSchema(runtimeHomeChatThreadBindImChannelRequestSchema, value);
+	const id = parsed.id.trim();
+	if (!id) {
+		throw new Error("Home chat thread id cannot be empty.");
+	}
+	const chatId = parsed.channel.chatId.trim();
+	if (!chatId) {
+		throw new Error("IM channel chatId cannot be empty.");
+	}
+	return {
+		id,
+		channel: { platform: parsed.channel.platform, chatId },
+	};
+}
+
+export function parseHomeChatThreadImChannelIdRequest(value: unknown): RuntimeHomeChatThreadImChannelIdRequest {
+	const parsed = parseWithSchema(runtimeHomeChatThreadImChannelIdRequestSchema, value);
+	const id = parsed.id.trim();
+	if (!id) {
+		throw new Error("Home chat thread id cannot be empty.");
+	}
+	return {
+		id,
 	};
 }
 

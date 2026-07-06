@@ -12,6 +12,7 @@ import {
 	sanitizeFullscreenTabs,
 	setHomeFullscreenTabs,
 	setHomeThreadAutoTitle,
+	setHomeThreadImChannel,
 	setHomeThreadNextStep,
 } from "../../../src/session/home-thread-registry";
 
@@ -189,6 +190,48 @@ describe("home thread registry", () => {
 
 		it("preserves the persisted fullscreen tab set", () => {
 			const next = setHomeThreadNextStep(seedWithTabs(), "t2", "Start the top backlog task");
+			expect(next.fullscreenTabs).toEqual({ openThreadIds: ["t1", "t2"], activeThreadId: "t2" });
+		});
+	});
+
+	describe("setHomeThreadImChannel", () => {
+		it("binds a thread to an IM channel and bumps updatedAt", () => {
+			const next = setHomeThreadImChannel(seed(), "t2", { platform: "lark", chatId: "oc_abc" }, 400);
+			const thread = next.threads.find((t) => t.id === "t2");
+			expect(thread?.imChannel).toEqual({ platform: "lark", chatId: "oc_abc" });
+			expect(thread?.updatedAt).toBe(400);
+		});
+
+		it("unbinds a thread when passed null", () => {
+			const bound = setHomeThreadImChannel(seed(), "t1", { platform: "dingtalk", chatId: "cid_1" }, 400);
+			const cleared = setHomeThreadImChannel(bound, "t1", null, 500);
+			expect(cleared.threads.find((t) => t.id === "t1")?.imChannel).toBeNull();
+		});
+
+		it("returns the same data reference when the binding is unchanged (no-op)", () => {
+			const bound = setHomeThreadImChannel(seed(), "t2", { platform: "lark", chatId: "oc_abc" }, 400);
+			const again = setHomeThreadImChannel(bound, "t2", { platform: "lark", chatId: "oc_abc" }, 999);
+			expect(again).toBe(bound);
+		});
+
+		it("treats an absent binding and null as equivalent (unbind on an unbound thread is a no-op)", () => {
+			const data = seed();
+			const next = setHomeThreadImChannel(data, "t1", null, 500);
+			expect(next).toBe(data);
+		});
+
+		it("does not mutate the source data", () => {
+			const data = seed();
+			setHomeThreadImChannel(data, "t2", { platform: "lark", chatId: "oc_abc" }, 400);
+			expect(data.threads.find((t) => t.id === "t2")?.imChannel).toBeUndefined();
+		});
+
+		it("throws when the thread does not exist", () => {
+			expect(() => setHomeThreadImChannel(seed(), "missing", { platform: "lark", chatId: "x" }, 400)).toThrow();
+		});
+
+		it("preserves the persisted fullscreen tab set", () => {
+			const next = setHomeThreadImChannel(seedWithTabs(), "t2", { platform: "lark", chatId: "oc_abc" }, 400);
 			expect(next.fullscreenTabs).toEqual({ openThreadIds: ["t1", "t2"], activeThreadId: "t2" });
 		});
 	});

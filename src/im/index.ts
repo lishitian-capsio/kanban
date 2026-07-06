@@ -44,6 +44,7 @@ export type {
 } from "./types";
 export {
 	IM_PLATFORMS,
+	imChannelTargetSchema,
 	imOutboundCredentialSchema,
 	imPlatformSchema,
 	persistedImCredentialsSchema,

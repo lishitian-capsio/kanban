@@ -51,8 +51,10 @@ import {
 	parseCommandRunRequest,
 	parseFetchRemoteModelsRequest,
 	parseHomeChatFullscreenTabsSaveRequest,
+	parseHomeChatThreadBindImChannelRequest,
 	parseHomeChatThreadCloseRequest,
 	parseHomeChatThreadCreateRequest,
+	parseHomeChatThreadImChannelIdRequest,
 	parseHomeChatThreadRenameRequest,
 	parseHomeChatThreadSetNextStepRequest,
 	parseHomeChatThreadSetTitleRequest,
@@ -815,6 +817,38 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				return { ok: false, thread: null, error: message };
+			}
+		},
+		bindHomeThreadImChannel: async (workspaceScope, input) => {
+			try {
+				const body = parseHomeChatThreadBindImChannelRequest(input);
+				const thread = await deps.getScopedHomeThreadStore(workspaceScope).bindImChannel(body.id, body.channel);
+				deps.bumpKanbanSessionContextVersion?.();
+				return { ok: true, thread };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, thread: null, error: message };
+			}
+		},
+		unbindHomeThreadImChannel: async (workspaceScope, input) => {
+			try {
+				const body = parseHomeChatThreadImChannelIdRequest(input);
+				const thread = await deps.getScopedHomeThreadStore(workspaceScope).unbindImChannel(body.id);
+				deps.bumpKanbanSessionContextVersion?.();
+				return { ok: true, thread };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, thread: null, error: message };
+			}
+		},
+		getHomeThreadImChannel: async (workspaceScope, input) => {
+			try {
+				const body = parseHomeChatThreadImChannelIdRequest(input);
+				const imChannel = await deps.getScopedHomeThreadStore(workspaceScope).getImChannel(body.id);
+				return { ok: true, imChannel };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, imChannel: null, error: message };
 			}
 		},
 		closeHomeThread: async (workspaceScope, input) => {
