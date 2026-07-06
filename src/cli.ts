@@ -15,6 +15,7 @@ import { registerGiteeCommand } from "./commands/gitee";
 import { registerGithubCommand } from "./commands/github";
 import { registerHomeThreadCommand } from "./commands/home-thread";
 import { registerHooksCommand } from "./commands/hooks";
+import { registerReleaseCommand } from "./commands/release";
 import { registerPasscodeAliasCommand, registerRemoteCommand } from "./commands/remote";
 import { registerServiceCommand } from "./commands/service";
 import { registerStorageCommand } from "./commands/storage";
@@ -860,6 +861,7 @@ function createProgram(invocationArgs: string[]): Command {
 	registerPasscodeAliasCommand(program);
 	registerGithubCommand(program);
 	registerGiteeCommand(program);
+	registerReleaseCommand(program);
 	// Registered after the others so it sits alongside them in help; the manifest itself is
 	// built at invocation time from the fully-assembled tree, so registration order is moot.
 	registerSchemaCommand(program, { kanbanVersion: KANBAN_VERSION });

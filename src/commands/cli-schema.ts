@@ -249,6 +249,10 @@ const COMMAND_SCHEMA_REGISTRY: Record<string, CommandSchemaMeta> = {
 		output: { ref: "#/schemas/ServiceStatusResult" },
 		errors: ["service_unsupported_platform", "internal_error"],
 	},
+	release: {
+		output: { ref: "#/schemas/ReleaseResult" },
+		errors: ["invalid_argument", "validation_failed", "internal_error"],
+	},
 	passcode: { output: { ref: GENERIC_OUTPUT_REF }, errors: ["passcode_not_set"] },
 	schema: { output: { ref: "#/schemas/CliSchemaManifest" }, errors: ["invalid_argument"] },
 	update: { output: { ref: GENERIC_OUTPUT_REF }, errors: ["internal_error"] },
@@ -346,6 +350,24 @@ const CLI_SCHEMAS: Record<string, unknown> = {
 	ServiceStatusResult: {
 		type: "object",
 		fields: { action: "string", platform: "string", name: "string", installed: "boolean", running: "boolean" },
+	},
+	ReleaseResult: {
+		type: "object",
+		fields: {
+			dryRun: "boolean",
+			previousVersion: "string",
+			version: "string",
+			bump: "enum(patch|minor|major|explicit)",
+			tag: "string",
+			branch: "string",
+			remote: "string",
+			commit: "string?",
+			commitMessage: "string",
+			pushed: "boolean",
+			steps: "string[]",
+			actionsRunUrl: "string|null",
+			actionsUrl: "string|null",
+		},
 	},
 	CliSchemaManifest: {
 		type: "object",
