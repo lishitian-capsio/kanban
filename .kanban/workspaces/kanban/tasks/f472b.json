@@ -1,0 +1,18 @@
+{
+  "id": "f472b",
+  "title": "Agent 页面刷新后模型 503 限流错误治理",
+  "prompt": "## 问题\n在 Kanban agent 页面刷新后,频繁出现模型服务端返回 503:\n\n\n## 原因分析(已初步定位)\n1. **重连风暴**:页面刷新时前端重新建立会话,短时间内触发多次 model API 调用(系统 prompt、上下文加载、自动续聊等),瞬间并发打满服务端容量。\n2. **重试放大**:如果前端/后端对 503 失败请求有自动重试且无退避,会进一步加剧拥堵。\n3. **服务端容量限流**:错误明确说 system capacity limits,是模型推理集群吞吐量被打满。\n\n## 任务要求\n1. **排查**:阅读模型调用相关代码(src/trpc/ 下的模型调用层、stream 相关代码),确认:\n   - 刷新时是否一次性开了多个 stream/session,导致并发请求数翻倍\n   - 当前是否有 retry + backoff 机制?如果有,是否对 503/429 做了指数退避?\n   - 如果有重试,重试间隔是多少?是否无脑立即重试?\n2. **修复**(根据排查结果决定具体措施,以下为候选):\n   - 对 503/429 响应加 **指数退避重试**(如初始 1s,倍率 2,上限 30s,最多 3-5 次)\n   - 如果刷新时存在多个并发 stream,考虑 **去重或排队**,避免同时打多个请求\n   - 前端适当展示友好的错误提示(如「服务繁忙,稍后重试」),而不是原样暴露 503 原始错误\n3. **约束**:\n   - 不改变正常请求的行为,只优化限流/过载场景下的表现\n   - 遵守 AGENTS.md TypeScript 与代码质量规范\n   - 补充相关单测(退避逻辑、重试次数上限等)\n   - typecheck 含 web:typecheck",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "baseRef": "main",
+  "createdAt": 1783303917926,
+  "updatedAt": 1783303917926,
+  "column": "backlog",
+  "rank": "Zu",
+  "dependsOn": []
+}
