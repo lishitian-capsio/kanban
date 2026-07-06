@@ -13,6 +13,7 @@ import type {
 	RuntimeTaskImage,
 	RuntimeTaskSessionSummary,
 } from "../core/api-contract";
+import { parseHomeAgentSessionId } from "../core/home-agent-session";
 import { buildKanbanCommandParts } from "../core/kanban-command";
 import { quoteShellArg } from "../core/shell";
 import { lockedFileSystem } from "../fs/locked-file-system";
@@ -1690,9 +1691,17 @@ const ADAPTERS: Record<RuntimeAgentId, AgentSessionAdapter> = {
 };
 
 export async function prepareAgentLaunch(input: AgentAdapterLaunchInput): Promise<PreparedAgentLaunch> {
+	// Isolate kickoff images per owner, mirroring the file-attachment scope rule
+	// (runtime-api's writeTaskSessionAttachment): a home-thread session scopes to
+	// its threadId, a real task scopes to its taskId. The scope root is the
+	// session cwd (task worktree / home-thread repo root), so images land in the
+	// same `.kanban/attachments/<scopeId>/` directory as dropped files and are
+	// cleaned up with the scope.
+	const scopeId = parseHomeAgentSessionId(input.taskId)?.threadId ?? input.taskId;
 	const preparedPrompt = await prepareTaskPromptWithImages({
 		prompt: input.prompt,
 		images: input.images,
+		scope: { root: input.cwd, scopeId },
 	});
 	return await ADAPTERS[input.agentId].prepare({
 		...input,

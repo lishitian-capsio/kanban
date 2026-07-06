@@ -426,34 +426,75 @@ describe("prepareAgentLaunch hook strategies", () => {
 		expect(config.model).toBeUndefined();
 	});
 
-	it("materializes task images for CLI prompts", async () => {
+	it("materializes task images into the task's scope attachment store for CLI prompts", async () => {
 		setupTempHome();
-		const launch = await prepareAgentLaunch({
-			taskId: "task-images",
-			agentId: "codex",
-			binary: "codex",
-			args: [],
-			cwd: "/tmp",
-			prompt: "Inspect the attached design",
-			images: [
-				{
-					id: "img-1",
-					data: Buffer.from("hello").toString("base64"),
-					mimeType: "image/png",
-					name: "diagram.png",
-				},
-			],
-		});
+		const cwd = mkdtempSync(join(tmpdir(), "kanban-agent-cwd-"));
+		try {
+			const launch = await prepareAgentLaunch({
+				taskId: "task-images",
+				agentId: "codex",
+				binary: "codex",
+				args: [],
+				cwd,
+				prompt: "Inspect the attached design",
+				images: [
+					{
+						id: "img-1",
+						data: Buffer.from("hello").toString("base64"),
+						mimeType: "image/png",
+						name: "diagram.png",
+					},
+				],
+			});
 
-		const initialPrompt = launch.args.at(-1) ?? "";
-		expect(initialPrompt).toContain("Attached reference images:");
-		expect(initialPrompt).toContain("Task:\nInspect the attached design");
+			const initialPrompt = launch.args.at(-1) ?? "";
+			expect(initialPrompt).toContain("Attached reference images:");
+			expect(initialPrompt).toContain("Task:\nInspect the attached design");
 
-		const imagePathMatch = initialPrompt.match(/1\. (.+?) \(diagram\.png\)/);
-		expect(imagePathMatch?.[1]).toBeDefined();
-		const imagePath = imagePathMatch?.[1] ?? "";
-		expect(existsSync(imagePath)).toBe(true);
-		expect(readFileSync(imagePath).toString("utf8")).toBe("hello");
+			const imagePathMatch = initialPrompt.match(/1\. (.+?) \(diagram\.png\)/);
+			expect(imagePathMatch?.[1]).toBeDefined();
+			const imagePath = imagePathMatch?.[1] ?? "";
+			// Landed in the shared scope attachment dir (task scope = taskId), not /tmp.
+			expect(imagePath.startsWith(join(cwd, ".kanban", "attachments", "task-images"))).toBe(true);
+			// Original name is embedded in the stored filename, extension preserved.
+			expect(imagePath).toMatch(/diagram-[0-9a-f]{8}\.png$/);
+			expect(existsSync(imagePath)).toBe(true);
+			expect(readFileSync(imagePath).toString("utf8")).toBe("hello");
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+
+	it("scopes home-thread kickoff images by threadId", async () => {
+		setupTempHome();
+		const cwd = mkdtempSync(join(tmpdir(), "kanban-agent-home-cwd-"));
+		try {
+			const launch = await prepareAgentLaunch({
+				taskId: "__home_agent__:ws-1:claude:thread-42",
+				agentId: "claude",
+				binary: "claude",
+				args: [],
+				cwd,
+				prompt: "Look at this",
+				images: [
+					{
+						id: "img-1",
+						data: Buffer.from("hi").toString("base64"),
+						mimeType: "image/png",
+					},
+				],
+			});
+
+			const initialPrompt = launch.args.at(-1) ?? "";
+			const imagePathMatch = initialPrompt.match(/1\. (.+)/);
+			const imagePath = imagePathMatch?.[1] ?? "";
+			// Home-thread scope = its threadId, so files never mix across threads.
+			expect(imagePath.startsWith(join(cwd, ".kanban", "attachments", "thread-42"))).toBe(true);
+			expect(existsSync(imagePath)).toBe(true);
+			expect(readFileSync(imagePath).toString("utf8")).toBe("hi");
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
 	});
 
 	it("defers Codex plan-mode startup input until startup UI is ready", async () => {
