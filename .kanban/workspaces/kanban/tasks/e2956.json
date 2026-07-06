@@ -3,7 +3,7 @@
   "title": "File popover: 附件管理入口 — 按会话分组, 只暴露 attachments",
   "prompt": "需求: 在 File popover(右上角文件浏览器)里增加一个\"Attachments\"入口,查看/下载/删除上传的聊天附件,并**按会话分组**展示。复用 File popover 现成能力。\n\n## 前置: 依赖地基任务 e801b(附件按会话隔离)\n附件现在按会话隔离:<仓库根>/.kanban/attachments/<threadId>/…(见 e801b)。本入口应按 <threadId> 分组列出,并尽量展示会话名(可从 home 线程注册表 threads.json / 线程标题解析,取不到就显示 threadId)。\n\n## 关键约束(务必遵守)\nFile popover 有意屏蔽整个 .kanban,不能整体放开:\n- src/workspace/workspace-fs-api.ts:80 ALWAYS_HIDDEN_NAMES={'.git','.kanban'},fsListDir(约551)与 listPaths(isReservedRelPath 约599-602)逐层过滤;.kanban 下增删改被 ReservedPathError 拒绝(约238-243/275-281)。\n- 原因: .kanban 含 sessions/meta/board/锁等内部状态。**只能精确开一道口子给 .kanban/attachments/**,其余 .kanban 继续隐藏禁改。\n\n## 方案\n1. 后端: 新增**专用**附件 API(按会话列出 / 下载 / 删除),只作用于 <repoRoot>/.kanban/attachments/(及其 <threadId> 子目录)。复用 e801b 提供的按 workspaceId+scopeId 解析附件目录的工具。删除要做严格路径安全: 只允许删除 attachments/<threadId>/ 下的直接子文件(或整个 <threadId> 目录),拒绝路径穿越;不要复用会命中 ReservedPathError 的通用 fsDeleteEntry —— 单独实现受限函数或加\"仅限 .kanban/attachments\"的白名单例外。下载/预览尽量复用现有 fsDownloadEntry / 预览(.md 文本、.docx 二进制只读)。\n2. 前端: File popover 加\"Attachments\"分区,按会话分组列出附件(文件名/大小/时间),支持下载/预览/删除。不要把 .kanban 整个塞进文件树。沿用现有 UI 风格与预览组件。\n3. 不改变 .kanban 其余部分的隐藏与禁改;ALWAYS_HIDDEN_NAMES 整体屏蔽保持,只对 attachments 做受控例外。\n4. 遵循仓库约定(TypeScript 无 any、现有风格、设计 token);补充/更新测试(删除路径安全、目录不存在返回空、按会话分组);跑通 typecheck / web:typecheck 与相关测试。\n5. 亲自验证: 多个会话各上传附件后,Attachments 入口按会话分组显示,能下载/预览/删除;删除后磁盘文件消失;.kanban 其余仍不可见不可改。\n\n注意: 依赖 e801b 先完成;活跃多智能体工作区,开工前 git 同步;留意 workspace-fs-api.ts / file-surface / session-attachment-store.ts 最新状态。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -13,7 +13,7 @@
   "originThreadId": "bcd4d0cd-58af-4991-967b-36e566b082ed",
   "baseRef": "main",
   "createdAt": 1783313598815,
-  "updatedAt": 1783314138777,
+  "updatedAt": 1783315729575,
   "column": "backlog",
   "rank": "Zu",
   "dependsOn": [

@@ -3,7 +3,7 @@
   "title": "创建task弹窗: 支持非图片文件(启动时落到worktree+@路径)",
   "prompt": "需求: 让\"创建 task\"弹窗(web-ui/src/components/task-create-dialog.tsx + web-ui/src/components/task-prompt-composer.tsx)的输入框支持粘贴/拖拽**非图片文件**(文档等),体验与图片一致(粘贴/拖拽/附件条/可删)。目前只支持图片(base64 进 prompt),文件不支持。\n\n## 前置: 依赖地基任务 e801b(附件按会话/scope 隔离存储)\n复用 e801b 提供的\"按 (workspaceId, scopeId) 写入/解析 .kanban/attachments/<scopeId>/ 的工具 + 路径安全 + 大小上限\"。不要自己硬拼路径、不要另写一套写盘逻辑。\n\n## 设计要点(与 a9bc2 新建会话弹窗共享前端能力,但落盘位置不同)\n- 前端收集能力应与新建会话弹窗**共用同一套 composer 文件收集逻辑**(TaskPromptComposer 扩展为\"图片 + 非图片文件\"收集/展示;抽成共享 hook/util,遵循 DRY,避免和 a9bc2 各写一份)。图片行为保持不变。\n- **task 附件落盘位置 = 任务自己的 worktree**(与对话中 task 会话拖入附件一致,提交 f5a1bccf 写在 <worktree>/.kanban/attachments/)。因为创建弹窗提交时 worktree 尚未创建,采用\"延迟落盘\":\n  1. 弹窗内先把文件收集在内存(base64/字节),显示可删除附件条;\n  2. 提交(创建任务)时把文件随任务一起带上(注意: 任务卡是持久化 JSON,不能把大二进制塞进卡里 —— 需要一个中转:要么在任务启动前的一个受控暂存区暂存并在启动时移入 worktree,要么在 task start 建好 worktree 后再由前端/后端补写。评估现有 startTaskSession / ensure-worktree 流程,选最简单可靠的一种);\n  3. 在任务启动、worktree 建好后,把文件写入 <worktree>/.kanban/attachments/,并把对应 @路径 追加进该任务 kickoff 首条 prompt(与图片一起)。\n- 清理: 附件随 worktree 删除自动清理(task done/删除时),无需额外 GC。\n\n## 要求\n1. 前端: 创建 task 弹窗输入框支持非图片文件粘贴/拖拽收集与展示(与图片并存可删),复用与 a9bc2 相同的共享收集逻辑。\n2. 落盘+注入: 文件在任务启动、worktree 就绪后写入 <worktree>/.kanban/attachments/,@路径注入 kickoff prompt。复用 e801b 工具与 session-attachment-store,不要另写。\n3. 适用范围: 仅对支持 @路径 的 CLI agent(ATTACHMENT_MENTION_AGENT_IDS,当前 claude)启用文件附件;其他 agent 优雅降级。图片不变。\n4. 弹窗关闭/提交后重置附件状态。\n5. 遵循仓库约定(TypeScript 无 any、现有风格、设计 token/UI 基元);注意 AGENTS.md 'Dual-lib typecheck trap';补充/更新测试(收集逻辑、暂存→写入 worktree、@路径注入);跑通 web:typecheck 与相关测试。\n6. 亲自验证: 创建 task 弹窗(claude)粘贴/拖拽非图片文件 → 出现附件条 → 创建并启动任务 → 文件写入 <worktree>/.kanban/attachments/ 且 kickoff prompt 含对应 @路径 → agent 能读到。图片仍正常。\n\n注意: 依赖 e801b 先完成;与 a9bc2 共享前端 composer 收集逻辑(注意避免两任务并行改 TaskPromptComposer 冲突,开工前先 git 同步,若 a9bc2 已落地则复用其抽出的共享逻辑)。活跃多智能体工作区。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -13,7 +13,7 @@
   "originThreadId": "bcd4d0cd-58af-4991-967b-36e566b082ed",
   "baseRef": "main",
   "createdAt": 1783315032160,
-  "updatedAt": 1783315032160,
+  "updatedAt": 1783315726348,
   "column": "backlog",
   "rank": "Zr",
   "dependsOn": [

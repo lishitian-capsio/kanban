@@ -3,7 +3,7 @@
   "title": "统一: 图片也走附件体系(.kanban/attachments/<scopeId>)而非 /tmp",
   "prompt": "目标: 把 CLI agent 的图片处理统一进附件体系,消除设计不一致。目前 CLI 创建 task/会话时的图片被写到 /tmp/kanban-task-images-<id>/(见 src/terminal/task-image-prompt.ts:55-77),游离于统一的 .kanban/attachments/<scopeId>/ 之外,也不归 e801b 的生命周期清理管。\n\n## 前置: 依赖 e801b(附件按 scope 隔离 + 保留原名 + 清理)\n复用 e801b 的\"按 (workspaceId, scopeId) 写入/解析 .kanban/attachments/<scopeId>/ + 路径安全 + 大小上限 + 生命周期清理\"工具。\n\n## 现状\n- CLI 图片 kickoff: task-image-prompt.ts 把 base64 图片解码成临时文件写到 /tmp/kanban-task-images-<id>/,并把引用清单拼进 prompt(prepareTaskPromptWithImages / prepareAgentLaunch)。→ 能用,但位置游离、无按 scope 清理、与文件附件不一致。\n- 文件附件: 走 session-attachment-store.ts,写到 <cwd>/.kanban/attachments/<scopeId>/,注入 @路径,随 scope 清理。\n\n## 要求\n1. 让 CLI agent 的图片与文件走**同一套**落盘+引用机制: 图片写到该 scope 的 .kanban/attachments/<scopeId>/(task=worktree、home 线程=仓库根,与 e801b 一致),用 @路径/引用注入 prompt,替代 /tmp/kanban-task-images-<id>/ 方案。复用 e801b 工具与 session-attachment-store,不要另写。\n2. 保留 claude 能正确识别图片的引用格式(现方案是在 prompt 里附\"Attached reference images\"清单 + 文件路径;沿用可被 claude 读取的形式,只把\"路径来源\"从 /tmp 换成 .kanban/attachments/<scopeId>/;确认 claude 通过该路径能读到图片)。\n3. 清理统一: 图片随 scope(worktree 删除 / 线程删除)自动清理,不再遗留 /tmp 文件。移除或改造 task-image-prompt.ts 里 /tmp 相关逻辑,避免死代码/双写。\n4. 不回退 pi(native)行为: pi 仍用 base64 in message(pi-task-session-service.ts),本任务只统一 CLI/terminal agent 的图片落盘。\n5. 适用范围与降级: 与文件一致,仅对 ATTACHMENT_MENTION_AGENT_IDS(当前 claude)统一;其他 agent 保持现状或优雅降级。\n6. 遵循仓库约定(TypeScript 无 any、现有风格);注意 AGENTS.md 'Dual-lib typecheck trap';更新相关测试(原 agent-session-adapters.test.ts 'materializes task images for CLI prompts' 等需相应调整为新落盘位置);跑通 typecheck 与相关测试。\n7. 亲自验证: CLI(claude)创建带图片的 task/会话 → 图片写入该 scope 的 .kanban/attachments/<scopeId>/(不再是 /tmp)且 claude 能读到;scope 删除后图片随之清理;pi 图片行为不变。\n\n注意: 依赖 e801b 先完成;可能与 45d69/a3876/a9bc2 有交叉(都碰附件落盘),开工前先 git 同步,尽量复用地基抽出的公共工具。活跃多智能体工作区。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -13,7 +13,7 @@
   "originThreadId": "bcd4d0cd-58af-4991-967b-36e566b082ed",
   "baseRef": "main",
   "createdAt": 1783315614404,
-  "updatedAt": 1783315614404,
+  "updatedAt": 1783315730613,
   "column": "backlog",
   "rank": "Zq",
   "dependsOn": [
