@@ -1140,6 +1140,9 @@ function getAnthropicCompat(
 
 const PROVIDER_MAX_RETRIES = 3;
 const PROVIDER_BASE_DELAY_MS = 2000;
+/** Longer base delay for capacity errors (503/529) to prevent thundering herd on refresh. */
+const PROVIDER_CAPACITY_BASE_DELAY_MS = 10_000;
+const PROVIDER_CAPACITY_MAX_DELAY_MS = 60_000;
 
 /**
  * Check if an error from the Anthropic SDK is a rate-limit/transient error that
@@ -1203,6 +1206,15 @@ export function isProviderRetryableError(error: unknown, provider?: string): boo
 		return true;
 	}
 	return isRetryableError(error);
+}
+
+/** Check if a stream error is a capacity/overload error requiring longer backoff. */
+function isCapacityRetryableError(error: unknown): boolean {
+	if (!(error instanceof Error)) return false;
+	const status = extractHttpStatusFromError(error);
+	if (status === 429 || status === 503 || status === 529) return true;
+	const msg = error.message.toLowerCase();
+	return /capacity|overloaded|system capacity|too many concurrent/i.test(msg);
 }
 
 function createEmptyUsage(premiumRequests?: number): Usage {
@@ -1722,11 +1734,25 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 						throw streamFailure;
 					}
 					providerRetryAttempt++;
-					const delayMs = PROVIDER_BASE_DELAY_MS * 2 ** (providerRetryAttempt - 1);
+					const isCapacity = isCapacityRetryableError(streamFailure);
+					const baseDelay = isCapacity ? PROVIDER_CAPACITY_BASE_DELAY_MS : PROVIDER_BASE_DELAY_MS;
+					const maxDelay = isCapacity ? PROVIDER_CAPACITY_MAX_DELAY_MS : PROVIDER_BASE_DELAY_MS * 4;
+					const delayMs = Math.min(baseDelay * 2 ** (providerRetryAttempt - 1), maxDelay);
+					// Add jitter for capacity errors to prevent thundering herd
+					const jitteredDelayMs = isCapacity
+						? delayMs * (1 + Math.random() * 0.5)
+						: delayMs;
+					if (isCapacity) {
+						logger.warn("anthropic: capacity error, retrying with extended backoff", {
+							model: model.id,
+							attempt: providerRetryAttempt,
+							delayMs: Math.round(jitteredDelayMs),
+						});
+					}
 					if (options?.providerRetryWait) {
-						await options.providerRetryWait(delayMs, options.signal);
+						await options.providerRetryWait(jitteredDelayMs, options.signal);
 					} else {
-						await scheduler.wait(delayMs, { signal: options?.signal });
+						await scheduler.wait(jitteredDelayMs, { signal: options?.signal });
 					}
 					output.content.length = 0;
 					output.responseId = undefined;
@@ -1756,6 +1782,13 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 			output.errorStatus = extractHttpStatusFromError(error);
 			output.errorMessage = firstEventTimeoutError?.message ?? (await finalizeErrorMessage(error, rawRequestDump));
 			output.errorMessage = rewriteCopilotError(output.errorMessage, error, model.provider);
+			// Surface friendly error messages for capacity/overload errors
+			if (output.errorStatus === 503 || output.errorStatus === 529 || output.errorStatus === 429) {
+				const rawMsg = output.errorMessage ?? "";
+				if (/capacity|overloaded|system capacity|too many concurrent|service.?unavailable/i.test(rawMsg)) {
+					output.errorMessage = "Service is temporarily busy. Please wait a moment and try again.";
+				}
+			}
 			output.duration = Date.now() - startTime;
 			if (firstTokenTime) output.ttft = firstTokenTime - startTime;
 			stream.push({ type: "error", reason: output.stopReason, error: output });

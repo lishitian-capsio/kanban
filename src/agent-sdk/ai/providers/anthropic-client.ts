@@ -18,7 +18,8 @@
  * - Retries: connection errors and 408/409/429/5xx (or `x-should-retry: true`)
  *   are retried up to `maxRetries` times, honoring `retry-after-ms` /
  *   `retry-after`, otherwise exponential backoff (0.5s * 2^n, capped at 8s,
- *   with up to 25% jitter).
+ *   with up to 25% jitter). Capacity errors (503/529) use longer backoff
+ *   with jitter to prevent thundering herd.
  */
 import { scheduler } from "node:timers/promises";
 import type { FetchImpl } from "../types";
@@ -30,6 +31,9 @@ const DEFAULT_TIMEOUT_MS = 600_000;
 const DEFAULT_MAX_RETRIES = 2;
 const INITIAL_RETRY_DELAY_S = 0.5;
 const MAX_RETRY_DELAY_S = 8;
+/** Longer backoff for capacity errors (503/529) to prevent thundering herd. */
+const CAPACITY_RETRY_BASE_S = 10;
+const CAPACITY_RETRY_MAX_S = 60;
 
 /** Per-request options accepted by {@link AnthropicMessages.create}. */
 export interface AnthropicRequestOptions {
@@ -120,6 +124,11 @@ function shouldRetryResponse(response: Response): boolean {
 	return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
+/** Check if status indicates capacity/rate-limit issues requiring longer backoff. */
+function isCapacityError(status: number): boolean {
+	return status === 429 || status === 503 || status === 529;
+}
+
 /** Server-suggested delay (`retry-after-ms`, then `retry-after` seconds or HTTP date). */
 function retryDelayFromHeaders(headers: Headers | undefined): number | undefined {
 	if (!headers) return undefined;
@@ -141,6 +150,13 @@ function retryDelayFromHeaders(headers: Headers | undefined): number | undefined
 function defaultRetryDelayMs(attempt: number): number {
 	const sleepSeconds = Math.min(INITIAL_RETRY_DELAY_S * 2 ** attempt, MAX_RETRY_DELAY_S);
 	const jitter = 1 - Math.random() * 0.25;
+	return sleepSeconds * jitter * 1000;
+}
+
+/** Longer backoff for capacity errors with jitter to prevent thundering herd. */
+function capacityRetryDelayMs(attempt: number): number {
+	const sleepSeconds = Math.min(CAPACITY_RETRY_BASE_S * 2 ** attempt, CAPACITY_RETRY_MAX_S);
+	const jitter = 1 + Math.random() * 0.5; // 1.0x to 1.5x multiplier
 	return sleepSeconds * jitter * 1000;
 }
 
@@ -252,7 +268,7 @@ export class AnthropicMessagesClient implements AnthropicMessagesClientLike {
 			} catch (error) {
 				if (callerSignal?.aborted) throw createAbortError();
 				if (attempt < maxRetries) {
-					await this.#backoff(attempt, undefined, callerSignal);
+					await this.#backoff(attempt, undefined, callerSignal, false);
 					continue;
 				}
 				if (error instanceof AnthropicConnectionTimeoutError) throw error;
@@ -262,8 +278,9 @@ export class AnthropicMessagesClient implements AnthropicMessagesClientLike {
 			if (response.ok) return response;
 
 			if (attempt < maxRetries && shouldRetryResponse(response)) {
+				const isCapacity = isCapacityError(response.status);
 				await response.body?.cancel().catch(() => {});
-				await this.#backoff(attempt, response.headers, callerSignal);
+				await this.#backoff(attempt, response.headers, callerSignal, isCapacity);
 				continue;
 			}
 			throw await AnthropicApiError.fromResponse(response);
@@ -307,8 +324,21 @@ export class AnthropicMessagesClient implements AnthropicMessagesClientLike {
 		attempt: number,
 		responseHeaders: Headers | undefined,
 		signal: AbortSignal | undefined,
+		isCapacity: boolean,
 	): Promise<void> {
-		const delayMs = retryDelayFromHeaders(responseHeaders) ?? defaultRetryDelayMs(attempt);
+		// Honor server-suggested retry delay if present
+		const serverDelay = retryDelayFromHeaders(responseHeaders);
+		if (serverDelay !== undefined) {
+			try {
+				await scheduler.wait(serverDelay, { signal });
+			} catch {
+				throw createAbortError();
+			}
+			return;
+		}
+
+		// Use longer backoff for capacity errors to prevent thundering herd
+		const delayMs = isCapacity ? capacityRetryDelayMs(attempt) : defaultRetryDelayMs(attempt);
 		try {
 			await scheduler.wait(delayMs, { signal });
 		} catch {

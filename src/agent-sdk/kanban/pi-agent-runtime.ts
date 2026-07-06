@@ -29,6 +29,7 @@ import {
 	createPiToolApprovalHook,
 } from "./pi-tools-bridge";
 import { type BuildPiSystemPromptInput, buildPiSystemPrompt } from "./pi-system-prompt";
+import { enqueueModelRequest } from "../shared/model-request-queue";
 
 export interface StartPiSessionRequest {
 	taskId: string;
@@ -228,8 +229,10 @@ export class InMemoryPiAgentRuntime implements PiAgentRuntime {
 		const normalizedPrompt = request.prompt.trim();
 		if (normalizedPrompt.length > 0) {
 			const userMessage = buildUserMessage(normalizedPrompt, request.images);
-			// Fire and forget - events will be emitted via subscription
-			void agent.prompt(userMessage).catch(() => {
+			// Fire and forget - events will be emitted via subscription.
+			// Route through the request queue to prevent concurrent session-start
+			// storms from overwhelming the model service (503 errors on refresh).
+			void enqueueModelRequest(() => agent.prompt(userMessage)).catch(() => {
 				// Errors are surfaced via agent_end event
 			});
 		}

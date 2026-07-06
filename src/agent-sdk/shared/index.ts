@@ -12,6 +12,7 @@ export * from "./json";
 export * as logger from "./logger";
 export * from "./mermaid-ascii";
 export * from "./mime";
+export * from "./model-request-queue";
 export * from "./peek-file";
 export * as prompt from "./prompt";
 export * from "./sanitize-text";
