@@ -236,3 +236,116 @@ function serializeRelations(relations: Record<string, VaultRelationDefinition>):
 function normalizeBody(text: string): string {
 	return text.replace(/^\n+/, "").replace(/\n+$/, "");
 }
+
+/** A relation name / inverse name: a letter, then letters, digits, `_` or `-`. */
+const RELATION_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/;
+
+/** Reduce a relation's `target` to its concrete named types, dropping the `"*"` / omitted "any" cases. */
+function concreteRelationTargets(target: string | string[] | undefined): string[] {
+	if (target === undefined) {
+		return [];
+	}
+	const list = Array.isArray(target) ? target : [target];
+	return list.filter((entry) => entry !== "*");
+}
+
+/**
+ * Strictly validate the typed-relation schema of a type that is about to be **written**
+ * through the registry. This is deliberately stricter than the read path
+ * ({@link parseRelations}, which tolerates torn/half-written entries by skipping them):
+ * authoring a type is authoritative, so a malformed relation is rejected rather than
+ * silently dropped (CLI rule — "写类型要严", cf. the advisory validation used when writing
+ * a *document*).
+ *
+ * `otherTypes` is every OTHER type currently on disk; the type being written is folded in
+ * so self-referential relations resolve. Checks, per relation (keyed by name):
+ *  - the relation name is a valid identifier;
+ *  - `cardinality`, when set, is `"one"` | `"many"`;
+ *  - every concrete `target` type exists (in `otherTypes` ∪ the type being written);
+ *    an omitted target or `"*"` means "any" and is not checked;
+ *  - a declared `inverse` is a valid identifier, resolves against a concrete target type,
+ *    and that target type declares a relation of that name whose own target points back to
+ *    this type (or is "any") — i.e. the reverse edge exists and is type-compatible.
+ *
+ * Returns the list of human-readable violations; an empty array means the schema is valid.
+ */
+export function validateVaultTypeRelations(
+	definition: VaultTypeDefinition,
+	otherTypes: readonly VaultTypeDefinition[],
+): string[] {
+	const errors: string[] = [];
+	if (!definition.relations) {
+		return errors;
+	}
+
+	// Known types = every other type on disk, plus the one being written, so a self-relation
+	// (or a mutually-inverse pair created in one shot) resolves against the new definition.
+	const known = new Map<string, VaultTypeDefinition>();
+	for (const other of otherTypes) {
+		if (other.type !== definition.type) {
+			known.set(other.type, other);
+		}
+	}
+	known.set(definition.type, definition);
+
+	for (const [name, relation] of Object.entries(definition.relations)) {
+		if (!RELATION_NAME_PATTERN.test(name)) {
+			errors.push(`relation "${name}" has an invalid name (expected a letter, then letters, digits, "_" or "-")`);
+		}
+		if (relation.cardinality !== undefined && relation.cardinality !== "one" && relation.cardinality !== "many") {
+			errors.push(
+				`relation "${name}" has an invalid cardinality "${relation.cardinality}" (expected "one" or "many")`,
+			);
+		}
+
+		const targets = concreteRelationTargets(relation.target);
+		for (const target of targets) {
+			if (!known.has(target)) {
+				errors.push(`relation "${name}" targets unknown type "${target}"`);
+			}
+		}
+
+		if (relation.inverse !== undefined) {
+			validateInverse(definition.type, name, relation.inverse, targets, known, errors);
+		}
+	}
+	return errors;
+}
+
+function validateInverse(
+	fromType: string,
+	name: string,
+	inverse: string,
+	targets: string[],
+	known: Map<string, VaultTypeDefinition>,
+	errors: string[],
+): void {
+	if (!RELATION_NAME_PATTERN.test(inverse)) {
+		errors.push(`relation "${name}" has an invalid inverse name "${inverse}"`);
+		return;
+	}
+	if (targets.length === 0) {
+		errors.push(`relation "${name}" declares inverse "${inverse}" but has no concrete target type to bind it to`);
+		return;
+	}
+	for (const target of targets) {
+		const targetType = known.get(target);
+		if (!targetType) {
+			continue; // Already reported as an unknown target above.
+		}
+		const reverse = targetType.relations?.[inverse];
+		if (!reverse) {
+			errors.push(
+				`relation "${name}" declares inverse "${inverse}", but type "${target}" has no relation named "${inverse}"`,
+			);
+			continue;
+		}
+		const reverseTargets = concreteRelationTargets(reverse.target);
+		const pointsBack = reverseTargets.length === 0 || reverseTargets.includes(fromType);
+		if (!pointsBack) {
+			errors.push(
+				`relation "${name}" declares inverse "${inverse}" on type "${target}", but that relation does not target "${fromType}"`,
+			);
+		}
+	}
+}

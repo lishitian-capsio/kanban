@@ -3,13 +3,25 @@ import { readFile } from "node:fs/promises";
 import type { Command } from "commander";
 
 import type { RuntimeVaultDocument, RuntimeVaultFrontmatterValue } from "../core/api-contract";
+import type { VaultFrontmatterValue } from "../vault/vault-document";
 import { VaultDocumentStore } from "../vault/vault-document-store";
 import { VaultTypeRegistry } from "../vault/vault-type-registry";
-import type { VaultTypeDefinition } from "../vault/vault-types";
+import {
+	type VaultRelationDefinition,
+	type VaultTypeDefinition,
+	validateVaultTypeRelations,
+} from "../vault/vault-types";
 import { readGlobalCliOptions, runCliCommand } from "./cli-command-runner";
-import type { CliWarning } from "./cli-envelope";
+import { CliError, type CliWarning } from "./cli-envelope";
 import { resolveRequiredId } from "./cli-positional-args";
-import { createRuntimeTrpcClient, type JsonRecord, resolveRuntimeWorkspace } from "./runtime-workspace";
+import { createRuntimeTrpcClient, type JsonRecord, resolveRuntimeWorkspace, toErrorMessage } from "./runtime-workspace";
+
+/** Type ids become `_types/<id>.md` filenames, so they are constrained to a path-safe slug. */
+const TYPE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+/** Default slug field when a type does not declare one (mirrors the parser's default). */
+const DEFAULT_SLUG_FIELD = "title";
+/** `--set` keys for a type target its `default_frontmatter` map and carry this prefix. */
+const DEFAULT_FRONTMATTER_PREFIX = "default_frontmatter.";
 
 function formatDocumentRecord(doc: RuntimeVaultDocument): JsonRecord {
 	return {
@@ -81,9 +93,15 @@ async function resolveStore(
 async function resolveTypeRegistry(
 	projectPath: string | undefined,
 	cwd: string,
-): Promise<{ registry: VaultTypeRegistry; repoPath: string }> {
+): Promise<{ registry: VaultTypeRegistry; repoPath: string; workspaceId: string }> {
 	const workspace = await resolveRuntimeWorkspace(projectPath, cwd, { autoCreateIfMissing: true });
-	return { registry: new VaultTypeRegistry(workspace.repoPath), repoPath: workspace.repoPath };
+	return {
+		// The `_types/` tree resolves under the board-data home (see getVaultTypesDir), so these
+		// writes are committed board data that travels with board-sync — no extra routing needed.
+		registry: new VaultTypeRegistry(workspace.repoPath),
+		repoPath: workspace.repoPath,
+		workspaceId: workspace.workspaceId,
+	};
 }
 
 /**
@@ -112,6 +130,9 @@ function formatTypeDefinitionRecord(definition: VaultTypeDefinition): JsonRecord
 	if (definition.defaultFrontmatter) {
 		record.defaultFrontmatter = definition.defaultFrontmatter;
 	}
+	if (definition.relations) {
+		record.relations = definition.relations;
+	}
 	record.body = definition.body;
 	return record;
 }
@@ -131,6 +152,298 @@ async function showType(input: { cwd: string; type: string; projectPath?: string
 		throw new Error(`Vault type "${input.type}" was not found in workspace ${repoPath}.`);
 	}
 	return { ok: true, workspacePath: repoPath, definition: formatTypeDefinitionRecord(definition) };
+}
+
+/**
+ * Parse repeatable `--set default_frontmatter.<key>=<value>` options into a
+ * `default_frontmatter` patch. Keys MUST carry the `default_frontmatter.` prefix (the
+ * only thing `--set` targets on a *type*, distinguishing it from a document's flat
+ * frontmatter); values are kept as raw strings, mirroring `vault doc create --set`.
+ */
+function parseTypeFrontmatterEntries(entries: string[] | undefined): Record<string, VaultFrontmatterValue> | undefined {
+	if (!entries || entries.length === 0) {
+		return undefined;
+	}
+	const result: Record<string, VaultFrontmatterValue> = {};
+	for (const entry of entries) {
+		const separator = entry.indexOf("=");
+		if (separator <= 0) {
+			throw new CliError(
+				"invalid_argument",
+				`Invalid --set value "${entry}". Expected ${DEFAULT_FRONTMATTER_PREFIX}<key>=<value>.`,
+			);
+		}
+		const rawKey = entry.slice(0, separator).trim();
+		if (!rawKey.startsWith(DEFAULT_FRONTMATTER_PREFIX)) {
+			throw new CliError(
+				"invalid_argument",
+				`Invalid --set key "${rawKey}". Type frontmatter keys must be prefixed with "${DEFAULT_FRONTMATTER_PREFIX}".`,
+			);
+		}
+		const key = rawKey.slice(DEFAULT_FRONTMATTER_PREFIX.length);
+		if (key.length === 0) {
+			throw new CliError(
+				"invalid_argument",
+				`Invalid --set value "${entry}". Key must not be empty after the "${DEFAULT_FRONTMATTER_PREFIX}" prefix.`,
+			);
+		}
+		result[key] = entry.slice(separator + 1);
+	}
+	return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/**
+ * Strictly parse one relation's JSON payload into a {@link VaultRelationDefinition}. Shape
+ * violations (non-object, wrong scalar types, a `cardinality` outside the enum) are rejected
+ * here as `invalid_argument`; the *semantic* checks (name legality, target existence, inverse
+ * self-consistency) run later over the whole map via {@link validateVaultTypeRelations}.
+ */
+function parseRelationDefinition(name: string, raw: unknown): VaultRelationDefinition {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new CliError("invalid_argument", `Relation "${name}" must be a JSON object.`);
+	}
+	const entry = raw as Record<string, unknown>;
+	const relation: VaultRelationDefinition = { name };
+	if (entry.label !== undefined) {
+		if (typeof entry.label !== "string") {
+			throw new CliError("invalid_argument", `Relation "${name}" label must be a string.`);
+		}
+		relation.label = entry.label;
+	}
+	if (entry.target !== undefined) {
+		relation.target = parseRelationTargetInput(name, entry.target);
+	}
+	if (entry.cardinality !== undefined) {
+		if (entry.cardinality !== "one" && entry.cardinality !== "many") {
+			throw new CliError(
+				"invalid_argument",
+				`Relation "${name}" cardinality must be "one" or "many" (got ${JSON.stringify(entry.cardinality)}).`,
+			);
+		}
+		relation.cardinality = entry.cardinality;
+	}
+	if (entry.inverse !== undefined) {
+		if (typeof entry.inverse !== "string") {
+			throw new CliError("invalid_argument", `Relation "${name}" inverse must be a string.`);
+		}
+		relation.inverse = entry.inverse;
+	}
+	// Accept both the model key (`inverseLabel`) and the on-disk key (`inverse_label`).
+	const inverseLabel = entry.inverseLabel ?? entry.inverse_label;
+	if (inverseLabel !== undefined) {
+		if (typeof inverseLabel !== "string") {
+			throw new CliError("invalid_argument", `Relation "${name}" inverseLabel must be a string.`);
+		}
+		relation.inverseLabel = inverseLabel;
+	}
+	return relation;
+}
+
+function parseRelationTargetInput(name: string, value: unknown): string | string[] {
+	if (typeof value === "string") {
+		return value;
+	}
+	if (Array.isArray(value) && value.every((entry): entry is string => typeof entry === "string") && value.length > 0) {
+		return value;
+	}
+	throw new CliError(
+		"invalid_argument",
+		`Relation "${name}" target must be a type id string or a non-empty array of type id strings.`,
+	);
+}
+
+/**
+ * Assemble the relation map from `--relations-file` (a JSON `name → definition` map) then
+ * repeatable `--relation '<name>={json}'` entries, the latter overriding by name. Returns
+ * `undefined` when neither option supplied anything (so the caller leaves relations unchanged).
+ */
+async function parseRelationsInput(
+	relation: string[] | undefined,
+	relationsFile: string | undefined,
+): Promise<Record<string, VaultRelationDefinition> | undefined> {
+	const result: Record<string, VaultRelationDefinition> = {};
+	if (relationsFile !== undefined) {
+		let raw: string;
+		try {
+			raw = await readFile(relationsFile, "utf8");
+		} catch (error) {
+			throw new CliError(
+				"invalid_argument",
+				`Could not read --relations-file "${relationsFile}": ${toErrorMessage(error)}`,
+			);
+		}
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(raw);
+		} catch (error) {
+			throw new CliError(
+				"invalid_argument",
+				`--relations-file "${relationsFile}" is not valid JSON: ${toErrorMessage(error)}`,
+			);
+		}
+		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+			throw new CliError(
+				"invalid_argument",
+				`--relations-file must contain a JSON object mapping relation name → definition.`,
+			);
+		}
+		for (const [name, value] of Object.entries(parsed)) {
+			result[name] = parseRelationDefinition(name, value);
+		}
+	}
+	for (const entry of relation ?? []) {
+		const separator = entry.indexOf("=");
+		if (separator <= 0) {
+			throw new CliError("invalid_argument", `Invalid --relation value "${entry}". Expected <name>={json}.`);
+		}
+		const name = entry.slice(0, separator).trim();
+		if (name.length === 0) {
+			throw new CliError(
+				"invalid_argument",
+				`Invalid --relation value "${entry}". Relation name must not be empty.`,
+			);
+		}
+		let value: unknown;
+		try {
+			value = JSON.parse(entry.slice(separator + 1));
+		} catch (error) {
+			throw new CliError("invalid_argument", `Invalid --relation JSON for "${name}": ${toErrorMessage(error)}`);
+		}
+		result[name] = parseRelationDefinition(name, value);
+	}
+	return Object.keys(result).length > 0 ? result : undefined;
+}
+
+interface TypeFieldInput {
+	label?: string;
+	description?: string;
+	icon?: string;
+	slugField?: string;
+	status?: string[];
+	set?: string[];
+	body?: string;
+	bodyFile?: string;
+	relation?: string[];
+	relationsFile?: string;
+}
+
+/**
+ * Build the {@link VaultTypeDefinition} to write. On create `existing` is undefined and every
+ * field comes from the flags; on update, omitted flags fall back to `existing` (缺字段保持不变).
+ * `--set` merges into the existing `default_frontmatter` and `--relation`/`--relations-file`
+ * merge by relation name — both mirror `vault doc update`'s key-wise merge rather than replacing
+ * the whole map.
+ */
+async function buildTypeDefinition(
+	type: string,
+	existing: VaultTypeDefinition | undefined,
+	input: TypeFieldInput,
+): Promise<VaultTypeDefinition> {
+	const definition: VaultTypeDefinition = {
+		type,
+		label: input.label ?? existing?.label ?? "",
+		slugField: input.slugField ?? existing?.slugField ?? DEFAULT_SLUG_FIELD,
+		body: (await resolveBody(input.body, input.bodyFile)) ?? existing?.body ?? "",
+	};
+
+	const description = input.description !== undefined ? input.description : existing?.description;
+	if (description !== undefined) {
+		definition.description = description;
+	}
+	const icon = input.icon !== undefined ? input.icon : existing?.icon;
+	if (icon !== undefined) {
+		definition.icon = icon;
+	}
+	const statusEnum = input.status && input.status.length > 0 ? input.status : existing?.statusEnum;
+	if (statusEnum && statusEnum.length > 0) {
+		definition.statusEnum = statusEnum;
+	}
+
+	const setPatch = parseTypeFrontmatterEntries(input.set);
+	const defaultFrontmatter = setPatch
+		? { ...existing?.defaultFrontmatter, ...setPatch }
+		: existing?.defaultFrontmatter;
+	if (defaultFrontmatter && Object.keys(defaultFrontmatter).length > 0) {
+		definition.defaultFrontmatter = defaultFrontmatter;
+	}
+
+	const relationsPatch = await parseRelationsInput(input.relation, input.relationsFile);
+	const relations = relationsPatch ? { ...existing?.relations, ...relationsPatch } : existing?.relations;
+	if (relations && Object.keys(relations).length > 0) {
+		definition.relations = relations;
+	}
+	return definition;
+}
+
+/** Fail closed on an empty label or an invalid relation schema (strict write-time validation). */
+function assertValidTypeDefinition(definition: VaultTypeDefinition, otherTypes: readonly VaultTypeDefinition[]): void {
+	if (definition.label.trim().length === 0) {
+		throw new CliError("invalid_argument", "Type label must not be empty.");
+	}
+	const relationErrors = validateVaultTypeRelations(definition, otherTypes);
+	if (relationErrors.length > 0) {
+		throw new CliError("invalid_argument", `Invalid type relation schema: ${relationErrors.join("; ")}`);
+	}
+}
+
+async function createType(
+	input: { cwd: string; type: string; projectPath?: string } & TypeFieldInput,
+): Promise<JsonRecord> {
+	const { registry, repoPath, workspaceId } = await resolveTypeRegistry(input.projectPath, input.cwd);
+	if (!TYPE_ID_PATTERN.test(input.type)) {
+		throw new CliError(
+			"invalid_argument",
+			`Invalid type id "${input.type}". Expected a letter or digit, then letters, digits, "_" or "-".`,
+		);
+	}
+	if (await registry.get(input.type)) {
+		throw new CliError("invalid_argument", `Vault type "${input.type}" already exists in workspace ${repoPath}.`);
+	}
+	const definition = await buildTypeDefinition(input.type, undefined, input);
+	assertValidTypeDefinition(definition, await registry.list());
+	await registry.writeDefinition(definition);
+	await notifyRuntimeIfRunning(workspaceId);
+	return { ok: true, workspacePath: repoPath, definition: formatTypeDefinitionRecord(definition) };
+}
+
+async function updateType(
+	input: { cwd: string; type: string; projectPath?: string } & TypeFieldInput,
+): Promise<JsonRecord> {
+	const { registry, repoPath, workspaceId } = await resolveTypeRegistry(input.projectPath, input.cwd);
+	const existing = await registry.get(input.type);
+	if (!existing) {
+		throw new CliError("document_not_found", `Vault type "${input.type}" was not found in workspace ${repoPath}.`);
+	}
+	const definition = await buildTypeDefinition(input.type, existing, input);
+	assertValidTypeDefinition(definition, await registry.list());
+	// Rewrite the file that actually declares this type (may be non-canonically named).
+	await registry.writeDefinition(definition, (await registry.locate(input.type)) ?? undefined);
+	await notifyRuntimeIfRunning(workspaceId);
+	return { ok: true, workspacePath: repoPath, definition: formatTypeDefinitionRecord(definition) };
+}
+
+/**
+ * Delete a type definition. Non-blocking: documents of this type are NOT removed — the delete
+ * proceeds even when they exist, and the count is surfaced as an `orphaned_documents` warning
+ * ("<n> 篇文档将变成未注册类型") since those documents become unregistered-type documents (the
+ * engine still serves them permissively).
+ */
+async function deleteType(
+	input: { cwd: string; type: string; projectPath?: string },
+	warnings: CliWarning[],
+): Promise<JsonRecord> {
+	const { registry, repoPath, workspaceId } = await resolveTypeRegistry(input.projectPath, input.cwd);
+	const existing = await registry.get(input.type);
+	if (!existing) {
+		throw new CliError("document_not_found", `Vault type "${input.type}" was not found in workspace ${repoPath}.`);
+	}
+	const documents = await new VaultDocumentStore(repoPath).list(input.type);
+	const deleted = await registry.delete(input.type);
+	await notifyRuntimeIfRunning(workspaceId);
+	if (documents.length > 0) {
+		warnings.push({ code: "orphaned_documents", message: `${documents.length} 篇文档将变成未注册类型` });
+	}
+	return { ok: true, workspacePath: repoPath, type: input.type, deleted, orphanedDocuments: documents.length };
 }
 
 async function resolveBody(body: string | undefined, bodyFile: string | undefined): Promise<string | undefined> {
@@ -256,6 +569,107 @@ export function registerVaultCommand(program: Command): void {
 					}
 					return await showType({ cwd: process.cwd(), type: resolved.id, projectPath: globals.projectPath });
 				},
+				{ globals, warnings },
+			);
+		});
+
+	type
+		.command("create")
+		.description("Create a new document type (writes docs/_types/<type>.md through the canonical serializer).")
+		.requiredOption("--type <type>", "Type id — used as the `type:` value and the filename.")
+		.requiredOption("--label <label>", "Human display label.")
+		.option("--description <text>", "One-line 'when to use me', shown in type pickers.")
+		.option("--icon <name>", "Lucide icon name hint.")
+		.option("--slug-field <field>", "Frontmatter field seeding the filename slug (defaults to title).")
+		.option("--status <value>", "Add a status enum value. Repeatable.", collectSet, [])
+		.option(
+			"--set <default_frontmatter.key=value>",
+			"Set a default_frontmatter field (keys prefixed default_frontmatter.). Repeatable.",
+			collectSet,
+			[],
+		)
+		.option("--body <text>", "Authoring-prompt markdown body.")
+		.option("--body-file <path>", "Read the authoring-prompt body from a local file.")
+		.option("--relation <name={json}>", "Add a typed relation by name. Repeatable.", collectSet, [])
+		.option("--relations-file <path>", "Read a JSON map of relation name → definition.")
+		.action(async function (this: Command, options: { type: string } & TypeFieldInput) {
+			const globals = readGlobalCliOptions(this);
+			await runCliCommand(
+				"vault.type.create",
+				async () =>
+					await createType({
+						cwd: process.cwd(),
+						type: options.type,
+						label: options.label,
+						description: options.description,
+						icon: options.icon,
+						slugField: options.slugField,
+						status: options.status,
+						set: options.set,
+						body: options.body,
+						bodyFile: options.bodyFile,
+						relation: options.relation,
+						relationsFile: options.relationsFile,
+						projectPath: globals.projectPath,
+					}),
+				{ globals },
+			);
+		});
+
+	type
+		.command("update")
+		.description("Update a document type (omitted fields are left unchanged; --set and --relation merge by key).")
+		.requiredOption("--type <type>", "Type id to update.")
+		.option("--label <label>", "New display label.")
+		.option("--description <text>", "New one-line description.")
+		.option("--icon <name>", "New Lucide icon name hint.")
+		.option("--slug-field <field>", "New slug field.")
+		.option("--status <value>", "Replace the status enum with these values. Repeatable.", collectSet, [])
+		.option(
+			"--set <default_frontmatter.key=value>",
+			"Merge a default_frontmatter field (keys prefixed default_frontmatter.). Repeatable.",
+			collectSet,
+			[],
+		)
+		.option("--body <text>", "Replace the authoring-prompt body.")
+		.option("--body-file <path>", "Replace the authoring-prompt body from a local file.")
+		.option("--relation <name={json}>", "Add or replace a typed relation by name. Repeatable.", collectSet, [])
+		.option("--relations-file <path>", "Merge a JSON map of relation name → definition.")
+		.action(async function (this: Command, options: { type: string } & TypeFieldInput) {
+			const globals = readGlobalCliOptions(this);
+			await runCliCommand(
+				"vault.type.update",
+				async () =>
+					await updateType({
+						cwd: process.cwd(),
+						type: options.type,
+						label: options.label,
+						description: options.description,
+						icon: options.icon,
+						slugField: options.slugField,
+						status: options.status,
+						set: options.set,
+						body: options.body,
+						bodyFile: options.bodyFile,
+						relation: options.relation,
+						relationsFile: options.relationsFile,
+						projectPath: globals.projectPath,
+					}),
+				{ globals },
+			);
+		});
+
+	type
+		.command("delete")
+		.description("Delete a document type. Non-blocking: existing documents of this type are kept (and warned about).")
+		.requiredOption("--type <type>", "Type id to delete.")
+		.action(async function (this: Command, options: { type: string }) {
+			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
+			await runCliCommand(
+				"vault.type.delete",
+				async () =>
+					await deleteType({ cwd: process.cwd(), type: options.type, projectPath: globals.projectPath }, warnings),
 				{ globals, warnings },
 			);
 		});

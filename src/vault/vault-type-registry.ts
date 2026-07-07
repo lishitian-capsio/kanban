@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { lockedFileSystem } from "../fs/locked-file-system";
@@ -76,6 +76,56 @@ export class VaultTypeRegistry {
 	/** Drop the in-memory cache so the next read re-scans disk (e.g. after a type edit). */
 	invalidate(): void {
 		this.cache = null;
+	}
+
+	/**
+	 * Absolute path of the `_types/` file that declares `type` (matched on the parsed
+	 * `name` frontmatter, not the filename, so a hand-named file is still located), or
+	 * `null` when no file declares it. Used by {@link delete} and by an update that must
+	 * rewrite the existing file in place rather than orphan a non-canonically-named one.
+	 */
+	async locate(type: string): Promise<string | null> {
+		for (const filename of await listMarkdownFiles(this.typesDir)) {
+			const path = join(this.typesDir, filename);
+			let raw: string;
+			try {
+				raw = await readFile(path, "utf8");
+			} catch {
+				continue;
+			}
+			try {
+				if (parseVaultTypeDefinition(raw).type === type) {
+					return path;
+				}
+			} catch {
+				// Unparseable file — cannot claim a type id, skip it.
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Write a type definition to disk as a canonical `_types/<type>.md` document, always
+	 * through {@link serializeVaultTypeDefinition} so a CLI write is byte-identical to a
+	 * hand-authored file and round-trips (relations included). Pass `targetPath` to rewrite
+	 * an existing, non-canonically-named file in place. Invalidates the cache after writing.
+	 */
+	async writeDefinition(definition: VaultTypeDefinition, targetPath?: string): Promise<void> {
+		await mkdir(this.typesDir, { recursive: true });
+		const path = targetPath ?? join(this.typesDir, `${definition.type}${DOC_EXTENSION}`);
+		await lockedFileSystem.writeTextFileAtomic(path, serializeVaultTypeDefinition(definition), { lock: null });
+		this.invalidate();
+	}
+
+	/** Remove the file declaring `type`. Returns `false` when no such file exists. */
+	async delete(type: string): Promise<boolean> {
+		const path = await this.locate(type);
+		if (!path) {
+			return false;
+		}
+		await rm(path, { force: true });
+		this.invalidate();
+		return true;
 	}
 }
 

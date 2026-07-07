@@ -87,4 +87,63 @@ describe("VaultTypeRegistry", () => {
 		registry.invalidate();
 		expect((await registry.get("spec"))?.label).toBe("Spec");
 	});
+
+	it("writeDefinition produces a canonical, re-readable file and invalidates the cache", async () => {
+		const registry = new VaultTypeRegistry(repoPath);
+		await registry.list(); // warm the cache so we prove invalidation
+
+		await registry.writeDefinition({
+			type: "spec",
+			label: "Spec",
+			slugField: "title",
+			defaultFrontmatter: { status: "draft" },
+			relations: { supersedes: { name: "supersedes", target: "spec", cardinality: "one" } },
+			body: "# Spec",
+		});
+
+		const written = await registry.get("spec");
+		expect(written?.label).toBe("Spec");
+		expect(written?.defaultFrontmatter).toEqual({ status: "draft" });
+		expect(written?.relations).toEqual({ supersedes: { name: "supersedes", target: "spec", cardinality: "one" } });
+
+		const onDisk = await readFile(join(getVaultTypesDir(repoPath), "spec.md"), "utf8");
+		expect(onDisk).toContain("name: spec");
+		expect(onDisk).toContain("relations:");
+	});
+
+	it("locate finds the backing file by parsed type, not filename", async () => {
+		const typesDir = getVaultTypesDir(repoPath);
+		await mkdir(typesDir, { recursive: true });
+		await writeFile(join(typesDir, "renamed.md"), "---\nname: spec\nlabel: Spec\n---\n# Spec");
+		const registry = new VaultTypeRegistry(repoPath);
+
+		expect(await registry.locate("spec")).toBe(join(typesDir, "renamed.md"));
+		expect(await registry.locate("missing")).toBeNull();
+	});
+
+	it("writeDefinition rewrites the located file in place when targetPath is given", async () => {
+		const typesDir = getVaultTypesDir(repoPath);
+		await mkdir(typesDir, { recursive: true });
+		await writeFile(join(typesDir, "renamed.md"), "---\nname: spec\nlabel: Spec\n---\n# Spec");
+		const registry = new VaultTypeRegistry(repoPath);
+
+		const path = await registry.locate("spec");
+		await registry.writeDefinition(
+			{ type: "spec", label: "Spec v2", slugField: "title", body: "# Spec" },
+			path ?? undefined,
+		);
+
+		const files = (await readdir(typesDir)).sort();
+		expect(files).toEqual(["renamed.md"]); // no orphaned canonical spec.md
+		expect((await registry.get("spec"))?.label).toBe("Spec v2");
+	});
+
+	it("delete removes the file and returns false for an unknown type", async () => {
+		await seedVaultTypeDefinitions(getVaultTypesDir(repoPath));
+		const registry = new VaultTypeRegistry(repoPath);
+
+		expect(await registry.delete("note")).toBe(true);
+		expect(await registry.get("note")).toBeUndefined();
+		expect(await registry.delete("note")).toBe(false);
+	});
 });

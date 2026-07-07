@@ -6,6 +6,7 @@ import {
 	serializeVaultTypeDefinition,
 	type VaultTypeDefinition,
 	VaultTypeDefinitionParseError,
+	validateVaultTypeRelations,
 } from "../../../src/vault/vault-types";
 
 describe("parseVaultTypeDefinition", () => {
@@ -171,6 +172,107 @@ describe("serialize → parse round-trip", () => {
 		};
 		const reparsed = parseVaultTypeDefinition(serializeVaultTypeDefinition(def));
 		expect(reparsed.relations).toEqual(def.relations);
+	});
+});
+
+describe("validateVaultTypeRelations", () => {
+	const baseType = (relations: VaultTypeDefinition["relations"], type = "task"): VaultTypeDefinition => ({
+		type,
+		label: "Task",
+		slugField: "title",
+		body: "",
+		relations,
+	});
+
+	it("passes when there are no relations", () => {
+		expect(validateVaultTypeRelations({ type: "note", label: "Note", slugField: "title", body: "" }, [])).toEqual([]);
+	});
+
+	it("accepts a relation whose target type exists", () => {
+		const requirement: VaultTypeDefinition = {
+			type: "requirement",
+			label: "Requirement",
+			slugField: "title",
+			body: "",
+		};
+		const def = baseType({ implements: { name: "implements", target: "requirement", cardinality: "one" } });
+		expect(validateVaultTypeRelations(def, [requirement])).toEqual([]);
+	});
+
+	it("accepts an omitted or wildcard target as 'any'", () => {
+		const def = baseType({
+			mentions: { name: "mentions" },
+			anything: { name: "anything", target: "*" },
+		});
+		expect(validateVaultTypeRelations(def, [])).toEqual([]);
+	});
+
+	it("resolves a self-referential target against the type being written", () => {
+		const def = baseType({ related: { name: "related", target: "task" } });
+		expect(validateVaultTypeRelations(def, [])).toEqual([]);
+	});
+
+	it("rejects a target type that does not exist", () => {
+		const def = baseType({ implements: { name: "implements", target: "requirement" } });
+		const errors = validateVaultTypeRelations(def, []);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('targets unknown type "requirement"');
+	});
+
+	it("rejects an invalid relation name and a bad cardinality", () => {
+		const def = baseType({
+			"1bad": { name: "1bad", target: "*" },
+			ok: { name: "ok", target: "*", cardinality: "sometimes" as unknown as "one" },
+		});
+		const errors = validateVaultTypeRelations(def, []);
+		expect(errors.some((e) => e.includes('relation "1bad" has an invalid name'))).toBe(true);
+		expect(errors.some((e) => e.includes('invalid cardinality "sometimes"'))).toBe(true);
+	});
+
+	it("rejects an inverse with no concrete target to bind to", () => {
+		const def = baseType({ blocks: { name: "blocks", target: "*", inverse: "blocked_by" } });
+		const errors = validateVaultTypeRelations(def, []);
+		expect(errors[0]).toContain("has no concrete target type to bind it to");
+	});
+
+	it("rejects an inverse when the target type lacks the named reverse relation", () => {
+		const other: VaultTypeDefinition = { type: "requirement", label: "Requirement", slugField: "title", body: "" };
+		const def = baseType({ implements: { name: "implements", target: "requirement", inverse: "implemented_by" } });
+		const errors = validateVaultTypeRelations(def, [other]);
+		expect(errors[0]).toContain('type "requirement" has no relation named "implemented_by"');
+	});
+
+	it("rejects an inverse whose reverse relation does not point back", () => {
+		const other: VaultTypeDefinition = {
+			type: "requirement",
+			label: "Requirement",
+			slugField: "title",
+			body: "",
+			relations: { implemented_by: { name: "implemented_by", target: "note" } },
+		};
+		const def = baseType({ implements: { name: "implements", target: "requirement", inverse: "implemented_by" } });
+		const errors = validateVaultTypeRelations(def, [other]);
+		expect(errors[0]).toContain('does not target "task"');
+	});
+
+	it("accepts a well-formed inverse whose reverse relation points back (or is any)", () => {
+		const other: VaultTypeDefinition = {
+			type: "requirement",
+			label: "Requirement",
+			slugField: "title",
+			body: "",
+			relations: { implemented_by: { name: "implemented_by", target: "task" } },
+		};
+		const def = baseType({ implements: { name: "implements", target: "requirement", inverse: "implemented_by" } });
+		expect(validateVaultTypeRelations(def, [other])).toEqual([]);
+	});
+
+	it("accepts a mutually-inverse pair declared within one self-referential type", () => {
+		const def = baseType({
+			blocks: { name: "blocks", target: "task", inverse: "blocked_by" },
+			blocked_by: { name: "blocked_by", target: "task", inverse: "blocks" },
+		});
+		expect(validateVaultTypeRelations(def, [])).toEqual([]);
 	});
 });
 
