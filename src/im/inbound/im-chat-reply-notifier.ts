@@ -33,8 +33,13 @@ interface BufferedReply {
 }
 
 export interface ImChatReplyNotifierDeps {
-	/** Resolve the IM channel a home thread is bound to. Returns `null` when unbound (→ skip). */
-	resolveThreadImChannel: (workspaceId: string, threadId: string) => Promise<ImChannelTarget | null>;
+	/**
+	 * Resolve the IM channel a home session's reply should be pushed to. Dispatches on the agent:
+	 * Pi's binding is doc-level (decision X1), a thread's is on its entry — so the agent is required
+	 * to keep a browser-driven CLI default session (threadId `"default"`, unbound) from mis-routing
+	 * to Pi's channel. Returns `null` when unbound (→ skip).
+	 */
+	resolveThreadImChannel: (workspaceId: string, agentId: string, threadId: string) => Promise<ImChannelTarget | null>;
 	/** Outbound text sender; defaults to the runtime-safe {@link sendImText}. Injected in tests. */
 	sendText?: (target: ImChannelTarget, message: ImTextMessage) => Promise<ImSendResult | null>;
 	/** Max sent `(taskId, messageId)` keys retained before FIFO eviction. */
@@ -100,11 +105,11 @@ export class ImChatReplyNotifier {
 
 	private async flush(workspaceId: string, taskId: string, content: string): Promise<void> {
 		try {
-			const threadId = parseHomeAgentSessionId(taskId)?.threadId;
-			if (!threadId) {
+			const parsed = parseHomeAgentSessionId(taskId);
+			if (!parsed) {
 				return;
 			}
-			const channel = await this.resolveThreadImChannel(workspaceId, threadId);
+			const channel = await this.resolveThreadImChannel(workspaceId, parsed.agentId, parsed.threadId);
 			if (!channel) {
 				return;
 			}

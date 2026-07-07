@@ -5,16 +5,20 @@ import { ImChannelChip } from "@/components/im/im-channel-chip";
 import { ImChannelPicker } from "@/components/im/im-channel-picker";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
-import type { HomeThread } from "@/hooks/use-home-threads";
 import { useImChats } from "@/hooks/use-im-chats";
 
 interface ImChannelBindDialogProps {
-	thread: HomeThread | null;
+	/** Whether the dialog is shown. */
+	open: boolean;
+	/** The current binding, or `null` when unbound. */
+	current: ImChannelTarget | null;
+	/** Dialog title. Defaults to the generic bind title. */
+	title?: string;
 	/** Workspace scope for the bindable IM chat list shown in the picker. */
 	workspaceId?: string | null;
 	onOpenChange: (open: boolean) => void;
-	onBind: (threadId: string, channel: ImChannelTarget) => void | Promise<void>;
-	onUnbind: (threadId: string) => void | Promise<void>;
+	onBind: (channel: ImChannelTarget) => void | Promise<void>;
+	onUnbind: () => void | Promise<void>;
 }
 
 function sameChannel(a: ImChannelTarget | null, b: ImChannelTarget | null): boolean {
@@ -22,14 +26,20 @@ function sameChannel(a: ImChannelTarget | null, b: ImChannelTarget | null): bool
 	return a.platform === b.platform && a.chatId === b.chatId;
 }
 
+/**
+ * Generic "bind this thing to an IM channel" dialog (requirement ac99c). The caller owns what is
+ * being bound (a home thread or the single Pi conversation) and supplies the current binding plus
+ * bind/unbind handlers — this component is only the picker + current-binding chip + submit states.
+ */
 export function ImChannelBindDialog({
-	thread,
+	open,
+	current,
+	title = "绑定 IM 频道",
 	workspaceId = null,
 	onOpenChange,
 	onBind,
 	onUnbind,
 }: ImChannelBindDialogProps): ReactElement {
-	const current = thread?.imChannel ?? null;
 	const [draft, setDraft] = useState<ImChannelTarget | null>(current);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -43,20 +53,21 @@ export function ImChannelBindDialog({
 		);
 	}, [chats, current]);
 
+	// Reset the draft to the current binding whenever the dialog (re)opens.
 	useEffect(() => {
-		if (thread) {
-			setDraft(thread.imChannel ?? null);
+		if (open) {
+			setDraft(current);
 			setIsSubmitting(false);
 		}
-	}, [thread]);
+	}, [open, current]);
 
 	const changed = Boolean(draft) && !sameChannel(draft, current);
 
 	const handleBind = async () => {
-		if (!thread || !draft || !changed || isSubmitting) return;
+		if (!draft || !changed || isSubmitting) return;
 		setIsSubmitting(true);
 		try {
-			await onBind(thread.id, draft);
+			await onBind(draft);
 			onOpenChange(false);
 		} finally {
 			setIsSubmitting(false);
@@ -64,10 +75,10 @@ export function ImChannelBindDialog({
 	};
 
 	const handleUnbind = async () => {
-		if (!thread || !current || isSubmitting) return;
+		if (!current || isSubmitting) return;
 		setIsSubmitting(true);
 		try {
-			await onUnbind(thread.id);
+			await onUnbind();
 			onOpenChange(false);
 		} finally {
 			setIsSubmitting(false);
@@ -75,8 +86,8 @@ export function ImChannelBindDialog({
 	};
 
 	return (
-		<Dialog open={thread !== null} onOpenChange={onOpenChange} contentClassName="max-w-md">
-			<DialogHeader title="绑定 IM 频道" />
+		<Dialog open={open} onOpenChange={onOpenChange} contentClassName="max-w-md">
+			<DialogHeader title={title} />
 			<DialogBody className="flex flex-col gap-4">
 				{current ? (
 					<div className="flex flex-col gap-1.5">

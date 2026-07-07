@@ -12,9 +12,11 @@ import type { ImChannelTarget } from "../im/types";
 import { loadWorkspaceHomeThreads, mutateWorkspaceHomeThreads } from "../state/workspace-state";
 import {
 	bindHomeThreadImChannelExclusive,
+	bindPiImChannelExclusive,
 	closeHomeThread,
 	createHomeThread,
 	getHomeFullscreenTabs,
+	getPiImChannel,
 	listHomeThreads,
 	renameHomeThread,
 	type SetHomeThreadAutoTitleResult,
@@ -22,6 +24,7 @@ import {
 	setHomeThreadAutoTitle,
 	setHomeThreadImChannel,
 	setHomeThreadNextStep,
+	unbindPiImChannel,
 } from "./home-thread-registry";
 
 /**
@@ -255,6 +258,28 @@ export class HomeThreadStore {
 	async getImChannel(id: string): Promise<ImChannelTarget | null> {
 		const data = await this.persistence.load();
 		return data.threads.find((thread) => thread.id === id)?.imChannel ?? null;
+	}
+
+	// --- Pi single conversation IM binding (decision X1, requirement ac99c) ---
+	// Pi is not a thread; its binding is a doc-level field. These mirror the thread bind/unbind/get
+	// above but take no thread id (Pi is a per-workspace singleton). Binding enforces the same
+	// one-to-one invariant across the doc — see {@link bindPiImChannelExclusive}.
+
+	/** The IM channel the workspace's single embedded Pi conversation is bound to, or `null`. */
+	async getPiImChannel(): Promise<ImChannelTarget | null> {
+		return getPiImChannel(await this.persistence.load());
+	}
+
+	/** Bind Pi to an IM channel, moving the channel off any thread that held it. Returns the channel. */
+	async bindPiImChannel(channel: ImChannelTarget): Promise<ImChannelTarget> {
+		const now = this.now();
+		const next = await this.persistence.mutate((current) => bindPiImChannelExclusive(current, channel, now));
+		return next.piImChannel ?? channel;
+	}
+
+	/** Remove Pi's IM channel binding. Idempotent. */
+	async unbindPiImChannel(): Promise<void> {
+		await this.persistence.mutate((current) => unbindPiImChannel(current));
 	}
 
 	async close(id: string): Promise<RuntimeHomeChatThread> {

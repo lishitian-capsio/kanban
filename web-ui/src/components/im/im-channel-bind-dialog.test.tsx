@@ -3,7 +3,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ImChannelBindDialog } from "@/components/im/im-channel-bind-dialog";
-import type { HomeThread } from "@/hooks/use-home-threads";
 import type { RuntimeImChat } from "@/runtime/types";
 
 // The picker inside the dialog owns the palette query — mock it so no network is touched and
@@ -24,19 +23,6 @@ function setInputValue(input: HTMLInputElement, value: string): void {
 	const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
 	setter?.call(input, value);
 	input.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
-function makeThread(overrides: Partial<HomeThread> = {}): HomeThread {
-	return {
-		id: "thread-1",
-		agentId: "claude",
-		name: "Thread 1",
-		titleSource: "manual",
-		createdAt: 1,
-		updatedAt: 1,
-		isDefault: false,
-		...overrides,
-	};
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -72,7 +58,8 @@ describe("ImChannelBindDialog", () => {
 		await act(async () => {
 			root.render(
 				<ImChannelBindDialog
-					thread={makeThread()}
+					open
+					current={null}
 					workspaceId="ws-1"
 					onOpenChange={() => {}}
 					onBind={onBind}
@@ -110,7 +97,7 @@ describe("ImChannelBindDialog", () => {
 			bindButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 			await flush();
 		});
-		expect(onBind).toHaveBeenCalledWith("thread-1", { platform: "lark", chatId: "oc_new" });
+		expect(onBind).toHaveBeenCalledWith({ platform: "lark", chatId: "oc_new" });
 	});
 
 	it("shows the current binding and unbinds it", async () => {
@@ -118,7 +105,8 @@ describe("ImChannelBindDialog", () => {
 		await act(async () => {
 			root.render(
 				<ImChannelBindDialog
-					thread={makeThread({ imChannel: { platform: "lark", chatId: "oc_existing" } })}
+					open
+					current={{ platform: "lark", chatId: "oc_existing" }}
 					workspaceId="ws-1"
 					onOpenChange={() => {}}
 					onBind={vi.fn()}
@@ -136,7 +124,7 @@ describe("ImChannelBindDialog", () => {
 			unbindButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 			await flush();
 		});
-		expect(onUnbind).toHaveBeenCalledWith("thread-1");
+		expect(onUnbind).toHaveBeenCalledWith();
 	});
 
 	it("shows the resolved display name for the bound channel when the palette knows it", async () => {
@@ -153,7 +141,8 @@ describe("ImChannelBindDialog", () => {
 		await act(async () => {
 			root.render(
 				<ImChannelBindDialog
-					thread={makeThread({ imChannel: { platform: "lark", chatId: "oc_existing" } })}
+					open
+					current={{ platform: "lark", chatId: "oc_existing" }}
 					workspaceId="ws-1"
 					onOpenChange={() => {}}
 					onBind={vi.fn()}

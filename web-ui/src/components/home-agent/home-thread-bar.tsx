@@ -213,15 +213,24 @@ export function HomeThreadBar({
 				onClose={onCloseThread}
 			/>
 			<ImChannelBindDialog
-				thread={imChannelTarget}
+				open={imChannelTarget !== null}
+				current={imChannelTarget?.imChannel ?? null}
 				workspaceId={currentProjectId}
 				onOpenChange={(open) => {
 					if (!open) {
 						setImChannelTarget(null);
 					}
 				}}
-				onBind={onBindThreadImChannel}
-				onUnbind={onUnbindThreadImChannel}
+				onBind={(channel) => {
+					if (imChannelTarget) {
+						return onBindThreadImChannel(imChannelTarget.id, channel);
+					}
+				}}
+				onUnbind={() => {
+					if (imChannelTarget) {
+						return onUnbindThreadImChannel(imChannelTarget.id);
+					}
+				}}
 			/>
 		</div>
 	);

@@ -54,6 +54,7 @@ import { ImChatInboundRecorder } from "./im/im-chat-recorder";
 import { ImTaskEventNotifier } from "./im/im-task-notifier";
 import {
 	findThreadBoundToImChannel,
+	resolveHomeSessionImChannel,
 	resolveTaskRouteFromBoard,
 	resolveThreadImChannelFromThreads,
 } from "./im/im-task-route-resolver";
@@ -560,7 +561,12 @@ async function startServer(): Promise<{
 	// outbound half of inbound routing). It observes the same transcript stream + turn-completion
 	// transitions the runtime already tracks, buffers the final assistant text per home session, and
 	// forwards it once per turn to the bound channel. Idempotent; best-effort (a send failure logs).
-	const imChatReplyNotifier = new ImChatReplyNotifier({ resolveThreadImChannel });
+	// Agent-aware resolution: Pi's binding is doc-level (decision X1) while a thread's is on its
+	// entry, so a Pi reply resolves `piImChannel` and a CLI reply resolves its thread's channel.
+	const imChatReplyNotifier = new ImChatReplyNotifier({
+		resolveThreadImChannel: async (workspaceId, agentId, threadId) =>
+			resolveHomeSessionImChannel(await loadWorkspaceHomeThreads(workspaceId), agentId, threadId),
+	});
 	runtimeStateHub = createRuntimeStateHub({
 		workspaceRegistry,
 		onTaskSessionTransition: ({ workspaceId, previous, next }) => {

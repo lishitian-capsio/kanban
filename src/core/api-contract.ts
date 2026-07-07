@@ -355,6 +355,12 @@ export const runtimeHomeChatThreadsDataSchema = z.object({
 	threads: z.array(runtimeHomeChatThreadSchema).default([]),
 	// Optional so existing `threads.json` (no field) loads cleanly as "no tabs persisted yet".
 	fullscreenTabs: runtimeHomeChatFullscreenTabsSchema.optional(),
+	// The IM channel the workspace's SINGLE embedded Pi conversation (decision X1) is bound to
+	// (requirement ac99c). Pi is not modeled as a home thread — it is one dedicated in-process
+	// conversation per workspace — so its binding lives here at the doc level rather than on a
+	// `threads[]` entry, keeping Pi out of the multi-thread UI while still making it a bindable
+	// IM target. Optional + nullable so existing docs load unchanged and unbind sets it to `null`.
+	piImChannel: imChannelTargetSchema.nullable().optional(),
 });
 export type RuntimeHomeChatThreadsData = z.infer<typeof runtimeHomeChatThreadsDataSchema>;
 
@@ -442,6 +448,15 @@ export const runtimeHomeChatThreadImChannelResponseSchema = z.object({
 	error: z.string().optional(),
 });
 export type RuntimeHomeChatThreadImChannelResponse = z.infer<typeof runtimeHomeChatThreadImChannelResponseSchema>;
+
+// Bind the workspace's single embedded Pi conversation (decision X1) to an IM channel (requirement
+// ac99c). Unlike a thread bind there is no `id` — Pi is a per-workspace singleton, so the workspace
+// scope alone identifies it. Unbind/query take no body (the scope is the key). The query reuses
+// {@link runtimeHomeChatThreadImChannelResponseSchema} above (the shape is identical).
+export const runtimePiImChannelBindRequestSchema = z.object({
+	channel: imChannelTargetSchema,
+});
+export type RuntimePiImChannelBindRequest = z.infer<typeof runtimePiImChannelBindRequestSchema>;
 
 // Shared by create/rename/close/bind/unbind — each returns the affected thread (close → the removed thread).
 export const runtimeHomeChatThreadMutationResponseSchema = z.object({

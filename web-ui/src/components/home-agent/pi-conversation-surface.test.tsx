@@ -37,6 +37,16 @@ vi.mock("@/hooks/use-reload-pi-session-on-context-bump", () => ({
 	useReloadPiSessionOnContextBump: vi.fn(),
 }));
 
+vi.mock("@/hooks/use-pi-im-channel", () => ({
+	usePiImChannel: () => ({
+		imChannel: null,
+		isLoading: false,
+		refresh: vi.fn(async () => {}),
+		bind: vi.fn(async () => true),
+		unbind: vi.fn(async () => true),
+	}),
+}));
+
 const chatMessagesSpy = vi.hoisted(() => vi.fn());
 let parentSummary: RuntimeTaskSessionSummary | null = null;
 vi.mock("@/runtime/runtime-stream-store", () => ({

@@ -5,8 +5,10 @@ import type {
 	RuntimeHomeChatThread,
 	RuntimeHomeChatThreadsData,
 } from "../../../src/core/api-contract";
+import { DEFAULT_HOME_THREAD_ID } from "../../../src/core/home-agent-session";
 import {
 	findThreadBoundToImChannel,
+	resolveHomeSessionImChannel,
 	resolveTaskRouteFromBoard,
 	resolveThreadImChannelFromThreads,
 } from "../../../src/im/im-task-route-resolver";
@@ -124,5 +126,52 @@ describe("findThreadBoundToImChannel", () => {
 			thread({ id: "second", imChannel: { platform: "lark", chatId: "oc_x" } }),
 		]);
 		expect(findThreadBoundToImChannel(d, "lark", "oc_x")?.threadId).toBe("first");
+	});
+
+	it("resolves the doc-level pi binding as the pi default session (decision X1)", () => {
+		const d: RuntimeHomeChatThreadsData = { threads: [], piImChannel: { platform: "lark", chatId: "oc_pi" } };
+		expect(findThreadBoundToImChannel(d, "lark", "oc_pi")).toEqual({
+			threadId: DEFAULT_HOME_THREAD_ID,
+			agentId: "pi",
+		});
+	});
+
+	it("prefers a matching thread over the pi binding", () => {
+		const d: RuntimeHomeChatThreadsData = {
+			threads: [thread({ id: "t-a", agentId: "claude", imChannel: { platform: "lark", chatId: "oc_x" } })],
+			piImChannel: { platform: "lark", chatId: "oc_x" },
+		};
+		expect(findThreadBoundToImChannel(d, "lark", "oc_x")).toEqual({ threadId: "t-a", agentId: "claude" });
+	});
+});
+
+describe("resolveHomeSessionImChannel", () => {
+	it("resolves a pi reply to the doc-level pi binding regardless of threadId", () => {
+		const d: RuntimeHomeChatThreadsData = { threads: [], piImChannel: { platform: "lark", chatId: "oc_pi" } };
+		expect(resolveHomeSessionImChannel(d, "pi", DEFAULT_HOME_THREAD_ID)).toEqual({
+			platform: "lark",
+			chatId: "oc_pi",
+		});
+	});
+
+	it("resolves a non-pi reply to its thread's binding, never the pi channel", () => {
+		const d: RuntimeHomeChatThreadsData = {
+			threads: [
+				{
+					id: "thread-9",
+					agentId: "claude",
+					name: "T",
+					titleSource: "manual",
+					createdAt: 1,
+					updatedAt: 1,
+					imChannel: { platform: "dingtalk", chatId: "cid" },
+				},
+			],
+			piImChannel: { platform: "lark", chatId: "oc_pi" },
+		};
+		expect(resolveHomeSessionImChannel(d, "claude", "thread-9")).toEqual({ platform: "dingtalk", chatId: "cid" });
+		// A browser-driven CLI default session (threadId "default", no thread entry) must NOT
+		// mis-route to the pi channel.
+		expect(resolveHomeSessionImChannel(d, "claude", DEFAULT_HOME_THREAD_ID)).toBeNull();
 	});
 });

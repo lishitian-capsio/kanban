@@ -125,6 +125,7 @@ import type {
 	RuntimeKanbanProviderModelsResponse,
 	RuntimeOpenFileRequest,
 	RuntimeOpenFileResponse,
+	RuntimePiImChannelBindRequest,
 	RuntimeProjectAddRequest,
 	RuntimeProjectAddResponse,
 	RuntimeProjectDirectoryPickerResponse,
@@ -358,6 +359,7 @@ import {
 	runtimeKanbanProviderModelsResponseSchema,
 	runtimeOpenFileRequestSchema,
 	runtimeOpenFileResponseSchema,
+	runtimePiImChannelBindRequestSchema,
 	runtimeProjectAddRequestSchema,
 	runtimeProjectAddResponseSchema,
 	runtimeProjectDirectoryPickerResponseSchema,
@@ -554,6 +556,14 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatThreadImChannelIdRequest,
 		) => Promise<RuntimeHomeChatThreadImChannelResponse>;
+		// Pi single-conversation IM binding (decision X1). Keyed by workspace scope alone — Pi is a
+		// per-workspace singleton, so bind carries only a channel and unbind/get take no input.
+		bindPiImChannel: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimePiImChannelBindRequest,
+		) => Promise<RuntimeHomeChatThreadImChannelResponse>;
+		unbindPiImChannel: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeHomeChatThreadImChannelResponse>;
+		getPiImChannel: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeHomeChatThreadImChannelResponse>;
 		closeHomeThread: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatThreadCloseRequest,
@@ -1065,6 +1075,22 @@ export const runtimeAppRouter = t.router({
 			.query(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.getHomeThreadImChannel(ctx.workspaceScope, input);
 			}),
+		// Pi single-conversation IM binding (decision X1). No thread id — Pi is a per-workspace
+		// singleton, so the workspace scope alone identifies it.
+		bindPiImChannel: workspaceProcedure
+			.input(runtimePiImChannelBindRequestSchema)
+			.output(runtimeHomeChatThreadImChannelResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.bindPiImChannel(ctx.workspaceScope, input);
+			}),
+		unbindPiImChannel: workspaceProcedure
+			.output(runtimeHomeChatThreadImChannelResponseSchema)
+			.mutation(async ({ ctx }) => {
+				return await ctx.runtimeApi.unbindPiImChannel(ctx.workspaceScope);
+			}),
+		getPiImChannel: workspaceProcedure.output(runtimeHomeChatThreadImChannelResponseSchema).query(async ({ ctx }) => {
+			return await ctx.runtimeApi.getPiImChannel(ctx.workspaceScope);
+		}),
 		closeHomeThread: workspaceProcedure
 			.input(runtimeHomeChatThreadCloseRequestSchema)
 			.output(runtimeHomeChatThreadMutationResponseSchema)

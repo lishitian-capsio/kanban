@@ -1,12 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RuntimeTaskSessionSummary } from "../../../../src/core/api-contract";
 import { createHomeAgentSessionId } from "../../../../src/core/home-agent-session";
-import {
-	ImChatReplyNotifier,
-	type ImChatReplyNotifierDeps,
-} from "../../../../src/im/inbound/im-chat-reply-notifier";
-import type { SessionMessage } from "../../../../src/session/session-message";
+import { ImChatReplyNotifier, type ImChatReplyNotifierDeps } from "../../../../src/im/inbound/im-chat-reply-notifier";
 import type { ImChannelTarget, ImSendResult, ImTextMessage } from "../../../../src/im/types";
+import type { SessionMessage } from "../../../../src/session/session-message";
 
 const HOME_TASK_ID = createHomeAgentSessionId("ws-a", "pi", "thread-1");
 const channel: ImChannelTarget = { platform: "lark", chatId: "oc_room" };
@@ -37,9 +34,9 @@ function makeNotifier(overrides: Partial<ImChatReplyNotifierDeps> = {}) {
 	const sendText = vi.fn<(target: ImChannelTarget, message: ImTextMessage) => Promise<ImSendResult | null>>(
 		async () => ({ platform: "lark", chatId: channel.chatId }),
 	);
-	const resolveThreadImChannel = vi.fn<(workspaceId: string, threadId: string) => Promise<ImChannelTarget | null>>(
-		async () => channel,
-	);
+	const resolveThreadImChannel = vi.fn<
+		(workspaceId: string, agentId: string, threadId: string) => Promise<ImChannelTarget | null>
+	>(async () => channel);
 	const notifier = new ImChatReplyNotifier({ resolveThreadImChannel, sendText, ...overrides });
 	return { notifier, sendText, resolveThreadImChannel };
 }
@@ -55,8 +52,23 @@ describe("ImChatReplyNotifier", () => {
 		notifier.noteMessage("ws-a", HOME_TASK_ID, assistantMessage({ content: "hello from pi" }));
 		notifier.noteTransition("ws-a", summary({ state: "running" }), summary({ state: "awaiting_review" }));
 		await flush();
-		expect(resolveThreadImChannel).toHaveBeenCalledWith("ws-a", "thread-1");
+		expect(resolveThreadImChannel).toHaveBeenCalledWith("ws-a", "pi", "thread-1");
 		expect(sendText).toHaveBeenCalledWith(channel, { text: "hello from pi" });
+	});
+
+	it("resolves the channel with the pi agent + default thread for the single Pi conversation", async () => {
+		const { notifier, sendText, resolveThreadImChannel } = makeNotifier();
+		const piTaskId = createHomeAgentSessionId("ws-a", "pi");
+		notifier.noteMessage("ws-a", piTaskId, assistantMessage({ content: "pi reply" }));
+		notifier.noteTransition(
+			"ws-a",
+			summary({ taskId: piTaskId, state: "running" }),
+			summary({ taskId: piTaskId, state: "awaiting_review" }),
+		);
+		await flush();
+		// Pi's default session id parses to agent "pi", thread "default" — the doc-level binding key.
+		expect(resolveThreadImChannel).toHaveBeenCalledWith("ws-a", "pi", "default");
+		expect(sendText).toHaveBeenCalledWith(channel, { text: "pi reply" });
 	});
 
 	it("also flushes on running → idle", async () => {

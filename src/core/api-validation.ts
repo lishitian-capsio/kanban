@@ -20,6 +20,7 @@ import {
 	type RuntimeKanbanMcpOAuthRequest,
 	type RuntimeKanbanMcpSettingsSaveRequest,
 	type RuntimeKanbanProviderModelsRequest,
+	type RuntimePiImChannelBindRequest,
 	type RuntimeProjectAddRequest,
 	type RuntimeProjectRemoveRequest,
 	type RuntimeShellSessionStartRequest,
@@ -61,6 +62,7 @@ import {
 	runtimeKanbanMcpOAuthRequestSchema,
 	runtimeKanbanMcpSettingsSaveRequestSchema,
 	runtimeKanbanProviderModelsRequestSchema,
+	runtimePiImChannelBindRequestSchema,
 	runtimeProjectAddRequestSchema,
 	runtimeProjectRemoveRequestSchema,
 	runtimeShellSessionStartRequestSchema,
@@ -457,6 +459,15 @@ export function parseHomeChatThreadBindImChannelRequest(value: unknown): Runtime
 		id,
 		channel: { platform: parsed.channel.platform, chatId },
 	};
+}
+
+export function parsePiImChannelBindRequest(value: unknown): RuntimePiImChannelBindRequest {
+	const parsed = parseWithSchema(runtimePiImChannelBindRequestSchema, value);
+	const chatId = parsed.channel.chatId.trim();
+	if (!chatId) {
+		throw new Error("IM channel chatId cannot be empty.");
+	}
+	return { channel: { platform: parsed.channel.platform, chatId } };
 }
 
 export function parseHomeChatThreadImChannelIdRequest(value: unknown): RuntimeHomeChatThreadImChannelIdRequest {

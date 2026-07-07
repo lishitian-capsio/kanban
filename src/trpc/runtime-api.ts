@@ -63,6 +63,7 @@ import {
 	parseKanbanMcpOAuthRequest,
 	parseKanbanMcpSettingsSaveRequest,
 	parseKanbanProviderModelsRequest,
+	parsePiImChannelBindRequest,
 	parseRuntimeConfigSaveRequest,
 	parseShellSessionStartRequest,
 	parseTaskChatAbortRequest,
@@ -852,6 +853,36 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			try {
 				const body = parseHomeChatThreadImChannelIdRequest(input);
 				const imChannel = await deps.getScopedHomeThreadStore(workspaceScope).getImChannel(body.id);
+				return { ok: true, imChannel };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, imChannel: null, error: message };
+			}
+		},
+		bindPiImChannel: async (workspaceScope, input) => {
+			try {
+				const body = parsePiImChannelBindRequest(input);
+				const imChannel = await deps.getScopedHomeThreadStore(workspaceScope).bindPiImChannel(body.channel);
+				deps.bumpKanbanSessionContextVersion?.();
+				return { ok: true, imChannel };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, imChannel: null, error: message };
+			}
+		},
+		unbindPiImChannel: async (workspaceScope) => {
+			try {
+				await deps.getScopedHomeThreadStore(workspaceScope).unbindPiImChannel();
+				deps.bumpKanbanSessionContextVersion?.();
+				return { ok: true, imChannel: null };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return { ok: false, imChannel: null, error: message };
+			}
+		},
+		getPiImChannel: async (workspaceScope) => {
+			try {
+				const imChannel = await deps.getScopedHomeThreadStore(workspaceScope).getPiImChannel();
 				return { ok: true, imChannel };
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);

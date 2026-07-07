@@ -224,7 +224,70 @@ export function bindHomeThreadImChannelExclusive(
 		}
 		return thread;
 	});
-	return changed ? { ...data, threads } : data;
+	// One-to-one spans the doc-level Pi binding too: if Pi held this channel, it loses it.
+	const piCleared = imChannelsEqual(data.piImChannel ?? null, channel);
+	if (!changed && !piCleared) {
+		return data;
+	}
+	const next: RuntimeHomeChatThreadsData = { ...data, threads };
+	if (piCleared) {
+		next.piImChannel = null;
+	}
+	return next;
+}
+
+// ---------------------------------------------------------------------------
+// Pi single-conversation IM binding (decision X1)
+//
+// Pi is not a home thread — it is one dedicated in-process conversation per
+// workspace — so its IM binding lives at the doc level (`piImChannel`) rather
+// than on a `threads[]` entry. This keeps Pi out of the multi-thread UI while
+// still making it a bindable IM target (requirement ac99c). These ops mirror the
+// thread bind/unbind/get helpers above and preserve the same reference-equality
+// no-op contract so unchanged binds don't rewrite `threads.json`.
+// ---------------------------------------------------------------------------
+
+/** The IM channel Pi is bound to for this workspace, or `null` when unbound. */
+export function getPiImChannel(data: RuntimeHomeChatThreadsData): ImChannelTarget | null {
+	return data.piImChannel ?? null;
+}
+
+/**
+ * Bind Pi to an IM channel with the same **one-to-one** invariant as threads (159ab): binding a
+ * channel to Pi also unbinds any THREAD currently holding that channel, so re-pointing a chat at
+ * Pi moves it off the thread it was on. Bumps `updatedAt` on every thread that actually changed.
+ * Returns the SAME data reference when nothing changed (Pi already holds it and no thread does).
+ */
+export function bindPiImChannelExclusive(
+	data: RuntimeHomeChatThreadsData,
+	channel: ImChannelTarget,
+	now: number,
+): RuntimeHomeChatThreadsData {
+	let threadsChanged = false;
+	const threads = data.threads.map((thread) => {
+		if (imChannelsEqual(thread.imChannel ?? null, channel)) {
+			threadsChanged = true;
+			return { ...thread, imChannel: null, updatedAt: now };
+		}
+		return thread;
+	});
+	const piChanged = !imChannelsEqual(data.piImChannel ?? null, channel);
+	if (!threadsChanged && !piChanged) {
+		return data;
+	}
+	return { ...data, threads, piImChannel: channel };
+}
+
+/**
+ * Remove Pi's IM channel binding. Returns the SAME data reference when Pi is already unbound
+ * (treating an absent field and `null` as equivalent), so an unbind on an already-unbound Pi
+ * does not rewrite `threads.json`.
+ */
+export function unbindPiImChannel(data: RuntimeHomeChatThreadsData): RuntimeHomeChatThreadsData {
+	if ((data.piImChannel ?? null) === null) {
+		return data;
+	}
+	return { ...data, piImChannel: null };
 }
 
 export interface CloseHomeThreadResult {

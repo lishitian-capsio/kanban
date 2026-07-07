@@ -206,6 +206,40 @@ describe("HomeThreadStore", () => {
 		});
 	});
 
+	describe("Pi IM channel binding (decision X1)", () => {
+		it("binds Pi to a channel and reflects it in getPiImChannel", async () => {
+			const { store } = makeStore();
+			expect(await store.getPiImChannel()).toBeNull();
+			const bound = await store.bindPiImChannel({ platform: "lark", chatId: "oc_pi" });
+			expect(bound).toEqual({ platform: "lark", chatId: "oc_pi" });
+			expect(await store.getPiImChannel()).toEqual({ platform: "lark", chatId: "oc_pi" });
+		});
+
+		it("unbinds Pi", async () => {
+			const { store } = makeStore();
+			await store.bindPiImChannel({ platform: "lark", chatId: "oc_pi" });
+			await store.unbindPiImChannel();
+			expect(await store.getPiImChannel()).toBeNull();
+		});
+
+		it("moves the channel off a thread when Pi takes it (cross-store one-to-one)", async () => {
+			const { store } = makeStore();
+			const thread = await store.create({ agentId: "claude", name: "T" });
+			await store.bindImChannel(thread.id, { platform: "lark", chatId: "oc_shared" });
+
+			await store.bindPiImChannel({ platform: "lark", chatId: "oc_shared" });
+
+			expect(await store.getPiImChannel()).toEqual({ platform: "lark", chatId: "oc_shared" });
+			expect(await store.getImChannel(thread.id)).toBeNull();
+		});
+
+		it("does NOT add a thread entry for Pi's binding", async () => {
+			const { store } = makeStore();
+			await store.bindPiImChannel({ platform: "lark", chatId: "oc_pi" });
+			expect(await store.list()).toHaveLength(0);
+		});
+	});
+
 	it("lists threads sorted by creation time", async () => {
 		const persistence = inMemoryPersistence({
 			threads: [
