@@ -188,13 +188,22 @@
         "platform": "lark",
         "chatId": "oc_4c1e97916edbd5b86a943139befd71ad"
       }
+    },
+    {
+      "id": "3cec6ac6-ff53-4608-8824-bfdd4b732a7f",
+      "agentId": "qoder",
+      "name": "Kanban Sidebar",
+      "titleSource": "auto",
+      "createdAt": 1783415393845,
+      "updatedAt": 1783415407085
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
       "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
-      "3759a513-d8ba-4fe8-8c85-15a4a9ea0d19"
+      "3759a513-d8ba-4fe8-8c85-15a4a9ea0d19",
+      "3cec6ac6-ff53-4608-8824-bfdd4b732a7f"
     ],
-    "activeThreadId": "3759a513-d8ba-4fe8-8c85-15a4a9ea0d19"
+    "activeThreadId": "3cec6ac6-ff53-4608-8824-bfdd4b732a7f"
   }
 }
