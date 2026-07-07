@@ -33,11 +33,12 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentExecutablePathSetting } from "@/components/agent-executable-path-setting";
 import { BoardBranchSetting } from "@/components/board-branch-setting";
-import { GitIdentitySetting } from "@/components/git-identity-setting";
 import { ExtraPushRemotesSetting } from "@/components/extra-push-remotes-setting";
+import { GitIdentitySetting } from "@/components/git-identity-setting";
 import { GitRemoteSetting } from "@/components/git-remote-setting";
 import { GiteeAuthSetting } from "@/components/gitee-auth-setting";
 import { GithubAuthSetting } from "@/components/github-auth-setting";
+import { ImCredentialsSetting } from "@/components/im-credentials-setting";
 import {
 	KanbanAddProviderDialog,
 	type KanbanProviderDialogInitialValues,
@@ -1417,6 +1418,7 @@ export function RuntimeSettingsDialog({
 					<ExtraPushRemotesSetting workspaceId={workspaceId} />
 					<GithubAuthSetting workspaceId={workspaceId} />
 					<GiteeAuthSetting workspaceId={workspaceId} />
+					<ImCredentialsSetting workspaceId={workspaceId} />
 					<div className="rounded-lg border border-border bg-surface-0 px-4 py-3 mb-4">
 						<div className="flex items-center justify-between mb-2">
 							<h6

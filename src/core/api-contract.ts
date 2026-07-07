@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { imChannelTargetSchema } from "../im/types.js";
+import { imChannelTargetSchema, imOutboundCredentialSchema, imPlatformSchema } from "../im/types.js";
 import { resolveTaskTitle } from "./task-title.js";
 
 export const runtimeWorkspaceFileStatusSchema = z.enum([
@@ -427,17 +427,13 @@ export const runtimeHomeChatThreadBindImChannelRequestSchema = z.object({
 	id: z.string(),
 	channel: imChannelTargetSchema,
 });
-export type RuntimeHomeChatThreadBindImChannelRequest = z.infer<
-	typeof runtimeHomeChatThreadBindImChannelRequestSchema
->;
+export type RuntimeHomeChatThreadBindImChannelRequest = z.infer<typeof runtimeHomeChatThreadBindImChannelRequestSchema>;
 
 // Unbind / query a thread's IM channel — both are keyed on the thread id alone.
 export const runtimeHomeChatThreadImChannelIdRequestSchema = z.object({
 	id: z.string(),
 });
-export type RuntimeHomeChatThreadImChannelIdRequest = z.infer<
-	typeof runtimeHomeChatThreadImChannelIdRequestSchema
->;
+export type RuntimeHomeChatThreadImChannelIdRequest = z.infer<typeof runtimeHomeChatThreadImChannelIdRequestSchema>;
 
 // Query response: the thread's current IM channel binding, or `null` when unbound / unknown.
 export const runtimeHomeChatThreadImChannelResponseSchema = z.object({
@@ -445,9 +441,7 @@ export const runtimeHomeChatThreadImChannelResponseSchema = z.object({
 	imChannel: imChannelTargetSchema.nullable(),
 	error: z.string().optional(),
 });
-export type RuntimeHomeChatThreadImChannelResponse = z.infer<
-	typeof runtimeHomeChatThreadImChannelResponseSchema
->;
+export type RuntimeHomeChatThreadImChannelResponse = z.infer<typeof runtimeHomeChatThreadImChannelResponseSchema>;
 
 // Shared by create/rename/close/bind/unbind — each returns the affected thread (close → the removed thread).
 export const runtimeHomeChatThreadMutationResponseSchema = z.object({
@@ -1300,6 +1294,52 @@ export const runtimeGiteeLogoutResponseSchema = z.object({
 	status: runtimeGiteeAuthStatusSchema,
 });
 export type RuntimeGiteeLogoutResponse = z.infer<typeof runtimeGiteeLogoutResponseSchema>;
+
+/**
+ * IM outbound-channel credentials contract (requirement ac99c, 阶段2). Machine-global (no
+ * workspace scope). The credential VALUES (bot tokens / webhook URLs / signing secrets) are
+ * NEVER carried over the wire on read — only the secret-free per-platform status crosses it
+ * (`configured` + presence booleans). Mirrors the gitee/github git-auth contracts.
+ */
+export const runtimeImCredentialPlatformStatusSchema = z.object({
+	platform: imPlatformSchema,
+	/** Whether this platform has any stored outbound credential. */
+	configured: z.boolean(),
+	/** Presence flags only — never the secret values. */
+	hasBotToken: z.boolean(),
+	hasWebhookUrl: z.boolean(),
+	hasWebhookSecret: z.boolean(),
+});
+export type RuntimeImCredentialPlatformStatus = z.infer<typeof runtimeImCredentialPlatformStatusSchema>;
+
+/** The full secret-free IM credential status: one entry per supported platform. */
+export const runtimeImCredentialStatusResponseSchema = z.object({
+	platforms: z.array(runtimeImCredentialPlatformStatusSchema),
+});
+export type RuntimeImCredentialStatusResponse = z.infer<typeof runtimeImCredentialStatusResponseSchema>;
+
+/** `im.setCredentials` input: the target platform plus its outbound credential (token / webhook). */
+export const runtimeImSetCredentialsRequestSchema = z.object({
+	platform: imPlatformSchema,
+	credential: imOutboundCredentialSchema,
+});
+export type RuntimeImSetCredentialsRequest = z.infer<typeof runtimeImSetCredentialsRequestSchema>;
+
+export const runtimeImSetCredentialsResponseSchema = z.object({
+	status: runtimeImCredentialStatusResponseSchema,
+});
+export type RuntimeImSetCredentialsResponse = z.infer<typeof runtimeImSetCredentialsResponseSchema>;
+
+/** `im.clearCredentials` input: which platform's credential to remove. */
+export const runtimeImClearCredentialsRequestSchema = z.object({
+	platform: imPlatformSchema,
+});
+export type RuntimeImClearCredentialsRequest = z.infer<typeof runtimeImClearCredentialsRequestSchema>;
+
+export const runtimeImClearCredentialsResponseSchema = z.object({
+	status: runtimeImCredentialStatusResponseSchema,
+});
+export type RuntimeImClearCredentialsResponse = z.infer<typeof runtimeImClearCredentialsResponseSchema>;
 
 export const runtimeBoardAutoSyncRequestSchema = z.object({
 	paused: z.boolean(),

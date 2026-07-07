@@ -334,6 +334,11 @@ import {
 	runtimeHomeChatThreadsListResponseSchema,
 	runtimeHookIngestRequestSchema,
 	runtimeHookIngestResponseSchema,
+	runtimeImClearCredentialsRequestSchema,
+	runtimeImClearCredentialsResponseSchema,
+	runtimeImCredentialStatusResponseSchema,
+	runtimeImSetCredentialsRequestSchema,
+	runtimeImSetCredentialsResponseSchema,
 	runtimeKanbanMcpAuthStatusResponseSchema,
 	runtimeKanbanMcpOAuthRequestSchema,
 	runtimeKanbanMcpOAuthResponseSchema,
@@ -443,6 +448,7 @@ import {
 } from "../core/api-contract";
 import { getGiteeAuthService } from "../gitee-auth";
 import { getGitHubAuthService } from "../github-auth";
+import { getImCredentialService } from "../im/im-credential-service";
 import type { WorkspaceDbApi } from "./workspace-db-api";
 import type { WorkspaceStorageApi } from "./workspace-storage-api";
 
@@ -1734,6 +1740,29 @@ export const runtimeAppRouter = t.router({
 			await getGiteeAuthService().logout();
 			return { status: await getGiteeAuthService().getStatus() };
 		}),
+	}),
+	// IM outbound-channel credentials (requirement ac99c, 阶段2). Machine-global (no workspace
+	// scope) — delegates directly to the process-wide singleton. The credential VALUES (bot
+	// tokens / webhook URLs / signing secrets) are NEVER returned over the wire; only the
+	// secret-free per-platform status crosses it.
+	im: t.router({
+		status: t.procedure.output(runtimeImCredentialStatusResponseSchema).query(async () => {
+			return { platforms: await getImCredentialService().getStatus() };
+		}),
+		setCredentials: t.procedure
+			.input(runtimeImSetCredentialsRequestSchema)
+			.output(runtimeImSetCredentialsResponseSchema)
+			.mutation(async ({ input }) => {
+				const platforms = await getImCredentialService().setCredential(input.platform, input.credential);
+				return { status: { platforms } };
+			}),
+		clearCredentials: t.procedure
+			.input(runtimeImClearCredentialsRequestSchema)
+			.output(runtimeImClearCredentialsResponseSchema)
+			.mutation(async ({ input }) => {
+				const platforms = await getImCredentialService().clearCredential(input.platform);
+				return { status: { platforms } };
+			}),
 	}),
 });
 

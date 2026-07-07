@@ -21,6 +21,10 @@ import type {
 	RuntimeGithubLogoutResponse,
 	RuntimeGithubPendingLoginResponse,
 	RuntimeGithubPollLoginResponse,
+	RuntimeImClearCredentialsResponse,
+	RuntimeImCredentialStatusResponse,
+	RuntimeImSetCredentialsRequest,
+	RuntimeImSetCredentialsResponse,
 	RuntimeKanbanMcpAuthStatusResponse,
 	RuntimeKanbanMcpOAuthResponse,
 	RuntimeKanbanMcpServer,
@@ -242,6 +246,32 @@ export async function setGiteeToken(
 export async function logoutGitee(workspaceId: string | null): Promise<RuntimeGiteeLogoutResponse> {
 	const trpcClient = getRuntimeTrpcClient(workspaceId);
 	return await trpcClient.gitee.logout.mutate();
+}
+
+// ── IM outbound-channel credentials ──────────────────────────────────────────
+// Machine-global (no workspace scope); the `im` router is a sibling of `runtime`. The credential
+// values (bot tokens / webhook URLs / signing secrets) never cross the wire on read — only the
+// secret-free per-platform status does (requirement ac99c, 阶段2).
+
+export async function fetchImCredentialStatus(workspaceId: string | null): Promise<RuntimeImCredentialStatusResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.im.status.query();
+}
+
+export async function setImCredentials(
+	workspaceId: string | null,
+	input: RuntimeImSetCredentialsRequest,
+): Promise<RuntimeImSetCredentialsResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.im.setCredentials.mutate(input);
+}
+
+export async function clearImCredentials(
+	workspaceId: string | null,
+	platform: RuntimeImSetCredentialsRequest["platform"],
+): Promise<RuntimeImClearCredentialsResponse> {
+	const trpcClient = getRuntimeTrpcClient(workspaceId);
+	return await trpcClient.im.clearCredentials.mutate({ platform });
 }
 
 // ── Remote model fetching ──────────────────────────────────────────────────

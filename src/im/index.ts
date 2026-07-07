@@ -18,6 +18,8 @@ export {
 export { DingtalkImProvider, registerDingtalkImProvider } from "./dingtalk/dingtalk-provider";
 export type { DingtalkApiResponse, DingtalkTransport } from "./dingtalk/dingtalk-transport";
 export { ImCredentialUnavailableError, ImError, ImSendFailedError, UnsupportedImPlatformError } from "./errors";
+export type { ImCredentialPlatformStatus, ImCredentialServiceDeps } from "./im-credential-service";
+export { getImCredentialService, ImCredentialService } from "./im-credential-service";
 export {
 	clearPersistedImCredentials,
 	getImCredentialsFilePath,
