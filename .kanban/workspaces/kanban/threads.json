@@ -168,14 +168,24 @@
       "createdAt": 1783394061881,
       "updatedAt": 1783401363257,
       "pendingNextStep": "开始 T1(5a280)——vault 关系类型 schema 的解析/序列化"
+    },
+    {
+      "id": "06483e7e-8f13-4d42-b348-0d133ac87ad3",
+      "agentId": "claude",
+      "name": "ok",
+      "titleSource": "auto",
+      "createdAt": 1783407541387,
+      "updatedAt": 1783407541387
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
       "5a452b07-e2c2-4342-9923-4c9cdae4a291",
       "be8da62b-73a2-48bf-99f8-7aa66272411b",
-      "9ed2b30b-108d-4520-babc-c313e0d7dbd8"
+      "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
+      "eebaca34-2492-4308-8460-c7dfb289dfd0",
+      "06483e7e-8f13-4d42-b348-0d133ac87ad3"
     ],
-    "activeThreadId": "9ed2b30b-108d-4520-babc-c313e0d7dbd8"
+    "activeThreadId": "06483e7e-8f13-4d42-b348-0d133ac87ad3"
   }
 }
