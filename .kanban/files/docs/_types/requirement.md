@@ -14,6 +14,18 @@ status_enum:
 default_frontmatter:
   status: proposed
   priority: medium
+relations:
+  customer:
+    label: Customer
+    target: customer
+    cardinality: one
+    inverse: requirements
+    inverse_label: Requirements
+  depends_on:
+    label: Depends on
+    target: requirement
+    inverse: blocks
+    inverse_label: Blocks
 ---
 # How to author a Requirement
 
@@ -28,7 +40,18 @@ tasks, and implementation detail out.
   `proposed` (raised), `clarified` (understood), `parked` (deferred),
   `invalid` (not a real need).
 - **priority**: how pressing the problem is for the customer.
-- **customer**: a `[[wikilink]]` to the customer this anchors to.
-- **related_tasks**: ids of the tasks delivering against this problem.
+
+## Typed relations (frontmatter fields, not prose links)
+
+Declare relationships as `[[wikilink]]` values in these **frontmatter
+fields** — that is what makes them queryable; do not bury them as prose
+links in the body:
+
+- **customer**: the one customer this problem anchors to (e.g.
+  `[[Acme Corp]]`). Exactly one.
+- **depends_on**: other requirements that must be resolved first (may be
+  several). Its reverse — what this blocks — is derived, so do not author it.
+- **related_tasks**: board task ids delivering against this problem — plain
+  ids, not a vault relation (tasks live on the board, not in the vault).
 
 Keep one problem per document. If a requirement names two needs, split it.

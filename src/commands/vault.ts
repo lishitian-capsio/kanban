@@ -5,6 +5,7 @@ import type { Command } from "commander";
 import type { RuntimeVaultDocument, RuntimeVaultFrontmatterValue } from "../core/api-contract";
 import type { VaultFrontmatterValue } from "../vault/vault-document";
 import { VaultDocumentStore } from "../vault/vault-document-store";
+import { buildVaultRelationGraph } from "../vault/vault-relations";
 import { VaultTypeRegistry } from "../vault/vault-type-registry";
 import {
 	type VaultRelationDefinition,
@@ -102,6 +103,21 @@ async function resolveTypeRegistry(
 		repoPath: workspace.repoPath,
 		workspaceId: workspace.workspaceId,
 	};
+}
+
+/**
+ * Resolve a document store + the type registry it uses over ONE workspace resolution
+ * (shared so the store and the relation layer read the same type definitions), for the
+ * typed-relation query commands that need both documents and their relation schema.
+ */
+async function resolveStoreAndTypes(
+	projectPath: string | undefined,
+	cwd: string,
+): Promise<{ store: VaultDocumentStore; registry: VaultTypeRegistry; repoPath: string }> {
+	const workspace = await resolveRuntimeWorkspace(projectPath, cwd, { autoCreateIfMissing: true });
+	const registry = new VaultTypeRegistry(workspace.repoPath);
+	const store = new VaultDocumentStore(workspace.repoPath, { typeRegistry: registry });
+	return { store, registry, repoPath: workspace.repoPath };
 }
 
 /**
@@ -525,6 +541,67 @@ async function deleteDocument(input: { cwd: string; id: string; projectPath?: st
 	return { ok: true, workspacePath: repoPath, id: input.id, deleted };
 }
 
+/**
+ * Validate typed relations across the vault (read-only): every document's declared
+ * relations are resolved and any that dangle (target resolves to nothing), point at the
+ * wrong target type, or exceed a `cardinality: one` are reported. Optionally narrowed to
+ * one document type and/or one relation name.
+ */
+async function checkRelations(input: {
+	cwd: string;
+	type?: string;
+	relation?: string;
+	projectPath?: string;
+}): Promise<JsonRecord> {
+	const { store, registry, repoPath } = await resolveStoreAndTypes(input.projectPath, input.cwd);
+	const [documents, typeDefinitions] = await Promise.all([store.list(), registry.list()]);
+	const graph = buildVaultRelationGraph(documents, typeDefinitions);
+	const issues = graph.issues({ type: input.type, relation: input.relation });
+	return {
+		ok: true,
+		workspacePath: repoPath,
+		type: input.type ?? null,
+		relation: input.relation ?? null,
+		issues,
+		count: issues.length,
+	};
+}
+
+/**
+ * Walk typed relations out of (forward) or into (inverse) a document, turning stored
+ * links into a reasoning traversal (e.g. a decision-supersession chain, or every
+ * requirement anchored to a customer). Read-only.
+ */
+async function traverseRelations(input: {
+	cwd: string;
+	id: string;
+	relation?: string;
+	inverse: boolean;
+	depth: number;
+	projectPath?: string;
+}): Promise<JsonRecord> {
+	const { store, registry, repoPath } = await resolveStoreAndTypes(input.projectPath, input.cwd);
+	const [documents, typeDefinitions] = await Promise.all([store.list(), registry.list()]);
+	const graph = buildVaultRelationGraph(documents, typeDefinitions);
+	const result = graph.traverse(input.id, {
+		relation: input.relation,
+		direction: input.inverse ? "inverse" : "forward",
+		maxDepth: input.depth,
+	});
+	if (!result) {
+		throw new CliError("document_not_found", `Vault document "${input.id}" was not found in workspace ${repoPath}.`);
+	}
+	return { ok: true, workspacePath: repoPath, ...result, count: result.nodes.length };
+}
+
+function parseDepthOption(value: string): number {
+	const depth = Number.parseInt(value, 10);
+	if (!Number.isFinite(depth) || depth < 1) {
+		throw new Error(`Invalid --depth value "${value}". Expected a positive integer.`);
+	}
+	return depth;
+}
+
 export function registerVaultCommand(program: Command): void {
 	const vault = program
 		.command("vault")
@@ -815,6 +892,71 @@ export function registerVaultCommand(program: Command): void {
 						warnings.push(resolved.warning);
 					}
 					return await deleteDocument({ cwd: process.cwd(), id: resolved.id, projectPath: globals.projectPath });
+				},
+				{ globals, warnings },
+			);
+		});
+
+	const relations = vault
+		.command("relations")
+		.description("Query typed relations declared by document types (read-only) — validate and traverse.");
+
+	relations
+		.command("check")
+		.description("Report documents whose typed relations dangle, target the wrong type, or exceed cardinality.")
+		.option("--type <type>", "Only check documents of this type (e.g. requirement).")
+		.option("--relation <name>", "Only check this relation (e.g. customer).")
+		.action(async function (this: Command, options: { type?: string; relation?: string }) {
+			const globals = readGlobalCliOptions(this);
+			await runCliCommand(
+				"vault.relations.check",
+				async () =>
+					await checkRelations({
+						cwd: process.cwd(),
+						type: options.type,
+						relation: options.relation,
+						projectPath: globals.projectPath,
+					}),
+				{ globals },
+			);
+		});
+
+	relations
+		.command("traverse")
+		.description("Walk typed relations out of (or into) a document, following resolved links up to a depth.")
+		.argument("[id]", "Start document ID (positional, preferred over --id).")
+		.option("--id <id>", "Deprecated: pass the document ID as the positional <id> instead.")
+		.option("--relation <name>", "Follow only this relation (default: every declared relation).")
+		.option("--inverse", "Follow reverse edges (documents pointing at the start) instead of forward.", false)
+		.option("--depth <n>", "Maximum hop distance from the start document (default 1).", parseDepthOption)
+		.action(async function (
+			this: Command,
+			idArg: string | undefined,
+			options: { id?: string; relation?: string; inverse?: boolean; depth?: number },
+		) {
+			const globals = readGlobalCliOptions(this);
+			const warnings: CliWarning[] = [];
+			await runCliCommand(
+				"vault.relations.traverse",
+				async () => {
+					const resolved = resolveRequiredId({
+						positional: idArg,
+						legacyFlagValue: options.id,
+						legacyFlagName: "--id",
+						missingMessage:
+							"vault relations traverse requires a document id. Pass it as the positional <id> argument.",
+					});
+					if (resolved.warning) {
+						warnings.push(resolved.warning);
+					}
+					return await traverseRelations({
+						cwd: process.cwd(),
+						id: resolved.id,
+						relation: options.relation,
+						inverse: options.inverse ?? false,
+						depth: options.depth ?? 1,
+						projectPath: globals.projectPath,
+					});
 				},
 				{ globals, warnings },
 			);

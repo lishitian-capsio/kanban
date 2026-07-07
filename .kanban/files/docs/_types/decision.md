@@ -11,6 +11,17 @@ status_enum:
   - rejected
 default_frontmatter:
   status: proposed
+relations:
+  supersedes:
+    label: Supersedes
+    target: decision
+    inverse: superseded_by
+    inverse_label: Superseded by
+  contradicts:
+    label: Contradicts
+    target: decision
+    inverse: contradicts
+    inverse_label: Contradicts
 ---
 # How to author a Decision
 
@@ -21,7 +32,15 @@ describes the decision's *standing* over time (ADR-flavored).
 - **body**: the context that forced a choice, the options weighed, the decision,
   and its consequences.
 - **status**: `proposed` (under discussion), `accepted` (in force),
-  `superseded` (replaced by a later decision — link it), `rejected` (declined).
+  `superseded` (replaced by a later decision), `rejected` (declined).
 
-When a decision replaces an earlier one, mark the old one `superseded` and
-`[[wikilink]]` between them rather than editing history.
+## Typed relations (frontmatter fields, not prose links)
+
+Record how decisions relate as `[[wikilink]]` values in these **frontmatter
+fields**, so the links are queryable rather than buried in prose:
+
+- **supersedes**: an earlier decision this one replaces. Also set the
+  superseded decision's `status` to `superseded`; its reverse (`superseded_by`)
+  is derived, so you do not author it there.
+- **contradicts**: a decision that conflicts with this one. Symmetric — you
+  need only record it on one side.

@@ -98,6 +98,8 @@ const EXPECTED_COMMAND_IDS = [
 	"vault.doc.create",
 	"vault.doc.update",
 	"vault.doc.delete",
+	"vault.relations.check",
+	"vault.relations.traverse",
 	"home-thread.set-title",
 	"home-thread.suggest-next",
 	"service.install",

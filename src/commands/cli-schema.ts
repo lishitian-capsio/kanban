@@ -135,7 +135,10 @@ const COMMAND_SCHEMA_REGISTRY: Record<string, CommandSchemaMeta> = {
 		output: { ref: GENERIC_OUTPUT_REF },
 		errors: [...DEFAULT_WORKSPACE_ERRORS, "database_access_disabled"],
 	},
-	"db.connection.add": { output: { ref: GENERIC_OUTPUT_REF }, errors: [...VALIDATION_ERRORS, "database_access_disabled"] },
+	"db.connection.add": {
+		output: { ref: GENERIC_OUTPUT_REF },
+		errors: [...VALIDATION_ERRORS, "database_access_disabled"],
+	},
 	"db.connection.remove": {
 		output: { ref: GENERIC_OUTPUT_REF },
 		errors: [...DEFAULT_WORKSPACE_ERRORS, "connection_not_found", "database_access_disabled"],
@@ -214,6 +217,13 @@ const COMMAND_SCHEMA_REGISTRY: Record<string, CommandSchemaMeta> = {
 		errors: [...VALIDATION_ERRORS, "document_not_found"],
 	},
 	"vault.doc.delete": {
+		output: { ref: GENERIC_OUTPUT_REF },
+		errors: [...DEFAULT_WORKSPACE_ERRORS, "document_not_found"],
+	},
+	// The typed-relation query channel is read-only (validate + traverse), so it surfaces no
+	// write/mutation errors — only workspace resolution and (for traverse) an unknown start id.
+	"vault.relations.check": { output: { ref: GENERIC_OUTPUT_REF }, errors: DEFAULT_WORKSPACE_ERRORS },
+	"vault.relations.traverse": {
 		output: { ref: GENERIC_OUTPUT_REF },
 		errors: [...DEFAULT_WORKSPACE_ERRORS, "document_not_found"],
 	},
