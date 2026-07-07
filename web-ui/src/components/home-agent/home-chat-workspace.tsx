@@ -28,6 +28,7 @@ import { HomeSessionCard } from "@/components/home-agent/home-session-card";
 import { PiConversationSurface } from "@/components/home-agent/pi-conversation-surface";
 import { SessionTabStrip } from "@/components/home-agent/session-tab-strip";
 import type { SessionTaskDialogActions } from "@/components/home-agent/thread-tasks";
+import { ImChatListPanel } from "@/components/im/im-chat-list-panel";
 import type { UseHomeThreadsResult } from "@/hooks/use-home-threads";
 import { useRefreshHomeThreadsOnSessionContextBump } from "@/hooks/use-refresh-home-threads-on-context-bump";
 import { estimateTaskSessionGeometry } from "@/runtime/task-session-geometry";
@@ -267,6 +268,17 @@ export function HomeChatWorkspace({
 								defaultAgentId={runtimeProjectConfig.selectedAgentId}
 								currentProjectId={currentProjectId}
 								onCreate={handleCreateSession}
+							/>
+						</div>
+						{/* Resident IM chat management (requirement ac99c, task B): a bindable list of
+						    the workspace's IM 会话, each showing its binding status + 绑定/切换/解绑/移除. */}
+						<div className="mt-6">
+							<ImChatListPanel
+								workspaceId={currentProjectId}
+								threads={homeThreads.threads}
+								agents={runtimeProjectConfig.agents}
+								onBindChannel={homeThreads.bindThreadImChannel}
+								onUnbindChannel={homeThreads.unbindThreadImChannel}
 							/>
 						</div>
 					</div>

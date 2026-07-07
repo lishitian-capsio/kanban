@@ -6,12 +6,14 @@ import type { RuntimeImChat } from "@/runtime/types";
 
 const listQuery = vi.fn();
 const addMutate = vi.fn();
+const removeMutate = vi.fn();
 
 vi.mock("@/runtime/trpc-client", () => ({
 	getRuntimeTrpcClient: () => ({
 		runtime: {
 			listImChats: { query: listQuery },
 			addImChat: { mutate: addMutate },
+			removeImChat: { mutate: removeMutate },
 		},
 	}),
 }));
@@ -60,6 +62,7 @@ describe("useImChats", () => {
 	beforeEach(() => {
 		listQuery.mockReset();
 		addMutate.mockReset();
+		removeMutate.mockReset();
 	});
 
 	afterEach(() => {
@@ -92,6 +95,26 @@ describe("useImChats", () => {
 
 		expect(addMutate).toHaveBeenCalledWith({ platform: "lark", chatId: "oc_new" });
 		expect(latest().chats.map((c) => c.chatId)).toEqual(["oc_new", "oc_old"]);
+		act(() => root.unmount());
+	});
+
+	it("removes a chat by identity and drops it from the list", async () => {
+		listQuery.mockResolvedValue({ ok: true, chats: [chat({ chatId: "oc_a" }), chat({ chatId: "oc_b" })] });
+		removeMutate.mockResolvedValue({ ok: true, chat: chat({ chatId: "oc_a" }) });
+		const { root, latest } = renderHook("ws-1");
+		await act(async () => {
+			await flush();
+		});
+
+		let removed = false;
+		await act(async () => {
+			removed = await latest().removeChat("lark", "oc_a");
+			await flush();
+		});
+
+		expect(removed).toBe(true);
+		expect(removeMutate).toHaveBeenCalledWith({ platform: "lark", chatId: "oc_a" });
+		expect(latest().chats.map((c) => c.chatId)).toEqual(["oc_b"]);
 		act(() => root.unmount());
 	});
 

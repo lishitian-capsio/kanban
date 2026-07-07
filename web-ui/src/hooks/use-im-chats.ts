@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { notifyError } from "@/components/app-toaster";
+import type { ImPlatform } from "@/components/im/im-channel";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeImChat, RuntimeImChatAddRequest } from "@/runtime/types";
 
@@ -30,6 +31,13 @@ export interface UseImChatsResult {
 	 * so a manually-bound chat becomes a reusable list entry.
 	 */
 	addChat: (request: RuntimeImChatAddRequest) => Promise<RuntimeImChat | null>;
+	/**
+	 * Remove a chat from the palette by its (platform, chatId) identity. Returns true on
+	 * success (a toast is surfaced on failure). Used by the resident IM-chat management list
+	 * (requirement ac99c, task B). Removing a chat does NOT touch any thread binding — the
+	 * binding lives on the thread and is reconciled separately.
+	 */
+	removeChat: (platform: ImPlatform, chatId: string) => Promise<boolean>;
 }
 
 function sameChat(a: RuntimeImChat, b: RuntimeImChat): boolean {
@@ -105,5 +113,25 @@ export function useImChats(workspaceId: string | null): UseImChatsResult {
 		[workspaceId],
 	);
 
-	return { chats, isLoading, error, refresh, addChat };
+	const removeChat = useCallback(
+		async (platform: ImPlatform, chatId: string): Promise<boolean> => {
+			if (!workspaceId) {
+				return false;
+			}
+			try {
+				const response = await getRuntimeTrpcClient(workspaceId).runtime.removeImChat.mutate({ platform, chatId });
+				if (!response.ok) {
+					throw new Error(response.error ?? "Could not remove the IM chat.");
+				}
+				setChats((current) => current.filter((chat) => !(chat.platform === platform && chat.chatId === chatId)));
+				return true;
+			} catch (caught) {
+				notifyError(caught instanceof Error ? caught.message : String(caught));
+				return false;
+			}
+		},
+		[workspaceId],
+	);
+
+	return { chats, isLoading, error, refresh, addChat, removeChat };
 }
