@@ -83,8 +83,21 @@ export { buildImTaskMessage, classifyImTaskEvent, isImTaskCardKind } from "./im-
 export type { ImTaskEventNotifierDeps, ImTaskRoute } from "./im-task-notifier";
 export { ImTaskEventNotifier } from "./im-task-notifier";
 export { resolveTaskRouteFromBoard, resolveThreadImChannelFromThreads } from "./im-task-route-resolver";
-export type { LarkBotCredential, LarkFetch, LarkImProviderOptions, LarkReceiveIdType } from "./lark";
-export { LarkApiError, LarkCredentialFormatError, LarkImProvider, registerLarkImProvider } from "./lark";
+export type {
+	LarkBotCredential,
+	LarkFetch,
+	LarkImGatewayConnectorOptions,
+	LarkImProviderOptions,
+	LarkReceiveIdType,
+} from "./lark";
+export {
+	LarkApiError,
+	LarkCredentialFormatError,
+	LarkImGatewayConnector,
+	LarkImProvider,
+	registerLarkImGatewayConnector,
+	registerLarkImProvider,
+} from "./lark";
 export type {
 	ImCard,
 	ImCardButton,

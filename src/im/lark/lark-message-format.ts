@@ -5,8 +5,9 @@
  *
  * @see https://open.feishu.cn/document/server-docs/im-v1/message/create
  */
-import { LarkCredentialFormatError } from "./errors";
+
 import type { ImCard } from "../types";
+import { LarkCredentialFormatError } from "./errors";
 
 /**
  * Lark `receive_id_type` values relevant to sending to a group or a single user. The API also

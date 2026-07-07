@@ -50,7 +50,7 @@ import { registerDingtalkStreamConnector } from "./im/dingtalk/dingtalk-stream-c
 import { ImGateway } from "./im/gateway/im-gateway";
 import { ImTaskEventNotifier } from "./im/im-task-notifier";
 import { resolveTaskRouteFromBoard, resolveThreadImChannelFromThreads } from "./im/im-task-route-resolver";
-import { registerLarkImProvider } from "./im/lark";
+import { registerLarkImGatewayConnector, registerLarkImProvider } from "./im/lark";
 import { configureLogging, createLogger } from "./logging";
 import { resolveAndPersistInternalToken } from "./security/internal-token-store";
 import { disablePasscode, setInternalToken, setPasscode } from "./security/passcode-manager";
@@ -447,6 +447,12 @@ async function startServer(): Promise<{
 	// lazily at send time and outbound is a no-op (logged, never thrown) when unconfigured, so this
 	// stays inert until a home thread is actually bound to a Lark channel.
 	registerLarkImProvider();
+
+	// Register the Lark inbound long-connection connector so the resident IM gateway can bring up a
+	// `im.message.receive_v1` subscription (no public callback URL) when a Lark credential is stored.
+	// Like the outbound provider, this is inert until a `lark` credential exists — the gateway
+	// (started below, before which connectors must be registered) skips connectors with no credential.
+	registerLarkImGatewayConnector();
 
 	// Load the Windows PTY backend (`bun-pty`, ConPTY) once, up front, so that
 	// PtySession.spawn stays synchronous for terminal/agent sessions. No-op on
