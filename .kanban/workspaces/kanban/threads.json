@@ -1,42 +1,6 @@
 {
   "threads": [
     {
-      "id": "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
-      "agentId": "claude",
-      "name": "Fix board cards flashing in fullscreen",
-      "titleSource": "auto",
-      "createdAt": 1782639849269,
-      "updatedAt": 1782700321654,
-      "pendingNextStep": "启动任务 f7513"
-    },
-    {
-      "id": "7f175fd0-b7e1-40c0-bf02-638bb0a5e55a",
-      "agentId": "claude",
-      "name": "修复 web-ui OSC52 复制",
-      "titleSource": "auto",
-      "createdAt": 1782648145207,
-      "updatedAt": 1782648421579,
-      "pendingNextStep": "把 #cc410 链接到 #ae0db，让它在 #ae0db 完成后自动启动"
-    },
-    {
-      "id": "64e7235d-6c2b-4575-90f6-e6f766c1de20",
-      "agentId": "claude",
-      "name": "修复 Home Tab 随会话列表滚动",
-      "titleSource": "auto",
-      "createdAt": 1782648248457,
-      "updatedAt": 1782648264562,
-      "pendingNextStep": "把 99cf9 链接到 3046e，让横向滚动条任务在竖向滚动条样式完成后自动开始"
-    },
-    {
-      "id": "4f4258a4-d3cb-48b6-99ed-3448706dc93e",
-      "agentId": "claude",
-      "name": "新增 qoder CLI agent",
-      "titleSource": "auto",
-      "createdAt": 1782649969582,
-      "updatedAt": 1782650033873,
-      "pendingNextStep": "开始执行任务 a8072(修正 qoder agent installUrl 与二进制名)"
-    },
-    {
       "id": "be8da62b-73a2-48bf-99f8-7aa66272411b",
       "agentId": "claude",
       "name": "全屏下按会话 agent 归类任务",
@@ -44,15 +8,6 @@
       "createdAt": 1782698377856,
       "updatedAt": 1782700538886,
       "pendingNextStep": "18a65 已验收并合并到 main 了，启动 ca182"
-    },
-    {
-      "id": "09cbba03-af49-47b6-9e38-85e50946643b",
-      "agentId": "claude",
-      "name": "侧栏 ops 状态栏趋势图",
-      "titleSource": "auto",
-      "createdAt": 1782698449665,
-      "updatedAt": 1782699411767,
-      "pendingNextStep": "启动任务 a316a"
     },
     {
       "id": "0dc23e3d-665b-4b31-b72f-edd3c9614521",
@@ -208,14 +163,9 @@
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "98d352bf-cb23-490b-8d5d-8945798a7371",
-      "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
       "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
-      "4f4258a4-d3cb-48b6-99ed-3448706dc93e",
-      "09cbba03-af49-47b6-9e38-85e50946643b",
-      "6a585585-b1b3-41e5-8785-009188294312",
-      "49269ceb-b13c-4019-aaaf-65bd61e653ff"
+      "5a452b07-e2c2-4342-9923-4c9cdae4a291"
     ],
-    "activeThreadId": "9ed2b30b-108d-4520-babc-c313e0d7dbd8"
+    "activeThreadId": "5a452b07-e2c2-4342-9923-4c9cdae4a291"
   }
 }
