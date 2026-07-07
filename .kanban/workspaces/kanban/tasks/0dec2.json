@@ -1,0 +1,20 @@
+{
+  "id": "0dec2",
+  "title": "T5 · vault type CLI 写命令(create/update/delete)",
+  "prompt": "给 vault type 命令族补写命令 create/update/delete(现有只有 list/show)。依赖 T1。\n\n命令(与现有 vault doc create 风格对齐:envelope、--set key=value):\n- vault type create --type <id> --label <文本>(必填) [--description] [--icon] [--slug-field] [--status <值>...(可重复)] [--set default_frontmatter.<k>=<v> ...] [--body | --body-file] [--relation '<name>={json}' ...(可重复)] [--relations-file <path>]\n- vault type update --type <id> [上述任意字段],缺字段保持不变\n- vault type delete --type <id>\n\n规则:\n1. 【必须】构造 VaultTypeDefinition 并经 serializeVaultTypeDefinition(T1)写盘——绝不裸写文件——使 CLI 写与手改产出一致的 canonical 文件、且 relations 能 round-trip;写后 registry.invalidate()。\n2. _types/ 在 board-data-home 下,所以这些写入是'提交项'、随 board-sync 走——确认写入走的是 board-data 路径。\n3. create:类型已存在则报错;update:缺失则报错(镜像 vault doc)。\n4. delete 非阻塞:若该类型下已有文档,仍删除,但在 envelope 的 warnings 里加一条 '<n> 篇文档将变成未注册类型'。\n5. create/update 严格自校验 relation schema(关系名合法、target 引用的类型存在、inverse 自洽)→ 不合法以 invalid_argument 拒绝(写类型要严,区别于 T2 写文档时的建议性校验)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "eebaca34-2492-4308-8460-c7dfb289dfd0",
+  "baseRef": "main",
+  "createdAt": 1783401207320,
+  "updatedAt": 1783401207320,
+  "column": "backlog",
+  "rank": "Zk",
+  "dependsOn": []
+}
