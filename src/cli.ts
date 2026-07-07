@@ -46,6 +46,7 @@ import {
 } from "./core/runtime-endpoint";
 import { getGiteeAuthService } from "./gitee-auth";
 import { getGitHubAuthService } from "./github-auth";
+import { registerDingtalkStreamConnector } from "./im/dingtalk/dingtalk-stream-connector";
 import { ImGateway } from "./im/gateway/im-gateway";
 import { ImTaskEventNotifier } from "./im/im-task-notifier";
 import { resolveTaskRouteFromBoard, resolveThreadImChannelFromThreads } from "./im/im-task-route-resolver";
@@ -551,9 +552,11 @@ async function startServer(): Promise<{
 	// Start the lightweight resident IM gateway. It brings up a long connection (Lark WebSocket /
 	// 钉钉 Stream) for every platform that has a stored credential AND a registered inbound
 	// connector, supervising each connection's lifecycle (start / backoff-reconnect / close) and
-	// fanning decoded inbound events out to subscribers. Safe to start unconditionally: with no
-	// connector registered yet (the concrete platform inbound adapters are separate tasks) it finds
-	// nothing to bring up and stays dormant — this is the resident seam those adapters plug into.
+	// fanning decoded inbound events out to subscribers. Register the concrete inbound connectors
+	// first so the gateway has something to bring up: DingTalk Stream mode (long connection) stays
+	// inert until a `dingtalk` app credential (appKey:appSecret in botToken) is stored, so this is
+	// safe to call unconditionally.
+	registerDingtalkStreamConnector();
 	const imGateway = new ImGateway();
 	await imGateway.start();
 

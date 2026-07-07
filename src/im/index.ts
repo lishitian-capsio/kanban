@@ -16,7 +16,30 @@ export {
 	signDingtalkWebhookUrl,
 } from "./dingtalk/dingtalk-message";
 export { DingtalkImProvider, registerDingtalkImProvider } from "./dingtalk/dingtalk-provider";
+export {
+	DingtalkStreamConnector,
+	type DingtalkStreamConnectorDeps,
+	registerDingtalkStreamConnector,
+} from "./dingtalk/dingtalk-stream-connector";
+export {
+	buildDingtalkOpenRequest,
+	decodeDingtalkBotMessage,
+	DINGTALK_BOT_MESSAGE_TOPIC,
+	DINGTALK_STREAM_OPEN_ENDPOINT,
+	type DingtalkStreamCredential,
+	type DingtalkStreamFrame,
+	parseDingtalkStreamCredential,
+	parseDingtalkStreamFrame,
+} from "./dingtalk/dingtalk-stream-protocol";
+export type {
+	DingtalkStreamEndpoint,
+	DingtalkStreamOpener,
+	DingtalkStreamSocket,
+	DingtalkStreamSocketFactory,
+	DingtalkStreamSocketHandlers,
+} from "./dingtalk/dingtalk-stream-transport";
 export type { DingtalkApiResponse, DingtalkTransport } from "./dingtalk/dingtalk-transport";
+export { DingtalkStreamCredentialFormatError, DingtalkStreamOpenError } from "./dingtalk/errors";
 export { ImCredentialUnavailableError, ImError, ImSendFailedError, UnsupportedImPlatformError } from "./errors";
 export type {
 	ImConnectionState,
