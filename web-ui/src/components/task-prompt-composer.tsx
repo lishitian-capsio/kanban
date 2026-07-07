@@ -46,6 +46,13 @@ interface TaskPromptComposerProps {
 	 * undefined by default, so composers without file support behave as before.
 	 */
 	onFilesSelected?: (files: File[]) => void;
+	/**
+	 * Called when NON-image files are dropped/pasted but {@link onFilesSelected} is
+	 * absent (e.g. the selected agent can't consume `@/path` mentions). The event is
+	 * still consumed (no browser navigation) so the caller can surface a clear reason
+	 * instead of the drop being silently ignored. Images are unaffected either way.
+	 */
+	onFilesUnsupported?: (files: File[]) => void;
 }
 
 export function TaskPromptComposer({
@@ -65,6 +72,7 @@ export function TaskPromptComposer({
 	showAttachImageButton = true,
 	enableSlashCommands = false,
 	onFilesSelected,
+	onFilesUnsupported,
 }: TaskPromptComposerProps): ReactElement {
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -159,7 +167,10 @@ export function TaskPromptComposer({
 			}
 			const imageFiles = onImagesChange ? collectImageFilesFromDataTransfer(event.clipboardData) : [];
 			// Grab the File refs synchronously; the clipboard is cleared after dispatch.
-			const otherFiles = onFilesSelected ? collectNonImageFilesFromDataTransfer(event.clipboardData) : [];
+			const otherFiles =
+				onFilesSelected || onFilesUnsupported
+					? collectNonImageFilesFromDataTransfer(event.clipboardData)
+					: [];
 			if (imageFiles.length === 0 && otherFiles.length === 0) {
 				return;
 			}
@@ -171,10 +182,10 @@ export function TaskPromptComposer({
 				})();
 			}
 			if (otherFiles.length > 0) {
-				onFilesSelected?.(otherFiles);
+				(onFilesSelected ?? onFilesUnsupported)?.(otherFiles);
 			}
 		},
-		[appendImages, onImagesChange, onFilesSelected],
+		[appendImages, onImagesChange, onFilesSelected, onFilesUnsupported],
 	);
 
 	const handleDrop = useCallback(
@@ -184,7 +195,8 @@ export function TaskPromptComposer({
 				return;
 			}
 			const imageFiles = onImagesChange ? collectImageFilesFromDataTransfer(event.dataTransfer) : [];
-			const otherFiles = onFilesSelected ? collectNonImageFilesFromDataTransfer(event.dataTransfer) : [];
+			const otherFiles =
+				onFilesSelected || onFilesUnsupported ? collectNonImageFilesFromDataTransfer(event.dataTransfer) : [];
 			if (imageFiles.length === 0 && otherFiles.length === 0) {
 				return;
 			}
@@ -196,15 +208,15 @@ export function TaskPromptComposer({
 				})();
 			}
 			if (otherFiles.length > 0) {
-				onFilesSelected?.(otherFiles);
+				(onFilesSelected ?? onFilesUnsupported)?.(otherFiles);
 			}
 		},
-		[appendImages, onImagesChange, onFilesSelected],
+		[appendImages, onImagesChange, onFilesSelected, onFilesUnsupported],
 	);
 
 	const handleDragOver = useCallback(
 		(event: DragEvent<HTMLDivElement>) => {
-			if (!onImagesChange && !onFilesSelected) {
+			if (!onImagesChange && !onFilesSelected && !onFilesUnsupported) {
 				return;
 			}
 			const hasFiles = event.dataTransfer.types.includes("Files");
@@ -214,7 +226,7 @@ export function TaskPromptComposer({
 			event.preventDefault();
 			setIsDragOver(true);
 		},
-		[onImagesChange, onFilesSelected],
+		[onImagesChange, onFilesSelected, onFilesUnsupported],
 	);
 
 	const handleDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {

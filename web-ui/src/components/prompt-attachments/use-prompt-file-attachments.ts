@@ -47,6 +47,12 @@ export interface UsePromptFileAttachmentsResult {
 	markSubmitted: (submitted?: boolean) => void;
 	/** Best-effort delete of the current scope's uploads unless it was submitted. */
 	cleanupOrphanScope: () => void;
+	/**
+	 * Drop every collected chip and best-effort delete their uploads. Used when the
+	 * attachment channel is turned off with files still staged (e.g. switching to an
+	 * agent that can't consume them) so nothing orphans on disk.
+	 */
+	clearAttachments: () => void;
 }
 
 /**
@@ -144,5 +150,23 @@ export function usePromptFileAttachments(options: UsePromptFileAttachmentsOption
 			});
 	}, [workspaceId, scopeId, attachments.length]);
 
-	return { attachments, handleFilesSelected, handleRemoveAttachment, markSubmitted, cleanupOrphanScope };
+	const clearAttachments = useCallback(() => {
+		if (workspaceId && attachments.length > 0 && !submittedRef.current) {
+			void getRuntimeTrpcClient(workspaceId)
+				.runtime.deleteWorkspaceAttachmentScope.mutate({ scopeId })
+				.catch(() => {
+					// Best-effort cleanup; a failed delete just leaves a small orphan dir.
+				});
+		}
+		setAttachments([]);
+	}, [workspaceId, scopeId, attachments.length]);
+
+	return {
+		attachments,
+		handleFilesSelected,
+		handleRemoveAttachment,
+		markSubmitted,
+		cleanupOrphanScope,
+		clearAttachments,
+	};
 }

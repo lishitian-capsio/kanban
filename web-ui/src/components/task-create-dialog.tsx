@@ -19,6 +19,7 @@ import type { Dispatch, ReactElement, SetStateAction } from "react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
+import { showAppToast } from "@/components/app-toaster";
 import type { BranchSelectOption } from "@/components/branch-select-dropdown";
 import { BranchSelectDropdown } from "@/components/branch-select-dropdown";
 import { PromptAttachmentChips } from "@/components/prompt-attachments/prompt-attachment-chips";
@@ -43,6 +44,11 @@ const AUTO_REVIEW_MODE_OPTIONS: Array<{ value: TaskAutoReviewMode; label: string
 type TaskCreateStartAction = "start" | "start_and_open";
 
 const DEFAULT_PRIMARY_START_ACTION: TaskCreateStartAction = "start";
+
+// Shared toast id so the "agent can't take files" notices de-dupe rather than stack.
+const ATTACHMENT_UNSUPPORTED_TOAST_ID = "task-create-attachment-unsupported";
+const ATTACHMENT_UNSUPPORTED_MESSAGE =
+	"This agent doesn't support file attachments. Switch to Claude to attach files.";
 
 function normalizeStoredTaskCreateStartAction(value: string): TaskCreateStartAction | null {
 	if (value === "start" || value === "start_and_open") {
@@ -210,15 +216,35 @@ export function TaskCreateDialog({
 	// task's worktree does not exist yet, so files are staged under the pre-minted
 	// task id and the backend relocates them into the worktree + injects the
 	// `@/path` mention into the kickoff prompt at start.
+	// The attachment channel follows the CURRENTLY selected agent (real time): an
+	// explicit pick wins, otherwise the workspace default. `undefined` agentId means
+	// "use default", so it resolves to `defaultAgentId` — which may itself be an
+	// agent (e.g. pi) that can't consume `@/path` mentions.
 	const effectiveAttachmentAgentId = agentId ?? defaultAgentId ?? undefined;
-	const attachmentsEnabled = Boolean(workspaceId) && agentSupportsFileAttachments(effectiveAttachmentAgentId);
-	const { attachments, handleFilesSelected, handleRemoveAttachment, markSubmitted, cleanupOrphanScope } =
+	const agentSupportsAttachments = agentSupportsFileAttachments(effectiveAttachmentAgentId);
+	const attachmentsEnabled = Boolean(workspaceId) && agentSupportsAttachments;
+	const { attachments, handleFilesSelected, handleRemoveAttachment, markSubmitted, cleanupOrphanScope, clearAttachments } =
 		usePromptFileAttachments({
 			workspaceId,
 			scopeId: taskId,
 			enabled: attachmentsEnabled,
 			toastId: "task-create-attachment-error",
 		});
+
+	// Dropping/pasting a file while the selected agent can't take one must not be
+	// silently ignored — tell the user why (and how to fix it).
+	const notifyAttachmentsUnsupported = useCallback(() => {
+		showAppToast({ intent: "warning", message: ATTACHMENT_UNSUPPORTED_MESSAGE }, ATTACHMENT_UNSUPPORTED_TOAST_ID);
+	}, []);
+
+	// Switching to an agent that can't consume attachments while files are staged:
+	// drop them (they'd never be injected) and say so, rather than orphaning them.
+	useEffect(() => {
+		if (!attachmentsEnabled && attachments.length > 0) {
+			clearAttachments();
+			showAppToast({ intent: "warning", message: ATTACHMENT_UNSUPPORTED_MESSAGE }, ATTACHMENT_UNSUPPORTED_TOAST_ID);
+		}
+	}, [attachmentsEnabled, attachments.length, clearAttachments]);
 
 	const detectedItems = useMemo(() => parseListItems(prompt), [prompt]);
 	const validTaskCount = useMemo(() => taskPrompts.filter((p) => p.trim()).length, [taskPrompts]);
@@ -482,6 +508,9 @@ export function TaskCreateDialog({
 							images={images}
 							onImagesChange={onImagesChange}
 							onFilesSelected={attachmentsEnabled ? handleFilesSelected : undefined}
+							onFilesUnsupported={
+								!attachmentsEnabled && !agentSupportsAttachments ? notifyAttachmentsUnsupported : undefined
+							}
 							onSubmit={handleCreateSingle}
 							onSubmitAndStart={() => handleRunSingleStartAction("start")}
 							placeholder="Describe the task..."
@@ -502,6 +531,9 @@ export function TaskCreateDialog({
 									{pasteShortcutLabel}
 								</code>{" "}
 								to add images{attachmentsEnabled ? " or files" : ""}.
+								{!agentSupportsAttachments ? (
+									<span className="text-status-orange"> Switch to Claude to attach files.</span>
+								) : null}
 							</p>
 							{detectedItems.length >= 2 ? (
 								<button

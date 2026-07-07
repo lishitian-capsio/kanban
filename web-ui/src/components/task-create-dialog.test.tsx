@@ -10,11 +10,17 @@ const {
 	getKanbanSlashCommandsMock,
 	writeWorkspaceAttachmentMock,
 	deleteWorkspaceAttachmentScopeMock,
+	showAppToastMock,
 } = vi.hoisted(() => ({
 	searchFilesMock: vi.fn(),
 	getKanbanSlashCommandsMock: vi.fn(),
 	writeWorkspaceAttachmentMock: vi.fn(),
 	deleteWorkspaceAttachmentScopeMock: vi.fn(),
+	showAppToastMock: vi.fn(),
+}));
+
+vi.mock("@/components/app-toaster", () => ({
+	showAppToast: showAppToastMock,
 }));
 
 vi.mock("@/runtime/trpc-client", () => ({
@@ -150,8 +156,11 @@ describe("TaskCreateDialog attachments", () => {
 		expect(document.querySelector('button[aria-label="Remove notes.txt"]')).toBeNull();
 	});
 
-	it("does not attach files when the selected agent has no `@/path` support", async () => {
+	it("does not attach files when the selected agent has no `@/path` support, but surfaces a clear hint and toast instead of silently ignoring the drop", async () => {
 		await render({ agentId: "codex" });
+
+		// A discoverable static hint before the user even tries.
+		expect(document.body.textContent).toContain("Switch to Claude to attach files");
 
 		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
 		await act(async () => {
@@ -161,5 +170,39 @@ describe("TaskCreateDialog attachments", () => {
 
 		expect(writeWorkspaceAttachmentMock).not.toHaveBeenCalled();
 		expect(document.querySelector('button[aria-label="Remove notes.txt"]')).toBeNull();
+		// The drop is not swallowed silently — the user is told why + how to fix it.
+		expect(showAppToastMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				intent: "warning",
+				message: expect.stringContaining("Switch to Claude"),
+			}),
+			"task-create-attachment-unsupported",
+		);
+	});
+
+	it("drops staged attachments and warns when the selected agent is switched to one without support", async () => {
+		await render({ agentId: "claude" });
+
+		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+		await act(async () => {
+			dispatchFileDrop(textarea, makeTextFile("notes.txt"));
+			await flushAttachment();
+		});
+		expect(document.querySelector('button[aria-label="Remove notes.txt"]')).not.toBeNull();
+
+		// Switch to an agent that can't consume the staged file.
+		showAppToastMock.mockClear();
+		await render({ agentId: "codex" });
+		await act(async () => {
+			await flushAttachment();
+		});
+
+		// The staged upload is cleaned up on the backend and the chip is gone.
+		expect(deleteWorkspaceAttachmentScopeMock).toHaveBeenCalledWith({ scopeId: "task-xyz" });
+		expect(document.querySelector('button[aria-label="Remove notes.txt"]')).toBeNull();
+		expect(showAppToastMock).toHaveBeenCalledWith(
+			expect.objectContaining({ intent: "warning" }),
+			"task-create-attachment-unsupported",
+		);
 	});
 });
