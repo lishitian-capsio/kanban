@@ -163,10 +163,11 @@
     {
       "id": "eebaca34-2492-4308-8460-c7dfb289dfd0",
       "agentId": "claude",
-      "name": "kanban agent的记忆怎么管理",
+      "name": "Vault 关系类型 schema 设计",
       "titleSource": "auto",
       "createdAt": 1783394061881,
-      "updatedAt": 1783394061881
+      "updatedAt": 1783401363257,
+      "pendingNextStep": "开始 T1(5a280)——vault 关系类型 schema 的解析/序列化"
     }
   ],
   "fullscreenTabs": {
