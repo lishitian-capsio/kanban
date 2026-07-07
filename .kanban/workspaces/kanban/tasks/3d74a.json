@@ -1,0 +1,20 @@
+{
+  "id": "3d74a",
+  "title": "T2 · vault 文档关系校验器(非阻塞)",
+  "prompt": "新增一个纯函数、非阻塞的 vault 文档关系校验器。依赖 T1(需要 VaultTypeDefinition.relations)。\n\n新文件 src/vault/vault-relation-validation.ts:\n- validateDocumentRelations(doc, typeDef, linkIndex) => 返回 issue 数组 { relation; kind: 'target-type-mismatch' | 'cardinality' | 'dangling'; detail }。\n- 复用现有 link 引擎(src/vault/vault-link-index.ts,它已给每条 outgoing link 打上 source.field 和 resolvedType)。对类型里每个'声明过的关系字段':\n  (a) target-type-mismatch:某条已解析 link 的 resolvedType 不在该关系的 target 白名单内;\n  (b) cardinality:cardinality:'one' 但该字段有 >1 个 wikilink;\n  (c) dangling:该字段里某条 link 的 resolvedId === null(悬空)。\n- 未声明的 frontmatter 字段、以及 body 里的 link 一律不校验(它们仍是无类型 mention)——完全向后兼容。\n- 校验是'建议性'的,绝不能阻断保存。\n\n纯函数,完整单测。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "eebaca34-2492-4308-8460-c7dfb289dfd0",
+  "baseRef": "main",
+  "createdAt": 1783401187779,
+  "updatedAt": 1783401187779,
+  "column": "backlog",
+  "rank": "Zn",
+  "dependsOn": []
+}
