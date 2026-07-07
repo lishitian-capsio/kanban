@@ -86,6 +86,11 @@ export class ImGateway {
 	private readonly listeners = new Set<ImInboundEventListener>();
 	private started = false;
 	private stopped = false;
+	/**
+	 * Serialization chain for {@link refresh}. Chaining each refresh after the previous one keeps
+	 * two concurrent credential changes from racing to bring up the same connection twice.
+	 */
+	private refreshChain: Promise<void> = Promise.resolve();
 
 	constructor(deps: ImGatewayDeps = {}) {
 		this.hasCredential = deps.hasCredential ?? (async (platform) => (await resolveImCredential(platform)) !== null);
@@ -151,6 +156,46 @@ export class ImGateway {
 		);
 	}
 
+	/**
+	 * Re-evaluate every platform's credential gate against the currently registered connectors and
+	 * bring connections into line: start a platform that gained a credential, stop one that lost it
+	 * (or whose connector was unregistered), leaving unchanged platforms untouched. Idempotent and
+	 * safe to call at any time after construction — this is the seam credential changes hook into so
+	 * a Lark/DingTalk long connection comes up (or drops) without a runtime restart.
+	 *
+	 * Concurrent calls are serialized via {@link refreshChain}, and a failure only logs (the gateway
+	 * is a resident component and must never let a refresh reject into its caller).
+	 */
+	async refresh(): Promise<void> {
+		const run = this.refreshChain.then(() => this.syncConnections());
+		// Keep the chain alive on failure so a later refresh still runs, but never surface the error.
+		this.refreshChain = run.catch(() => {});
+		return run.catch((error) => {
+			log.warn("IM gateway refresh failed", { error });
+		});
+	}
+
+	/** One pass of reconciliation between the desired (credentialed + registered) set and the live one. */
+	private async syncConnections(): Promise<void> {
+		if (this.stopped) {
+			return;
+		}
+		const registered = new Set(this.listConnectorPlatforms());
+		// Stop any live connection whose connector was unregistered or whose credential was cleared.
+		for (const sup of [...this.supervised.values()]) {
+			const keep = registered.has(sup.platform) && (await this.hasCredential(sup.platform));
+			if (!keep) {
+				await this.stopPlatform(sup);
+			}
+		}
+		if (this.stopped) {
+			return;
+		}
+		// Bring up any registered, credentialed platform not already supervised. `startPlatform`
+		// re-checks the credential and no-ops when the platform is already supervised.
+		await Promise.all([...registered].map((platform) => this.startPlatform(platform)));
+	}
+
 	private async startPlatform(platform: ImPlatform): Promise<void> {
 		if (this.supervised.has(platform)) {
 			return;
@@ -159,13 +204,50 @@ export class ImGateway {
 		if (!connector) {
 			return;
 		}
-		if (!(await this.hasCredential(platform))) {
-			log.debug("skipping IM connector: no credential configured", { platform });
-			return;
-		}
+		// Reserve the map slot synchronously — before the `hasCredential` await — so a concurrent
+		// start/refresh for the same platform sees the entry and bails, closing the check-then-act
+		// race that would otherwise bring up two connections.
 		const sup: Supervised = { platform, connector, state: "idle", attempt: 0, cancelTimer: null, generation: 0 };
 		this.supervised.set(platform, sup);
+		let credentialed: boolean;
+		try {
+			credentialed = await this.hasCredential(platform);
+		} catch (error) {
+			this.unreserve(sup);
+			log.warn("IM credential check failed; not starting connector", { platform, error });
+			return;
+		}
+		if (!credentialed || this.stopped) {
+			this.unreserve(sup);
+			if (!credentialed) {
+				log.debug("skipping IM connector: no credential configured", { platform });
+			}
+			return;
+		}
 		await this.connect(sup);
+	}
+
+	/** Drop a reserved-but-not-started slot, but only if it is still the one we reserved. */
+	private unreserve(sup: Supervised): void {
+		if (this.supervised.get(sup.platform) === sup) {
+			this.supervised.delete(sup.platform);
+		}
+	}
+
+	/**
+	 * Gracefully stop a single supervised connection and remove it from the map (so a later
+	 * {@link refresh} can bring the platform back up). Mirrors {@link stop} but scoped to one
+	 * platform. Bumping the generation invalidates any in-flight emit / drop signal / reconnect.
+	 */
+	private async stopPlatform(sup: Supervised): Promise<void> {
+		sup.generation += 1;
+		if (sup.cancelTimer) {
+			sup.cancelTimer();
+			sup.cancelTimer = null;
+		}
+		sup.state = "closed";
+		this.supervised.delete(sup.platform);
+		await this.safeDisconnect(sup);
 	}
 
 	/** Run one connect cycle for a supervised connector; on failure, schedule a backoff reconnect. */
@@ -194,8 +276,9 @@ export class ImGateway {
 			this.handleDrop(sup, error);
 			return;
 		}
-		if (this.stopped) {
-			// Stopped while the connect was in flight — do not keep a live connection around.
+		if (this.stopped || this.supervised.get(sup.platform) !== sup) {
+			// Stopped (globally or for this platform, e.g. its credential was cleared mid-connect)
+			// while the connect was in flight — do not keep a live connection around.
 			await this.safeDisconnect(sup);
 			return;
 		}

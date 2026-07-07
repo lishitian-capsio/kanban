@@ -236,3 +236,150 @@ describe("ImGateway", () => {
 		expect(lark.connectCount).toBe(1);
 	});
 });
+
+describe("ImGateway.refresh", () => {
+	it("brings up a platform whose credential appears after start()", async () => {
+		const lark = new FakeConnector("lark");
+		const credentialed = new Set<ImPlatform>();
+		const { gateway } = makeGateway(new Map([["lark", lark]]), credentialed);
+
+		await gateway.start();
+		expect(lark.connectCount).toBe(0);
+		expect(gateway.getConnectionState("lark")).toBe("idle");
+
+		credentialed.add("lark");
+		await gateway.refresh();
+
+		expect(lark.connectCount).toBe(1);
+		expect(gateway.getConnectionState("lark")).toBe("connected");
+	});
+
+	it("stops and disconnects a platform whose credential was cleared", async () => {
+		const lark = new FakeConnector("lark");
+		const credentialed = new Set<ImPlatform>(["lark"]);
+		const { gateway } = makeGateway(new Map([["lark", lark]]), credentialed);
+
+		await gateway.start();
+		expect(gateway.getConnectionState("lark")).toBe("connected");
+
+		credentialed.delete("lark");
+		await gateway.refresh();
+
+		expect(lark.disconnectCount).toBe(1);
+		expect(gateway.getConnectionState("lark")).toBe("idle");
+	});
+
+	it("cancels a pending reconnect when the credential is cleared", async () => {
+		const lark = new FakeConnector("lark", { defaultOutcome: "reject" });
+		const credentialed = new Set<ImPlatform>(["lark"]);
+		const { gateway, scheduler } = makeGateway(new Map([["lark", lark]]), credentialed);
+
+		await gateway.start();
+		expect(scheduler.pending).toHaveLength(1);
+
+		credentialed.delete("lark");
+		await gateway.refresh();
+
+		expect(scheduler.pending[0]?.canceled).toBe(true);
+		expect(gateway.getConnectionState("lark")).toBe("idle");
+	});
+
+	it("is a no-op when nothing changed — does not reconnect an already-connected platform", async () => {
+		const lark = new FakeConnector("lark");
+		const { gateway } = makeGateway(new Map([["lark", lark]]), new Set(["lark"]));
+
+		await gateway.start();
+		await gateway.refresh();
+		await gateway.refresh();
+
+		expect(lark.connectCount).toBe(1);
+		expect(gateway.getConnectionState("lark")).toBe("connected");
+	});
+
+	it("only touches the platform whose credential changed, leaving others connected", async () => {
+		const lark = new FakeConnector("lark");
+		const dingtalk = new FakeConnector("dingtalk");
+		const credentialed = new Set<ImPlatform>(["lark"]);
+		const { gateway } = makeGateway(
+			new Map<ImPlatform, ImGatewayConnector>([
+				["lark", lark],
+				["dingtalk", dingtalk],
+			]),
+			credentialed,
+		);
+
+		await gateway.start();
+		expect(lark.connectCount).toBe(1);
+		expect(dingtalk.connectCount).toBe(0);
+
+		credentialed.add("dingtalk");
+		await gateway.refresh();
+
+		expect(dingtalk.connectCount).toBe(1);
+		expect(gateway.getConnectionState("dingtalk")).toBe("connected");
+		// lark was untouched — no reconnect churn.
+		expect(lark.connectCount).toBe(1);
+		expect(lark.disconnectCount).toBe(0);
+	});
+
+	it("coalesces concurrent refresh() calls so a newly-credentialed platform connects once", async () => {
+		const lark = new FakeConnector("lark");
+		const credentialed = new Set<ImPlatform>();
+		const { gateway } = makeGateway(new Map([["lark", lark]]), credentialed);
+
+		await gateway.start();
+		credentialed.add("lark");
+
+		await Promise.all([gateway.refresh(), gateway.refresh(), gateway.refresh()]);
+
+		expect(lark.connectCount).toBe(1);
+		expect(gateway.getConnectionState("lark")).toBe("connected");
+	});
+
+	it("re-adds a platform after its credential is cleared and later restored", async () => {
+		const lark = new FakeConnector("lark");
+		const credentialed = new Set<ImPlatform>(["lark"]);
+		const { gateway } = makeGateway(new Map([["lark", lark]]), credentialed);
+
+		await gateway.start();
+		credentialed.delete("lark");
+		await gateway.refresh();
+		expect(gateway.getConnectionState("lark")).toBe("idle");
+
+		credentialed.add("lark");
+		await gateway.refresh();
+
+		expect(lark.connectCount).toBe(2);
+		expect(gateway.getConnectionState("lark")).toBe("connected");
+	});
+
+	it("does not bring connections back up after stop()", async () => {
+		const lark = new FakeConnector("lark");
+		const credentialed = new Set<ImPlatform>(["lark"]);
+		const { gateway } = makeGateway(new Map([["lark", lark]]), credentialed);
+
+		await gateway.start();
+		await gateway.stop();
+		expect(lark.disconnectCount).toBe(1);
+
+		await gateway.refresh();
+
+		expect(lark.connectCount).toBe(1);
+		expect(gateway.getConnectionState("lark")).toBe("closed");
+	});
+
+	it("never rejects when the credential check throws", async () => {
+		const lark = new FakeConnector("lark");
+		const gateway = new ImGateway({
+			hasCredential: async () => {
+				throw new Error("credential store unavailable");
+			},
+			listConnectorPlatforms: () => ["lark"],
+			getConnector: () => lark,
+			scheduleReconnect: () => () => {},
+		});
+
+		await expect(gateway.refresh()).resolves.toBeUndefined();
+		expect(lark.connectCount).toBe(0);
+	});
+});

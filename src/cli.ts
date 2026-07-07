@@ -48,6 +48,7 @@ import { getGiteeAuthService } from "./gitee-auth";
 import { getGitHubAuthService } from "./github-auth";
 import { registerDingtalkStreamConnector } from "./im/dingtalk/dingtalk-stream-connector";
 import { ImGateway } from "./im/gateway/im-gateway";
+import { setResidentImGateway } from "./im/gateway/resident-gateway";
 import { ImChatInboundRecorder } from "./im/im-chat-recorder";
 import { ImTaskEventNotifier } from "./im/im-task-notifier";
 import {
@@ -582,6 +583,10 @@ async function startServer(): Promise<{
 	// safe to call unconditionally.
 	registerDingtalkStreamConnector();
 	const imGateway = new ImGateway();
+	// Expose the resident gateway so the tRPC `im` router can trigger a refresh when a credential is
+	// saved/cleared at runtime — bringing a platform's long connection up (or down) without a process
+	// restart (mirrors how `setRuntimeProxyStateFromConfig` is reached from the config save path).
+	setResidentImGateway(imGateway);
 	// Auto-populate each open workspace's bindable IM chat list from inbound events: when a chat
 	// @'s the bot, record its (platform, chatId) so the user can bind it to a home thread without
 	// hand-copying the platform-native id (requirement ac99c, source ②). Best-effort and idempotent
@@ -714,6 +719,7 @@ async function startServer(): Promise<{
 		});
 		opsMetricsSampler.stop();
 		await imGateway.stop();
+		setResidentImGateway(null);
 		await stopNetworkBridge();
 		await stallWatchdog?.stop();
 	};

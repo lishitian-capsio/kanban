@@ -456,6 +456,7 @@ import {
 } from "../core/api-contract";
 import { getGiteeAuthService } from "../gitee-auth";
 import { getGitHubAuthService } from "../github-auth";
+import { getResidentImGateway } from "../im/gateway/resident-gateway";
 import { getImCredentialService } from "../im/im-credential-service";
 import type { WorkspaceDbApi } from "./workspace-db-api";
 import type { WorkspaceStorageApi } from "./workspace-storage-api";
@@ -1788,6 +1789,11 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeImSetCredentialsResponseSchema)
 			.mutation(async ({ input }) => {
 				const platforms = await getImCredentialService().setCredential(input.platform, input.credential);
+				// A credential can be configured (or changed) long after startup, so the resident
+				// gateway must re-evaluate its connections now — otherwise the new platform's long
+				// connection would only come up on the next restart. Fire-and-forget: refresh never
+				// rejects, and the save response shouldn't block on a network handshake.
+				void getResidentImGateway()?.refresh();
 				return { status: { platforms } };
 			}),
 		clearCredentials: t.procedure
@@ -1795,6 +1801,8 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeImClearCredentialsResponseSchema)
 			.mutation(async ({ input }) => {
 				const platforms = await getImCredentialService().clearCredential(input.platform);
+				// Tear down the now-credential-less platform's live connection without a restart.
+				void getResidentImGateway()?.refresh();
 				return { status: { platforms } };
 			}),
 	}),
