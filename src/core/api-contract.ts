@@ -465,6 +465,75 @@ export const runtimeHomeChatFullscreenTabsResponseSchema = z.object({
 export type RuntimeHomeChatFullscreenTabsResponse = z.infer<typeof runtimeHomeChatFullscreenTabsResponseSchema>;
 
 // ---------------------------------------------------------------------------
+// IM 会话 id 列表 (requirement ac99c, 阶段2 task ⑤)
+//
+// The per-workspace palette of bindable IM chats (飞书 Lark / 钉钉 DingTalk). A home
+// chat thread's `imChannel` binding (above) points at one of these entries. Two
+// population sources feed the list:
+//   - "manual"  — a user adds a chat by platform + native chat id;
+//   - "inbound" — a chat that @'d the bot is auto-recorded from a gateway inbound
+//                 event (see the IM gateway seam) so it becomes bindable without
+//                 the user hand-copying the platform-native id.
+// The identity of an entry is the (platform, chatId) pair; `displayName` is mutable
+// label metadata. Persisted with the workspace's board data (sibling of
+// `threads.json`), so the bindable palette travels with the board like the bindings.
+// ---------------------------------------------------------------------------
+
+export const runtimeImChatSourceSchema = z.enum(["manual", "inbound"]);
+export type RuntimeImChatSource = z.infer<typeof runtimeImChatSourceSchema>;
+
+export const runtimeImChatSchema = z.object({
+	platform: imPlatformSchema,
+	// The platform-native chat / conversation identifier (Lark `chat_id`, DingTalk `conversationId`).
+	chatId: z.string().min(1),
+	// A human-friendly label shown in the bindable list. Empty when unknown (an inbound-discovered
+	// chat carries no name yet); the UI falls back to the chatId.
+	displayName: z.string().default(""),
+	// How the entry entered the list. An `inbound` auto-record never overwrites a `manual` entry.
+	source: runtimeImChatSourceSchema.default("manual"),
+	createdAt: z.number(),
+	updatedAt: z.number(),
+});
+export type RuntimeImChat = z.infer<typeof runtimeImChatSchema>;
+
+export const runtimeImChatsDataSchema = z.object({
+	chats: z.array(runtimeImChatSchema).default([]),
+});
+export type RuntimeImChatsData = z.infer<typeof runtimeImChatsDataSchema>;
+
+// List (查) response — the full bindable palette for the workspace.
+export const runtimeImChatListResponseSchema = z.object({
+	ok: z.boolean(),
+	chats: z.array(runtimeImChatSchema),
+	error: z.string().optional(),
+});
+export type RuntimeImChatListResponse = z.infer<typeof runtimeImChatListResponseSchema>;
+
+// Manual add (增) — upserts by (platform, chatId): a re-add updates the display name (when a new
+// one is supplied) and marks the entry `manual`. `displayName` is optional.
+export const runtimeImChatAddRequestSchema = z.object({
+	platform: imPlatformSchema,
+	chatId: z.string().min(1),
+	displayName: z.string().optional(),
+});
+export type RuntimeImChatAddRequest = z.infer<typeof runtimeImChatAddRequestSchema>;
+
+// Remove (删) — keyed on the (platform, chatId) identity.
+export const runtimeImChatRemoveRequestSchema = z.object({
+	platform: imPlatformSchema,
+	chatId: z.string().min(1),
+});
+export type RuntimeImChatRemoveRequest = z.infer<typeof runtimeImChatRemoveRequestSchema>;
+
+// Shared add/remove response — carries the affected entry (remove → the removed entry).
+export const runtimeImChatMutationResponseSchema = z.object({
+	ok: z.boolean(),
+	chat: runtimeImChatSchema.nullable(),
+	error: z.string().optional(),
+});
+export type RuntimeImChatMutationResponse = z.infer<typeof runtimeImChatMutationResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // Files library
 //
 // A first-class resource library, on par with Requirements, that any agent

@@ -48,6 +48,7 @@ import { getGiteeAuthService } from "./gitee-auth";
 import { getGitHubAuthService } from "./github-auth";
 import { registerDingtalkStreamConnector } from "./im/dingtalk/dingtalk-stream-connector";
 import { ImGateway } from "./im/gateway/im-gateway";
+import { ImChatInboundRecorder } from "./im/im-chat-recorder";
 import { ImTaskEventNotifier } from "./im/im-task-notifier";
 import { resolveTaskRouteFromBoard, resolveThreadImChannelFromThreads } from "./im/im-task-route-resolver";
 import { registerLarkImGatewayConnector, registerLarkImProvider } from "./im/lark";
@@ -59,6 +60,7 @@ import { startEventLoopStallWatchdog } from "./server/event-loop-stall-watchdog"
 import { terminateProcessForTimeout } from "./server/process-termination";
 import { startRuntimeOpsMetricsSampler } from "./server/runtime-ops-metrics";
 import type { RuntimeStateHub } from "./server/runtime-state-hub";
+import { recordInboundImChat } from "./session/im-chat-registry";
 import { isGitRepository } from "./state/git-repository-check";
 import { captureNodeException, flushNodeTelemetry } from "./telemetry/sentry-node.js";
 import { PtySession } from "./terminal/pty-session";
@@ -511,7 +513,7 @@ async function startServer(): Promise<{
 		{ shutdownRuntimeServer },
 		{ collectProjectWorktreeTaskIdsForRemoval, createWorkspaceRegistry },
 		{ clearPendingUpdateNotification, getPendingUpdateNotification },
-		{ loadWorkspaceBoardById, loadWorkspaceHomeThreads },
+		{ loadWorkspaceBoardById, loadWorkspaceHomeThreads, mutateWorkspaceImChats },
 	] = await Promise.all([
 		import("./projects/project-path.js"),
 		import("./server/directory-picker.js"),
@@ -564,6 +566,19 @@ async function startServer(): Promise<{
 	// safe to call unconditionally.
 	registerDingtalkStreamConnector();
 	const imGateway = new ImGateway();
+	// Auto-populate each open workspace's bindable IM chat list from inbound events: when a chat
+	// @'s the bot, record its (platform, chatId) so the user can bind it to a home thread without
+	// hand-copying the platform-native id (requirement ac99c, source ②). Best-effort and idempotent
+	// — recording an already-known chat is a no-op and never clobbers a manual entry.
+	const imChatRecorder = new ImChatInboundRecorder({
+		listWorkspaceIds: () => workspaceRegistry.listManagedWorkspaces().map(({ workspaceId }) => workspaceId),
+		recordInbound: (workspaceId, channel) =>
+			mutateWorkspaceImChats(
+				workspaceId,
+				(current) => recordInboundImChat(current, { ...channel, now: Date.now() })?.next ?? current,
+			),
+	});
+	imGateway.onInboundEvent((event) => imChatRecorder.handleInboundEvent(event));
 	await imGateway.start();
 
 	// Sample process RSS / CPU% and the stall watchdog's state on a modest

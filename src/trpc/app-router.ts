@@ -110,6 +110,10 @@ import type {
 	RuntimeHomeChatThreadsListResponse,
 	RuntimeHookIngestRequest,
 	RuntimeHookIngestResponse,
+	RuntimeImChatAddRequest,
+	RuntimeImChatListResponse,
+	RuntimeImChatMutationResponse,
+	RuntimeImChatRemoveRequest,
 	RuntimeKanbanMcpAuthStatusResponse,
 	RuntimeKanbanMcpOAuthRequest,
 	RuntimeKanbanMcpOAuthResponse,
@@ -334,6 +338,10 @@ import {
 	runtimeHomeChatThreadsListResponseSchema,
 	runtimeHookIngestRequestSchema,
 	runtimeHookIngestResponseSchema,
+	runtimeImChatAddRequestSchema,
+	runtimeImChatListResponseSchema,
+	runtimeImChatMutationResponseSchema,
+	runtimeImChatRemoveRequestSchema,
 	runtimeImClearCredentialsRequestSchema,
 	runtimeImClearCredentialsResponseSchema,
 	runtimeImCredentialStatusResponseSchema,
@@ -549,6 +557,15 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatThreadCloseRequest,
 		) => Promise<RuntimeHomeChatThreadMutationResponse>;
+		listImChats: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeImChatListResponse>;
+		addImChat: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeImChatAddRequest,
+		) => Promise<RuntimeImChatMutationResponse>;
+		removeImChat: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeImChatRemoveRequest,
+		) => Promise<RuntimeImChatMutationResponse>;
 		setHomeFullscreenTabs: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatFullscreenTabsSaveRequest,
@@ -1052,6 +1069,23 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeHomeChatThreadMutationResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.closeHomeThread(ctx.workspaceScope, input);
+			}),
+		// Bindable IM chat list (requirement ac99c) — the palette a home thread's `imChannel`
+		// can point at. Populated by manual add and by inbound auto-record (chats that @'d the bot).
+		listImChats: workspaceProcedure.output(runtimeImChatListResponseSchema).query(async ({ ctx }) => {
+			return await ctx.runtimeApi.listImChats(ctx.workspaceScope);
+		}),
+		addImChat: workspaceProcedure
+			.input(runtimeImChatAddRequestSchema)
+			.output(runtimeImChatMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.addImChat(ctx.workspaceScope, input);
+			}),
+		removeImChat: workspaceProcedure
+			.input(runtimeImChatRemoveRequestSchema)
+			.output(runtimeImChatMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.runtimeApi.removeImChat(ctx.workspaceScope, input);
 			}),
 		setHomeFullscreenTabs: workspaceProcedure
 			.input(runtimeHomeChatFullscreenTabsSaveRequestSchema)

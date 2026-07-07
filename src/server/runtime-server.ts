@@ -38,6 +38,7 @@ import {
 	validateSession,
 } from "../security/passcode-manager";
 import { createWorkspaceHomeThreadStore, type HomeThreadStore } from "../session/home-thread-store";
+import { createWorkspaceImChatStore, type ImChatStore } from "../session/im-chat-store";
 import { FileSessionMessageJournal } from "../session/session-message-journal";
 import {
 	getWorkspaceSessionMessagesDirPath,
@@ -235,6 +236,21 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		homeThreadStoreByWorkspaceId.delete(workspaceId);
 	};
 
+	// Per-workspace bindable IM chat list (requirement ac99c). A plain persistence-backed
+	// store with no session lifecycle — cached per workspace and dropped on dispose.
+	const imChatStoreByWorkspaceId = new Map<string, ImChatStore>();
+	const getScopedImChatStore = (scope: RuntimeTrpcWorkspaceScope): ImChatStore => {
+		let store = imChatStoreByWorkspaceId.get(scope.workspaceId);
+		if (!store) {
+			store = createWorkspaceImChatStore(scope.workspaceId);
+			imChatStoreByWorkspaceId.set(scope.workspaceId, store);
+		}
+		return store;
+	};
+	const disposeImChatStore = (workspaceId: string): void => {
+		imChatStoreByWorkspaceId.delete(workspaceId);
+	};
+
 	// Board-branch decoupling: after each committed-data change the board worktree is
 	// (debounced) committed **locally** — push and pull are explicit, user-only actions, so
 	// the hot path never touches the network. A no-op for repos that have not activated
@@ -317,6 +333,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		for (const workspaceId of workspaceIds) {
 			await disposePiTaskSessionServiceAsync(workspaceId);
 			disposeHomeThreadStore(workspaceId);
+			disposeImChatStore(workspaceId);
 			deps.disposeWorkspace(workspaceId, {
 				stopTerminalSessions: true,
 			});
@@ -338,6 +355,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				getScopedTerminalManager,
 				getScopedPiTaskSessionService,
 				getScopedHomeThreadStore,
+				getScopedImChatStore,
 				resolveInteractiveShellCommand: deps.resolveInteractiveShellCommand,
 				runCommand: deps.runCommand,
 				broadcastKanbanMcpAuthStatusesUpdated: deps.runtimeStateHub.broadcastKanbanMcpAuthStatusesUpdated,
@@ -373,6 +391,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 				disposeWorkspace: (workspaceId, options) => {
 					disposePiTaskSessionService(workspaceId);
 					disposeHomeThreadStore(workspaceId);
+					disposeImChatStore(workspaceId);
 					return deps.disposeWorkspace(workspaceId, options);
 				},
 				collectProjectWorktreeTaskIdsForRemoval: deps.collectProjectWorktreeTaskIdsForRemoval,

@@ -15,6 +15,8 @@ import {
 	type RuntimeHomeChatThreadSetNextStepRequest,
 	type RuntimeHomeChatThreadSetTitleRequest,
 	type RuntimeHookIngestRequest,
+	type RuntimeImChatAddRequest,
+	type RuntimeImChatRemoveRequest,
 	type RuntimeKanbanMcpOAuthRequest,
 	type RuntimeKanbanMcpSettingsSaveRequest,
 	type RuntimeKanbanProviderModelsRequest,
@@ -54,6 +56,8 @@ import {
 	runtimeHomeChatThreadSetNextStepRequestSchema,
 	runtimeHomeChatThreadSetTitleRequestSchema,
 	runtimeHookIngestRequestSchema,
+	runtimeImChatAddRequestSchema,
+	runtimeImChatRemoveRequestSchema,
 	runtimeKanbanMcpOAuthRequestSchema,
 	runtimeKanbanMcpSettingsSaveRequestSchema,
 	runtimeKanbanProviderModelsRequestSchema,
@@ -463,6 +467,33 @@ export function parseHomeChatThreadImChannelIdRequest(value: unknown): RuntimeHo
 	}
 	return {
 		id,
+	};
+}
+
+export function parseImChatAddRequest(value: unknown): RuntimeImChatAddRequest {
+	const parsed = parseWithSchema(runtimeImChatAddRequestSchema, value);
+	const chatId = parsed.chatId.trim();
+	if (!chatId) {
+		throw new Error("IM chat id cannot be empty.");
+	}
+	const displayName = parsed.displayName?.trim();
+	return {
+		platform: parsed.platform,
+		chatId,
+		// Drop an empty/whitespace-only name so a re-add without a name keeps any existing label.
+		...(displayName ? { displayName } : {}),
+	};
+}
+
+export function parseImChatRemoveRequest(value: unknown): RuntimeImChatRemoveRequest {
+	const parsed = parseWithSchema(runtimeImChatRemoveRequestSchema, value);
+	const chatId = parsed.chatId.trim();
+	if (!chatId) {
+		throw new Error("IM chat id cannot be empty.");
+	}
+	return {
+		platform: parsed.platform,
+		chatId,
 	};
 }
 

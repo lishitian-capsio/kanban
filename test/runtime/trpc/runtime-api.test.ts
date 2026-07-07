@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RuntimeConfigState } from "../../../src/config/runtime-config";
-import type { RuntimeHomeChatThreadsData, RuntimeTaskSessionSummary } from "../../../src/core/api-contract";
+import type {
+	RuntimeHomeChatThreadsData,
+	RuntimeImChatsData,
+	RuntimeTaskSessionSummary,
+} from "../../../src/core/api-contract";
 import { createHomeAgentSessionId } from "../../../src/core/home-agent-session";
 import { writeScopeAttachment } from "../../../src/terminal/session-attachment-store";
 
@@ -206,6 +210,7 @@ vi.mock("../../../src/agent-sdk/kanban/provider-settings-store.js", () => ({
 }));
 
 import { HomeThreadStore } from "../../../src/session/home-thread-store";
+import { ImChatStore } from "../../../src/session/im-chat-store";
 import type { RuntimeTrpcContext } from "../../../src/trpc/app-router";
 import { type CreateRuntimeApiDependencies, createRuntimeApi } from "../../../src/trpc/runtime-api";
 
@@ -224,13 +229,35 @@ function createInMemoryHomeThreadStore(onCloseSession?: (sessionId: string) => P
 	});
 }
 
+function createInMemoryImChatStore(): ImChatStore {
+	let data = { chats: [] as RuntimeImChatsData["chats"] };
+	return new ImChatStore({
+		persistence: {
+			load: async () => data,
+			mutate: async (fn) => {
+				data = fn(data);
+				return data;
+			},
+		},
+	});
+}
+
 function createTestRuntimeApi(
-	deps: Omit<CreateRuntimeApiDependencies, "getUpdateStatus" | "runUpdateNow" | "getScopedHomeThreadStore"> &
-		Partial<Pick<CreateRuntimeApiDependencies, "getUpdateStatus" | "runUpdateNow" | "getScopedHomeThreadStore">>,
+	deps: Omit<
+		CreateRuntimeApiDependencies,
+		"getUpdateStatus" | "runUpdateNow" | "getScopedHomeThreadStore" | "getScopedImChatStore"
+	> &
+		Partial<
+			Pick<
+				CreateRuntimeApiDependencies,
+				"getUpdateStatus" | "runUpdateNow" | "getScopedHomeThreadStore" | "getScopedImChatStore"
+			>
+		>,
 ): RuntimeTrpcContext["runtimeApi"] {
 	return createRuntimeApi({
 		...deps,
 		getScopedHomeThreadStore: deps.getScopedHomeThreadStore ?? (() => createInMemoryHomeThreadStore()),
+		getScopedImChatStore: deps.getScopedImChatStore ?? (() => createInMemoryImChatStore()),
 		getUpdateStatus:
 			deps.getUpdateStatus ??
 			vi.fn(() => ({
