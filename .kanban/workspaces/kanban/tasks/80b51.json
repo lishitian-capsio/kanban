@@ -1,0 +1,20 @@
+{
+  "id": "80b51",
+  "title": "IM 驱动会话的视觉标记(一眼可辨来自 IM)",
+  "prompt": "C。onboarding(83c9d)自动建的、或绑定了 IM 的会话,应在 Home 会话列表/卡片/thread-bar 上一眼可辨\"来自 IM/绑定 IM\":加平台图标标记,必要时用群名作会话标题。\n- 数据来源:thread.imChannel(已绑定即打标);如需区分\"IM 自动创建 vs 手动绑定\"可加一个 origin 标记(可选)。\n- 复用 ImChannelChip 作为标记;在会话卡片/tab 上显示精简版(仅平台图标+群名)。\n参考需求 ac99c。相关:web-ui/src/components/home-agent/(会话卡片、home-thread-bar.tsx)、web-ui/src/components/im/im-channel-chip.tsx。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
+  "baseRef": "main",
+  "createdAt": 1783413758346,
+  "updatedAt": 1783413758346,
+  "column": "backlog",
+  "rank": "Zt",
+  "dependsOn": []
+}

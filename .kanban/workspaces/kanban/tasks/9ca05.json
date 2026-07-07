@@ -1,0 +1,20 @@
+{
+  "id": "9ca05",
+  "title": "IM 会话显示群名(而非 oc_ chatId)",
+  "prompt": "A(快赢)。现状:IM 会话在 chip/列表/picker 里显示的是不可读的 chatId(如 oc_4c1e…),因为 im-chats 列表条目的 displayName 为空。目标:显示人类可读的群名/会话名,chatId 退为悬浮 title。\n- 后端:在 IM 会话进列表时解析并存 displayName——飞书用 im/v1/chats/{chat_id}(chats.get,返回 name,如 \"Technology.Result\");手动添加时也尽量补名;单聊则取对方名。best-effort,失败回退 chatId。RuntimeImChat.displayName 已有字段,填充它。\n- 前端:ImChannelChip / ImChannelPicker / describeImChannel 统一优先显示 displayName,空则回退 chatId(chatId 作为 title 悬浮)。\n参考 ac99c。相关:src/im/im-chat-recorder.ts、src/session/im-chat-registry.ts、web-ui/src/components/im/(im-channel-chip.tsx、im-channel-picker.tsx、im-channel.ts)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
+  "baseRef": "main",
+  "createdAt": 1783413755509,
+  "updatedAt": 1783413755509,
+  "column": "backlog",
+  "rank": "Zv",
+  "dependsOn": []
+}
