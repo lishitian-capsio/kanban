@@ -46,6 +46,7 @@ import {
 } from "./core/runtime-endpoint";
 import { getGiteeAuthService } from "./gitee-auth";
 import { getGitHubAuthService } from "./github-auth";
+import { ImGateway } from "./im/gateway/im-gateway";
 import { ImTaskEventNotifier } from "./im/im-task-notifier";
 import { resolveTaskRouteFromBoard, resolveThreadImChannelFromThreads } from "./im/im-task-route-resolver";
 import { registerLarkImProvider } from "./im/lark";
@@ -547,6 +548,15 @@ async function startServer(): Promise<{
 		runtimeHub.trackTerminalManager(workspaceId, terminalManager);
 	}
 
+	// Start the lightweight resident IM gateway. It brings up a long connection (Lark WebSocket /
+	// 钉钉 Stream) for every platform that has a stored credential AND a registered inbound
+	// connector, supervising each connection's lifecycle (start / backoff-reconnect / close) and
+	// fanning decoded inbound events out to subscribers. Safe to start unconditionally: with no
+	// connector registered yet (the concrete platform inbound adapters are separate tasks) it finds
+	// nothing to bring up and stays dormant — this is the resident seam those adapters plug into.
+	const imGateway = new ImGateway();
+	await imGateway.start();
+
 	// Sample process RSS / CPU% and the stall watchdog's state on a modest
 	// interval, broadcasting them as the low-frequency `runtime_metrics_updated`
 	// channel that feeds the sidebar's VSCode-style ops status bar. The sampler's
@@ -639,6 +649,7 @@ async function startServer(): Promise<{
 			skipSessionCleanup: options?.skipSessionCleanup ?? false,
 		});
 		opsMetricsSampler.stop();
+		await imGateway.stop();
 		await stopNetworkBridge();
 		await stallWatchdog?.stop();
 	};

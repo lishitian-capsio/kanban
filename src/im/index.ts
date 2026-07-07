@@ -18,6 +18,24 @@ export {
 export { DingtalkImProvider, registerDingtalkImProvider } from "./dingtalk/dingtalk-provider";
 export type { DingtalkApiResponse, DingtalkTransport } from "./dingtalk/dingtalk-transport";
 export { ImCredentialUnavailableError, ImError, ImSendFailedError, UnsupportedImPlatformError } from "./errors";
+export type {
+	ImConnectionState,
+	ImConnectorContext,
+	ImGatewayConnector,
+	ImGatewayDeps,
+	ImInboundEvent,
+	ImInboundEventListener,
+	ImInboundImage,
+	ImInboundMessageEvent,
+} from "./gateway";
+export {
+	DEFAULT_RECONNECT_DELAYS_MS,
+	getImGatewayConnector,
+	ImGateway,
+	listRegisteredImGatewayConnectorPlatforms,
+	registerImGatewayConnector,
+	unregisterImGatewayConnector,
+} from "./gateway";
 export type { ImCredentialPlatformStatus, ImCredentialServiceDeps } from "./im-credential-service";
 export { getImCredentialService, ImCredentialService } from "./im-credential-service";
 export {
