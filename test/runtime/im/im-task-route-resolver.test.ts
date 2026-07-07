@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { RuntimeBoardCard, RuntimeBoardData, RuntimeHomeChatThreadsData } from "../../../src/core/api-contract";
-import { resolveTaskRouteFromBoard, resolveThreadImChannelFromThreads } from "../../../src/im/im-task-route-resolver";
+import type {
+	RuntimeBoardCard,
+	RuntimeBoardData,
+	RuntimeHomeChatThread,
+	RuntimeHomeChatThreadsData,
+} from "../../../src/core/api-contract";
+import {
+	findThreadBoundToImChannel,
+	resolveTaskRouteFromBoard,
+	resolveThreadImChannelFromThreads,
+} from "../../../src/im/im-task-route-resolver";
 
 function card(overrides: Partial<RuntimeBoardCard> & { id: string }): RuntimeBoardCard {
 	return {
@@ -73,5 +82,47 @@ describe("resolveThreadImChannelFromThreads", () => {
 	it("returns null for an unknown thread", () => {
 		const data = threads({ imChannel: { platform: "lark", chatId: "oc_x" } });
 		expect(resolveThreadImChannelFromThreads(data, "nope")).toBeNull();
+	});
+});
+
+describe("findThreadBoundToImChannel", () => {
+	function thread(overrides: Partial<RuntimeHomeChatThread> & { id: string }): RuntimeHomeChatThread {
+		return {
+			agentId: "pi",
+			name: "Thread",
+			titleSource: "manual",
+			createdAt: 1,
+			updatedAt: 1,
+			...overrides,
+		};
+	}
+	function data(threads: RuntimeHomeChatThread[]): RuntimeHomeChatThreadsData {
+		return { threads };
+	}
+
+	it("returns the bound thread id + agent for a matching (platform, chatId)", () => {
+		const d = data([
+			thread({ id: "t-a", agentId: "pi" }),
+			thread({ id: "t-b", agentId: "claude", imChannel: { platform: "lark", chatId: "oc_x" } }),
+		]);
+		expect(findThreadBoundToImChannel(d, "lark", "oc_x")).toEqual({ threadId: "t-b", agentId: "claude" });
+	});
+
+	it("returns null when no thread is bound to that chat", () => {
+		const d = data([thread({ id: "t-a", imChannel: { platform: "lark", chatId: "oc_other" } })]);
+		expect(findThreadBoundToImChannel(d, "lark", "oc_x")).toBeNull();
+	});
+
+	it("does not match a same chatId on a different platform", () => {
+		const d = data([thread({ id: "t-a", imChannel: { platform: "dingtalk", chatId: "oc_x" } })]);
+		expect(findThreadBoundToImChannel(d, "lark", "oc_x")).toBeNull();
+	});
+
+	it("returns the first thread when two are bound to the same chat", () => {
+		const d = data([
+			thread({ id: "first", imChannel: { platform: "lark", chatId: "oc_x" } }),
+			thread({ id: "second", imChannel: { platform: "lark", chatId: "oc_x" } }),
+		]);
+		expect(findThreadBoundToImChannel(d, "lark", "oc_x")?.threadId).toBe("first");
 	});
 });

@@ -209,7 +209,10 @@ export class DingtalkStreamConnector implements ImGatewayConnector {
 		if (this.seen.seen(dedupKey)) {
 			return;
 		}
-		context.emit(decoded.event);
+		// Surface the same dedup key as the routing layer's message identity, so a
+		// redelivery that slips past this connector's seen-set (e.g. after a reconnect)
+		// is still collapsed downstream.
+		context.emit({ ...decoded.event, messageId: dedupKey });
 	}
 
 	private ack(messageId: string, data?: string): void {

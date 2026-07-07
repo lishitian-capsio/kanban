@@ -65,6 +65,14 @@ export interface CreateRuntimeStateHubDependencies {
 		previous: RuntimeTaskSessionSummary | null;
 		next: RuntimeTaskSessionSummary;
 	}) => void;
+	/**
+	 * Optional observer of transcript messages, fired for BOTH terminal (CLI) and pi agents from
+	 * the same `onMessage` seam that feeds the `task_chat_message` broadcast — but UNLIKE the
+	 * broadcast it fires regardless of connected web clients, so an IM-driven session with no
+	 * browser open is still observed (e.g. the IM chat reply notifier buffering assistant text).
+	 * Called synchronously and fire-and-forget; a throwing observer is swallowed.
+	 */
+	onTaskChatMessage?: (workspaceId: string, taskId: string, message: SessionMessage) => void;
 }
 
 export interface RuntimeStateHub {
@@ -152,6 +160,17 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			deps.onTaskSessionTransition({ workspaceId, previous, next });
 		} catch {
 			// A transition observer (e.g. IM notifier) must never break state broadcasts.
+		}
+	};
+
+	const emitTaskChatMessage = (workspaceId: string, taskId: string, message: SessionMessage) => {
+		if (!deps.onTaskChatMessage) {
+			return;
+		}
+		try {
+			deps.onTaskChatMessage(workspaceId, taskId, message);
+		} catch {
+			// A message observer (e.g. IM reply notifier) must never break message broadcasts.
 		}
 	};
 
@@ -658,6 +677,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			// CLI/terminal agents expose the same agent-agnostic transcript as pi;
 			// stream their captured messages over the shared task_chat_message channel.
 			const unsubscribeMessage = manager.onMessage((taskId, message) => {
+				emitTaskChatMessage(workspaceId, taskId, message);
 				broadcastTaskChatMessage(workspaceId, taskId, message);
 			});
 			terminalMessageUnsubscribeByWorkspaceId.set(workspaceId, unsubscribeMessage);
@@ -696,6 +716,7 @@ export function createRuntimeStateHub(deps: CreateRuntimeStateHubDependencies): 
 			});
 			piSummaryUnsubscribeByWorkspaceId.set(workspaceId, unsubscribe);
 			const unsubscribeMessage = service.onMessage((taskId, message) => {
+				emitTaskChatMessage(workspaceId, taskId, message);
 				broadcastTaskChatMessage(workspaceId, taskId, message);
 			});
 			piMessageUnsubscribeByWorkspaceId.set(workspaceId, unsubscribeMessage);

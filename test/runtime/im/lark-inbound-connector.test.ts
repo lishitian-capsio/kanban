@@ -106,7 +106,15 @@ describe("LarkImGatewayConnector inbound", () => {
 		fake.deliver(textEvent("e1", "hello there"));
 		await flush();
 		expect(emitted).toEqual([
-			{ kind: "message", platform: "lark", channelKey: "oc_group", text: "hello there", senderId: "ou_sender" },
+			{
+				kind: "message",
+				platform: "lark",
+				channelKey: "oc_group",
+				text: "hello there",
+				senderId: "ou_sender",
+				// The header event_id is surfaced as the routing layer's dedup key.
+				messageId: "e1",
+			},
 		]);
 	});
 

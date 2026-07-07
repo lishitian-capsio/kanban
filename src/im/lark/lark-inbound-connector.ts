@@ -115,7 +115,7 @@ export class LarkImGatewayConnector implements ImGatewayConnector {
 		if (!normalized) {
 			return;
 		}
-		void this.emitMessage(normalized).catch((error) => {
+		void this.emitMessage(normalized, eventId).catch((error) => {
 			log.warn("failed to process lark inbound message", { error });
 		});
 	}
@@ -131,7 +131,7 @@ export class LarkImGatewayConnector implements ImGatewayConnector {
 		}
 	}
 
-	private async emitMessage(normalized: NormalizedLarkInboundMessage): Promise<void> {
+	private async emitMessage(normalized: NormalizedLarkInboundMessage, eventId: string | undefined): Promise<void> {
 		const images = this.imageDownloadEnabled ? await this.downloadInboundImages(normalized.images) : [];
 		const context = this.context;
 		if (!context) {
@@ -150,6 +150,9 @@ export class LarkImGatewayConnector implements ImGatewayConnector {
 			text: normalized.text,
 			senderId: normalized.senderId,
 			...(images.length > 0 ? { images } : {}),
+			// Reuse the header `event_id` (the same id the connector dedups on) as the
+			// routing layer's dedup key, so both layers agree on message identity.
+			...(eventId !== undefined ? { messageId: eventId } : {}),
 		};
 		context.emit(event);
 	}

@@ -12,10 +12,15 @@ import {
 import type {
 	RuntimeCommandRunResponse,
 	RuntimeRunUpdateResponse,
+	RuntimeTaskImage,
 	RuntimeUpdateStatusResponse,
 	RuntimeWorkspaceStateResponse,
 } from "../core/api-contract";
-import { parseHomeAgentSessionId } from "../core/home-agent-session";
+import type { ImInboundImage } from "../im/gateway/inbound-event";
+import type { ImInboundDelivery } from "../im/inbound/im-inbound-router";
+import { createHomeAgentSessionId, parseHomeAgentSessionId } from "../core/home-agent-session";
+import { safeRandomUUID } from "../core/safe-uuid";
+import { createLogger } from "../logging";
 import {
 	getKanbanRuntimeHost,
 	getKanbanRuntimeOrigin,
@@ -93,7 +98,16 @@ export interface CreateRuntimeServerDependencies {
 export interface RuntimeServer {
 	url: string;
 	close: () => Promise<void>;
+	/**
+	 * Deliver an inbound IM message into the home thread it is bound to (requirement ac99c, task
+	 * I2). Wired to the resident IM gateway's inbound router in cli.ts. Reuses the same session
+	 * start/continue logic as the browser chat path (pi structured input / CLI PTY), so an IM-driven
+	 * turn is identical to a browser-driven one. Never throws; a failure degrades to a log line.
+	 */
+	deliverHomeChatMessage: (delivery: ImInboundDelivery) => Promise<void>;
 }
+
+const log = createLogger("runtime-server");
 
 function readWorkspaceIdFromRequest(request: IncomingMessage, requestUrl: URL): string | null {
 	const headerValue = request.headers["x-kanban-workspace-id"];
@@ -341,30 +355,89 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		deps.workspaceRegistry.clearActiveWorkspace();
 	};
 
+	// One shared runtime API instance. Its methods take the workspace scope explicitly and hold no
+	// per-request state (the internal provider/MCP services are facades over module-level state), so
+	// a single instance is reused across requests AND by the inbound IM delivery path below — the
+	// latter needs the exact same session start/continue logic the browser chat uses.
+	const runtimeApi = createRuntimeApi({
+		getActiveWorkspaceId: deps.workspaceRegistry.getActiveWorkspaceId,
+		getActiveRuntimeConfig: deps.workspaceRegistry.getActiveRuntimeConfig,
+		loadScopedRuntimeConfig: deps.workspaceRegistry.loadScopedRuntimeConfig,
+		setActiveRuntimeConfig: deps.workspaceRegistry.setActiveRuntimeConfig,
+		getScopedTerminalManager,
+		getScopedPiTaskSessionService,
+		getScopedHomeThreadStore,
+		getScopedImChatStore,
+		resolveInteractiveShellCommand: deps.resolveInteractiveShellCommand,
+		runCommand: deps.runCommand,
+		broadcastKanbanMcpAuthStatusesUpdated: deps.runtimeStateHub.broadcastKanbanMcpAuthStatusesUpdated,
+		broadcastTaskChatCleared: deps.runtimeStateHub.broadcastTaskChatCleared,
+		bumpKanbanSessionContextVersion: deps.runtimeStateHub.bumpKanbanSessionContextVersion,
+		prepareForStateReset,
+		getUpdateStatus: deps.getUpdateStatus,
+		runUpdateNow: deps.runUpdateNow,
+	});
+
+	/**
+	 * Map a normalized inbound IM image to the runtime's task-image shape (a fresh id per image;
+	 * base64 bytes + mime carry over). Used by the inbound delivery path only.
+	 */
+	const toTaskImages = (images: ImInboundImage[] | undefined): RuntimeTaskImage[] | undefined =>
+		images && images.length > 0
+			? images.map((image) => ({ id: safeRandomUUID(), data: image.dataBase64, mimeType: image.mimeType }))
+			: undefined;
+
+	// Deliver an inbound IM message into its bound home thread's agent (requirement ac99c, task I2).
+	// pi (native) → the same lazy start-or-continue path as the browser composer; a CLI agent →
+	// write to its live PTY, or start the session when it is dead/absent (waking an idle session).
+	// The home session id encodes the agent, so `startTaskSession` launches the right runtime.
+	const deliverHomeChatMessage = async (delivery: ImInboundDelivery): Promise<void> => {
+		const { workspaceId, binding, text } = delivery;
+		const context = await loadWorkspaceContextById(workspaceId);
+		if (!context) {
+			log.warn("dropping inbound IM message: workspace not found", { workspaceId });
+			return;
+		}
+		const scope: RuntimeTrpcWorkspaceScope = {
+			workspaceId: context.workspaceId,
+			workspacePath: context.repoPath,
+		};
+		const sessionId = createHomeAgentSessionId(workspaceId, binding.agentId, binding.threadId);
+		const images = toTaskImages(delivery.images);
+		if (binding.agentId === "pi") {
+			const result = await runtimeApi.sendTaskChatMessage(scope, { taskId: sessionId, text, images });
+			if (!result.ok) {
+				log.warn("inbound IM message: pi delivery failed", { workspaceId, error: result.error });
+			}
+			return;
+		}
+		// CLI agent: write to the live PTY when one is running (the common "idle but alive" case),
+		// otherwise (re)start the session with the message as its kickoff prompt.
+		const terminalManager = await getScopedTerminalManager(scope);
+		const wrote = terminalManager.writeInput(sessionId, Buffer.from(`${text}\r`, "utf8"));
+		if (wrote) {
+			return;
+		}
+		const started = await runtimeApi.startTaskSession(scope, {
+			taskId: sessionId,
+			prompt: text,
+			images,
+			baseRef: "",
+			startInPlanMode: false,
+			agentId: binding.agentId,
+		});
+		if (!started.ok) {
+			log.warn("inbound IM message: CLI delivery failed", { workspaceId, error: started.error });
+		}
+	};
+
 	const createTrpcContext = async (req: IncomingMessage): Promise<RuntimeTrpcContext> => {
 		const requestUrl = new URL(req.url ?? "/", "http://localhost");
 		const scope = await resolveWorkspaceScopeFromRequest(req, requestUrl);
 		return {
 			requestedWorkspaceId: scope.requestedWorkspaceId,
 			workspaceScope: scope.workspaceScope,
-			runtimeApi: createRuntimeApi({
-				getActiveWorkspaceId: deps.workspaceRegistry.getActiveWorkspaceId,
-				getActiveRuntimeConfig: deps.workspaceRegistry.getActiveRuntimeConfig,
-				loadScopedRuntimeConfig: deps.workspaceRegistry.loadScopedRuntimeConfig,
-				setActiveRuntimeConfig: deps.workspaceRegistry.setActiveRuntimeConfig,
-				getScopedTerminalManager,
-				getScopedPiTaskSessionService,
-				getScopedHomeThreadStore,
-				getScopedImChatStore,
-				resolveInteractiveShellCommand: deps.resolveInteractiveShellCommand,
-				runCommand: deps.runCommand,
-				broadcastKanbanMcpAuthStatusesUpdated: deps.runtimeStateHub.broadcastKanbanMcpAuthStatusesUpdated,
-				broadcastTaskChatCleared: deps.runtimeStateHub.broadcastTaskChatCleared,
-				bumpKanbanSessionContextVersion: deps.runtimeStateHub.bumpKanbanSessionContextVersion,
-				prepareForStateReset,
-				getUpdateStatus: deps.getUpdateStatus,
-				runUpdateNow: deps.runUpdateNow,
-			}),
+			runtimeApi,
 			workspaceApi: createWorkspaceApi({
 				ensureTerminalManagerForWorkspace: deps.ensureTerminalManagerForWorkspace,
 				getScopedPiTaskSessionService,
@@ -663,6 +736,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 
 	return {
 		url,
+		deliverHomeChatMessage,
 		close: async () => {
 			// Release the event-loop keepalive so the process can exit cleanly.
 			clearInterval(eventLoopKeepaliveTimer);

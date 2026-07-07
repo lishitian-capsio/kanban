@@ -38,6 +38,13 @@ export interface ImInboundMessageEvent {
 	senderId: string;
 	/** Images the message carried, when any. */
 	images?: ImInboundImage[];
+	/**
+	 * A stable per-message identity used by the routing layer for idempotent dedup
+	 * (the platform's `event_id` / `msgId`). Connectors already collapse at-least-once
+	 * redeliveries at their own layer, so this is a secondary guard; it is optional
+	 * because a platform frame may omit it (dedup is simply skipped when absent).
+	 */
+	messageId?: string;
 }
 
 /**

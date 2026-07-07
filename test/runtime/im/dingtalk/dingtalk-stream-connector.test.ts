@@ -136,7 +136,15 @@ describe("DingtalkStreamConnector", () => {
 		socket.handlers.onMessage(botMessageFrame());
 
 		expect(h.received).toEqual([
-			{ kind: "message", platform: "dingtalk", channelKey: "cid-1", text: "hello", senderId: "staff-1" },
+			{
+				kind: "message",
+				platform: "dingtalk",
+				channelKey: "cid-1",
+				text: "hello",
+				senderId: "staff-1",
+				// The dedup key (msgId) is surfaced as the routing layer's message identity.
+				messageId: "mid-1",
+			},
 		]);
 		const ack = JSON.parse(socket.sent.at(-1) as string);
 		expect(ack.code).toBe(200);

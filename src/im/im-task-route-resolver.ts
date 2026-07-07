@@ -7,9 +7,15 @@
  * pure (operate on already-loaded data) so the array lookups are unit-testable and the notifier
  * stays decoupled from how the board / threads doc are loaded.
  */
-import type { RuntimeBoardData, RuntimeHomeChatThreadsData } from "../core/api-contract";
+import type { RuntimeAgentId, RuntimeBoardData, RuntimeHomeChatThreadsData } from "../core/api-contract";
 import type { ImTaskRoute } from "./im-task-notifier";
-import type { ImChannelTarget } from "./types";
+import type { ImChannelTarget, ImPlatform } from "./types";
+
+/** The home thread an inbound IM chat is routed to: which thread, and the agent that backs it. */
+export interface ImThreadBinding {
+	threadId: string;
+	agentId: RuntimeAgentId;
+}
 
 /**
  * Find a task card by id across all board columns and return its originating thread + title, or
@@ -39,4 +45,26 @@ export function resolveThreadImChannelFromThreads(
 ): ImChannelTarget | null {
 	const thread = data.threads.find((candidate) => candidate.id === threadId);
 	return thread?.imChannel ?? null;
+}
+
+/**
+ * The inverse of {@link resolveThreadImChannelFromThreads}: find the home thread a given
+ * inbound IM chat is bound to (an `imChannel` matching `platform` + `chatId`), returning the
+ * thread id and the agent that backs it, or `null` when no thread is bound to that chat.
+ *
+ * Binding is a deliberate one-to-one user action (requirement ac99c), so the first match wins;
+ * a defensive `find` still tolerates an accidental duplicate binding by picking the first.
+ */
+export function findThreadBoundToImChannel(
+	data: RuntimeHomeChatThreadsData,
+	platform: ImPlatform,
+	chatId: string,
+): ImThreadBinding | null {
+	const thread = data.threads.find(
+		(candidate) => candidate.imChannel?.platform === platform && candidate.imChannel.chatId === chatId,
+	);
+	if (!thread) {
+		return null;
+	}
+	return { threadId: thread.id, agentId: thread.agentId };
 }
