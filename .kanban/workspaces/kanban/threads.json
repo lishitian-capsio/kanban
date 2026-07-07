@@ -178,12 +178,12 @@
       "updatedAt": 1783408256212
     },
     {
-      "id": "3984b3b0-699e-4f2e-98f3-e03259379257",
+      "id": "09a189de-42e1-428b-b12d-0aef332e4e6b",
       "agentId": "claude",
-      "name": "ok",
+      "name": "xxxx",
       "titleSource": "auto",
-      "createdAt": 1783409850655,
-      "updatedAt": 1783409850731,
+      "createdAt": 1783410012893,
+      "updatedAt": 1783410012948,
       "imChannel": {
         "platform": "lark",
         "chatId": "oc_4c1e97916edbd5b86a943139befd71ad"
@@ -196,8 +196,8 @@
       "eebaca34-2492-4308-8460-c7dfb289dfd0",
       "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
       "be8da62b-73a2-48bf-99f8-7aa66272411b",
-      "3984b3b0-699e-4f2e-98f3-e03259379257"
+      "09a189de-42e1-428b-b12d-0aef332e4e6b"
     ],
-    "activeThreadId": "3984b3b0-699e-4f2e-98f3-e03259379257"
+    "activeThreadId": "09a189de-42e1-428b-b12d-0aef332e4e6b"
   }
 }
