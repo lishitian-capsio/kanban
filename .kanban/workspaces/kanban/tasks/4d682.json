@@ -1,0 +1,20 @@
+{
+  "id": "4d682",
+  "title": "T3 · vault link wire 契约 + 面板类型化关系展示",
+  "prompt": "把类型化关系暴露到 vault links 的 wire 契约和面板上。依赖 T1。\n\nsrc/core/api-contract.ts:\n- 给 runtimeVaultOutgoingLinkSchema 和 runtimeVaultBacklinkSchema 增加【可选】字段 relation?: { name; label; inverse; inverseLabel; directed }(directed = inverse !== name)。必须是 additive/optional,保证 web:typecheck 和现有消费者不受影响。\n\nlink 构建/API 层:\n- 当一条 link 的 source 是 frontmatter kind 时,用 source.field 去匹配'源文档类型'声明的 relations(T1,经 VaultTypeRegistry)来填充 relation;body link / 未声明字段留 undefined。\n\nweb-ui vault links 面板:\n- relation 存在时,按人话标签分组/显示(outgoing 用 label,backlinks 用 inverseLabel),而不是裸的 'frontmatter:<field>';不存在时回退到现有行为。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "eebaca34-2492-4308-8460-c7dfb289dfd0",
+  "baseRef": "main",
+  "createdAt": 1783401193204,
+  "updatedAt": 1783401193204,
+  "column": "backlog",
+  "rank": "Zm",
+  "dependsOn": []
+}

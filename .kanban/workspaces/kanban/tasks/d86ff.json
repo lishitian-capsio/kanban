@@ -1,0 +1,20 @@
+{
+  "id": "d86ff",
+  "title": "T4 · (可选)种子类型关系升级 + vault query 类型化查询",
+  "prompt": "(可选/较低优先级)两件事。依赖 T1(dangling 查询复用 T2 校验器)。\n\n(1) 升级种子类型,声明关系。在 src/vault/vault-type-seeds.ts 与盘上 .kanban/files/docs/_types/*.md:\n- decision:加 supersedes -> decision(inverse superseded_by),以及对称的 contradicts;\n- requirement:加 customer -> customer(cardinality one,inverse requirements),depends_on -> requirement(inverse blocks);\n- 更新各类型 authoring prompt,引导使用这些 frontmatter 关系字段,而不是在 body 里写 prose wikilink。\n\n(2) 类型化关系查询 helper + vault query CLI:\n- 例如:列出某类型下 relation 悬空/未解析的文档,或按某个关系做遍历。\n- 兑现'从检索到推理'。只读、遵循 CLI envelope。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "eebaca34-2492-4308-8460-c7dfb289dfd0",
+  "baseRef": "main",
+  "createdAt": 1783401198210,
+  "updatedAt": 1783401198210,
+  "column": "backlog",
+  "rank": "Zl",
+  "dependsOn": []
+}
