@@ -9,6 +9,27 @@ import { coerceFrontmatterValue, type VaultFrontmatterValue } from "./vault-docu
  * (frontmatter = this metadata, body = the prompt), discovered at runtime — the
  * engine itself stays type-agnostic and serves unregistered types permissively.
  */
+/**
+ * A **typed relation** a document of one type may declare toward others — the schema
+ * layer T2/T3/T5 build on. It describes an edge (e.g. a task `blocks` other tasks),
+ * not the edge data itself; the link engine is untouched. The relation name is the
+ * key it is stored under in {@link VaultTypeDefinition.relations}.
+ */
+export interface VaultRelationDefinition {
+	/** Relation name, mirrored from its key in {@link VaultTypeDefinition.relations}. */
+	name?: string;
+	/** Human display label for the forward direction. */
+	label?: string;
+	/** Allowed target type id(s); omitted or `"*"` means any type. */
+	target?: string | string[];
+	/** Whether a document may hold one or many of this relation. Defaults to `"many"`. */
+	cardinality?: "one" | "many";
+	/** Relation name on the target type that points back (the reverse edge). */
+	inverse?: string;
+	/** Human display label for the inverse direction. */
+	inverseLabel?: string;
+}
+
 export interface VaultTypeDefinition {
 	/** Type id, from the `name` frontmatter field (e.g. "requirement"). */
 	type: string;
@@ -24,6 +45,8 @@ export interface VaultTypeDefinition {
 	statusEnum?: readonly string[];
 	/** Frontmatter applied to a freshly created doc before the caller's overrides. */
 	defaultFrontmatter?: Record<string, VaultFrontmatterValue>;
+	/** Typed relations this type may declare toward others, keyed by relation name. */
+	relations?: Record<string, VaultRelationDefinition>;
 	/** The self-governing authoring prompt — how to write a doc of this type (markdown, verbatim). */
 	body: string;
 }
@@ -72,6 +95,10 @@ export function parseVaultTypeDefinition(raw: string): VaultTypeDefinition {
 	if (defaultFrontmatter) {
 		definition.defaultFrontmatter = defaultFrontmatter;
 	}
+	const relations = parseRelations(data.relations);
+	if (relations) {
+		definition.relations = relations;
+	}
 	return definition;
 }
 
@@ -95,6 +122,11 @@ export function serializeVaultTypeDefinition(definition: VaultTypeDefinition): s
 	if (definition.defaultFrontmatter) {
 		frontmatter.default_frontmatter = definition.defaultFrontmatter;
 	}
+	// Emit `relations` as a known canonical key so a write through the registry never
+	// silently drops hand-authored typed relations on the way back to disk.
+	if (definition.relations) {
+		frontmatter.relations = serializeRelations(definition.relations);
+	}
 	return matter.stringify(normalizeBody(definition.body), frontmatter);
 }
 
@@ -115,6 +147,90 @@ function parseDefaultFrontmatter(value: unknown): Record<string, VaultFrontmatte
 		result[key] = coerceFrontmatterValue(entry);
 	}
 	return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/**
+ * Read a nested `relations:` frontmatter map into typed {@link VaultRelationDefinition}s.
+ * A non-map value, or an individual entry that is not a map (a half-written / torn block),
+ * is tolerated by skipping it — mirroring the scan's "one bad file never empties" stance.
+ */
+function parseRelations(value: unknown): Record<string, VaultRelationDefinition> | undefined {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return undefined;
+	}
+	const result: Record<string, VaultRelationDefinition> = {};
+	for (const [name, entry] of Object.entries(value)) {
+		const relation = parseRelation(name, entry);
+		if (relation) {
+			result[name] = relation;
+		}
+	}
+	return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function parseRelation(name: string, value: unknown): VaultRelationDefinition | undefined {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return undefined;
+	}
+	const entry = value as Record<string, unknown>;
+	const relation: VaultRelationDefinition = { name };
+	if (typeof entry.label === "string") {
+		relation.label = entry.label;
+	}
+	const target = parseRelationTarget(entry.target);
+	if (target !== undefined) {
+		relation.target = target;
+	}
+	if (entry.cardinality === "one" || entry.cardinality === "many") {
+		relation.cardinality = entry.cardinality;
+	}
+	if (typeof entry.inverse === "string") {
+		relation.inverse = entry.inverse;
+	}
+	if (typeof entry.inverse_label === "string") {
+		relation.inverseLabel = entry.inverse_label;
+	}
+	return relation;
+}
+
+function parseRelationTarget(value: unknown): string | string[] | undefined {
+	if (typeof value === "string") {
+		return value;
+	}
+	if (Array.isArray(value)) {
+		const targets = value.filter((entry): entry is string => typeof entry === "string");
+		return targets.length > 0 ? targets : undefined;
+	}
+	return undefined;
+}
+
+/**
+ * Serialize typed relations back to a nested `relations:` map, each relation's keys in a
+ * fixed canonical order. The relation name lives in the map key, so it is not re-emitted
+ * inside the entry (and `inverseLabel` is written under its on-disk `inverse_label` key).
+ */
+function serializeRelations(relations: Record<string, VaultRelationDefinition>): Record<string, unknown> {
+	const result: Record<string, unknown> = {};
+	for (const [name, relation] of Object.entries(relations)) {
+		const entry: Record<string, unknown> = {};
+		if (relation.label !== undefined) {
+			entry.label = relation.label;
+		}
+		if (relation.target !== undefined) {
+			entry.target = Array.isArray(relation.target) ? [...relation.target] : relation.target;
+		}
+		if (relation.cardinality !== undefined) {
+			entry.cardinality = relation.cardinality;
+		}
+		if (relation.inverse !== undefined) {
+			entry.inverse = relation.inverse;
+		}
+		if (relation.inverseLabel !== undefined) {
+			entry.inverse_label = relation.inverseLabel;
+		}
+		result[name] = entry;
+	}
+	return result;
 }
 
 function normalizeBody(text: string): string {

@@ -54,6 +54,81 @@ describe("parseVaultTypeDefinition", () => {
 	it("throws when `label` is missing", () => {
 		expect(() => parseVaultTypeDefinition("---\nname: note\n---\nbody")).toThrow(VaultTypeDefinitionParseError);
 	});
+
+	it("maps a nested `relations:` map onto typed relation definitions", () => {
+		const raw = [
+			"---",
+			"name: task",
+			"label: Task",
+			"relations:",
+			"  blocks:",
+			"    label: Blocks",
+			"    target: task",
+			"    cardinality: many",
+			"    inverse: blocked_by",
+			"    inverse_label: Blocked by",
+			"  implements:",
+			"    target: [requirement, decision]",
+			"    cardinality: one",
+			"---",
+			"body",
+		].join("\n");
+
+		const def = parseVaultTypeDefinition(raw);
+
+		expect(def.relations).toEqual({
+			blocks: {
+				name: "blocks",
+				label: "Blocks",
+				target: "task",
+				cardinality: "many",
+				inverse: "blocked_by",
+				inverseLabel: "Blocked by",
+			},
+			implements: {
+				name: "implements",
+				target: ["requirement", "decision"],
+				cardinality: "one",
+			},
+		});
+	});
+
+	it("leaves relations undefined when omitted", () => {
+		const def = parseVaultTypeDefinition("---\nname: note\nlabel: Note\n---\nbody");
+		expect(def.relations).toBeUndefined();
+	});
+
+	it("tolerates a broken / half-written relations block by skipping bad entries", () => {
+		const raw = [
+			"---",
+			"name: task",
+			"label: Task",
+			"relations:",
+			"  good:",
+			"    target: task",
+			"  scalar_instead_of_map: oops",
+			"  list_instead_of_map:",
+			"    - nope",
+			"  bad_cardinality:",
+			"    cardinality: sometimes",
+			"---",
+			"body",
+		].join("\n");
+
+		const def = parseVaultTypeDefinition(raw);
+
+		// The two non-map entries are dropped; the enum-invalid cardinality is ignored
+		// but the (otherwise valid) relation survives without it.
+		expect(def.relations).toEqual({
+			good: { name: "good", target: "task" },
+			bad_cardinality: { name: "bad_cardinality" },
+		});
+	});
+
+	it("ignores a relations value that is not a map", () => {
+		const def = parseVaultTypeDefinition("---\nname: task\nlabel: Task\nrelations: nonsense\n---\nbody");
+		expect(def.relations).toBeUndefined();
+	});
 });
 
 describe("serialize → parse round-trip", () => {
@@ -74,6 +149,28 @@ describe("serialize → parse round-trip", () => {
 		};
 		const reparsed = parseVaultTypeDefinition(serializeVaultTypeDefinition(def));
 		expect(reparsed.defaultFrontmatter).toEqual({ status: "draft", owner: "platform" });
+	});
+
+	it("preserves a typed relations map across the round-trip", () => {
+		const def: VaultTypeDefinition = {
+			type: "task",
+			label: "Task",
+			slugField: "title",
+			relations: {
+				blocks: {
+					name: "blocks",
+					label: "Blocks",
+					target: ["task", "requirement"],
+					cardinality: "many",
+					inverse: "blocked_by",
+					inverseLabel: "Blocked by",
+				},
+				anyTarget: { name: "anyTarget", target: "*", cardinality: "one" },
+			},
+			body: "# Task",
+		};
+		const reparsed = parseVaultTypeDefinition(serializeVaultTypeDefinition(def));
+		expect(reparsed.relations).toEqual(def.relations);
 	});
 });
 
