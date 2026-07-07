@@ -1,10 +1,6 @@
 {
   "agentVaultManagementEnabled": true,
-  "extraPushRemotes": [
-    {
-      "name": "github",
-      "url": "https://github.com/lishitian-capsio/kanban.git"
-    }
-  ],
-  "agentDatabaseAccessEnabled": true
+  "extraPushRemotes": [],
+  "agentDatabaseAccessEnabled": true,
+  "agentStorageAccessEnabled": false
 }
