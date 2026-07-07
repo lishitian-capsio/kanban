@@ -176,6 +176,18 @@
       "titleSource": "auto",
       "createdAt": 1783407541387,
       "updatedAt": 1783407541387
+    },
+    {
+      "id": "d3ea507c-ac6f-4f0c-8315-b838b925f71c",
+      "agentId": "claude",
+      "name": "ok",
+      "titleSource": "auto",
+      "createdAt": 1783407629858,
+      "updatedAt": 1783407629927,
+      "imChannel": {
+        "platform": "lark",
+        "chatId": "oc_4c1e97916edbd5b86a943139befd71ad"
+      }
     }
   ],
   "fullscreenTabs": {
@@ -184,8 +196,9 @@
       "be8da62b-73a2-48bf-99f8-7aa66272411b",
       "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
       "eebaca34-2492-4308-8460-c7dfb289dfd0",
-      "06483e7e-8f13-4d42-b348-0d133ac87ad3"
+      "06483e7e-8f13-4d42-b348-0d133ac87ad3",
+      "d3ea507c-ac6f-4f0c-8315-b838b925f71c"
     ],
-    "activeThreadId": "06483e7e-8f13-4d42-b348-0d133ac87ad3"
+    "activeThreadId": "d3ea507c-ac6f-4f0c-8315-b838b925f71c"
   }
 }
