@@ -1197,6 +1197,16 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 		if (!entry?.active) {
 			return null;
 		}
+		// Only a live session (running or awaiting_review) can actually process input.
+		// A session the state machine considers dead (interrupted/idle/failed) may still
+		// carry a lingering process handle mid-teardown; writing into it would funnel the
+		// text into a defunct PTY and merely record an unanswered user message. Returning
+		// null keeps the truthy return an honest "delivered to a live agent" signal, so
+		// callers that use it to decide whether to wake a session — inbound IM delivery
+		// (deliverHomeChatMessage) — fall through to (re)starting/resuming instead.
+		if (!isActiveState(entry.summary.state)) {
+			return null;
+		}
 		if (
 			entry.summary.agentId === "codex" &&
 			entry.summary.state === "awaiting_review" &&

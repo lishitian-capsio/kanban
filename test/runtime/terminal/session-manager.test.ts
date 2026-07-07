@@ -354,6 +354,73 @@ describe("TerminalSessionManager", () => {
 		expect(manager.listMessages("task-shell")).toHaveLength(0);
 	});
 
+	it("refuses input for a non-live session even when a process handle lingers", () => {
+		// Regression (IM inbound → bound CLI home thread): writeInput's truthy return is
+		// used by deliverHomeChatMessage as the "already delivered, no need to wake" signal.
+		// A session the state machine considers dead (interrupted/idle/failed) must return
+		// null — never funnel the text into a defunct PTY and record an unanswered user
+		// message — so the caller falls through to startTaskSession (resume/wake).
+		const manager = new TerminalSessionManager();
+		const write = vi.fn();
+		const entry = {
+			summary: createSummary({
+				taskId: "task-dead",
+				state: "interrupted",
+				agentId: "claude",
+				reviewReason: "interrupted",
+			}),
+			active: {
+				session: { write },
+			},
+			transcript: new TerminalTranscriptCapture("task-dead"),
+			captureChain: Promise.resolve(),
+			listenerIdCounter: 1,
+			listeners: new Map(),
+		};
+		(manager as unknown as { entries: Map<string, typeof entry> }).entries.set("task-dead", entry);
+
+		const received: SessionMessage[] = [];
+		manager.onMessage((_taskId, message) => {
+			received.push(message);
+		});
+
+		const result = manager.writeInput("task-dead", Buffer.from("please reply\r", "utf8"));
+
+		expect(result).toBeNull();
+		expect(write).not.toHaveBeenCalled();
+		expect(received).toHaveLength(0);
+		expect(manager.listMessages("task-dead")).toHaveLength(0);
+	});
+
+	it("wakes an idle-but-alive (awaiting_review) session via input", () => {
+		// The common idle-but-alive wake case must keep working: a finished CLI turn sits
+		// at awaiting_review with a live PTY, and inbound input submits the next prompt.
+		const manager = new TerminalSessionManager();
+		const write = vi.fn();
+		const entry = {
+			summary: createSummary({
+				taskId: "task-idle",
+				state: "awaiting_review",
+				agentId: "claude",
+				reviewReason: "hook",
+			}),
+			active: {
+				session: { write },
+			},
+			transcript: new TerminalTranscriptCapture("task-idle"),
+			captureChain: Promise.resolve(),
+			listenerIdCounter: 1,
+			listeners: new Map(),
+		};
+		(manager as unknown as { entries: Map<string, typeof entry> }).entries.set("task-idle", entry);
+
+		const result = manager.writeInput("task-idle", Buffer.from("continue\r", "utf8"));
+
+		expect(result).not.toBeNull();
+		expect(write).toHaveBeenCalledOnce();
+		expect(manager.listMessages("task-idle")).toHaveLength(1);
+	});
+
 	it("captures committed scrollback as an assistant message when entering review", async () => {
 		const manager = new TerminalSessionManager();
 		const getCommittedLines = vi.fn(async () => ["I read the file.", "All done."]);
