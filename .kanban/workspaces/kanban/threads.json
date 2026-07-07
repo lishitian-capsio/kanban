@@ -216,11 +216,11 @@
     {
       "id": "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
       "agentId": "claude",
-      "name": "会话绑定 IM 渠道(飞书/钉钉)",
+      "name": "IM 集成设计(飞书/钉钉+Home 绑定)",
       "titleSource": "auto",
       "createdAt": 1783319473324,
-      "updatedAt": 1783323566725,
-      "pendingNextStep": "按阶段 1 把这个需求拆成可并行的 Kanban 任务并配好依赖"
+      "updatedAt": 1783391120252,
+      "pendingNextStep": "启动 ① eb5b5 IM 凭证 Settings 配置入口"
     }
   ],
   "fullscreenTabs": {
