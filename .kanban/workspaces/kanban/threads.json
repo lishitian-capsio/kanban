@@ -179,15 +179,6 @@
       "pendingNextStep": "启动 4910c，开 auto-review"
     },
     {
-      "id": "6eff6e3c-a36d-4d19-8f02-3462ec4b1e41",
-      "agentId": "claude",
-      "name": "Fix CI: bun not installed",
-      "titleSource": "auto",
-      "createdAt": 1782982535028,
-      "updatedAt": 1782982578985,
-      "pendingNextStep": "把 rolldown 是安装问题的诊断补进任务 6c5ff 并重启它"
-    },
-    {
       "id": "bcd4d0cd-58af-4991-967b-36e566b082ed",
       "agentId": "claude",
       "name": "聊天输入框图片粘贴支持",
@@ -206,14 +197,6 @@
       "pendingNextStep": "把需求 11ba3「回退合并按钮」在看板上建一个排查+实现任务"
     },
     {
-      "id": "5c1abf3d-f8d3-4fb3-a2d0-98cdcaeaa102",
-      "agentId": "claude",
-      "name": "SAP 合作对齐清单回应处理",
-      "titleSource": "auto",
-      "createdAt": 1783306807043,
-      "updatedAt": 1783306882669
-    },
-    {
       "id": "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
       "agentId": "claude",
       "name": "IM 集成设计(飞书/钉钉+Home 绑定)",
@@ -225,12 +208,14 @@
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "5fec3500-5c60-4477-8b05-794bc8dd76a7",
-      "bcd4d0cd-58af-4991-967b-36e566b082ed",
       "98d352bf-cb23-490b-8d5d-8945798a7371",
       "815c2d5d-1b77-4ef2-99bb-d5c73582390c",
-      "9ed2b30b-108d-4520-babc-c313e0d7dbd8"
+      "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
+      "4f4258a4-d3cb-48b6-99ed-3448706dc93e",
+      "09cbba03-af49-47b6-9e38-85e50946643b",
+      "6a585585-b1b3-41e5-8785-009188294312",
+      "49269ceb-b13c-4019-aaaf-65bd61e653ff"
     ],
-    "activeThreadId": "9ed2b30b-108d-4520-babc-c313e0d7dbd8"
+    "activeThreadId": "49269ceb-b13c-4019-aaaf-65bd61e653ff"
   }
 }
