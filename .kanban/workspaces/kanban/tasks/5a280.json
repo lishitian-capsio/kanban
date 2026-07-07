@@ -1,0 +1,20 @@
+{
+  "id": "5a280",
+  "title": "T1 · vault 关系类型 schema:解析/序列化(round-trip)",
+  "prompt": "为 vault 类型定义增加'类型化关系' schema 层(基础任务,T2/T3/T5 依赖它)。\n\n在 src/vault/vault-types.ts:\n- 新增 interface VaultRelationDefinition { name?; label?; target?: string | string[] (允许的目标类型 id;省略或 '*' = 任意); cardinality?: 'one' | 'many' (默认 'many'); inverse?: string; inverseLabel?: string }。\n- 给 VaultTypeDefinition 增加可选字段 relations?: Record<string, VaultRelationDefinition>(key = 关系名)。\n- parseVaultTypeDefinition:读取嵌套的 frontmatter 'relations:' map(gray-matter 已能给出嵌套 map,和现有 default_frontmatter 一样),把 label/target/cardinality/inverse/inverse_label 映射进结构。\n- 【关键坑】serializeVaultTypeDefinition 目前只输出已知 key,未知 key 会在重新序列化时被丢弃。必须让它按 canonical 顺序输出 'relations',否则任何经注册表的类型写入都会悄悄抹掉手加的 relations。\n\n不改 link 引擎。为 parse→serialize round-trip(保留 relations)、以及坏/半截 relations 块被容忍(沿用现有 scan 跳过坏文件的行为)补单测,镜像现有 vault-types 测试。文件:src/vault/vault-types.ts(必要时 vault-type-registry.ts 只需确认 cache invalidate 正常)。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "eebaca34-2492-4308-8460-c7dfb289dfd0",
+  "baseRef": "main",
+  "createdAt": 1783401180701,
+  "updatedAt": 1783401180701,
+  "column": "backlog",
+  "rank": "Zo",
+  "dependsOn": []
+}
