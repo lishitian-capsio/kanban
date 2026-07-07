@@ -94,6 +94,31 @@ export function recordInboundImChat(data: RuntimeImChatsData, input: UpsertImCha
 	return { next: { ...data, chats: [...data.chats, created] }, chat: created };
 }
 
+/**
+ * Backfill a display name onto an already-recorded chat, WITHOUT changing its `source` or bumping
+ * `updatedAt` — used to lazily label an `inbound`-discovered chat once the platform resolves its
+ * name (see the inbound recorder). Returns the SAME data reference (so persistence skips the write)
+ * unless the chat exists AND currently has an empty name; a chat that already has a name — a user's
+ * manual label or a prior successful resolution — is never clobbered.
+ */
+export function setImChatDisplayName(
+	data: RuntimeImChatsData,
+	platform: ImPlatform,
+	chatId: string,
+	displayName: string,
+): RuntimeImChatsData {
+	const name = displayName.trim();
+	if (!name) {
+		return data;
+	}
+	const existing = data.chats.find((chat) => sameChat(chat, { platform, chatId }));
+	if (!existing || (existing.displayName && existing.displayName.length > 0)) {
+		return data;
+	}
+	const updated: RuntimeImChat = { ...existing, displayName: name };
+	return { ...data, chats: data.chats.map((chat) => (sameChat(chat, { platform, chatId }) ? updated : chat)) };
+}
+
 export interface RemoveImChatResult {
 	next: RuntimeImChatsData;
 	removed: RuntimeImChat;

@@ -7,6 +7,7 @@ import {
 	IM_PLATFORM_OPTIONS,
 	type ImChannelTarget,
 	type ImPlatform,
+	imChannelDisplayLabel,
 	inferLarkKindLabel,
 } from "@/components/im/im-channel";
 import { useImChats } from "@/hooks/use-im-chats";
@@ -141,7 +142,7 @@ export function ImChannelPicker({ value, onChange, workspaceId = null, disabled 
 							</RadixSelect.Item>
 							{options.map((chat) => {
 								const key = chatKey(chat.platform, chat.chatId);
-								const primary = chat.displayName || chat.chatId;
+								const primary = imChannelDisplayLabel(chat.chatId, chat.displayName);
 								const meta = `${IM_PLATFORM_LABELS[chat.platform]} · ${kindLabelFor(chat.platform, chat.chatId)}`;
 								return (
 									<RadixSelect.Item
@@ -151,7 +152,9 @@ export function ImChannelPicker({ value, onChange, workspaceId = null, disabled 
 									>
 										<RadixSelect.ItemText>
 											<span className="flex min-w-0 flex-col">
-												<span className="truncate">{primary}</span>
+												<span className="truncate" title={chat.chatId}>
+													{primary}
+												</span>
 												<span className="truncate text-[11px] text-text-tertiary">
 													{meta}
 													{chat.source === "inbound" ? " · 自动发现" : ""}

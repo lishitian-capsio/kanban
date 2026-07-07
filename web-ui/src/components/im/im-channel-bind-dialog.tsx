@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState } from "react";
+import { type ReactElement, useEffect, useMemo, useState } from "react";
 
 import type { ImChannelTarget } from "@/components/im/im-channel";
 import { ImChannelChip } from "@/components/im/im-channel-chip";
@@ -6,6 +6,7 @@ import { ImChannelPicker } from "@/components/im/im-channel-picker";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import type { HomeThread } from "@/hooks/use-home-threads";
+import { useImChats } from "@/hooks/use-im-chats";
 
 interface ImChannelBindDialogProps {
 	thread: HomeThread | null;
@@ -31,6 +32,16 @@ export function ImChannelBindDialog({
 	const current = thread?.imChannel ?? null;
 	const [draft, setDraft] = useState<ImChannelTarget | null>(current);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+
+	// Resolve the bound channel's human-readable name from the workspace palette so the "已绑定"
+	// chip shows the group/conversation name rather than the opaque id.
+	const { chats } = useImChats(workspaceId);
+	const currentDisplayName = useMemo(() => {
+		if (!current) return null;
+		return (
+			chats.find((chat) => chat.platform === current.platform && chat.chatId === current.chatId)?.displayName ?? null
+		);
+	}, [chats, current]);
 
 	useEffect(() => {
 		if (thread) {
@@ -71,7 +82,7 @@ export function ImChannelBindDialog({
 					<div className="flex flex-col gap-1.5">
 						<span className="text-[12px] font-medium text-text-secondary">已绑定</span>
 						<div className="flex items-center gap-2">
-							<ImChannelChip channel={current} />
+							<ImChannelChip channel={current} displayName={currentDisplayName} />
 							<Button variant="ghost" size="sm" disabled={isSubmitting} onClick={() => void handleUnbind()}>
 								解绑
 							</Button>

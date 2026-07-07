@@ -29,6 +29,24 @@ describe("ImChannelChip", () => {
 		expect(container.textContent).toContain("oc_abc123");
 	});
 
+	it("prefers a display name and keeps the chat id as a hover title", () => {
+		act(() => {
+			root.render(
+				<ImChannelChip channel={{ platform: "lark", chatId: "oc_abc123" }} displayName="Technology.Result" />,
+			);
+		});
+		expect(container.textContent).toContain("Technology.Result");
+		expect(container.textContent).not.toContain("oc_abc123");
+		expect(container.querySelector('[title="oc_abc123"]')).not.toBeNull();
+	});
+
+	it("falls back to the chat id when the display name is blank", () => {
+		act(() => {
+			root.render(<ImChannelChip channel={{ platform: "lark", chatId: "oc_abc123" }} displayName="   " />);
+		});
+		expect(container.textContent).toContain("oc_abc123");
+	});
+
 	it("renders no unbind button without onUnbind", () => {
 		act(() => {
 			root.render(<ImChannelChip channel={{ platform: "lark", chatId: "oc_abc" }} />);

@@ -9,9 +9,10 @@ import type { RuntimeImChat } from "@/runtime/types";
 // The picker inside the dialog owns the palette query — mock it so no network is touched and
 // the test can drive a manual add (which upserts + selects a draft binding).
 const addChatMock = vi.fn();
+let chatsMock: RuntimeImChat[] = [];
 vi.mock("@/hooks/use-im-chats", () => ({
 	useImChats: () => ({
-		chats: [] as RuntimeImChat[],
+		chats: chatsMock,
 		isLoading: false,
 		error: null,
 		refresh: vi.fn(async () => {}),
@@ -49,6 +50,7 @@ describe("ImChannelBindDialog", () => {
 		document.body.appendChild(container);
 		root = createRoot(container);
 		addChatMock.mockReset();
+		chatsMock = [];
 	});
 
 	afterEach(() => {
@@ -135,5 +137,33 @@ describe("ImChannelBindDialog", () => {
 			await flush();
 		});
 		expect(onUnbind).toHaveBeenCalledWith("thread-1");
+	});
+
+	it("shows the resolved display name for the bound channel when the palette knows it", async () => {
+		chatsMock = [
+			{
+				platform: "lark",
+				chatId: "oc_existing",
+				displayName: "Technology.Result",
+				source: "inbound",
+				createdAt: 1,
+				updatedAt: 1,
+			},
+		];
+		await act(async () => {
+			root.render(
+				<ImChannelBindDialog
+					thread={makeThread({ imChannel: { platform: "lark", chatId: "oc_existing" } })}
+					workspaceId="ws-1"
+					onOpenChange={() => {}}
+					onBind={vi.fn()}
+					onUnbind={vi.fn()}
+				/>,
+			);
+			await flush();
+		});
+		expect(document.body.textContent).toContain("Technology.Result");
+		// The raw id is available as a hover title, not as visible text.
+		expect(document.querySelector('[title="oc_existing"]')).not.toBeNull();
 	});
 });

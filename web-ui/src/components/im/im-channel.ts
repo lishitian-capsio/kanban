@@ -37,6 +37,16 @@ export function inferLarkKindLabel(chatId: string): string {
 	return "群聊";
 }
 
+/**
+ * The primary human-readable label for a chat: its resolved `displayName` when present, else the
+ * raw platform id as a fallback. Shared by the chip and the picker so the "prefer name, fall back
+ * to id" rule lives in one place (requirement ac99c). The id stays available for a hover title.
+ */
+export function imChannelDisplayLabel(chatId: string, displayName?: string | null): string {
+	const name = displayName?.trim();
+	return name && name.length > 0 ? name : chatId;
+}
+
 export function describeImChannel(target: ImChannelTarget): { platformLabel: string; kindLabel: string } {
 	const platformLabel = IM_PLATFORM_LABELS[target.platform];
 	// DingTalk delivery is a webhook robot bound to one conversation — no chat-kind concept.

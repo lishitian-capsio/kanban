@@ -49,6 +49,7 @@ import { getGitHubAuthService } from "./github-auth";
 import { registerDingtalkStreamConnector } from "./im/dingtalk/dingtalk-stream-connector";
 import { ImGateway } from "./im/gateway/im-gateway";
 import { setResidentImGateway } from "./im/gateway/resident-gateway";
+import { resolveImChatDisplayName } from "./im/im-chat-name-resolver";
 import { ImChatInboundRecorder } from "./im/im-chat-recorder";
 import { ImTaskEventNotifier } from "./im/im-task-notifier";
 import {
@@ -67,7 +68,7 @@ import { startEventLoopStallWatchdog } from "./server/event-loop-stall-watchdog"
 import { terminateProcessForTimeout } from "./server/process-termination";
 import { startRuntimeOpsMetricsSampler } from "./server/runtime-ops-metrics";
 import type { RuntimeStateHub } from "./server/runtime-state-hub";
-import { recordInboundImChat } from "./session/im-chat-registry";
+import { recordInboundImChat, setImChatDisplayName } from "./session/im-chat-registry";
 import { isGitRepository } from "./state/git-repository-check";
 import { captureNodeException, flushNodeTelemetry } from "./telemetry/sentry-node.js";
 import { PtySession } from "./terminal/pty-session";
@@ -593,11 +594,29 @@ async function startServer(): Promise<{
 	// — recording an already-known chat is a no-op and never clobbers a manual entry.
 	const imChatRecorder = new ImChatInboundRecorder({
 		listWorkspaceIds: () => workspaceRegistry.listManagedWorkspaces().map(({ workspaceId }) => workspaceId),
-		recordInbound: (workspaceId, channel) =>
-			mutateWorkspaceImChats(
-				workspaceId,
-				(current) => recordInboundImChat(current, { ...channel, now: Date.now() })?.next ?? current,
-			),
+		recordInbound: async (workspaceId, channel) => {
+			let inserted = false;
+			await mutateWorkspaceImChats(workspaceId, (current) => {
+				const result = recordInboundImChat(current, { ...channel, now: Date.now() });
+				if (!result) {
+					return current;
+				}
+				inserted = true;
+				return result.next;
+			});
+			// Only a freshly-inserted chat needs a name — a known chat already has one (or a user's
+			// label). Resolve best-effort and backfill; a null resolution leaves it as the raw id.
+			if (!inserted) {
+				return;
+			}
+			const displayName = await resolveImChatDisplayName(channel.platform, channel.chatId);
+			if (!displayName) {
+				return;
+			}
+			await mutateWorkspaceImChats(workspaceId, (current) =>
+				setImChatDisplayName(current, channel.platform, channel.chatId, displayName),
+			);
+		},
 	});
 	imGateway.onInboundEvent((event) => imChatRecorder.handleInboundEvent(event));
 	// The gateway is started AFTER the runtime server is created (below), so the inbound router's

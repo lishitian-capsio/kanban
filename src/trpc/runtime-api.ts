@@ -87,6 +87,7 @@ import {
 } from "../core/home-agent-session";
 import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
 import { resolveTaskTitle } from "../core/task-title.js";
+import { resolveImChatDisplayName } from "../im/im-chat-name-resolver";
 import { createLogger } from "../logging";
 import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-prompt";
 import { limitAgentStart } from "../server/agent-start-limiter";
@@ -869,7 +870,11 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 		addImChat: async (workspaceScope, input) => {
 			try {
 				const body = parseImChatAddRequest(input);
-				const chat = await deps.getScopedImChatStore(workspaceScope).add(body);
+				// When the caller supplies no label (the picker's raw-id add), best-effort resolve a
+				// human-readable name so the palette shows the group/conversation name, not the id.
+				const displayName =
+					body.displayName?.trim() || (await resolveImChatDisplayName(body.platform, body.chatId)) || undefined;
+				const chat = await deps.getScopedImChatStore(workspaceScope).add({ ...body, displayName });
 				return { ok: true, chat };
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);

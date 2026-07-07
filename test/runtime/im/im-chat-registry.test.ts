@@ -4,6 +4,7 @@ import {
 	listImChats,
 	recordInboundImChat,
 	removeImChat,
+	setImChatDisplayName,
 	upsertManualImChat,
 } from "../../../src/session/im-chat-registry";
 
@@ -112,6 +113,51 @@ describe("im-chat-registry", () => {
 			const inbound = recordInboundImChat(manual.next, { platform: "lark", chatId: "oc_1", now: 2 });
 			expect(inbound).toBeNull();
 			expect(manual.next.chats[0]).toMatchObject({ source: "manual", displayName: "user label" });
+		});
+	});
+
+	describe("setImChatDisplayName", () => {
+		it("backfills a name onto an inbound entry that has none, keeping source and timestamps", () => {
+			const inbound = recordInboundImChat(emptyData(), { platform: "lark", chatId: "oc_1", now: 100 });
+			if (!inbound) {
+				throw new Error("expected the inbound record to insert");
+			}
+			const next = setImChatDisplayName(inbound.next, "lark", "oc_1", "Technology.Result");
+			expect(next.chats[0]).toMatchObject({
+				source: "inbound",
+				displayName: "Technology.Result",
+				createdAt: 100,
+				updatedAt: 100,
+			});
+		});
+
+		it("trims the resolved name", () => {
+			const inbound = recordInboundImChat(emptyData(), { platform: "lark", chatId: "oc_1", now: 1 });
+			const next = setImChatDisplayName(inbound?.next ?? emptyData(), "lark", "oc_1", "  团队群  ");
+			expect(next.chats[0].displayName).toBe("团队群");
+		});
+
+		it("never clobbers an existing name (returns the same reference)", () => {
+			const manual = upsertManualImChat(emptyData(), {
+				platform: "lark",
+				chatId: "oc_1",
+				displayName: "user label",
+				now: 1,
+			});
+			const next = setImChatDisplayName(manual.next, "lark", "oc_1", "resolved");
+			expect(next).toBe(manual.next);
+			expect(next.chats[0].displayName).toBe("user label");
+		});
+
+		it("is a no-op (same reference) when the chat is not present", () => {
+			const data = emptyData();
+			expect(setImChatDisplayName(data, "lark", "missing", "x")).toBe(data);
+		});
+
+		it("is a no-op (same reference) for an empty/whitespace name", () => {
+			const inbound = recordInboundImChat(emptyData(), { platform: "lark", chatId: "oc_1", now: 1 });
+			const data = inbound?.next ?? emptyData();
+			expect(setImChatDisplayName(data, "lark", "oc_1", "   ")).toBe(data);
 		});
 	});
 

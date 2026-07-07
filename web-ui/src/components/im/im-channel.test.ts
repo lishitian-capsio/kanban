@@ -4,6 +4,7 @@ import {
 	describeImChannel,
 	IM_PLATFORM_LABELS,
 	IM_PLATFORM_OPTIONS,
+	imChannelDisplayLabel,
 	inferLarkKindLabel,
 } from "@/components/im/im-channel";
 
@@ -34,6 +35,23 @@ describe("IM_PLATFORM_LABELS / OPTIONS", () => {
 				{ value: "dingtalk", label: "钉钉" },
 			]),
 		);
+	});
+});
+
+describe("imChannelDisplayLabel", () => {
+	it("prefers a non-empty display name", () => {
+		expect(imChannelDisplayLabel("oc_abc", "Technology.Result")).toBe("Technology.Result");
+	});
+
+	it("falls back to the chat id when the name is empty, whitespace, null, or undefined", () => {
+		expect(imChannelDisplayLabel("oc_abc", "")).toBe("oc_abc");
+		expect(imChannelDisplayLabel("oc_abc", "   ")).toBe("oc_abc");
+		expect(imChannelDisplayLabel("oc_abc", null)).toBe("oc_abc");
+		expect(imChannelDisplayLabel("oc_abc")).toBe("oc_abc");
+	});
+
+	it("trims the display name", () => {
+		expect(imChannelDisplayLabel("oc_abc", "  团队群  ")).toBe("团队群");
 	});
 });
 

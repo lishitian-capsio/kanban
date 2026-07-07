@@ -73,6 +73,42 @@ export async function larkPostJson(
 	return parsed;
 }
 
+/**
+ * GET a JSON resource from a Lark endpoint and return the parsed JSON object. Throws
+ * {@link LarkApiError} on a transport failure, a non-2xx HTTP status, a non-object body, or a
+ * non-zero business `code`. Mirrors {@link larkPostJson} for read (`chats.get`, `users.get`, …).
+ */
+export async function larkGetJson(
+	fetchImpl: LarkFetch,
+	url: string,
+	options: LarkRequestOptions = {},
+): Promise<Record<string, unknown>> {
+	const timeoutMs = options.timeoutMs ?? DEFAULT_LARK_REQUEST_TIMEOUT_MS;
+	let response: Response;
+	try {
+		response = await fetchImpl(url, {
+			method: "GET",
+			headers: { ...options.headers },
+			signal: AbortSignal.timeout(timeoutMs),
+		});
+	} catch (error) {
+		throw new LarkApiError(abortMessage(url, timeoutMs, error), 0);
+	}
+	if (!response.ok) {
+		throw new LarkApiError(`lark request failed with HTTP ${response.status}`, response.status);
+	}
+	const parsed = (await response.json().catch(() => null)) as unknown;
+	if (!isRecord(parsed)) {
+		throw new LarkApiError("lark returned a non-object response body", 0);
+	}
+	const code = typeof parsed.code === "number" ? parsed.code : 0;
+	if (code !== 0) {
+		const msg = typeof parsed.msg === "string" ? parsed.msg : "unknown error";
+		throw new LarkApiError(`lark API error ${code}: ${msg}`, code);
+	}
+	return parsed;
+}
+
 /** Binary payload returned by {@link larkGetBinary}. */
 export interface LarkBinaryResponse {
 	bytes: Uint8Array;

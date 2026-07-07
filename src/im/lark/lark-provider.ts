@@ -22,8 +22,8 @@ import { resolveImCredential } from "../im-credential-store";
 import type { ImProvider } from "../im-provider";
 import { registerImProvider } from "../im-provider-registry";
 import type { ImCard, ImChannelTarget, ImOutboundCredential, ImPlatform, ImSendResult, ImTextMessage } from "../types";
-import { DEFAULT_LARK_BASE_URL } from "./lark-endpoints";
-import { isRecord, type LarkFetch, larkPostJson } from "./lark-http";
+import { buildLarkChatInfoUrl, buildLarkUserInfoUrl, DEFAULT_LARK_BASE_URL } from "./lark-endpoints";
+import { isRecord, type LarkFetch, larkGetJson, larkPostJson } from "./lark-http";
 import {
 	buildLarkInteractiveCardContent,
 	buildLarkTextMessageContent,
@@ -79,6 +79,58 @@ export class LarkImProvider implements ImProvider {
 
 	async sendCard(target: ImChannelTarget, card: ImCard): Promise<ImSendResult> {
 		return this.send(target, "interactive", buildLarkInteractiveCardContent(card));
+	}
+
+	/**
+	 * Best-effort human-readable name for a Lark chat. A group (`oc_`) resolves via
+	 * `im/v1/chats/{chat_id}` → `data.name`; a single chat (`ou_`/`on_`) resolves the peer's name
+	 * via `contact/v3/users/{user_id}` → `data.user.name`. An email target or any failure (missing
+	 * scope, network, unknown id) resolves to `null` so the caller falls back to the raw id.
+	 */
+	async resolveChatName(target: ImChannelTarget): Promise<string | null> {
+		const receiveIdType = inferLarkReceiveIdType(target.chatId);
+		try {
+			if (receiveIdType === "chat_id") {
+				return await this.fetchChatName(target.chatId);
+			}
+			if (receiveIdType === "open_id" || receiveIdType === "union_id") {
+				return await this.fetchUserName(target.chatId, receiveIdType);
+			}
+			// An email target has no name-lookup path here; fall back to the id.
+			return null;
+		} catch (error) {
+			// Never throw for the unresolvable case — degrade to the raw id (the interface contract).
+			log.debug("failed to resolve lark chat name", {
+				platform: this.platform,
+				error,
+			});
+			return null;
+		}
+	}
+
+	/** GET a group chat's title. Returns the trimmed name, or `null` when the API omits one. */
+	private async fetchChatName(chatId: string): Promise<string | null> {
+		const token = await this.tokenProvider.getToken();
+		const body = await larkGetJson(this.fetchImpl, buildLarkChatInfoUrl(this.baseUrl, chatId), {
+			headers: { Authorization: `Bearer ${token}` },
+			timeoutMs: this.requestTimeoutMs,
+		});
+		const data = isRecord(body.data) ? body.data : {};
+		const name = typeof data.name === "string" ? data.name.trim() : "";
+		return name.length > 0 ? name : null;
+	}
+
+	/** GET a single chat's peer display name via the contact API. */
+	private async fetchUserName(userId: string, userIdType: "open_id" | "union_id"): Promise<string | null> {
+		const token = await this.tokenProvider.getToken();
+		const body = await larkGetJson(this.fetchImpl, buildLarkUserInfoUrl(this.baseUrl, userId, userIdType), {
+			headers: { Authorization: `Bearer ${token}` },
+			timeoutMs: this.requestTimeoutMs,
+		});
+		const data = isRecord(body.data) ? body.data : {};
+		const user = isRecord(data.user) ? data.user : {};
+		const name = typeof user.name === "string" ? user.name.trim() : "";
+		return name.length > 0 ? name : null;
 	}
 
 	/** POST a single message to the target chat, resolving/minting the bot token as needed. */

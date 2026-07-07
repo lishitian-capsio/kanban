@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ImCredentialUnavailableError } from "../../../src/im/errors";
 import { LarkApiError, LarkCredentialFormatError } from "../../../src/im/lark/errors";
-import { LarkImProvider, type LarkFetch } from "../../../src/im/lark/lark-provider";
+import { type LarkFetch, LarkImProvider } from "../../../src/im/lark/lark-provider";
 import type { ImOutboundCredential } from "../../../src/im/types";
 
 const BASE = "https://open.feishu.cn";
@@ -17,11 +17,19 @@ interface FakeCall {
 function makeFakeFetch(routes: {
 	token?: () => { status?: number; body: unknown };
 	message?: () => { status?: number; body: unknown };
+	chat?: () => { status?: number; body: unknown };
+	user?: () => { status?: number; body: unknown };
 }): { fetchImpl: LarkFetch; calls: FakeCall[] } {
 	const calls: FakeCall[] = [];
 	const fetchImpl: LarkFetch = async (url, init) => {
 		calls.push({ url, init });
-		const route = url.includes("/tenant_access_token/") ? routes.token : routes.message;
+		const route = url.includes("/tenant_access_token/")
+			? routes.token
+			: url.includes("/contact/v3/users/")
+				? routes.user
+				: url.includes("/im/v1/chats/")
+					? routes.chat
+					: routes.message;
 		if (!route) throw new Error(`unexpected fetch to ${url}`);
 		const { status = 200, body } = route();
 		return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -33,11 +41,7 @@ const okToken = () => ({ body: { code: 0, msg: "ok", tenant_access_token: "t-abc
 const okMessage = () => ({ body: { code: 0, msg: "ok", data: { message_id: "om_123" } } });
 
 function makeProvider(
-	overrides: {
-		credential?: ImOutboundCredential | null;
-		fetchImpl?: LarkFetch;
-		now?: () => number;
-	} = {},
+	overrides: { credential?: ImOutboundCredential | null; fetchImpl?: LarkFetch; now?: () => number } = {},
 ) {
 	const credential = "credential" in overrides ? overrides.credential : { botToken: "cli_app:secret" };
 	return new LarkImProvider({
@@ -50,7 +54,10 @@ function makeProvider(
 describe("LarkImProvider.sendMessage", () => {
 	it("mints a token then posts a text message and returns the message id", async () => {
 		const { fetchImpl, calls } = makeFakeFetch({ token: okToken, message: okMessage });
-		const result = await makeProvider({ fetchImpl }).sendMessage({ platform: "lark", chatId: "oc_group" }, { text: "hi" });
+		const result = await makeProvider({ fetchImpl }).sendMessage(
+			{ platform: "lark", chatId: "oc_group" },
+			{ text: "hi" },
+		);
 
 		expect(result).toEqual({ platform: "lark", chatId: "oc_group", messageId: "om_123" });
 
@@ -73,8 +80,14 @@ describe("LarkImProvider.sendMessage", () => {
 	});
 
 	it("returns a result without messageId when the API omits one (still succeeds)", async () => {
-		const { fetchImpl } = makeFakeFetch({ token: okToken, message: () => ({ body: { code: 0, msg: "ok", data: {} } }) });
-		const result = await makeProvider({ fetchImpl }).sendMessage({ platform: "lark", chatId: "oc_g" }, { text: "hi" });
+		const { fetchImpl } = makeFakeFetch({
+			token: okToken,
+			message: () => ({ body: { code: 0, msg: "ok", data: {} } }),
+		});
+		const result = await makeProvider({ fetchImpl }).sendMessage(
+			{ platform: "lark", chatId: "oc_g" },
+			{ text: "hi" },
+		);
 		expect(result).toEqual({ platform: "lark", chatId: "oc_g" });
 	});
 });
@@ -92,6 +105,64 @@ describe("LarkImProvider.sendCard", () => {
 		expect(card.header.title.content).toBe("Build");
 		expect(card.elements[0].text.content).toBe("done");
 		expect(card.elements[1].actions[0].url).toBe("https://x.test");
+	});
+});
+
+describe("LarkImProvider.resolveChatName", () => {
+	it("resolves a group's name via im/v1/chats/{chat_id}", async () => {
+		const { fetchImpl, calls } = makeFakeFetch({
+			token: okToken,
+			chat: () => ({ body: { code: 0, msg: "ok", data: { name: "Technology.Result" } } }),
+		});
+		const name = await makeProvider({ fetchImpl }).resolveChatName({ platform: "lark", chatId: "oc_4c1e" });
+		expect(name).toBe("Technology.Result");
+		expect(calls[1].url).toBe(`${BASE}/open-apis/im/v1/chats/oc_4c1e`);
+		expect((calls[1].init.headers as Record<string, string>).Authorization).toBe("Bearer t-abc");
+	});
+
+	it("trims the resolved group name", async () => {
+		const { fetchImpl } = makeFakeFetch({
+			token: okToken,
+			chat: () => ({ body: { code: 0, msg: "ok", data: { name: "  padded  " } } }),
+		});
+		expect(await makeProvider({ fetchImpl }).resolveChatName({ platform: "lark", chatId: "oc_1" })).toBe("padded");
+	});
+
+	it("resolves a single chat's peer name via contact/v3/users with user_id_type=open_id", async () => {
+		const { fetchImpl, calls } = makeFakeFetch({
+			token: okToken,
+			user: () => ({ body: { code: 0, msg: "ok", data: { user: { name: "Alice" } } } }),
+		});
+		const name = await makeProvider({ fetchImpl }).resolveChatName({ platform: "lark", chatId: "ou_peer" });
+		expect(name).toBe("Alice");
+		expect(calls[1].url).toBe(`${BASE}/open-apis/contact/v3/users/ou_peer?user_id_type=open_id`);
+	});
+
+	it("returns null for an email target (no name-lookup path)", async () => {
+		const { fetchImpl, calls } = makeFakeFetch({ token: okToken });
+		expect(await makeProvider({ fetchImpl }).resolveChatName({ platform: "lark", chatId: "a@b.com" })).toBeNull();
+		// No token/API call is even needed for the email fallback.
+		expect(calls).toHaveLength(0);
+	});
+
+	it("returns null (does not throw) when the chats API errors — best-effort", async () => {
+		const { fetchImpl } = makeFakeFetch({
+			token: okToken,
+			chat: () => ({ body: { code: 230002, msg: "no permission" } }),
+		});
+		expect(await makeProvider({ fetchImpl }).resolveChatName({ platform: "lark", chatId: "oc_1" })).toBeNull();
+	});
+
+	it("returns null when no credential is configured", async () => {
+		const { fetchImpl } = makeFakeFetch({ token: okToken, chat: () => ({ body: { code: 0, data: {} } }) });
+		expect(
+			await makeProvider({ fetchImpl, credential: null }).resolveChatName({ platform: "lark", chatId: "oc_1" }),
+		).toBeNull();
+	});
+
+	it("returns null when the API omits a name", async () => {
+		const { fetchImpl } = makeFakeFetch({ token: okToken, chat: () => ({ body: { code: 0, msg: "ok", data: {} } }) });
+		expect(await makeProvider({ fetchImpl }).resolveChatName({ platform: "lark", chatId: "oc_1" })).toBeNull();
 	});
 });
 

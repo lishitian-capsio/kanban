@@ -1,18 +1,21 @@
 import { MessageCircle, X } from "lucide-react";
 import type { ReactElement } from "react";
 
-import { describeImChannel, type ImChannelTarget } from "@/components/im/im-channel";
+import { describeImChannel, type ImChannelTarget, imChannelDisplayLabel } from "@/components/im/im-channel";
 import { cn } from "@/components/ui/cn";
 
 interface ImChannelChipProps {
 	channel: ImChannelTarget;
+	/** Human-readable chat name. When present it is shown; the raw chatId falls back to a hover title. */
+	displayName?: string | null;
 	onUnbind?: () => void;
 	className?: string;
 }
 
-export function ImChannelChip({ channel, onUnbind, className }: ImChannelChipProps): ReactElement {
+export function ImChannelChip({ channel, displayName, onUnbind, className }: ImChannelChipProps): ReactElement {
 	const { platformLabel, kindLabel } = describeImChannel(channel);
 	const label = `${platformLabel} · ${kindLabel}`;
+	const primary = imChannelDisplayLabel(channel.chatId, displayName);
 	return (
 		<span
 			className={cn(
@@ -22,8 +25,14 @@ export function ImChannelChip({ channel, onUnbind, className }: ImChannelChipPro
 		>
 			<MessageCircle size={13} className="shrink-0 text-text-tertiary" />
 			<span className="shrink-0">{label}</span>
-			<span className="max-w-[160px] truncate font-mono text-text-tertiary" title={channel.chatId}>
-				{channel.chatId}
+			<span
+				className={cn(
+					"max-w-[160px] truncate text-text-secondary",
+					!displayName?.trim() && "font-mono text-text-tertiary",
+				)}
+				title={channel.chatId}
+			>
+				{primary}
 			</span>
 			{onUnbind ? (
 				<button
