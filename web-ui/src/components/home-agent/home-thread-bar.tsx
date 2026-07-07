@@ -214,6 +214,7 @@ export function HomeThreadBar({
 			/>
 			<ImChannelBindDialog
 				thread={imChannelTarget}
+				workspaceId={currentProjectId}
 				onOpenChange={(open) => {
 					if (!open) {
 						setImChannelTarget(null);

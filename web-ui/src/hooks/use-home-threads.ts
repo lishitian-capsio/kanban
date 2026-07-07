@@ -38,6 +38,27 @@ import type { TaskImage } from "@/types";
 
 type ImChannelTarget = RuntimeHomeChatThreadBindImChannelRequest["channel"];
 
+function sameImChannel(a: ImChannelTarget, b: ImChannelTarget): boolean {
+	return a.platform === b.platform && a.chatId === b.chatId;
+}
+
+/**
+ * One-to-one local mirror of the backend's exclusive bind: after a thread binds `channel`,
+ * clear that same channel off every OTHER thread in the list so the UI matches the server
+ * (an IM chat maps to at most one thread — requirement ac99c, 159ab). Returns a new array.
+ */
+function clearImChannelFromOtherThreads(
+	list: RuntimeHomeChatThread[],
+	boundThreadId: string,
+	channel: ImChannelTarget,
+): RuntimeHomeChatThread[] {
+	return list.map((thread) =>
+		thread.id !== boundThreadId && thread.imChannel && sameImChannel(thread.imChannel, channel)
+			? { ...thread, imChannel: null }
+			: thread,
+	);
+}
+
 const DEFAULT_THREAD_NAME = "Default";
 const EMPTY_FULLSCREEN_TABS: FullscreenTabsState = { openThreadIds: [], activeThreadId: null };
 
@@ -303,9 +324,9 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 				// rolls back the create (spec: "绑定失败不回滚会话创建").
 				if (imChannel) {
 					try {
-						const bindResponse = await getRuntimeTrpcClient(currentProjectId).runtime.bindHomeThreadImChannel.mutate(
-							{ id: created.id, channel: imChannel },
-						);
+						const bindResponse = await getRuntimeTrpcClient(
+							currentProjectId,
+						).runtime.bindHomeThreadImChannel.mutate({ id: created.id, channel: imChannel });
 						if (bindResponse.ok && bindResponse.thread) {
 							finalThread = bindResponse.thread;
 						} else {
@@ -315,10 +336,14 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 						notifyError(error instanceof Error ? error.message : String(error));
 					}
 				}
-				setRegistryThreadsByWorkspace((current) => ({
-					...current,
-					[currentProjectId]: [...(current[currentProjectId] ?? []), finalThread],
-				}));
+				setRegistryThreadsByWorkspace((current) => {
+					const existing = current[currentProjectId] ?? [];
+					// One-to-one: if the new thread adopted a channel another thread held, drop it there.
+					const reconciled = finalThread.imChannel
+						? clearImChannelFromOtherThreads(existing, finalThread.id, finalThread.imChannel)
+						: existing;
+					return { ...current, [currentProjectId]: [...reconciled, finalThread] };
+				});
 				setActiveThreadIdByWorkspace((current) => ({ ...current, [currentProjectId]: finalThread.id }));
 				return finalThread.id;
 			} catch (error) {
@@ -453,12 +478,17 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 					throw new Error(response.error ?? "Could not bind IM channel.");
 				}
 				const bound = response.thread;
-				setRegistryThreadsByWorkspace((current) => ({
-					...current,
-					[currentProjectId]: (current[currentProjectId] ?? []).map((thread) =>
+				setRegistryThreadsByWorkspace((current) => {
+					const updated = (current[currentProjectId] ?? []).map((thread) =>
 						thread.id === bound.id ? bound : thread,
-					),
-				}));
+					);
+					// One-to-one: mirror the backend's exclusive bind by clearing the same channel
+					// off any other thread that held it (so the old thread's chip drops immediately).
+					const reconciled = bound.imChannel
+						? clearImChannelFromOtherThreads(updated, bound.id, bound.imChannel)
+						: updated;
+					return { ...current, [currentProjectId]: reconciled };
+				});
 			} catch (error) {
 				notifyError(error instanceof Error ? error.message : String(error));
 			}

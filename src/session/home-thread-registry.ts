@@ -188,6 +188,45 @@ export function setHomeThreadImChannel(
 	};
 }
 
+/**
+ * Bind a thread to an IM channel with a **one-to-one** invariant (requirement ac99c, 159ab):
+ * an IM chat maps to at most one thread. Binding `channel` to `id` also unbinds any OTHER
+ * thread that currently holds the same channel, so re-pointing a chat at a new thread moves
+ * it off the old one atomically. Bumps `updatedAt` on every thread that actually changed.
+ * Returns the SAME data reference when nothing changed (the target already holds the channel
+ * and no other thread does). Throws if the target thread is missing.
+ *
+ * Unbind stays on {@link setHomeThreadImChannel} (passing `null`); this exclusive path is only
+ * for a non-null bind, where the cross-thread move matters.
+ */
+export function bindHomeThreadImChannelExclusive(
+	data: RuntimeHomeChatThreadsData,
+	id: string,
+	channel: ImChannelTarget,
+	now: number,
+): RuntimeHomeChatThreadsData {
+	if (!data.threads.some((thread) => thread.id === id)) {
+		throw new Error(`Home chat thread "${id}" not found.`);
+	}
+	let changed = false;
+	const threads = data.threads.map((thread) => {
+		if (thread.id === id) {
+			if (imChannelsEqual(thread.imChannel ?? null, channel)) {
+				return thread;
+			}
+			changed = true;
+			return { ...thread, imChannel: channel, updatedAt: now };
+		}
+		// Any other thread holding the same channel loses it (one-to-one).
+		if (imChannelsEqual(thread.imChannel ?? null, channel)) {
+			changed = true;
+			return { ...thread, imChannel: null, updatedAt: now };
+		}
+		return thread;
+	});
+	return changed ? { ...data, threads } : data;
+}
+
 export interface CloseHomeThreadResult {
 	next: RuntimeHomeChatThreadsData;
 	removed: RuntimeHomeChatThread;
@@ -206,7 +245,10 @@ export function closeHomeThread(data: RuntimeHomeChatThreadsData, id: string): C
 	const threads = data.threads.filter((thread) => thread.id !== id);
 	const next: RuntimeHomeChatThreadsData = { threads };
 	if (data.fullscreenTabs) {
-		next.fullscreenTabs = sanitizeFullscreenTabs(data.fullscreenTabs, threads.map((thread) => thread.id));
+		next.fullscreenTabs = sanitizeFullscreenTabs(
+			data.fullscreenTabs,
+			threads.map((thread) => thread.id),
+		);
 	}
 	return { next, removed };
 }
@@ -244,8 +286,7 @@ export function sanitizeFullscreenTabs(
 			openThreadIds.push(id);
 		}
 	}
-	const activeThreadId =
-		tabs.activeThreadId !== null && seen.has(tabs.activeThreadId) ? tabs.activeThreadId : null;
+	const activeThreadId = tabs.activeThreadId !== null && seen.has(tabs.activeThreadId) ? tabs.activeThreadId : null;
 	return { openThreadIds, activeThreadId };
 }
 
@@ -266,7 +307,10 @@ export function setHomeFullscreenTabs(
 	data: RuntimeHomeChatThreadsData,
 	tabs: RuntimeHomeChatFullscreenTabs,
 ): RuntimeHomeChatThreadsData {
-	const sanitized = sanitizeFullscreenTabs(tabs, data.threads.map((thread) => thread.id));
+	const sanitized = sanitizeFullscreenTabs(
+		tabs,
+		data.threads.map((thread) => thread.id),
+	);
 	if (data.fullscreenTabs && fullscreenTabsEqual(data.fullscreenTabs, sanitized)) {
 		return data;
 	}

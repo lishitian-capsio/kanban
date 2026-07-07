@@ -190,6 +190,20 @@ describe("HomeThreadStore", () => {
 			const { store } = makeStore();
 			await expect(store.bindImChannel("missing", { platform: "lark", chatId: "x" })).rejects.toThrow();
 		});
+
+		it("moves an IM channel off the previous thread when bound to a new one (one-to-one)", async () => {
+			const { store } = makeStore();
+			const first = await store.create({ agentId: "pi", name: "First" });
+			const second = await store.create({ agentId: "claude", name: "Second" });
+			await store.bindImChannel(first.id, { platform: "lark", chatId: "oc_shared" });
+
+			const moved = await store.bindImChannel(second.id, { platform: "lark", chatId: "oc_shared" });
+
+			expect(moved.imChannel).toEqual({ platform: "lark", chatId: "oc_shared" });
+			expect(await store.getImChannel(second.id)).toEqual({ platform: "lark", chatId: "oc_shared" });
+			// The previous owner is now unbound — an IM chat maps to at most one thread.
+			expect(await store.getImChannel(first.id)).toBeNull();
+		});
 	});
 
 	it("lists threads sorted by creation time", async () => {

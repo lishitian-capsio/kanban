@@ -14,11 +14,15 @@ const {
 	getKanbanSlashCommandsMock,
 	writeWorkspaceAttachmentMock,
 	deleteWorkspaceAttachmentScopeMock,
+	listImChatsMock,
+	addImChatMock,
 } = vi.hoisted(() => ({
 	searchFilesMock: vi.fn(),
 	getKanbanSlashCommandsMock: vi.fn(),
 	writeWorkspaceAttachmentMock: vi.fn(),
 	deleteWorkspaceAttachmentScopeMock: vi.fn(),
+	listImChatsMock: vi.fn(),
+	addImChatMock: vi.fn(),
 }));
 
 vi.mock("@/runtime/trpc-client", () => ({
@@ -28,6 +32,8 @@ vi.mock("@/runtime/trpc-client", () => ({
 			getKanbanSlashCommands: { query: getKanbanSlashCommandsMock },
 			writeWorkspaceAttachment: { mutate: writeWorkspaceAttachmentMock },
 			deleteWorkspaceAttachmentScope: { mutate: deleteWorkspaceAttachmentScopeMock },
+			listImChats: { query: listImChatsMock },
+			addImChat: { mutate: addImChatMock },
 		},
 	}),
 }));
@@ -105,6 +111,11 @@ describe("HomeThreadCreateDialog", () => {
 		getKanbanSlashCommandsMock.mockResolvedValue({ commands: [] });
 		writeWorkspaceAttachmentMock.mockResolvedValue({ ok: true, path: "/repo/.kanban/attachments/abc.txt" });
 		deleteWorkspaceAttachmentScopeMock.mockResolvedValue({ ok: true });
+		listImChatsMock.mockResolvedValue({ ok: true, chats: [] });
+		addImChatMock.mockResolvedValue({
+			ok: true,
+			chat: { platform: "lark", chatId: "oc_team", displayName: "", source: "manual", createdAt: 1, updatedAt: 1 },
+		});
 	});
 
 	afterEach(() => {
@@ -343,7 +354,7 @@ describe("HomeThreadCreateDialog", () => {
 
 	it("passes the bound IM channel through onCreate", async () => {
 		const onCreate = vi.fn(async () => {});
-		await render({ onCreate });
+		await render({ workspaceId: "ws-1", onCreate });
 
 		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
 		await act(async () => {
@@ -351,7 +362,15 @@ describe("HomeThreadCreateDialog", () => {
 			await flush();
 		});
 
-		// Type an IM chat id into the (default lark) picker.
+		// The picker binds by selecting from the IM chat list; seed the empty palette via its
+		// manual-add fallback (open the toggle, type an id, "添加" upserts + selects it).
+		const addToggle = Array.from(document.querySelectorAll("button")).find((b) =>
+			b.textContent?.includes("手动添加会话 ID"),
+		);
+		await act(async () => {
+			addToggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+			await flush();
+		});
 		const imInput = document.querySelector('input[aria-label="IM chat ID"]') as HTMLInputElement;
 		expect(imInput).not.toBeNull();
 		await act(async () => {
@@ -360,6 +379,12 @@ describe("HomeThreadCreateDialog", () => {
 			imInput.dispatchEvent(new Event("input", { bubbles: true }));
 			await flush();
 		});
+		const addButton = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.trim() === "添加");
+		await act(async () => {
+			addButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+			await flush();
+		});
+		expect(addImChatMock).toHaveBeenCalledWith({ platform: "lark", chatId: "oc_team" });
 
 		const createButton = Array.from(document.querySelectorAll("button")).find(
 			(button) => button.textContent?.trim() === "Create",

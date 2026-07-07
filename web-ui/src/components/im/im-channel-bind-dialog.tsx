@@ -9,6 +9,8 @@ import type { HomeThread } from "@/hooks/use-home-threads";
 
 interface ImChannelBindDialogProps {
 	thread: HomeThread | null;
+	/** Workspace scope for the bindable IM chat list shown in the picker. */
+	workspaceId?: string | null;
 	onOpenChange: (open: boolean) => void;
 	onBind: (threadId: string, channel: ImChannelTarget) => void | Promise<void>;
 	onUnbind: (threadId: string) => void | Promise<void>;
@@ -19,7 +21,13 @@ function sameChannel(a: ImChannelTarget | null, b: ImChannelTarget | null): bool
 	return a.platform === b.platform && a.chatId === b.chatId;
 }
 
-export function ImChannelBindDialog({ thread, onOpenChange, onBind, onUnbind }: ImChannelBindDialogProps): ReactElement {
+export function ImChannelBindDialog({
+	thread,
+	workspaceId = null,
+	onOpenChange,
+	onBind,
+	onUnbind,
+}: ImChannelBindDialogProps): ReactElement {
 	const current = thread?.imChannel ?? null;
 	const [draft, setDraft] = useState<ImChannelTarget | null>(current);
 	const [isSubmitting, setIsSubmitting] = useState(false);
@@ -71,8 +79,10 @@ export function ImChannelBindDialog({ thread, onOpenChange, onBind, onUnbind }: 
 					</div>
 				) : null}
 				<div className="flex flex-col gap-1.5">
-					<span className="text-[12px] font-medium text-text-secondary">{current ? "重新绑定" : "选择平台与频道"}</span>
-					<ImChannelPicker value={draft} onChange={setDraft} disabled={isSubmitting} />
+					<span className="text-[12px] font-medium text-text-secondary">
+						{current ? "重新绑定" : "选择平台与频道"}
+					</span>
+					<ImChannelPicker value={draft} onChange={setDraft} workspaceId={workspaceId} disabled={isSubmitting} />
 				</div>
 			</DialogBody>
 			<DialogFooter>

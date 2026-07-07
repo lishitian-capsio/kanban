@@ -11,6 +11,7 @@ import { createHomeAgentSessionId } from "../core/home-agent-session";
 import type { ImChannelTarget } from "../im/types";
 import { loadWorkspaceHomeThreads, mutateWorkspaceHomeThreads } from "../state/workspace-state";
 import {
+	bindHomeThreadImChannelExclusive,
 	closeHomeThread,
 	createHomeThread,
 	getHomeFullscreenTabs,
@@ -213,10 +214,21 @@ export class HomeThreadStore {
 
 	/**
 	 * Bind a thread to an IM channel (requirement ac99c) so outbound notifications can be
-	 * delivered to it. Returns the updated thread. Throws if the thread is missing.
+	 * delivered to it. Enforces the **one-to-one** invariant: any other thread that held the
+	 * same channel is unbound in the same atomic mutation, so re-pointing an IM chat at a new
+	 * thread moves it off the old one. Returns the (now-bound) target thread. Throws if missing.
 	 */
 	async bindImChannel(id: string, channel: ImChannelTarget): Promise<RuntimeHomeChatThread> {
-		return this.setImChannel(id, channel);
+		const now = this.now();
+		const next = await this.persistence.mutate((current) =>
+			bindHomeThreadImChannelExclusive(current, id, channel, now),
+		);
+		const updated = next.threads.find((thread) => thread.id === id);
+		if (!updated) {
+			// Unreachable: bindHomeThreadImChannelExclusive throws when the id is missing.
+			throw new Error(`Home chat thread "${id}" not found after bindImChannel.`);
+		}
+		return updated;
 	}
 
 	/** Remove a thread's IM channel binding. Returns the updated thread. Throws if missing. */

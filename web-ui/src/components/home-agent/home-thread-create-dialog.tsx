@@ -237,7 +237,12 @@ export function HomeThreadCreateDialog({
 
 				<div className="flex flex-col gap-2">
 					<span className="text-[12px] font-medium text-text-secondary">绑定 IM(可选)</span>
-					<ImChannelPicker value={imChannel} onChange={setImChannel} disabled={isSubmitting} />
+					<ImChannelPicker
+						value={imChannel}
+						onChange={setImChannel}
+						workspaceId={workspaceId}
+						disabled={isSubmitting}
+					/>
 				</div>
 			</DialogBody>
 			<DialogFooter>

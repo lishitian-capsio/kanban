@@ -4,6 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ImChannelBindDialog } from "@/components/im/im-channel-bind-dialog";
 import type { HomeThread } from "@/hooks/use-home-threads";
+import type { RuntimeImChat } from "@/runtime/types";
+
+// The picker inside the dialog owns the palette query — mock it so no network is touched and
+// the test can drive a manual add (which upserts + selects a draft binding).
+const addChatMock = vi.fn();
+vi.mock("@/hooks/use-im-chats", () => ({
+	useImChats: () => ({
+		chats: [] as RuntimeImChat[],
+		isLoading: false,
+		error: null,
+		refresh: vi.fn(async () => {}),
+		addChat: addChatMock,
+	}),
+}));
 
 function setInputValue(input: HTMLInputElement, value: string): void {
 	const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
@@ -34,6 +48,7 @@ describe("ImChannelBindDialog", () => {
 		container = document.createElement("div");
 		document.body.appendChild(container);
 		root = createRoot(container);
+		addChatMock.mockReset();
 	});
 
 	afterEach(() => {
@@ -42,12 +57,35 @@ describe("ImChannelBindDialog", () => {
 		vi.clearAllMocks();
 	});
 
-	it("binds a new channel from an unbound thread", async () => {
+	it("binds a new channel picked via manual add from an unbound thread", async () => {
+		addChatMock.mockResolvedValue({
+			platform: "lark",
+			chatId: "oc_new",
+			displayName: "",
+			source: "manual",
+			createdAt: 1,
+			updatedAt: 1,
+		});
 		const onBind = vi.fn(async () => {});
 		await act(async () => {
 			root.render(
-				<ImChannelBindDialog thread={makeThread()} onOpenChange={() => {}} onBind={onBind} onUnbind={vi.fn()} />,
+				<ImChannelBindDialog
+					thread={makeThread()}
+					workspaceId="ws-1"
+					onOpenChange={() => {}}
+					onBind={onBind}
+					onUnbind={vi.fn()}
+				/>,
 			);
+			await flush();
+		});
+
+		// Open the picker's manual-add fallback and register a new id.
+		const addToggle = Array.from(document.querySelectorAll("button")).find((b) =>
+			b.textContent?.includes("手动添加会话 ID"),
+		);
+		await act(async () => {
+			addToggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 			await flush();
 		});
 		const input = document.querySelector('input[aria-label="IM chat ID"]') as HTMLInputElement;
@@ -55,6 +93,13 @@ describe("ImChannelBindDialog", () => {
 			setInputValue(input, "oc_new");
 			await flush();
 		});
+		const addButton = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.trim() === "添加");
+		await act(async () => {
+			addButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+			await flush();
+		});
+
+		// Now the dialog's bind button commits the selected draft.
 		const bindButton = Array.from(document.querySelectorAll("button")).find(
 			(button) => button.textContent?.trim() === "绑定",
 		);
@@ -72,6 +117,7 @@ describe("ImChannelBindDialog", () => {
 			root.render(
 				<ImChannelBindDialog
 					thread={makeThread({ imChannel: { platform: "lark", chatId: "oc_existing" } })}
+					workspaceId="ws-1"
 					onOpenChange={() => {}}
 					onBind={vi.fn()}
 					onUnbind={onUnbind}
