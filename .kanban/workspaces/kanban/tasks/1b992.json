@@ -1,0 +1,20 @@
+{
+  "id": "1b992",
+  "title": "入站路由到绑定 thread + 送入 agent(pi 优先)+ 按需唤醒",
+  "prompt": "依赖 I1(入站事件)与 L1/绑定。做入站路由:gateway 收到消息 → 按 chatId 查绑定的 thread → 送入该 thread 的 agent;agent 回复回推该 IM 会话(复用与 cli 共用的 task_chat_message 出站通道)。agent 若空闲则先唤醒/接续。pi 优先跑通(塞入 pi 结构化输入口,进程内),cli 随后(写 PTY)。幂等去重。参考需求 ac99c。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
+  "baseRef": "main",
+  "createdAt": 1783391084849,
+  "updatedAt": 1783391084849,
+  "column": "backlog",
+  "rank": "Zp",
+  "dependsOn": []
+}

@@ -1,0 +1,20 @@
+{
+  "id": "eb5b5",
+  "title": "IM 凭证 Settings 配置入口(tRPC + 粘贴卡片)",
+  "prompt": "阶段2前置。后端已有 src/im/im-credential-store.ts 的 writePersistedImCredentials/clearPersistedImCredentials/readPersistedImCredentials，但没有任何 tRPC/CLI/UI 调用者。补:(1) tRPC im router: setCredentials(platform,{botToken|webhookUrl|webhookSecret})/clearCredentials/status(status 只返回是否已配,不回显秘密);(2) Settings「IM 渠道凭证」卡片:飞书/钉钉各一栏粘贴 token/webhook,保存写机器本地 0600。参考 gitee-auth-setting.tsx 粘贴凭证卡片。成功路径不打 info 日志(污染 --json)。参考需求 ac99c。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
+  "baseRef": "main",
+  "createdAt": 1783391078334,
+  "updatedAt": 1783391078334,
+  "column": "backlog",
+  "rank": "Zv",
+  "dependsOn": []
+}

@@ -1,0 +1,20 @@
+{
+  "id": "06c08",
+  "title": "钉钉 Stream 长连接入站 adapter",
+  "prompt": "依赖 G1。实现钉钉 Stream 模式长连接入站:接收群/单聊消息,归一成 gateway 统一入站事件。与飞书 adapter 同构。幂等去重。参考需求 ac99c。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
+  "baseRef": "main",
+  "createdAt": 1783391081554,
+  "updatedAt": 1783391081554,
+  "column": "backlog",
+  "rank": "Zs",
+  "dependsOn": []
+}

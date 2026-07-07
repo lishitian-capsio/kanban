@@ -1,0 +1,20 @@
+{
+  "id": "159ab",
+  "title": "IM 绑定 UI:home tab 与会话 tab 选 IM 会话 id(一对一)",
+  "prompt": "依赖 L1。在 home 新建会话入口与已存在的会话 tab 上,提供从「IM 会话 id 列表」选一个绑到该 thread(写 thread.imChannel);一对一:选到新 thread 时自动从旧 thread 解绑。不做独立 IM tab、不复刻聊天框——只做绑定/指向管理。遵循 web-ui 设计规范。参考需求 ac99c。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
+  "baseRef": "main",
+  "createdAt": 1783391083715,
+  "updatedAt": 1783391083715,
+  "column": "backlog",
+  "rank": "Zq",
+  "dependsOn": []
+}
