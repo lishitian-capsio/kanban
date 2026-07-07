@@ -1,7 +1,7 @@
 {
   "id": "83c9d",
   "title": "未绑定会话 onboarding:回推卡片引导选 agent→建会话+绑定+补投",
-  "prompt": "依赖\"卡片回调事件接入\"任务 + 入站路由。改造 ImInboundRouter:未绑定会话来消息时不再丢弃(现状是 findThreadBoundToImChannel 返回 null 即 return),改为:(1)在该 IM 会话回一张交互卡片,列出可用 agent(装了/配了的,过滤不可用),按钮如 [pi][claude][codex];(2)暂存这条原消息 + 标记该会话\"待选择 agent\"的 pending 状态;(3)用户点按钮→卡片回调→建一个该 agent 的 home thread + 绑定该 IM 会话(一对一)+ 把暂存的原消息补投进去驱动 agent;(4)之后该会话已绑定,走正常投递,不再询问。可先用文字选项(回复数字)实现闭环、卡片为增强,但目标形态是卡片(方案 A)。只列可用 agent;pending 状态需持久化或至少进程内可靠。参考需求 ac99c。相关:src/im/inbound/im-inbound-router.ts、src/server/runtime-server.ts(deliverHomeChatMessage/建会话)、src/im/lark 出站卡片。",
+  "prompt": "依赖\"卡片回调事件接入\"(d6d96) + 入站路由 + pi 可绑(9523b)。改造 ImInboundRouter:未绑定会话来消息时不丢弃(现状 findThreadBoundToImChannel 返回 null 即 return),改为引导选择:\n(1) 在该 IM 会话回一张交互卡片,列出可用 agent(装了/配了的,过滤不可用):[pi][claude][codex]…;\n(2) 暂存这条原消息 + 标记该会话\"待选择 agent\"的 pending 状态;\n(3) 用户点按钮 → 卡片回调 → 按所选 agent 类型分支:\n    - 选 CLI(claude/codex):新建一个该 agent 的 home thread + 绑定该 IM 会话(一对一);\n    - 选 pi:pi 是单会话(X1),不能新建 thread,改为绑定到那唯一的 pi 会话(依赖 9523b 让 pi 成为可绑目标);\n   然后把暂存的原消息补投进去驱动 agent;\n(4) 之后该会话已绑定,后续消息接着进同一会话,不再询问。\n可先用文字选项(回复数字)实现闭环、卡片为增强,但目标形态是卡片(方案 A)。只列可用 agent;pending 状态需可靠。参考需求 ac99c。相关:src/im/inbound/im-inbound-router.ts、src/server/runtime-server.ts(deliverHomeChatMessage/建会话)、src/im/lark 出站卡片、9523b 的 pi 可绑表示。",
   "startInPlanMode": false,
   "autoReviewEnabled": false,
   "autoReviewMode": "commit",
@@ -13,7 +13,7 @@
   "originThreadId": "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
   "baseRef": "main",
   "createdAt": 1783412453300,
-  "updatedAt": 1783412453300,
+  "updatedAt": 1783413589306,
   "column": "backlog",
   "rank": "Zy",
   "dependsOn": [
@@ -21,6 +21,11 @@
       "id": "d849d0a8",
       "toTaskId": "d6d96",
       "createdAt": 1783412468552
+    },
+    {
+      "id": "5ae1b9bc",
+      "toTaskId": "9523b",
+      "createdAt": 1783413590739
     }
   ]
 }
