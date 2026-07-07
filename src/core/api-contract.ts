@@ -1054,12 +1054,28 @@ export const runtimeVaultLinkSourceSchema = z.discriminatedUnion("kind", [
 ]);
 export type RuntimeVaultLinkSource = z.infer<typeof runtimeVaultLinkSourceSchema>;
 
+// The typed relation a link realizes, resolved from the *source document's* type
+// definition (T1's `relations:` schema). Present only when the link sits in a
+// frontmatter field the source type declares as a relation; body links and
+// undeclared fields carry no relation. `label`/`inverseLabel` are the human names
+// for the forward and reverse directions; `directed` is `false` only for a
+// symmetric relation whose inverse is itself (`inverse === name`).
+export const runtimeVaultLinkRelationSchema = z.object({
+	name: z.string(),
+	label: z.string().optional(),
+	inverse: z.string().optional(),
+	inverseLabel: z.string().optional(),
+	directed: z.boolean(),
+});
+export type RuntimeVaultLinkRelation = z.infer<typeof runtimeVaultLinkRelationSchema>;
+
 // A link going *out* of a document, with its resolution status. `resolved*` is
 // null when the target matches no document by title, alias, or slug.
 export const runtimeVaultOutgoingLinkSchema = z.object({
 	target: z.string(),
 	label: z.string().optional(),
 	source: runtimeVaultLinkSourceSchema,
+	relation: runtimeVaultLinkRelationSchema.optional(),
 	resolvedId: z.string().nullable(),
 	resolvedType: z.string().nullable(),
 	resolvedTitle: z.string().nullable(),
@@ -1073,6 +1089,7 @@ export const runtimeVaultBacklinkSchema = z.object({
 	sourceType: z.string(),
 	sourceTitle: z.string(),
 	source: runtimeVaultLinkSourceSchema,
+	relation: runtimeVaultLinkRelationSchema.optional(),
 	label: z.string().optional(),
 });
 export type RuntimeVaultBacklink = z.infer<typeof runtimeVaultBacklinkSchema>;

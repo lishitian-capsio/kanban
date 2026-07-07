@@ -2,6 +2,8 @@ import { Download, Plus } from "lucide-react";
 import type React from "react";
 import { useMemo, useState } from "react";
 
+import type { RuntimeVaultBacklink, RuntimeVaultOutgoingLink } from "@/runtime/types";
+
 import { Spinner } from "@/components/ui/spinner";
 import { VaultBoard } from "./board/vault-board";
 import { groupDocsByStatus } from "./board/vault-status-columns";
@@ -50,6 +52,12 @@ interface VaultContentProps {
 	renderDetailExtras?: (doc: VaultDoc) => React.ReactNode;
 	/** Body `[[wikilink]]` binding for the open document's editor. */
 	wikilinks?: VaultWikilinkBinding;
+	/** The open document's outgoing links (with typed relations), for the detail links panel. */
+	outgoingLinks?: RuntimeVaultOutgoingLink[];
+	/** The open document's backlinks (with typed relations), for the detail links panel. */
+	backlinks?: RuntimeVaultBacklink[];
+	/** Navigate to a linked document from the detail links panel. */
+	onOpenLinkedDoc?: (type: string, id: string) => void;
 }
 
 export function VaultContent({
@@ -68,6 +76,9 @@ export function VaultContent({
 	onCardMove,
 	renderDetailExtras,
 	wikilinks,
+	outgoingLinks,
+	backlinks,
+	onOpenLinkedDoc,
 }: VaultContentProps): React.ReactElement {
 	// Only status-bearing types get a board; flat types (Customer, Note) are table-only.
 	const supportsBoard = view.statuses.length > 0;
@@ -109,6 +120,9 @@ export function VaultContent({
 				customers={customers}
 				extras={renderDetailExtras?.(selectedDoc)}
 				wikilinks={wikilinks}
+				outgoingLinks={outgoingLinks}
+				backlinks={backlinks}
+				onOpenLinkedDoc={onOpenLinkedDoc}
 				onPatch={onPatch}
 				onDelete={onDelete}
 				onBack={() => onSelectDoc(null)}

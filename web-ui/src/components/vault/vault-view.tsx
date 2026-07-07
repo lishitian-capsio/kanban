@@ -125,7 +125,11 @@ export function VaultView({
 
 	// Body `[[wikilink]]` support for the open document: candidate pool (all docs)
 	// + resolution from the B1 backend engine, re-pulled when the doc is saved.
-	const { candidates, resolve } = useVaultWikilinks(workspaceId, selectedDoc?.id ?? null, selectedDoc?.updatedAt ?? 0);
+	const { candidates, resolve, outgoing, backlinks } = useVaultWikilinks(
+		workspaceId,
+		selectedDoc?.id ?? null,
+		selectedDoc?.updatedAt ?? 0,
+	);
 
 	// A dangling `[[link]]` materializes as a free-form Note (the lifecycle-free
 	// type), then opens it so the user can flesh it out immediately.
@@ -213,6 +217,9 @@ export function VaultView({
 					onCardMove={handleCardMove}
 					renderDetailExtras={renderDetailExtras}
 					wikilinks={wikilinkBinding}
+					outgoingLinks={outgoing}
+					backlinks={backlinks}
+					onOpenLinkedDoc={handleOpenDoc}
 				/>
 			) : (
 				<div className="flex flex-1 items-center justify-center bg-surface-0 text-[13px] text-text-tertiary">

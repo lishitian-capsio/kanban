@@ -4,7 +4,15 @@ import {
 	buildVaultLinkIndex,
 	groupBacklinksBySource,
 	type VaultLinkDocument,
+	type VaultTypeRelationsMap,
 } from "../../../src/vault/vault-link-index";
+import type { VaultRelationDefinition } from "../../../src/vault/vault-types";
+
+function relationsMap(
+	entries: Record<string, Record<string, VaultRelationDefinition>>,
+): VaultTypeRelationsMap {
+	return new Map(Object.entries(entries));
+}
 
 function doc(partial: Partial<VaultLinkDocument> & Pick<VaultLinkDocument, "id">): VaultLinkDocument {
 	return {
@@ -135,6 +143,64 @@ describe("buildVaultLinkIndex — backlinks", () => {
 			{ id: "rA", source: { kind: "frontmatter", field: "customer" } },
 			{ id: "rB", source: { kind: "body" } },
 		]);
+	});
+});
+
+describe("buildVaultLinkIndex — typed relations", () => {
+	const relations = relationsMap({
+		requirement: {
+			customer: { name: "customer", label: "Serves customer", inverse: "requirements", inverseLabel: "Requirements" },
+			related: { name: "related", label: "Related", inverse: "related", inverseLabel: "Related" },
+		},
+	});
+
+	it("fills the relation on an outgoing frontmatter link the source type declares", () => {
+		const acme = doc({ id: "c1", type: "customer", title: "Acme" });
+		const req = doc({ id: "r1", type: "requirement", title: "Rate limit", frontmatter: { customer: "[[Acme]]" } });
+
+		const outgoing = buildVaultLinkIndex([acme, req], relations).outgoing("r1");
+
+		expect(outgoing[0].relation).toEqual({
+			name: "customer",
+			label: "Serves customer",
+			inverse: "requirements",
+			inverseLabel: "Requirements",
+			directed: true,
+		});
+	});
+
+	it("marks a self-inverse relation as undirected", () => {
+		const req = doc({ id: "r1", type: "requirement", frontmatter: { related: "[[Other]]" } });
+		const outgoing = buildVaultLinkIndex([req], relations).outgoing("r1");
+		expect(outgoing[0].relation).toMatchObject({ name: "related", directed: false });
+	});
+
+	it("carries the source doc's relation onto the resulting backlink", () => {
+		const acme = doc({ id: "c1", type: "customer", title: "Acme" });
+		const req = doc({ id: "r1", type: "requirement", title: "Rate limit", frontmatter: { customer: "[[Acme]]" } });
+
+		const backlinks = buildVaultLinkIndex([acme, req], relations).backlinks("c1");
+
+		expect(backlinks[0].relation).toMatchObject({ name: "customer", inverseLabel: "Requirements" });
+	});
+
+	it("leaves relation undefined for a body link and for an undeclared frontmatter field", () => {
+		const acme = doc({ id: "c1", type: "customer", title: "Acme" });
+		const req = doc({
+			id: "r1",
+			type: "requirement",
+			frontmatter: { owner: "[[Acme]]" },
+			body: "see [[Acme]]",
+		});
+
+		const outgoing = buildVaultLinkIndex([acme, req], relations).outgoing("r1");
+
+		expect(outgoing.every((link) => link.relation === undefined)).toBe(true);
+	});
+
+	it("leaves relation undefined when no relations map is supplied (backward compatible)", () => {
+		const req = doc({ id: "r1", type: "requirement", frontmatter: { customer: "[[Acme]]" } });
+		expect(buildVaultLinkIndex([req]).outgoing("r1")[0].relation).toBeUndefined();
 	});
 });
 

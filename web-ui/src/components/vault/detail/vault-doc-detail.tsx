@@ -14,10 +14,13 @@ import {
 	AlertDialogTitle,
 } from "@/components/ui/dialog";
 
+import type { RuntimeVaultBacklink, RuntimeVaultOutgoingLink } from "@/runtime/types";
+
 import type { VaultDocPatch } from "../data/use-vault-docs";
 import type { VaultDoc } from "../data/vault-doc-model";
 import type { VaultTypeView } from "../data/vault-type-registry";
 import { DocEditor } from "../editor/doc-editor";
+import { VaultLinksPanel } from "../links/vault-links-panel";
 import type { VaultWikilinkBinding } from "../links/vault-wikilink-binding";
 import { VaultPropertiesPanel } from "./vault-properties-panel";
 
@@ -30,6 +33,12 @@ interface VaultDocDetailProps {
 	extras?: React.ReactNode;
 	/** Body `[[wikilink]]` autocomplete + render binding (omitted ⇒ plain markdown). */
 	wikilinks?: VaultWikilinkBinding;
+	/** The open document's outgoing links (with typed relations), for the links panel. */
+	outgoingLinks?: RuntimeVaultOutgoingLink[];
+	/** The open document's backlinks (with typed relations), for the links panel. */
+	backlinks?: RuntimeVaultBacklink[];
+	/** Navigate to a linked document from the links panel. */
+	onOpenLinkedDoc?: (type: string, id: string) => void;
 	onPatch: (id: string, patch: VaultDocPatch) => void;
 	onDelete: (id: string) => void;
 	onBack: () => void;
@@ -51,6 +60,9 @@ export function VaultDocDetail({
 	customers,
 	extras,
 	wikilinks,
+	outgoingLinks,
+	backlinks,
+	onOpenLinkedDoc,
 	onPatch,
 	onDelete,
 	onBack,
@@ -127,6 +139,14 @@ export function VaultDocDetail({
 				customers={customers}
 				onPatchFrontmatter={(patch) => onPatch(doc.id, { frontmatter: patch })}
 			/>
+
+			{onOpenLinkedDoc ? (
+				<VaultLinksPanel
+					outgoing={outgoingLinks ?? []}
+					backlinks={backlinks ?? []}
+					onOpenDoc={onOpenLinkedDoc}
+				/>
+			) : null}
 
 			{extras}
 

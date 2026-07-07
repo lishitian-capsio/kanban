@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 
+import type { RuntimeVaultBacklink, RuntimeVaultOutgoingLink } from "@/runtime/types";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import { useTrpcQuery } from "@/runtime/use-trpc-query";
 
@@ -7,12 +8,18 @@ import { toVaultDoc, type VaultDoc } from "../data/vault-doc-model";
 import { buildWikilinkResolver, type WikilinkResolver } from "./wikilink-resolution";
 
 const EMPTY_DOCS: VaultDoc[] = [];
+const EMPTY_OUTGOING: RuntimeVaultOutgoingLink[] = [];
+const EMPTY_BACKLINKS: RuntimeVaultBacklink[] = [];
 
 export interface UseVaultWikilinksResult {
 	/** Every vault doc across types (autocomplete candidate pool). */
 	candidates: VaultDoc[];
 	/** Resolve a `[[target]]` to its document, backed by the backend link engine. */
 	resolve: WikilinkResolver;
+	/** The open document's outgoing links (with typed relations), for the links panel. */
+	outgoing: RuntimeVaultOutgoingLink[];
+	/** The open document's backlinks (with typed relations), for the links panel. */
+	backlinks: RuntimeVaultBacklink[];
 }
 
 /**
@@ -65,5 +72,7 @@ export function useVaultWikilinks(
 	return {
 		candidates: candidatesQuery.data ?? EMPTY_DOCS,
 		resolve,
+		outgoing: linksQuery.data?.outgoing ?? EMPTY_OUTGOING,
+		backlinks: linksQuery.data?.backlinks ?? EMPTY_BACKLINKS,
 	};
 }

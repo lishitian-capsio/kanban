@@ -17,6 +17,7 @@ import { getVaultDocsDir, getVaultFilesDir } from "./vault-paths";
 import { getVaultReadCache, type VaultReadCache, type VaultReadResult, type VaultScanResult } from "./vault-read-cache";
 import { searchVaultDocuments, type VaultSearchOptions } from "./vault-search";
 import { VaultTypeRegistry } from "./vault-type-registry";
+import type { VaultRelationDefinition } from "./vault-types";
 
 const DOC_EXTENSION = ".md";
 
@@ -101,7 +102,23 @@ export class VaultDocumentStore {
 	 */
 	async getLinkIndex(): Promise<VaultLinkIndex> {
 		const { version, documents } = await this.readCachedDocuments();
-		return this.cache.derive("link-index", version, () => buildVaultLinkIndex(documents));
+		const relationsByType = await this.loadTypeRelations();
+		// Fold a relations fingerprint into the memo key so a type's `relations:` edit
+		// rebuilds the index even when the document set (and its version) is unchanged.
+		const key = `link-index:${JSON.stringify([...relationsByType.entries()])}`;
+		return this.cache.derive(key, version, () => buildVaultLinkIndex(documents, relationsByType));
+	}
+
+	/** Declared relations keyed by type name, for tagging links with their typed relation. */
+	private async loadTypeRelations(): Promise<Map<string, Record<string, VaultRelationDefinition>>> {
+		const definitions = await this.typeRegistry.list();
+		const byType = new Map<string, Record<string, VaultRelationDefinition>>();
+		for (const definition of definitions) {
+			if (definition.relations) {
+				byType.set(definition.type, definition.relations);
+			}
+		}
+		return byType;
 	}
 
 	/** Full-text search over the cached documents — no per-keystroke disk read or parse. */
