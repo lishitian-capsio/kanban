@@ -3,7 +3,7 @@
   "title": "修复: 创建task弹窗粘贴文件被静默禁用(默认agent=pi)",
   "prompt": "问题: 创建 task 弹窗里粘贴/拖拽非图片文件无反应。\n\n根因: 文件附件能力绑定到当前选中的 task agent,而 task 默认 agent 是 pi(原生),pi 不支持文件附件(只有 claude 支持,见 web-ui/src/runtime/attachment-agents.ts 的 agentSupportsFileAttachments / ATTACHMENT_MENTION_AGENT_IDS)。于是 web-ui/src/components/task-create-dialog.tsx:213-214 的 effectiveAttachmentAgentId = agentId ?? defaultAgentId 落到 pi → attachmentsEnabled=false → 传给 TaskPromptComposer 的文件收集 onFilesSelected 为 undefined,粘贴/拖拽文件被静默忽略。对比: 新建会话弹窗(home-thread-create-dialog.tsx:69-92)只允许 CLI agent、永不落到 pi,所以能用。\n\n要求(不要用「强制默认 claude」糊弄): task 的 agent 是真实运行选择;若 task 实际跑 pi 却写了文件,pi 用不到,所以不能像新建会话那样强制把附件 agent 落到 claude。正确修法:\n1. 文件附件能力跟随弹窗里当前选中的 agent 实时变化: 选中支持附件的 agent(claude,agentSupportsFileAttachments 为真)时,启用文件粘贴/拖拽(与新建会话弹窗体验一致);确认显式选 claude 时这条路径真的可用(若仍不行,一并修)。\n2. 选中不支持附件的 agent(如 pi)时,不要静默吞掉: 给出明确的禁用态/提示(例如在附件区或粘贴时提示「当前 agent 不支持文件附件,切换到 claude 可用」),避免用户以为功能坏了。图片行为不受影响。\n3. 切换 agent 时,附件启用/禁用状态与已选文件的处理要一致(从 claude 切到 pi 后已附文件的处理: 提示或清除,择一,给出清晰反馈)。\n4. 复用现有 agentSupportsFileAttachments 判断与 session-attachment-store 落盘链路(a3876/bd00b85c 已实现选 claude 时写 worktree+@路径);本任务只修「能力门控 + 反馈」,不重做落盘。\n5. 遵循仓库约定(TypeScript 无 any、现有风格、设计 token);补充/更新测试(选 claude 启用、选 pi 禁用且有提示、切换 agent 的状态);跑通 web:typecheck 与相关测试。\n6. 亲自验证: 创建 task 弹窗选 claude → 粘贴/拖拽非图片文件出现附件条、创建启动后写入 worktree 的 .kanban/attachments/ 且 prompt 含 @路径;选 pi → 有明确禁用提示而非静默无反应。\n\n注意: 相关实现已在 main(提交 bd00b85c=a3876 / 6f9ed8f6=e801b);活跃多智能体工作区,开工前先 git 同步。",
   "startInPlanMode": false,
-  "autoReviewEnabled": false,
+  "autoReviewEnabled": true,
   "autoReviewMode": "commit",
   "agentId": "claude",
   "owner": {
@@ -13,8 +13,8 @@
   "originThreadId": "bcd4d0cd-58af-4991-967b-36e566b082ed",
   "baseRef": "main",
   "createdAt": 1783386704584,
-  "updatedAt": 1783386704584,
-  "column": "backlog",
+  "updatedAt": 1783391334079,
+  "column": "in_progress",
   "rank": "Zw",
   "dependsOn": []
 }
