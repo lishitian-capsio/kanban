@@ -1,0 +1,20 @@
+{
+  "id": "84427",
+  "title": "移除 IM 集成(飞书/钉钉)整套代码与接线",
+  "prompt": "决定:IM 集成整体移除(过于复杂)。把飞书/钉钉 IM 相关的代码、UI、接线全部拆掉,让代码库回到没有 IM 的状态。需求记录见 vault requirement ac99c(已 parked,保留设计以备将来)。\n\n要移除:\n- 后端 src/im/ 整个目录(provider 抽象、lark/、dingtalk/、gateway/、inbound/、im-credential-store、im-chat-recorder、im-task-notifier、im-inbound-router、im-task-route-resolver 等)。\n- cli.ts 里的所有 IM 接线:import 与实例化 ImGateway、registerLarkImProvider/registerLarkImGatewayConnector、registerDingtalkStreamInboundConnector、ImChatInboundRecorder、ImInboundRouter、ImChatReplyNotifier、ImTaskEventNotifier,以及 imGateway.start()/stop()、onInboundEvent 挂接。\n- tRPC:im router(凭证 setCredentials/status/clb、绑定 bindHomeThreadImChannel/unbind/get、im-chats list/add/remove 等),从 app-router 摘除。\n- runtime-server.ts:deliverHomeChatMessage、onTaskChatMessage 观察者接线(若仅为 IM 回推而加)、相关 deps。\n- home thread:RuntimeHomeChatThread 的 imChannel 字段 + home-thread-store 的 bindImChannel/unbindImChannel/setImChannel、workspace-state 里 setHomeThreadImChannel/bindHomeThreadImChannelExclusive;删除已落盘的 threads.json 里 imChannel 与 im-chats.json(迁移/清理)。\n- 契约:api-contract 里 ImChannelTarget/imChannelTarget schema、RuntimeImChat、相关 request 解析。\n- web-ui:components/im/ 整个目录、hooks/use-im-chats、use-im-credentials、Settings 的 im-credentials-setting 卡片、新建会话/thread-bar 里的 ImChannelPicker/Chip 挂点。\n- 依赖:package.json 里 @larksuiteoapi/node-sdk 若仅 IM 用则移除;钉钉相关同理。\n- 机器本地 ~/.kanban/settings/im-credentials.json 的读写代码删除(文件本身可留,无引用即无害)。\n\n必须保留(勿误删):\n- Gitee / GitHub git 认证(src/gitee-auth、src/github-auth)与 git-utils 的 host-keyed 凭证注入——与 IM 无关。\n- home thread 注册表本身(多会话 UI、threads.json)——只摘 imChannel 字段。\n- task_chat_message 广播通道、pi/terminal 会话机制——只摘 IM 回推的观察者。\n\n验收:typecheck(runtime + web:typecheck)通过、相关测试更新/删除、grep 无残留 IM 引用、构建成功;非 IM 功能(git 认证、看板、会话、db、storage)不受影响。分批小步提交,便于 review。",
+  "startInPlanMode": false,
+  "autoReviewEnabled": false,
+  "autoReviewMode": "commit",
+  "agentId": "claude",
+  "owner": {
+    "name": "LiShitian",
+    "email": "shitian@capsio.ai"
+  },
+  "originThreadId": "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
+  "baseRef": "main",
+  "createdAt": 1783477481688,
+  "updatedAt": 1783477481688,
+  "column": "backlog",
+  "rank": "a0",
+  "dependsOn": []
+}
