@@ -152,15 +152,6 @@
       "pendingNextStep": "把需求 11ba3「回退合并按钮」在看板上建一个排查+实现任务"
     },
     {
-      "id": "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
-      "agentId": "claude",
-      "name": "IM 集成设计(飞书/钉钉+Home 绑定)",
-      "titleSource": "auto",
-      "createdAt": 1783319473324,
-      "updatedAt": 1783391120252,
-      "pendingNextStep": "启动 9523b(pi 单会话对接 IM)"
-    },
-    {
       "id": "eebaca34-2492-4308-8460-c7dfb289dfd0",
       "agentId": "claude",
       "name": "Vault 关系类型 schema 设计",
@@ -180,9 +171,8 @@
   ],
   "fullscreenTabs": {
     "openThreadIds": [
-      "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
-      "be8da62b-73a2-48bf-99f8-7aa66272411b"
+      "98d352bf-cb23-490b-8d5d-8945798a7371"
     ],
-    "activeThreadId": "be8da62b-73a2-48bf-99f8-7aa66272411b"
+    "activeThreadId": "98d352bf-cb23-490b-8d5d-8945798a7371"
   }
 }
