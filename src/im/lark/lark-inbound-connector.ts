@@ -20,12 +20,13 @@
 import { createLogger } from "../../logging";
 import type { ImConnectorContext, ImGatewayConnector } from "../gateway/im-gateway-connector";
 import { registerImGatewayConnector } from "../gateway/im-gateway-connector-registry";
-import type { ImInboundImage, ImInboundMessageEvent } from "../gateway/inbound-event";
+import type { ImInboundCardActionEvent, ImInboundImage, ImInboundMessageEvent } from "../gateway/inbound-event";
 import { resolveImCredential } from "../im-credential-store";
 import type { ImOutboundCredential, ImPlatform } from "../types";
 import { buildLarkMessageResourceUrl, DEFAULT_LARK_BASE_URL } from "./lark-endpoints";
 import { type LarkFetch, larkGetBinary } from "./lark-http";
 import {
+	normalizeLarkCardAction,
 	type NormalizedLarkImageRef,
 	type NormalizedLarkInboundMessage,
 	normalizeLarkInboundMessage,
@@ -91,6 +92,7 @@ export class LarkImGatewayConnector implements ImGatewayConnector {
 		this.context = context;
 		await this.transport.start({
 			onMessage: (data) => this.handleInbound(data),
+			onCardAction: (data) => this.handleCardAction(data),
 			onDisconnect: (error) => context.signalDisconnected(error),
 		});
 	}
@@ -100,16 +102,30 @@ export class LarkImGatewayConnector implements ImGatewayConnector {
 		await this.transport.stop();
 	}
 
+	/**
+	 * Dedup an event by its `event_id` against the shared FIFO (before any await, so rapid
+	 * re-deliveries collapse). Returns the `event_id` when the event is fresh (and remembers it), or
+	 * `null` when it is a duplicate that the caller should drop. An event without an `event_id` is
+	 * always fresh (nothing stable to key on) and returns `undefined`.
+	 */
+	private claimEventId(data: unknown, kind: "message" | "card action"): string | null | undefined {
+		const eventId = parseLarkInboundEventId(data);
+		if (eventId === undefined) {
+			return undefined;
+		}
+		if (this.seenEventIds.has(eventId)) {
+			log.debug(`skipping duplicate lark inbound ${kind}`, { eventId });
+			return null;
+		}
+		this.rememberEventId(eventId);
+		return eventId;
+	}
+
 	/** Dedup + normalize a raw event, then (async) download images and emit. Never throws to the transport. */
 	private handleInbound(data: unknown): void {
-		// Dedup synchronously — before any await — so rapid re-deliveries of one event_id collapse.
-		const eventId = parseLarkInboundEventId(data);
-		if (eventId !== undefined) {
-			if (this.seenEventIds.has(eventId)) {
-				log.debug("skipping duplicate lark inbound event", { eventId });
-				return;
-			}
-			this.rememberEventId(eventId);
+		const eventId = this.claimEventId(data, "message");
+		if (eventId === null) {
+			return;
 		}
 		const normalized = normalizeLarkInboundMessage(data);
 		if (!normalized) {
@@ -118,6 +134,35 @@ export class LarkImGatewayConnector implements ImGatewayConnector {
 		void this.emitMessage(normalized, eventId).catch((error) => {
 			log.warn("failed to process lark inbound message", { error });
 		});
+	}
+
+	/** Dedup by `event_id`, normalize a `card.action.trigger`, and emit a card-action event. Never throws. */
+	private handleCardAction(data: unknown): void {
+		const eventId = this.claimEventId(data, "card action");
+		if (eventId === null) {
+			return;
+		}
+		const normalized = normalizeLarkCardAction(data);
+		if (!normalized) {
+			return;
+		}
+		const context = this.context;
+		if (!context) {
+			// Disconnected between decode and emit; drop rather than emit onto a dead cycle.
+			return;
+		}
+		const event: ImInboundCardActionEvent = {
+			kind: "card_action",
+			platform: this.platform,
+			channelKey: normalized.channelKey,
+			senderId: normalized.senderId,
+			action: normalized.action,
+			...(normalized.callbackToken !== undefined ? { callbackToken: normalized.callbackToken } : {}),
+			...(normalized.cardRef !== undefined ? { cardRef: normalized.cardRef } : {}),
+			// Reuse the header event_id as the routing layer's dedup key (same as the message path).
+			...(eventId !== undefined ? { messageId: eventId } : {}),
+		};
+		context.emit(event);
 	}
 
 	private rememberEventId(eventId: string): void {

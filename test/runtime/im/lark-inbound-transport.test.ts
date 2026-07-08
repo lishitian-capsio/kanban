@@ -58,7 +58,7 @@ function makeTransport(
 	});
 }
 
-const handlers = () => ({ onMessage: vi.fn(), onDisconnect: vi.fn() });
+const handlers = () => ({ onMessage: vi.fn(), onCardAction: vi.fn(), onDisconnect: vi.fn() });
 
 describe("LarkWsInboundTransport lifecycle", () => {
 	it("resolves start() when the SDK fires onReady, and starts the client", async () => {
@@ -133,6 +133,35 @@ describe("LarkWsInboundTransport lifecycle", () => {
 		await harness.dispatcher.invoke(raw, { needCheck: false });
 		expect(h.onMessage).toHaveBeenCalledTimes(1);
 		expect(h.onMessage.mock.calls[0][0]).toMatchObject({ event_id: "evt_wire", message: { chat_id: "oc_x" } });
+	});
+
+	it("registers card.action.trigger on the dispatcher and forwards the merged data to onCardAction", async () => {
+		const harness = makeClientHarness();
+		const transport = makeTransport(harness);
+		const h = handlers();
+		const promise = transport.start(h);
+		await Promise.resolve();
+		harness.params.onReady();
+		await promise;
+		const raw = {
+			schema: "2.0",
+			header: { event_type: "card.action.trigger", event_id: "evt_card_wire", token: "verify-token" },
+			event: {
+				token: "c-callback",
+				operator: { open_id: "ou_op" },
+				action: { value: { command: "merge" }, tag: "button" },
+				context: { open_chat_id: "oc_x", open_message_id: "om_x" },
+			},
+		};
+		await harness.dispatcher.invoke(raw, { needCheck: false });
+		expect(h.onCardAction).toHaveBeenCalledTimes(1);
+		expect(h.onMessage).not.toHaveBeenCalled();
+		expect(h.onCardAction.mock.calls[0][0]).toMatchObject({
+			event_id: "evt_card_wire",
+			token: "c-callback",
+			action: { value: { command: "merge" }, tag: "button" },
+			context: { open_chat_id: "oc_x", open_message_id: "om_x" },
+		});
 	});
 
 	it("throws ImCredentialUnavailableError when no bot credential is stored", async () => {

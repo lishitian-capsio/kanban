@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeLarkInboundMessage, parseLarkInboundEventId } from "../../../src/im/lark/lark-inbound-message";
+import {
+	normalizeLarkCardAction,
+	normalizeLarkInboundMessage,
+	parseLarkInboundEventId,
+} from "../../../src/im/lark/lark-inbound-message";
 
 /** Build a v2 `im.message.receive_v1` handler payload (header + event fields merged flat, as the SDK's EventDispatcher delivers it). */
 function makeEvent(overrides: {
@@ -146,5 +150,103 @@ describe("normalizeLarkInboundMessage — skip conditions", () => {
 	it("returns null for a non-object payload", () => {
 		expect(normalizeLarkInboundMessage(null)).toBeNull();
 		expect(normalizeLarkInboundMessage(42)).toBeNull();
+	});
+});
+
+/**
+ * Build a `card.action.trigger` handler payload as the SDK's base EventDispatcher delivers it:
+ * header (`event_id`, …) and event (`operator`, `action`, `context`, `token`, `host`) merged flat,
+ * with the event-level callback `token` overriding the header verification token.
+ */
+function makeCardAction(overrides: {
+	eventId?: string;
+	openId?: string;
+	unionId?: string;
+	userId?: string;
+	chatId?: string;
+	openMessageId?: string;
+	token?: string;
+	action?: unknown;
+	context?: unknown;
+	operator?: unknown;
+}): unknown {
+	const operator =
+		overrides.operator !== undefined
+			? overrides.operator
+			: {
+					...(overrides.openId !== undefined ? { open_id: overrides.openId } : {}),
+					...(overrides.unionId !== undefined ? { union_id: overrides.unionId } : {}),
+					...(overrides.userId !== undefined ? { user_id: overrides.userId } : {}),
+					tenant_key: "tk",
+				};
+	const context =
+		overrides.context !== undefined
+			? overrides.context
+			: {
+					open_chat_id: overrides.chatId ?? "oc_card_chat",
+					open_message_id: overrides.openMessageId ?? "om_card",
+				};
+	return {
+		event_id: overrides.eventId ?? "evt_card",
+		event_type: "card.action.trigger",
+		create_time: "1700000000000",
+		token: overrides.token ?? "c-callback-token",
+		operator,
+		action: overrides.action !== undefined ? overrides.action : { value: { command: "view_diff" }, tag: "button" },
+		context,
+		host: "im_message",
+	};
+}
+
+describe("normalizeLarkCardAction", () => {
+	it("extracts chat, sender, action value/tag, callback token and card ref", () => {
+		const result = normalizeLarkCardAction(
+			makeCardAction({
+				openId: "ou_op",
+				chatId: "oc_group",
+				openMessageId: "om_42",
+				token: "c-token-abc",
+				action: { value: { command: "merge", taskId: "t1" }, tag: "button" },
+			}),
+		);
+		expect(result).toEqual({
+			channelKey: "oc_group",
+			senderId: "ou_op",
+			action: { value: { command: "merge", taskId: "t1" }, tag: "button" },
+			callbackToken: "c-token-abc",
+			cardRef: "om_42",
+		});
+	});
+
+	it("resolves the operator id preferring open_id, then union_id, then user_id", () => {
+		expect(normalizeLarkCardAction(makeCardAction({ unionId: "on_u", userId: "uid" }))?.senderId).toBe("on_u");
+		expect(normalizeLarkCardAction(makeCardAction({ userId: "uid_only" }))?.senderId).toBe("uid_only");
+		expect(normalizeLarkCardAction(makeCardAction({ operator: {} }))?.senderId).toBe("");
+	});
+
+	it("keeps a tagged button that carried no business value (an empty value object)", () => {
+		const result = normalizeLarkCardAction(makeCardAction({ action: { tag: "button" } }));
+		expect(result?.action).toEqual({ value: {}, tag: "button" });
+	});
+
+	it("omits the tag when the action carried none", () => {
+		const result = normalizeLarkCardAction(makeCardAction({ action: { value: { x: 1 } } }));
+		expect(result?.action).toEqual({ value: { x: 1 } });
+	});
+
+	it("falls back to empty channelKey / undefined cardRef when context is absent", () => {
+		const result = normalizeLarkCardAction(makeCardAction({ context: {} }));
+		expect(result?.channelKey).toBe("");
+		expect(result?.cardRef).toBeUndefined();
+	});
+
+	it("returns null when there is no action object", () => {
+		expect(normalizeLarkCardAction(makeCardAction({ action: null }))).toBeNull();
+		expect(normalizeLarkCardAction({ event_id: "e", operator: {}, context: {} })).toBeNull();
+	});
+
+	it("returns null for a non-object payload", () => {
+		expect(normalizeLarkCardAction(null)).toBeNull();
+		expect(normalizeLarkCardAction("nope")).toBeNull();
 	});
 });

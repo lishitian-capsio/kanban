@@ -35,6 +35,8 @@ export const DEFAULT_LARK_WS_HANDSHAKE_TIMEOUT_MS = 15_000;
 export interface LarkInboundTransportHandlers {
 	/** A raw `im.message.receive_v1` handler payload (header + event merged flat). */
 	onMessage(data: unknown): void;
+	/** A raw `card.action.trigger` handler payload (header + event merged flat) — an interactive-card click. */
+	onCardAction(data: unknown): void;
 	/** The live connection terminally dropped; the gateway should schedule a backoff reconnect. */
 	onDisconnect(error?: unknown): void;
 }
@@ -124,6 +126,11 @@ export class LarkWsInboundTransport implements LarkInboundTransport {
 		const eventDispatcher = new EventDispatcher({}).register({
 			"im.message.receive_v1": async (data: unknown) => {
 				handlers.onMessage(data);
+			},
+			// Interactive-card button callback. Returning nothing yields an empty 200 response over the
+			// WS (no card update) — updating the card is the downstream consumer's job, not the transport's.
+			"card.action.trigger": async (data: unknown) => {
+				handlers.onCardAction(data);
 			},
 		});
 

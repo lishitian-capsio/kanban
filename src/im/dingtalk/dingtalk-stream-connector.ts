@@ -29,7 +29,9 @@ import {
 	buildDingtalkAckFrame,
 	buildDingtalkOpenRequest,
 	decodeDingtalkBotMessage,
+	decodeDingtalkCardAction,
 	isDingtalkBotMessageFrame,
+	isDingtalkCardCallbackFrame,
 	isDingtalkDisconnectFrame,
 	isDingtalkPingFrame,
 	parseDingtalkStreamCredential,
@@ -195,6 +197,11 @@ export class DingtalkStreamConnector implements ImGatewayConnector {
 			return;
 		}
 
+		if (isDingtalkCardCallbackFrame(frame)) {
+			this.handleCardCallback(frame.data, frame.messageId, context);
+			return;
+		}
+
 		if (!isDingtalkBotMessageFrame(frame)) {
 			return;
 		}
@@ -212,6 +219,22 @@ export class DingtalkStreamConnector implements ImGatewayConnector {
 		// Surface the same dedup key as the routing layer's message identity, so a
 		// redelivery that slips past this connector's seen-set (e.g. after a reconnect)
 		// is still collapsed downstream.
+		context.emit({ ...decoded.event, messageId: dedupKey });
+	}
+
+	/** Decode an interactive-card callback, dedup on its card+value key, and emit a card-action event. */
+	private handleCardCallback(dataJson: string, frameMessageId: string, context: ImConnectorContext): void {
+		const decoded = decodeDingtalkCardAction(dataJson);
+		if (!decoded) {
+			return;
+		}
+		// The card+value dedup key is always present (decode requires `outTrackId`); the frame id is a
+		// defensive fallback matching the message path. Distinct buttons produce distinct keys; a genuine
+		// redelivery of the same click collapses.
+		const dedupKey = decoded.dedupKey || frameMessageId;
+		if (this.seen.seen(dedupKey)) {
+			return;
+		}
 		context.emit({ ...decoded.event, messageId: dedupKey });
 	}
 

@@ -25,6 +25,7 @@ function makeFakeTransport() {
 	return {
 		transport,
 		deliver: (data: unknown) => handlers?.onMessage(data),
+		deliverCard: (data: unknown) => handlers?.onCardAction(data),
 		drop: (error?: unknown) => handlers?.onDisconnect(error),
 		get stopped() {
 			return stopped;
@@ -206,6 +207,65 @@ describe("LarkImGatewayConnector inbound", () => {
 		// Image-only message with images disabled → text empty + no images → skipped.
 		expect(emitted).toHaveLength(0);
 		expect(fetchCalls).toHaveLength(0);
+	});
+
+	it("normalizes a card.action.trigger payload into a gateway card_action event", async () => {
+		const { fake, emitted } = await connect();
+		fake.deliverCard({
+			event_id: "card1",
+			event_type: "card.action.trigger",
+			token: "c-callback",
+			operator: { open_id: "ou_op" },
+			action: { value: { command: "merge", taskId: "t1" }, tag: "button" },
+			context: { open_chat_id: "oc_group", open_message_id: "om_42" },
+		});
+		await flush();
+		expect(emitted).toEqual([
+			{
+				kind: "card_action",
+				platform: "lark",
+				channelKey: "oc_group",
+				senderId: "ou_op",
+				action: { value: { command: "merge", taskId: "t1" }, tag: "button" },
+				callbackToken: "c-callback",
+				cardRef: "om_42",
+				messageId: "card1",
+			},
+		]);
+	});
+
+	it("dedups card actions by event_id (redelivery collapses to one emit)", async () => {
+		const { fake, emitted } = await connect();
+		const card = {
+			event_id: "card_dup",
+			action: { value: { command: "view_diff" }, tag: "button" },
+			operator: { open_id: "ou_op" },
+			context: { open_chat_id: "oc_c", open_message_id: "om_c" },
+		};
+		fake.deliverCard(card);
+		fake.deliverCard(card);
+		await flush();
+		expect(emitted).toHaveLength(1);
+	});
+
+	it("shares the dedup window between messages and card actions (same event_id collapses)", async () => {
+		const { fake, emitted } = await connect();
+		fake.deliver(textEvent("shared", "hi"));
+		fake.deliverCard({
+			event_id: "shared",
+			action: { value: { command: "x" } },
+			operator: { open_id: "ou_op" },
+			context: { open_chat_id: "oc_c" },
+		});
+		await flush();
+		expect(emitted).toHaveLength(1);
+	});
+
+	it("skips a card action payload with no action object without emitting", async () => {
+		const { fake, emitted } = await connect();
+		fake.deliverCard({ event_id: "no_action", operator: { open_id: "ou_op" }, context: {} });
+		await flush();
+		expect(emitted).toHaveLength(0);
 	});
 
 	it("escalates a terminal transport drop to the gateway via signalDisconnected", async () => {

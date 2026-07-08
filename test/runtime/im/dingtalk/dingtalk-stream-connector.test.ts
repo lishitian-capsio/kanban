@@ -88,6 +88,30 @@ function botMessageFrame(overrides: Record<string, unknown> = {}): string {
 	});
 }
 
+/** A card-callback CALLBACK frame carrying an interactive-card button click. */
+function cardCallbackFrame(overrides: {
+	dataOverrides?: Record<string, unknown>;
+	frameMessageId?: string;
+} = {}): string {
+	const data = JSON.stringify({
+		outTrackId: "otid-1",
+		userId: "staff-9",
+		conversationId: "cid-1",
+		content: JSON.stringify({ cardPrivateData: { params: { command: "merge" } } }),
+		...overrides.dataOverrides,
+	});
+	return JSON.stringify({
+		specVersion: "1.0",
+		type: "CALLBACK",
+		headers: {
+			topic: "/v1.0/card/instances/callback",
+			messageId: overrides.frameMessageId ?? "cframe-1",
+			contentType: "application/json",
+		},
+		data,
+	});
+}
+
 /** Wait (flushing microtasks) until the socket at `index` has been created, then return it. */
 async function nextSocket(h: Harness, index: number): Promise<FakeSocket> {
 	for (let i = 0; i < 50 && !h.sockets[index]; i++) {
@@ -149,6 +173,67 @@ describe("DingtalkStreamConnector", () => {
 		const ack = JSON.parse(socket.sent.at(-1) as string);
 		expect(ack.code).toBe(200);
 		expect(ack.headers.messageId).toBe("frame-1");
+	});
+
+	it("decodes a card callback into a card_action event and acks the frame", async () => {
+		const h = makeHarness();
+		const socket = await connectToLive(h);
+
+		socket.handlers.onMessage(cardCallbackFrame());
+
+		expect(h.received).toHaveLength(1);
+		const event = h.received[0];
+		expect(event.kind).toBe("card_action");
+		if (event.kind !== "card_action") throw new Error("unreachable");
+		expect(event).toMatchObject({
+			platform: "dingtalk",
+			channelKey: "cid-1",
+			senderId: "staff-9",
+			action: { value: { command: "merge" } },
+			callbackToken: "otid-1",
+			cardRef: "otid-1",
+		});
+		// The dedup key is surfaced as the routing layer's message identity.
+		expect(event.messageId).toContain("otid-1");
+		const ack = JSON.parse(socket.sent.at(-1) as string);
+		expect(ack.code).toBe(200);
+		expect(ack.headers.messageId).toBe("cframe-1");
+	});
+
+	it("de-duplicates a redelivered card click with the same card/value key (emits once, acks both)", async () => {
+		const h = makeHarness();
+		const socket = await connectToLive(h);
+
+		socket.handlers.onMessage(cardCallbackFrame({ frameMessageId: "cframe-a" }));
+		socket.handlers.onMessage(cardCallbackFrame({ frameMessageId: "cframe-b" }));
+
+		expect(h.received).toHaveLength(1);
+		expect(socket.sent).toHaveLength(2);
+	});
+
+	it("treats distinct button values on the same card as distinct actions", async () => {
+		const h = makeHarness();
+		const socket = await connectToLive(h);
+
+		socket.handlers.onMessage(
+			cardCallbackFrame({ dataOverrides: { content: JSON.stringify({ cardPrivateData: { params: { c: "1" } } }) } }),
+		);
+		socket.handlers.onMessage(
+			cardCallbackFrame({ dataOverrides: { content: JSON.stringify({ cardPrivateData: { params: { c: "2" } } }) } }),
+		);
+
+		expect(h.received).toHaveLength(2);
+	});
+
+	it("acks but does not emit a malformed card callback (missing outTrackId)", async () => {
+		const h = makeHarness();
+		const socket = await connectToLive(h);
+
+		socket.handlers.onMessage(cardCallbackFrame({ dataOverrides: { outTrackId: undefined } }));
+
+		expect(h.received).toHaveLength(0);
+		const ack = JSON.parse(socket.sent.at(-1) as string);
+		expect(ack.code).toBe(200);
 	});
 
 	it("answers a ping with a 200 ack echoing the ping data, without emitting", async () => {

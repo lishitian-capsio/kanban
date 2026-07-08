@@ -14,7 +14,7 @@
  *
  * @see https://open.dingtalk.com/document/orgapp/stream
  */
-import type { ImInboundMessageEvent } from "../gateway/inbound-event";
+import type { ImInboundCardActionEvent, ImInboundMessageEvent } from "../gateway/inbound-event";
 import { DingtalkStreamCredentialFormatError } from "./errors";
 
 /** HTTP endpoint that mints a Stream WebSocket `endpoint` + `ticket` for an app credential. */
@@ -22,6 +22,15 @@ export const DINGTALK_STREAM_OPEN_ENDPOINT = "https://api.dingtalk.com/v1.0/gate
 
 /** CALLBACK topic carrying an inbound bot message (group or single chat). */
 export const DINGTALK_BOT_MESSAGE_TOPIC = "/v1.0/im/bot/messages/get";
+
+/**
+ * CALLBACK topic carrying an interactive-card / AI-card button callback (the Stream-mode equivalent
+ * of an ActionCard callback). The exact `data` field names below are doc-derived and marked for live
+ * verification; the decode is fully defensive so an unexpected shape is skipped, never thrown.
+ *
+ * @see https://open.dingtalk.com/document/orgapp/stream-mode-card-callback
+ */
+export const DINGTALK_CARD_CALLBACK_TOPIC = "/v1.0/card/instances/callback";
 
 /** SYSTEM topic: a keep-alive ping the client must echo back as a 200 ack. */
 export const DINGTALK_SYSTEM_PING_TOPIC = "ping";
@@ -70,6 +79,13 @@ export interface DecodedDingtalkMessage {
 	event: ImInboundMessageEvent;
 }
 
+/** A normalized card-action callback plus the key used to de-duplicate at-least-once redeliveries. */
+export interface DecodedDingtalkCardAction {
+	/** Stable per-interaction key `card:<outTrackId>:<serialized value>` for idempotent dedup. */
+	dedupKey: string;
+	event: ImInboundCardActionEvent;
+}
+
 /**
  * Parse `"<appKey>:<appSecret>"` out of the stored {@link ImOutboundCredential.botToken}. Splits on
  * the FIRST colon only (a secret containing a colon survives intact). Throws
@@ -96,7 +112,10 @@ export function buildDingtalkOpenRequest(
 	return {
 		clientId: credential.appKey,
 		clientSecret: credential.appSecret,
-		subscriptions: [{ type: "CALLBACK", topic: DINGTALK_BOT_MESSAGE_TOPIC }],
+		subscriptions: [
+			{ type: "CALLBACK", topic: DINGTALK_BOT_MESSAGE_TOPIC },
+			{ type: "CALLBACK", topic: DINGTALK_CARD_CALLBACK_TOPIC },
+		],
 		ua: options.ua ?? DINGTALK_STREAM_DEFAULT_UA,
 		localIp: options.localIp ?? "127.0.0.1",
 	};
@@ -143,6 +162,11 @@ export function isDingtalkDisconnectFrame(frame: DingtalkStreamFrame): boolean {
 /** True for a subscribed inbound bot-message frame. */
 export function isDingtalkBotMessageFrame(frame: DingtalkStreamFrame): boolean {
 	return frame.topic === DINGTALK_BOT_MESSAGE_TOPIC;
+}
+
+/** True for a subscribed interactive-card callback frame. */
+export function isDingtalkCardCallbackFrame(frame: DingtalkStreamFrame): boolean {
+	return frame.topic === DINGTALK_CARD_CALLBACK_TOPIC;
 }
 
 /**
@@ -208,5 +232,74 @@ export function decodeDingtalkBotMessage(dataJson: string): DecodedDingtalkMessa
 	return {
 		dedupKey,
 		event: { kind: "message", platform: "dingtalk", channelKey, text, senderId },
+	};
+}
+
+/**
+ * Extract an interactive-card action's carried value: prefer `content.cardPrivateData.params`, else
+ * the whole parsed `content` object, else `{}` (unparseable / absent). `content` may arrive as a JSON
+ * string or an already-parsed object depending on the frame.
+ */
+function extractDingtalkCardValue(content: unknown): Record<string, unknown> {
+	let parsed: unknown = content;
+	if (typeof content === "string") {
+		try {
+			parsed = JSON.parse(content);
+		} catch {
+			return {};
+		}
+	}
+	if (!isRecord(parsed)) {
+		return {};
+	}
+	const priv = parsed.cardPrivateData;
+	if (isRecord(priv) && isRecord(priv.params)) {
+		return priv.params;
+	}
+	return parsed;
+}
+
+/**
+ * Map a DingTalk card-callback `data` payload (the JSON string from a {@link DINGTALK_CARD_CALLBACK_TOPIC}
+ * frame) onto a normalized {@link ImInboundCardActionEvent}. Returns `null` — the caller still acks the
+ * frame — when the payload is unparseable, lacks the operator `userId`, or lacks the `outTrackId` (the
+ * card instance id, which serves as the card ref, the async-update token, and the dedup basis). Field
+ * names are doc-derived and marked for live verification (see {@link DINGTALK_CARD_CALLBACK_TOPIC}).
+ */
+export function decodeDingtalkCardAction(dataJson: string): DecodedDingtalkCardAction | null {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(dataJson);
+	} catch {
+		return null;
+	}
+	if (!isRecord(parsed)) {
+		return null;
+	}
+
+	const outTrackId = typeof parsed.outTrackId === "string" ? parsed.outTrackId.trim() : "";
+	const userId =
+		(typeof parsed.userId === "string" ? parsed.userId.trim() : "") ||
+		(typeof parsed.senderStaffId === "string" ? parsed.senderStaffId.trim() : "");
+	if (!outTrackId || !userId) {
+		return null;
+	}
+
+	const channelKey = typeof parsed.conversationId === "string" ? parsed.conversationId.trim() : "";
+	const value = extractDingtalkCardValue(parsed.content);
+
+	return {
+		// Key on the card instance + the action value so distinct buttons on one card are not collapsed,
+		// but a genuine at-least-once redelivery of the same click is.
+		dedupKey: `card:${outTrackId}:${JSON.stringify(value)}`,
+		event: {
+			kind: "card_action",
+			platform: "dingtalk",
+			channelKey,
+			senderId: userId,
+			action: { value },
+			callbackToken: outTrackId,
+			cardRef: outTrackId,
+		},
 	};
 }

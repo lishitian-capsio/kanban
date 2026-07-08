@@ -43,6 +43,52 @@ export function parseLarkInboundEventId(data: unknown): string | undefined {
 	return isRecord(data) ? asString(data.event_id) : undefined;
 }
 
+/** The neutral card interaction extracted from a `card.action.trigger` event (before the connector stamps it). */
+export interface NormalizedLarkCardAction {
+	/** The Lark `context.open_chat_id`; `""` when the event omitted the context. */
+	channelKey: string;
+	/** The operator's `open_id` (falling back to `union_id`, then `user_id`), or `""` when unknown. */
+	senderId: string;
+	/** The interacted element's carried value + tag. */
+	action: { value: Record<string, unknown>; tag?: string };
+	/** The event-level callback `token`, used to asynchronously update the card. */
+	callbackToken?: string;
+	/** The `context.open_message_id` — the card message to update in place. */
+	cardRef?: string;
+}
+
+/** Resolve the operator id from a card action's `operator`, preferring `open_id`, then `union_id`, then `user_id`. */
+function extractOperatorId(operator: unknown): string {
+	if (!isRecord(operator)) return "";
+	return asString(operator.open_id) ?? asString(operator.union_id) ?? asString(operator.user_id) ?? "";
+}
+
+/**
+ * Normalize a Lark `card.action.trigger` payload (header + event merged flat, as the base
+ * EventDispatcher delivers it) into a {@link NormalizedLarkCardAction}. Returns `null` (the event is
+ * skipped) when the payload is not a record or carries no `action` object. A tagged button that
+ * carried no business value is still a legitimate click, so an empty `value` is preserved, not skipped.
+ */
+export function normalizeLarkCardAction(data: unknown): NormalizedLarkCardAction | null {
+	if (!isRecord(data)) return null;
+	const action = data.action;
+	if (!isRecord(action)) return null;
+
+	const context = isRecord(data.context) ? data.context : {};
+	const value = isRecord(action.value) ? action.value : {};
+	const tag = asString(action.tag);
+	const callbackToken = asString(data.token);
+	const cardRef = asString(context.open_message_id);
+
+	return {
+		channelKey: asString(context.open_chat_id) ?? "",
+		senderId: extractOperatorId(data.operator),
+		action: { value, ...(tag !== undefined ? { tag } : {}) },
+		...(callbackToken !== undefined ? { callbackToken } : {}),
+		...(cardRef !== undefined ? { cardRef } : {}),
+	};
+}
+
 /** Resolve the sender id, preferring `open_id`, then `union_id`, then `user_id`. */
 function extractSenderId(sender: unknown): string {
 	if (!isRecord(sender)) return "";

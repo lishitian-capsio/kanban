@@ -4,10 +4,13 @@ import {
 	buildDingtalkAckFrame,
 	buildDingtalkOpenRequest,
 	decodeDingtalkBotMessage,
+	decodeDingtalkCardAction,
 	DINGTALK_BOT_MESSAGE_TOPIC,
+	DINGTALK_CARD_CALLBACK_TOPIC,
 	DINGTALK_SYSTEM_DISCONNECT_TOPIC,
 	DINGTALK_SYSTEM_PING_TOPIC,
 	isDingtalkBotMessageFrame,
+	isDingtalkCardCallbackFrame,
 	isDingtalkDisconnectFrame,
 	isDingtalkPingFrame,
 	parseDingtalkStreamCredential,
@@ -41,6 +44,11 @@ describe("buildDingtalkOpenRequest", () => {
 		expect(request.subscriptions).toContainEqual({ type: "CALLBACK", topic: DINGTALK_BOT_MESSAGE_TOPIC });
 		expect(request.ua).toBeTruthy();
 		expect(request.localIp).toBeTruthy();
+	});
+
+	it("also subscribes to the interactive-card callback topic", () => {
+		const request = buildDingtalkOpenRequest({ appKey: "ak", appSecret: "as" });
+		expect(request.subscriptions).toContainEqual({ type: "CALLBACK", topic: DINGTALK_CARD_CALLBACK_TOPIC });
 	});
 });
 
@@ -87,6 +95,11 @@ describe("frame classification", () => {
 	it("recognizes bot message frames", () => {
 		expect(isDingtalkBotMessageFrame(frame("CALLBACK", DINGTALK_BOT_MESSAGE_TOPIC))).toBe(true);
 		expect(isDingtalkBotMessageFrame(frame("SYSTEM", DINGTALK_SYSTEM_PING_TOPIC))).toBe(false);
+	});
+
+	it("recognizes card callback frames", () => {
+		expect(isDingtalkCardCallbackFrame(frame("CALLBACK", DINGTALK_CARD_CALLBACK_TOPIC))).toBe(true);
+		expect(isDingtalkCardCallbackFrame(frame("CALLBACK", DINGTALK_BOT_MESSAGE_TOPIC))).toBe(false);
 	});
 });
 
@@ -184,5 +197,80 @@ describe("decodeDingtalkBotMessage", () => {
 	it("returns null for a text message with an empty body", () => {
 		const data = JSON.stringify({ conversationId: "c", senderId: "s", msgtype: "text", text: { content: "   " }, msgId: "m" });
 		expect(decodeDingtalkBotMessage(data)).toBeNull();
+	});
+});
+
+describe("decodeDingtalkCardAction", () => {
+	function cardData(overrides: {
+		outTrackId?: string | null;
+		userId?: string | null;
+		conversationId?: string;
+		content?: unknown;
+	}): string {
+		const payload: Record<string, unknown> = {};
+		if (overrides.outTrackId !== null) payload.outTrackId = overrides.outTrackId ?? "card-instance-1";
+		if (overrides.userId !== null) payload.userId = overrides.userId ?? "staff-1";
+		if (overrides.conversationId !== undefined) payload.conversationId = overrides.conversationId;
+		payload.content =
+			overrides.content !== undefined
+				? overrides.content
+				: JSON.stringify({ cardPrivateData: { params: { command: "merge" } } });
+		return JSON.stringify(payload);
+	}
+
+	it("maps a card callback to a normalized card_action event", () => {
+		const decoded = decodeDingtalkCardAction(
+			cardData({
+				outTrackId: "otid-1",
+				userId: "staff-9",
+				conversationId: "cidGroup",
+				content: JSON.stringify({ cardPrivateData: { params: { command: "merge", taskId: "t1" } } }),
+			}),
+		);
+		expect(decoded?.event).toEqual({
+			kind: "card_action",
+			platform: "dingtalk",
+			channelKey: "cidGroup",
+			senderId: "staff-9",
+			action: { value: { command: "merge", taskId: "t1" } },
+			callbackToken: "otid-1",
+			cardRef: "otid-1",
+		});
+		expect(decoded?.dedupKey).toContain("otid-1");
+	});
+
+	it("produces a stable dedupKey per interaction and distinct keys for distinct button values", () => {
+		const a1 = decodeDingtalkCardAction(cardData({ content: JSON.stringify({ cardPrivateData: { params: { b: "1" } } }) }));
+		const a2 = decodeDingtalkCardAction(cardData({ content: JSON.stringify({ cardPrivateData: { params: { b: "1" } } }) }));
+		const b = decodeDingtalkCardAction(cardData({ content: JSON.stringify({ cardPrivateData: { params: { b: "2" } } }) }));
+		expect(a1?.dedupKey).toBe(a2?.dedupKey);
+		expect(a1?.dedupKey).not.toBe(b?.dedupKey);
+	});
+
+	it("falls back to the whole parsed content when it carries no cardPrivateData.params wrapper", () => {
+		const decoded = decodeDingtalkCardAction(cardData({ content: JSON.stringify({ command: "reject" }) }));
+		expect(decoded?.event.action.value).toEqual({ command: "reject" });
+	});
+
+	it("stays deliverable with an empty value when content is unparseable", () => {
+		const decoded = decodeDingtalkCardAction(cardData({ content: "not json" }));
+		expect(decoded?.event.action.value).toEqual({});
+		expect(decoded?.event.callbackToken).toBe("card-instance-1");
+	});
+
+	it("leaves channelKey empty when the callback omits a conversationId", () => {
+		expect(decodeDingtalkCardAction(cardData({}))?.event.channelKey).toBe("");
+	});
+
+	it("returns null when the operator userId is missing", () => {
+		expect(decodeDingtalkCardAction(cardData({ userId: null }))).toBeNull();
+	});
+
+	it("returns null when the outTrackId is missing", () => {
+		expect(decodeDingtalkCardAction(cardData({ outTrackId: null }))).toBeNull();
+	});
+
+	it("returns null for non-JSON data", () => {
+		expect(decodeDingtalkCardAction("not json")).toBeNull();
 	});
 });
