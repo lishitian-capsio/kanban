@@ -167,10 +167,20 @@
       "titleSource": "auto",
       "createdAt": 1783408256212,
       "updatedAt": 1783408256212
+    },
+    {
+      "id": "df264927-5d75-4334-bc01-b1c953f76973",
+      "agentId": "claude",
+      "name": "现在ai的知识库系统感觉真的可以做到很好了",
+      "titleSource": "auto",
+      "createdAt": 1783500254982,
+      "updatedAt": 1783500254982
     }
   ],
   "fullscreenTabs": {
-    "openThreadIds": [],
-    "activeThreadId": null
+    "openThreadIds": [
+      "df264927-5d75-4334-bc01-b1c953f76973"
+    ],
+    "activeThreadId": "df264927-5d75-4334-bc01-b1c953f76973"
   }
 }
