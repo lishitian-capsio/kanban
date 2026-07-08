@@ -3,18 +3,10 @@
     {
       "platform": "lark",
       "chatId": "oc_4c1e97916edbd5b86a943139befd71ad",
-      "displayName": "",
+      "displayName": "Technology.Result",
       "source": "manual",
-      "createdAt": 1783407622125,
-      "updatedAt": 1783407622125
-    },
-    {
-      "platform": "lark",
-      "chatId": "oc_9e7fed0fdf7dbe951156aa1772935588",
-      "displayName": "",
-      "source": "inbound",
-      "createdAt": 1783411328098,
-      "updatedAt": 1783411328098
+      "createdAt": 1783476817411,
+      "updatedAt": 1783476817411
     }
   ]
 }

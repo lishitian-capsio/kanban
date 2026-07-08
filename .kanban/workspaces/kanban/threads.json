@@ -176,13 +176,26 @@
       "titleSource": "auto",
       "createdAt": 1783408256212,
       "updatedAt": 1783408256212
+    },
+    {
+      "id": "fb3c3970-c615-4b26-a64a-0b1c632057c2",
+      "agentId": "claude",
+      "name": "ok",
+      "titleSource": "auto",
+      "createdAt": 1783476831018,
+      "updatedAt": 1783476831112,
+      "imChannel": {
+        "platform": "lark",
+        "chatId": "oc_4c1e97916edbd5b86a943139befd71ad"
+      }
     }
   ],
   "fullscreenTabs": {
     "openThreadIds": [
       "9ed2b30b-108d-4520-babc-c313e0d7dbd8",
-      "be8da62b-73a2-48bf-99f8-7aa66272411b"
+      "be8da62b-73a2-48bf-99f8-7aa66272411b",
+      "fb3c3970-c615-4b26-a64a-0b1c632057c2"
     ],
-    "activeThreadId": null
+    "activeThreadId": "fb3c3970-c615-4b26-a64a-0b1c632057c2"
   }
 }
