@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { imChannelTargetSchema, imOutboundCredentialSchema, imPlatformSchema } from "../im/types.js";
 import { resolveTaskTitle } from "./task-title.js";
 
 export const runtimeWorkspaceFileStatusSchema = z.enum([
@@ -331,11 +330,6 @@ export const runtimeHomeChatThreadSchema = z.object({
 	// it, and it is cleared when the user sends a message in the thread (the agent's next turn).
 	// Optional + nullable so existing persisted threads (no field) load cleanly.
 	pendingNextStep: z.string().nullable().optional(),
-	// The IM channel this thread is bound to, so outbound notifications can be delivered to it
-	// (requirement ac99c). The binding descriptor is the platform-agnostic `ImChannelTarget`
-	// from the IM abstraction (T1). Optional + nullable so existing persisted threads (no field)
-	// load unchanged and behave exactly as before when unbound; `unbind` sets it back to `null`.
-	imChannel: imChannelTargetSchema.nullable().optional(),
 });
 export type RuntimeHomeChatThread = z.infer<typeof runtimeHomeChatThreadSchema>;
 
@@ -355,12 +349,6 @@ export const runtimeHomeChatThreadsDataSchema = z.object({
 	threads: z.array(runtimeHomeChatThreadSchema).default([]),
 	// Optional so existing `threads.json` (no field) loads cleanly as "no tabs persisted yet".
 	fullscreenTabs: runtimeHomeChatFullscreenTabsSchema.optional(),
-	// The IM channel the workspace's SINGLE embedded Pi conversation (decision X1) is bound to
-	// (requirement ac99c). Pi is not modeled as a home thread — it is one dedicated in-process
-	// conversation per workspace — so its binding lives here at the doc level rather than on a
-	// `threads[]` entry, keeping Pi out of the multi-thread UI while still making it a bindable
-	// IM target. Optional + nullable so existing docs load unchanged and unbind sets it to `null`.
-	piImChannel: imChannelTargetSchema.nullable().optional(),
 });
 export type RuntimeHomeChatThreadsData = z.infer<typeof runtimeHomeChatThreadsDataSchema>;
 
@@ -427,38 +415,7 @@ export const runtimeHomeChatThreadSetNextStepRequestSchema = z.object({
 });
 export type RuntimeHomeChatThreadSetNextStepRequest = z.infer<typeof runtimeHomeChatThreadSetNextStepRequestSchema>;
 
-// Bind a thread to an IM channel (requirement ac99c). Reuses the platform-agnostic
-// `ImChannelTarget` descriptor from the IM abstraction (T1) verbatim.
-export const runtimeHomeChatThreadBindImChannelRequestSchema = z.object({
-	id: z.string(),
-	channel: imChannelTargetSchema,
-});
-export type RuntimeHomeChatThreadBindImChannelRequest = z.infer<typeof runtimeHomeChatThreadBindImChannelRequestSchema>;
-
-// Unbind / query a thread's IM channel — both are keyed on the thread id alone.
-export const runtimeHomeChatThreadImChannelIdRequestSchema = z.object({
-	id: z.string(),
-});
-export type RuntimeHomeChatThreadImChannelIdRequest = z.infer<typeof runtimeHomeChatThreadImChannelIdRequestSchema>;
-
-// Query response: the thread's current IM channel binding, or `null` when unbound / unknown.
-export const runtimeHomeChatThreadImChannelResponseSchema = z.object({
-	ok: z.boolean(),
-	imChannel: imChannelTargetSchema.nullable(),
-	error: z.string().optional(),
-});
-export type RuntimeHomeChatThreadImChannelResponse = z.infer<typeof runtimeHomeChatThreadImChannelResponseSchema>;
-
-// Bind the workspace's single embedded Pi conversation (decision X1) to an IM channel (requirement
-// ac99c). Unlike a thread bind there is no `id` — Pi is a per-workspace singleton, so the workspace
-// scope alone identifies it. Unbind/query take no body (the scope is the key). The query reuses
-// {@link runtimeHomeChatThreadImChannelResponseSchema} above (the shape is identical).
-export const runtimePiImChannelBindRequestSchema = z.object({
-	channel: imChannelTargetSchema,
-});
-export type RuntimePiImChannelBindRequest = z.infer<typeof runtimePiImChannelBindRequestSchema>;
-
-// Shared by create/rename/close/bind/unbind — each returns the affected thread (close → the removed thread).
+// Shared by create/rename/close — each returns the affected thread (close → the removed thread).
 export const runtimeHomeChatThreadMutationResponseSchema = z.object({
 	ok: z.boolean(),
 	thread: runtimeHomeChatThreadSchema.nullable(),
@@ -478,75 +435,6 @@ export const runtimeHomeChatFullscreenTabsResponseSchema = z.object({
 	error: z.string().optional(),
 });
 export type RuntimeHomeChatFullscreenTabsResponse = z.infer<typeof runtimeHomeChatFullscreenTabsResponseSchema>;
-
-// ---------------------------------------------------------------------------
-// IM 会话 id 列表 (requirement ac99c, 阶段2 task ⑤)
-//
-// The per-workspace palette of bindable IM chats (飞书 Lark / 钉钉 DingTalk). A home
-// chat thread's `imChannel` binding (above) points at one of these entries. Two
-// population sources feed the list:
-//   - "manual"  — a user adds a chat by platform + native chat id;
-//   - "inbound" — a chat that @'d the bot is auto-recorded from a gateway inbound
-//                 event (see the IM gateway seam) so it becomes bindable without
-//                 the user hand-copying the platform-native id.
-// The identity of an entry is the (platform, chatId) pair; `displayName` is mutable
-// label metadata. Persisted with the workspace's board data (sibling of
-// `threads.json`), so the bindable palette travels with the board like the bindings.
-// ---------------------------------------------------------------------------
-
-export const runtimeImChatSourceSchema = z.enum(["manual", "inbound"]);
-export type RuntimeImChatSource = z.infer<typeof runtimeImChatSourceSchema>;
-
-export const runtimeImChatSchema = z.object({
-	platform: imPlatformSchema,
-	// The platform-native chat / conversation identifier (Lark `chat_id`, DingTalk `conversationId`).
-	chatId: z.string().min(1),
-	// A human-friendly label shown in the bindable list. Empty when unknown (an inbound-discovered
-	// chat carries no name yet); the UI falls back to the chatId.
-	displayName: z.string().default(""),
-	// How the entry entered the list. An `inbound` auto-record never overwrites a `manual` entry.
-	source: runtimeImChatSourceSchema.default("manual"),
-	createdAt: z.number(),
-	updatedAt: z.number(),
-});
-export type RuntimeImChat = z.infer<typeof runtimeImChatSchema>;
-
-export const runtimeImChatsDataSchema = z.object({
-	chats: z.array(runtimeImChatSchema).default([]),
-});
-export type RuntimeImChatsData = z.infer<typeof runtimeImChatsDataSchema>;
-
-// List (查) response — the full bindable palette for the workspace.
-export const runtimeImChatListResponseSchema = z.object({
-	ok: z.boolean(),
-	chats: z.array(runtimeImChatSchema),
-	error: z.string().optional(),
-});
-export type RuntimeImChatListResponse = z.infer<typeof runtimeImChatListResponseSchema>;
-
-// Manual add (增) — upserts by (platform, chatId): a re-add updates the display name (when a new
-// one is supplied) and marks the entry `manual`. `displayName` is optional.
-export const runtimeImChatAddRequestSchema = z.object({
-	platform: imPlatformSchema,
-	chatId: z.string().min(1),
-	displayName: z.string().optional(),
-});
-export type RuntimeImChatAddRequest = z.infer<typeof runtimeImChatAddRequestSchema>;
-
-// Remove (删) — keyed on the (platform, chatId) identity.
-export const runtimeImChatRemoveRequestSchema = z.object({
-	platform: imPlatformSchema,
-	chatId: z.string().min(1),
-});
-export type RuntimeImChatRemoveRequest = z.infer<typeof runtimeImChatRemoveRequestSchema>;
-
-// Shared add/remove response — carries the affected entry (remove → the removed entry).
-export const runtimeImChatMutationResponseSchema = z.object({
-	ok: z.boolean(),
-	chat: runtimeImChatSchema.nullable(),
-	error: z.string().optional(),
-});
-export type RuntimeImChatMutationResponse = z.infer<typeof runtimeImChatMutationResponseSchema>;
 
 // ---------------------------------------------------------------------------
 // Files library
@@ -1395,52 +1283,6 @@ export const runtimeGiteeLogoutResponseSchema = z.object({
 	status: runtimeGiteeAuthStatusSchema,
 });
 export type RuntimeGiteeLogoutResponse = z.infer<typeof runtimeGiteeLogoutResponseSchema>;
-
-/**
- * IM outbound-channel credentials contract (requirement ac99c, 阶段2). Machine-global (no
- * workspace scope). The credential VALUES (bot tokens / webhook URLs / signing secrets) are
- * NEVER carried over the wire on read — only the secret-free per-platform status crosses it
- * (`configured` + presence booleans). Mirrors the gitee/github git-auth contracts.
- */
-export const runtimeImCredentialPlatformStatusSchema = z.object({
-	platform: imPlatformSchema,
-	/** Whether this platform has any stored outbound credential. */
-	configured: z.boolean(),
-	/** Presence flags only — never the secret values. */
-	hasBotToken: z.boolean(),
-	hasWebhookUrl: z.boolean(),
-	hasWebhookSecret: z.boolean(),
-});
-export type RuntimeImCredentialPlatformStatus = z.infer<typeof runtimeImCredentialPlatformStatusSchema>;
-
-/** The full secret-free IM credential status: one entry per supported platform. */
-export const runtimeImCredentialStatusResponseSchema = z.object({
-	platforms: z.array(runtimeImCredentialPlatformStatusSchema),
-});
-export type RuntimeImCredentialStatusResponse = z.infer<typeof runtimeImCredentialStatusResponseSchema>;
-
-/** `im.setCredentials` input: the target platform plus its outbound credential (token / webhook). */
-export const runtimeImSetCredentialsRequestSchema = z.object({
-	platform: imPlatformSchema,
-	credential: imOutboundCredentialSchema,
-});
-export type RuntimeImSetCredentialsRequest = z.infer<typeof runtimeImSetCredentialsRequestSchema>;
-
-export const runtimeImSetCredentialsResponseSchema = z.object({
-	status: runtimeImCredentialStatusResponseSchema,
-});
-export type RuntimeImSetCredentialsResponse = z.infer<typeof runtimeImSetCredentialsResponseSchema>;
-
-/** `im.clearCredentials` input: which platform's credential to remove. */
-export const runtimeImClearCredentialsRequestSchema = z.object({
-	platform: imPlatformSchema,
-});
-export type RuntimeImClearCredentialsRequest = z.infer<typeof runtimeImClearCredentialsRequestSchema>;
-
-export const runtimeImClearCredentialsResponseSchema = z.object({
-	status: runtimeImCredentialStatusResponseSchema,
-});
-export type RuntimeImClearCredentialsResponse = z.infer<typeof runtimeImClearCredentialsResponseSchema>;
 
 export const runtimeBoardAutoSyncRequestSchema = z.object({
 	paused: z.boolean(),
