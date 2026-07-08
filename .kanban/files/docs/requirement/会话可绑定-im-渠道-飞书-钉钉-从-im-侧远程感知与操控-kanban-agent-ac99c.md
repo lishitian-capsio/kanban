@@ -2,9 +2,9 @@
 _id: ac99c
 type: requirement
 _created: 1783323546359
-_updated: 1783412410566
+_updated: 1783477495511
 priority: medium
-status: clarified
+status: parked
 title: 会话可绑定 IM 渠道（飞书 / 钉钉），从 IM 侧远程感知与操控 Kanban agent
 ---
 ## 谁受影响
