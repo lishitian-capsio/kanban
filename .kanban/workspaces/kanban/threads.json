@@ -171,10 +171,11 @@
     {
       "id": "df264927-5d75-4334-bc01-b1c953f76973",
       "agentId": "claude",
-      "name": "现在ai的知识库系统感觉真的可以做到很好了",
+      "name": "三层知识库 POC 记录",
       "titleSource": "auto",
       "createdAt": 1783500254982,
-      "updatedAt": 1783500254982
+      "updatedAt": 1783500305880,
+      "pendingNextStep": "把这套三层知识库 POC 拆成 Kanban 任务并排好依赖"
     }
   ],
   "fullscreenTabs": {
