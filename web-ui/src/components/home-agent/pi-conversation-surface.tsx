@@ -14,7 +14,6 @@
 // subagents are spawn-and-forget child runs). All runtime-store subscriptions live in this
 // leaf fiber so streaming tokens re-render only this surface.
 import { createHomeAgentSessionId } from "@runtime-home-agent-session";
-import { Radio } from "lucide-react";
 import type { ReactElement } from "react";
 import { useCallback, useMemo, useState } from "react";
 
@@ -22,13 +21,9 @@ import { SessionProviderControl } from "@/components/agent-providers/session-pro
 import { KanbanAgentChatPanel } from "@/components/detail-panels/kanban-agent-chat-panel";
 import { AgentAvatar, resolveAgentLabel } from "@/components/home-agent/agent-icon";
 import { SubagentsRail } from "@/components/home-agent/subagents-rail";
-import { ImChannelBindDialog } from "@/components/im/im-channel-bind-dialog";
-import { cn } from "@/components/ui/cn";
-import { Tooltip } from "@/components/ui/tooltip";
 import { createIdleTaskSession } from "@/hooks/app-utils";
 import { selectNewestTaskSessionSummary } from "@/hooks/home-sidebar-agent-panel-session-summary";
 import { useKanbanChatRuntimeActions } from "@/hooks/use-kanban-chat-runtime-actions";
-import { usePiImChannel } from "@/hooks/use-pi-im-channel";
 import { useReloadPiSessionOnContextBump } from "@/hooks/use-reload-pi-session-on-context-bump";
 import {
 	useLatestTaskChatMessageForTask,
@@ -92,10 +87,6 @@ export function PiConversationSurface({
 	// Optimistic parent summary from send/reload results, merged with the broadcast store.
 	const [localParentSummary, setLocalParentSummary] = useState<RuntimeTaskSessionSummary | null>(null);
 	const [providerOverride, setProviderOverride] = useState<string | null>(null);
-	const [imBindOpen, setImBindOpen] = useState(false);
-	// Pi's single conversation (decision X1) is a bindable IM target (requirement ac99c). The
-	// binding is doc-level (not a thread), so it has its own hook rather than the thread registry.
-	const piImChannel = usePiImChannel(currentProjectId);
 
 	const kanbanSessionContextVersion = useRuntimeKanbanSessionContextVersion();
 	const storeParentSummary = useTaskSessionSummary(parentTaskId);
@@ -176,19 +167,6 @@ export function PiConversationSurface({
 				selectedProviderId={providerOverride}
 				onSelectProvider={setProviderOverride}
 			/>
-			<Tooltip content={piImChannel.imChannel ? "IM 已绑定 · 点击管理" : "绑定 IM 频道"}>
-				<button
-					type="button"
-					aria-label="绑定 IM"
-					className={cn(
-						"shrink-0 cursor-pointer rounded-sm p-1 hover:bg-surface-4 hover:text-text-primary",
-						piImChannel.imChannel ? "text-accent" : "text-text-tertiary",
-					)}
-					onClick={() => setImBindOpen(true)}
-				>
-					<Radio size={14} />
-				</button>
-			</Tooltip>
 		</div>
 	);
 
@@ -222,19 +200,6 @@ export function PiConversationSurface({
 				selectedSubagentId={selectedSubagent ? selectedSubagentId : null}
 				onSelect={setSelectedSubagentId}
 				orientation={orientation}
-			/>
-			<ImChannelBindDialog
-				open={imBindOpen}
-				current={piImChannel.imChannel}
-				title="绑定 Pi 到 IM 频道"
-				workspaceId={currentProjectId}
-				onOpenChange={setImBindOpen}
-				onBind={async (channel) => {
-					await piImChannel.bind(channel);
-				}}
-				onUnbind={async () => {
-					await piImChannel.unbind();
-				}}
 			/>
 		</div>
 	);

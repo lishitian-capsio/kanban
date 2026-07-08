@@ -110,8 +110,6 @@ export function HomeSidebarAgentPanel({
 								onCreateThread={homeThreads.createThread}
 								onRenameThread={homeThreads.renameThread}
 								onCloseThread={homeThreads.closeThread}
-								onBindThreadImChannel={homeThreads.bindThreadImChannel}
-								onUnbindThreadImChannel={homeThreads.unbindThreadImChannel}
 							/>
 						</div>
 					</div>

@@ -28,36 +28,8 @@ import {
 } from "@/components/home-agent/home-fullscreen-tabs";
 import { isNativeAgentSelected } from "@/runtime/native-agent";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
-import type {
-	RuntimeAgentId,
-	RuntimeConfigResponse,
-	RuntimeHomeChatThread,
-	RuntimeHomeChatThreadBindImChannelRequest,
-} from "@/runtime/types";
+import type { RuntimeAgentId, RuntimeConfigResponse, RuntimeHomeChatThread } from "@/runtime/types";
 import type { TaskImage } from "@/types";
-
-type ImChannelTarget = RuntimeHomeChatThreadBindImChannelRequest["channel"];
-
-function sameImChannel(a: ImChannelTarget, b: ImChannelTarget): boolean {
-	return a.platform === b.platform && a.chatId === b.chatId;
-}
-
-/**
- * One-to-one local mirror of the backend's exclusive bind: after a thread binds `channel`,
- * clear that same channel off every OTHER thread in the list so the UI matches the server
- * (an IM chat maps to at most one thread — requirement ac99c, 159ab). Returns a new array.
- */
-function clearImChannelFromOtherThreads(
-	list: RuntimeHomeChatThread[],
-	boundThreadId: string,
-	channel: ImChannelTarget,
-): RuntimeHomeChatThread[] {
-	return list.map((thread) =>
-		thread.id !== boundThreadId && thread.imChannel && sameImChannel(thread.imChannel, channel)
-			? { ...thread, imChannel: null }
-			: thread,
-	);
-}
 
 const DEFAULT_THREAD_NAME = "Default";
 const EMPTY_FULLSCREEN_TABS: FullscreenTabsState = { openThreadIds: [], activeThreadId: null };
@@ -95,15 +67,9 @@ export interface UseHomeThreadsResult {
 		name?: string;
 		agentId: RuntimeAgentId;
 		images?: TaskImage[];
-		/** Optional IM channel to bind to the new thread (best-effort, after create). */
-		imChannel?: ImChannelTarget | null;
 	}) => Promise<string | null>;
 	renameThread: (threadId: string, name: string) => Promise<void>;
 	closeThread: (threadId: string) => Promise<void>;
-	/** Bind an IM channel to an existing thread (no-op for the synthetic default). */
-	bindThreadImChannel: (threadId: string, channel: ImChannelTarget) => Promise<void>;
-	/** Remove a thread's IM channel binding. */
-	unbindThreadImChannel: (threadId: string) => Promise<void>;
 	/**
 	 * Optimistically clear a thread's pending next-step suggestion locally (drop the chip the
 	 * instant the user sends a message). The runtime also clears it server-side on send and
@@ -283,7 +249,6 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 			name,
 			agentId,
 			images,
-			imChannel,
 		}: {
 			/**
 			 * Optional client-generated thread id. The create dialog mints it up front so
@@ -295,7 +260,6 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 			name?: string;
 			agentId: RuntimeAgentId;
 			images?: TaskImage[];
-			imChannel?: ImChannelTarget | null;
 		}): Promise<string | null> => {
 			if (!currentProjectId) {
 				return null;
@@ -316,33 +280,10 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 				if (!response.ok || !response.thread) {
 					throw new Error(response.error ?? "Could not create home chat thread.");
 				}
-				const created = response.thread;
-				let finalThread = created;
-				// Best-effort bind AFTER create — keeps T4's createHomeThread contract untouched.
-				// A bind failure never fails the create: the thread exists (rebind via kebab).
-				// Both resolved {ok:false} and thrown errors are caught here so neither shape
-				// rolls back the create (spec: "绑定失败不回滚会话创建").
-				if (imChannel) {
-					try {
-						const bindResponse = await getRuntimeTrpcClient(
-							currentProjectId,
-						).runtime.bindHomeThreadImChannel.mutate({ id: created.id, channel: imChannel });
-						if (bindResponse.ok && bindResponse.thread) {
-							finalThread = bindResponse.thread;
-						} else {
-							notifyError(bindResponse.error ?? "Could not bind IM channel.");
-						}
-					} catch (error) {
-						notifyError(error instanceof Error ? error.message : String(error));
-					}
-				}
+				const finalThread = response.thread;
 				setRegistryThreadsByWorkspace((current) => {
 					const existing = current[currentProjectId] ?? [];
-					// One-to-one: if the new thread adopted a channel another thread held, drop it there.
-					const reconciled = finalThread.imChannel
-						? clearImChannelFromOtherThreads(existing, finalThread.id, finalThread.imChannel)
-						: existing;
-					return { ...current, [currentProjectId]: [...reconciled, finalThread] };
+					return { ...current, [currentProjectId]: [...existing, finalThread] };
 				});
 				setActiveThreadIdByWorkspace((current) => ({ ...current, [currentProjectId]: finalThread.id }));
 				return finalThread.id;
@@ -464,64 +405,6 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		[currentProjectId],
 	);
 
-	const bindThreadImChannel = useCallback(
-		async (threadId: string, channel: ImChannelTarget) => {
-			if (!currentProjectId || threadId === DEFAULT_HOME_THREAD_ID) {
-				return;
-			}
-			try {
-				const response = await getRuntimeTrpcClient(currentProjectId).runtime.bindHomeThreadImChannel.mutate({
-					id: threadId,
-					channel,
-				});
-				if (!response.ok || !response.thread) {
-					throw new Error(response.error ?? "Could not bind IM channel.");
-				}
-				const bound = response.thread;
-				setRegistryThreadsByWorkspace((current) => {
-					const updated = (current[currentProjectId] ?? []).map((thread) =>
-						thread.id === bound.id ? bound : thread,
-					);
-					// One-to-one: mirror the backend's exclusive bind by clearing the same channel
-					// off any other thread that held it (so the old thread's chip drops immediately).
-					const reconciled = bound.imChannel
-						? clearImChannelFromOtherThreads(updated, bound.id, bound.imChannel)
-						: updated;
-					return { ...current, [currentProjectId]: reconciled };
-				});
-			} catch (error) {
-				notifyError(error instanceof Error ? error.message : String(error));
-			}
-		},
-		[currentProjectId],
-	);
-
-	const unbindThreadImChannel = useCallback(
-		async (threadId: string) => {
-			if (!currentProjectId || threadId === DEFAULT_HOME_THREAD_ID) {
-				return;
-			}
-			try {
-				const response = await getRuntimeTrpcClient(currentProjectId).runtime.unbindHomeThreadImChannel.mutate({
-					id: threadId,
-				});
-				if (!response.ok || !response.thread) {
-					throw new Error(response.error ?? "Could not unbind IM channel.");
-				}
-				const unbound = response.thread;
-				setRegistryThreadsByWorkspace((current) => ({
-					...current,
-					[currentProjectId]: (current[currentProjectId] ?? []).map((thread) =>
-						thread.id === unbound.id ? unbound : thread,
-					),
-				}));
-			} catch (error) {
-				notifyError(error instanceof Error ? error.message : String(error));
-			}
-		},
-		[currentProjectId],
-	);
-
 	const fullscreenTabs = currentProjectId
 		? (fullscreenTabsByWorkspace[currentProjectId] ?? EMPTY_FULLSCREEN_TABS)
 		: EMPTY_FULLSCREEN_TABS;
@@ -585,8 +468,6 @@ export function useHomeThreads({ currentProjectId, runtimeProjectConfig }: UseHo
 		createThread,
 		renameThread,
 		closeThread,
-		bindThreadImChannel,
-		unbindThreadImChannel,
 		clearNextStep,
 		refresh,
 		isLoading: loadingWorkspaceId !== null && loadingWorkspaceId === currentProjectId,

@@ -10,7 +10,6 @@ const listHomeThreadsQueryMock = vi.hoisted(() => vi.fn());
 const createHomeThreadMutateMock = vi.hoisted(() => vi.fn());
 const renameHomeThreadMutateMock = vi.hoisted(() => vi.fn());
 const closeHomeThreadMutateMock = vi.hoisted(() => vi.fn());
-const bindHomeThreadImChannelMutateMock = vi.hoisted(() => vi.fn());
 const setHomeFullscreenTabsMutateMock = vi.hoisted(() => vi.fn());
 const notifyErrorMock = vi.hoisted(() => vi.fn());
 
@@ -21,7 +20,6 @@ vi.mock("@/runtime/trpc-client", () => ({
 			createHomeThread: { mutate: (input: object) => createHomeThreadMutateMock(input) },
 			renameHomeThread: { mutate: (input: object) => renameHomeThreadMutateMock(input) },
 			closeHomeThread: { mutate: (input: object) => closeHomeThreadMutateMock(input) },
-			bindHomeThreadImChannel: { mutate: (input: object) => bindHomeThreadImChannelMutateMock(input) },
 			setHomeFullscreenTabs: { mutate: (input: object) => setHomeFullscreenTabsMutateMock(input) },
 		},
 	}),
@@ -118,7 +116,6 @@ describe("useHomeThreads", () => {
 		createHomeThreadMutateMock.mockReset();
 		renameHomeThreadMutateMock.mockReset();
 		closeHomeThreadMutateMock.mockReset();
-		bindHomeThreadImChannelMutateMock.mockReset();
 		setHomeFullscreenTabsMutateMock.mockReset();
 		notifyErrorMock.mockReset();
 		listHomeThreadsQueryMock.mockResolvedValue({ ok: true, threads: [] });
@@ -474,44 +471,6 @@ describe("useHomeThreads", () => {
 			openThreadIds: ["thread-1"],
 			activeThreadId: "thread-1",
 		});
-	});
-
-	it("a thrown bind error does not fail the create (spec: 绑定失败不回滚会话创建)", async () => {
-		// Regression: before FIX 1 the bind call was inside the outer try/catch, so a
-		// thrown error (network/500) escaped, skipped the local insert, and returned null.
-		const created = createThread({ id: "t-new", name: "n", titleSource: "auto" });
-		createHomeThreadMutateMock.mockResolvedValue({ ok: true, thread: created });
-		bindHomeThreadImChannelMutateMock.mockRejectedValue(new Error("network"));
-		let latest: UseHomeThreadsResult | null = null;
-
-		await act(async () => {
-			root.render(
-				<Harness
-					onResult={(result) => {
-						latest = result;
-					}}
-				/>,
-			);
-			await flushPromises();
-		});
-
-		let returnedId: string | null = "not-called";
-		await act(async () => {
-			returnedId = await (latest as unknown as UseHomeThreadsResult).createThread({
-				description: "hi",
-				agentId: "claude",
-				imChannel: { platform: "lark", chatId: "oc_x" },
-			});
-			await flushPromises();
-		});
-
-		// Create must succeed despite the thrown bind error.
-		expect(returnedId).toBe("t-new");
-		// The thread is inserted into the local list.
-		const result = latest as unknown as UseHomeThreadsResult;
-		expect(result.threads.map((t) => t.id)).toContain("t-new");
-		// The bind error is surfaced via notifyError, not swallowed silently.
-		expect(notifyErrorMock).toHaveBeenCalledWith("network");
 	});
 
 	it("prunes a hard-closed thread from the tab set without an extra persist", async () => {

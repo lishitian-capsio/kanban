@@ -9,21 +9,13 @@ import type { RuntimeAgentDefinition } from "@/runtime/types";
 // The prompt composer reaches for the runtime tRPC client to power its `@` file
 // mentions and `/` slash commands. Hoist mockable query fns so each test can
 // drive the completion data sources without a live runtime.
-const {
-	searchFilesMock,
-	getKanbanSlashCommandsMock,
-	writeWorkspaceAttachmentMock,
-	deleteWorkspaceAttachmentScopeMock,
-	listImChatsMock,
-	addImChatMock,
-} = vi.hoisted(() => ({
-	searchFilesMock: vi.fn(),
-	getKanbanSlashCommandsMock: vi.fn(),
-	writeWorkspaceAttachmentMock: vi.fn(),
-	deleteWorkspaceAttachmentScopeMock: vi.fn(),
-	listImChatsMock: vi.fn(),
-	addImChatMock: vi.fn(),
-}));
+const { searchFilesMock, getKanbanSlashCommandsMock, writeWorkspaceAttachmentMock, deleteWorkspaceAttachmentScopeMock } =
+	vi.hoisted(() => ({
+		searchFilesMock: vi.fn(),
+		getKanbanSlashCommandsMock: vi.fn(),
+		writeWorkspaceAttachmentMock: vi.fn(),
+		deleteWorkspaceAttachmentScopeMock: vi.fn(),
+	}));
 
 vi.mock("@/runtime/trpc-client", () => ({
 	getRuntimeTrpcClient: () => ({
@@ -32,8 +24,6 @@ vi.mock("@/runtime/trpc-client", () => ({
 			getKanbanSlashCommands: { query: getKanbanSlashCommandsMock },
 			writeWorkspaceAttachment: { mutate: writeWorkspaceAttachmentMock },
 			deleteWorkspaceAttachmentScope: { mutate: deleteWorkspaceAttachmentScopeMock },
-			listImChats: { query: listImChatsMock },
-			addImChat: { mutate: addImChatMock },
 		},
 	}),
 }));
@@ -111,11 +101,6 @@ describe("HomeThreadCreateDialog", () => {
 		getKanbanSlashCommandsMock.mockResolvedValue({ commands: [] });
 		writeWorkspaceAttachmentMock.mockResolvedValue({ ok: true, path: "/repo/.kanban/attachments/abc.txt" });
 		deleteWorkspaceAttachmentScopeMock.mockResolvedValue({ ok: true });
-		listImChatsMock.mockResolvedValue({ ok: true, chats: [] });
-		addImChatMock.mockResolvedValue({
-			ok: true,
-			chat: { platform: "lark", chatId: "oc_team", displayName: "", source: "manual", createdAt: 1, updatedAt: 1 },
-		});
 	});
 
 	afterEach(() => {
@@ -350,55 +335,5 @@ describe("HomeThreadCreateDialog", () => {
 		});
 
 		expect(writeWorkspaceAttachmentMock).not.toHaveBeenCalled();
-	});
-
-	it("passes the bound IM channel through onCreate", async () => {
-		const onCreate = vi.fn(async () => {});
-		await render({ workspaceId: "ws-1", onCreate });
-
-		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
-		await act(async () => {
-			setControlledValue(textarea, "Ship it");
-			await flush();
-		});
-
-		// The picker binds by selecting from the IM chat list; seed the empty palette via its
-		// manual-add fallback (open the toggle, type an id, "添加" upserts + selects it).
-		const addToggle = Array.from(document.querySelectorAll("button")).find((b) =>
-			b.textContent?.includes("手动添加会话 ID"),
-		);
-		await act(async () => {
-			addToggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-			await flush();
-		});
-		const imInput = document.querySelector('input[aria-label="IM chat ID"]') as HTMLInputElement;
-		expect(imInput).not.toBeNull();
-		await act(async () => {
-			const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-			setter?.call(imInput, "oc_team");
-			imInput.dispatchEvent(new Event("input", { bubbles: true }));
-			await flush();
-		});
-		const addButton = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.trim() === "添加");
-		await act(async () => {
-			addButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-			await flush();
-		});
-		expect(addImChatMock).toHaveBeenCalledWith({ platform: "lark", chatId: "oc_team" });
-
-		const createButton = Array.from(document.querySelectorAll("button")).find(
-			(button) => button.textContent?.trim() === "Create",
-		);
-		await act(async () => {
-			createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-			await flush();
-		});
-
-		expect(onCreate).toHaveBeenCalledWith(
-			expect.objectContaining({
-				description: "Ship it",
-				imChannel: { platform: "lark", chatId: "oc_team" },
-			}),
-		);
 	});
 });
