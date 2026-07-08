@@ -1,12 +1,3 @@
 {
-  "chats": [
-    {
-      "platform": "lark",
-      "chatId": "oc_4c1e97916edbd5b86a943139befd71ad",
-      "displayName": "Technology.Result",
-      "source": "manual",
-      "createdAt": 1783476817411,
-      "updatedAt": 1783476817411
-    }
-  ]
+  "chats": []
 }
