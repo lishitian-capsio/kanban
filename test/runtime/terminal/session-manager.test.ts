@@ -355,11 +355,11 @@ describe("TerminalSessionManager", () => {
 	});
 
 	it("refuses input for a non-live session even when a process handle lingers", () => {
-		// Regression (IM inbound → bound CLI home thread): writeInput's truthy return is
-		// used by deliverHomeChatMessage as the "already delivered, no need to wake" signal.
-		// A session the state machine considers dead (interrupted/idle/failed) must return
-		// null — never funnel the text into a defunct PTY and record an unanswered user
-		// message — so the caller falls through to startTaskSession (resume/wake).
+		// writeInput's truthy return is the "delivered to a live agent" signal callers use
+		// to decide whether to wake a session. A session the state machine considers dead
+		// (interrupted/idle/failed) must return null — never funnel the text into a defunct
+		// PTY and record an unanswered user message — so the caller falls through to
+		// startTaskSession (resume/wake).
 		const manager = new TerminalSessionManager();
 		const write = vi.fn();
 		const entry = {
