@@ -7,20 +7,15 @@ import {
 	type RuntimeFetchRemoteModelsRequest,
 	type RuntimeGitCheckoutRequest,
 	type RuntimeHomeChatFullscreenTabsSaveRequest,
-	type RuntimeHomeChatThreadBindImChannelRequest,
 	type RuntimeHomeChatThreadCloseRequest,
 	type RuntimeHomeChatThreadCreateRequest,
-	type RuntimeHomeChatThreadImChannelIdRequest,
 	type RuntimeHomeChatThreadRenameRequest,
 	type RuntimeHomeChatThreadSetNextStepRequest,
 	type RuntimeHomeChatThreadSetTitleRequest,
 	type RuntimeHookIngestRequest,
-	type RuntimeImChatAddRequest,
-	type RuntimeImChatRemoveRequest,
 	type RuntimeKanbanMcpOAuthRequest,
 	type RuntimeKanbanMcpSettingsSaveRequest,
 	type RuntimeKanbanProviderModelsRequest,
-	type RuntimePiImChannelBindRequest,
 	type RuntimeProjectAddRequest,
 	type RuntimeProjectRemoveRequest,
 	type RuntimeShellSessionStartRequest,
@@ -49,20 +44,15 @@ import {
 	runtimeFetchRemoteModelsRequestSchema,
 	runtimeGitCheckoutRequestSchema,
 	runtimeHomeChatFullscreenTabsSaveRequestSchema,
-	runtimeHomeChatThreadBindImChannelRequestSchema,
 	runtimeHomeChatThreadCloseRequestSchema,
 	runtimeHomeChatThreadCreateRequestSchema,
-	runtimeHomeChatThreadImChannelIdRequestSchema,
 	runtimeHomeChatThreadRenameRequestSchema,
 	runtimeHomeChatThreadSetNextStepRequestSchema,
 	runtimeHomeChatThreadSetTitleRequestSchema,
 	runtimeHookIngestRequestSchema,
-	runtimeImChatAddRequestSchema,
-	runtimeImChatRemoveRequestSchema,
 	runtimeKanbanMcpOAuthRequestSchema,
 	runtimeKanbanMcpSettingsSaveRequestSchema,
 	runtimeKanbanProviderModelsRequestSchema,
-	runtimePiImChannelBindRequestSchema,
 	runtimeProjectAddRequestSchema,
 	runtimeProjectRemoveRequestSchema,
 	runtimeShellSessionStartRequestSchema,
@@ -442,69 +432,6 @@ export function parseHomeChatThreadSetNextStepRequest(value: unknown): RuntimeHo
 	return {
 		id,
 		suggestion,
-	};
-}
-
-export function parseHomeChatThreadBindImChannelRequest(value: unknown): RuntimeHomeChatThreadBindImChannelRequest {
-	const parsed = parseWithSchema(runtimeHomeChatThreadBindImChannelRequestSchema, value);
-	const id = parsed.id.trim();
-	if (!id) {
-		throw new Error("Home chat thread id cannot be empty.");
-	}
-	const chatId = parsed.channel.chatId.trim();
-	if (!chatId) {
-		throw new Error("IM channel chatId cannot be empty.");
-	}
-	return {
-		id,
-		channel: { platform: parsed.channel.platform, chatId },
-	};
-}
-
-export function parsePiImChannelBindRequest(value: unknown): RuntimePiImChannelBindRequest {
-	const parsed = parseWithSchema(runtimePiImChannelBindRequestSchema, value);
-	const chatId = parsed.channel.chatId.trim();
-	if (!chatId) {
-		throw new Error("IM channel chatId cannot be empty.");
-	}
-	return { channel: { platform: parsed.channel.platform, chatId } };
-}
-
-export function parseHomeChatThreadImChannelIdRequest(value: unknown): RuntimeHomeChatThreadImChannelIdRequest {
-	const parsed = parseWithSchema(runtimeHomeChatThreadImChannelIdRequestSchema, value);
-	const id = parsed.id.trim();
-	if (!id) {
-		throw new Error("Home chat thread id cannot be empty.");
-	}
-	return {
-		id,
-	};
-}
-
-export function parseImChatAddRequest(value: unknown): RuntimeImChatAddRequest {
-	const parsed = parseWithSchema(runtimeImChatAddRequestSchema, value);
-	const chatId = parsed.chatId.trim();
-	if (!chatId) {
-		throw new Error("IM chat id cannot be empty.");
-	}
-	const displayName = parsed.displayName?.trim();
-	return {
-		platform: parsed.platform,
-		chatId,
-		// Drop an empty/whitespace-only name so a re-add without a name keeps any existing label.
-		...(displayName ? { displayName } : {}),
-	};
-}
-
-export function parseImChatRemoveRequest(value: unknown): RuntimeImChatRemoveRequest {
-	const parsed = parseWithSchema(runtimeImChatRemoveRequestSchema, value);
-	const chatId = parsed.chatId.trim();
-	if (!chatId) {
-		throw new Error("IM chat id cannot be empty.");
-	}
-	return {
-		platform: parsed.platform,
-		chatId,
 	};
 }
 

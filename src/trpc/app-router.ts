@@ -98,11 +98,8 @@ import type {
 	RuntimeGitUserIdentityResponse,
 	RuntimeHomeChatFullscreenTabsResponse,
 	RuntimeHomeChatFullscreenTabsSaveRequest,
-	RuntimeHomeChatThreadBindImChannelRequest,
 	RuntimeHomeChatThreadCloseRequest,
 	RuntimeHomeChatThreadCreateRequest,
-	RuntimeHomeChatThreadImChannelIdRequest,
-	RuntimeHomeChatThreadImChannelResponse,
 	RuntimeHomeChatThreadMutationResponse,
 	RuntimeHomeChatThreadRenameRequest,
 	RuntimeHomeChatThreadSetNextStepRequest,
@@ -110,10 +107,6 @@ import type {
 	RuntimeHomeChatThreadsListResponse,
 	RuntimeHookIngestRequest,
 	RuntimeHookIngestResponse,
-	RuntimeImChatAddRequest,
-	RuntimeImChatListResponse,
-	RuntimeImChatMutationResponse,
-	RuntimeImChatRemoveRequest,
 	RuntimeKanbanMcpAuthStatusResponse,
 	RuntimeKanbanMcpOAuthRequest,
 	RuntimeKanbanMcpOAuthResponse,
@@ -125,7 +118,6 @@ import type {
 	RuntimeKanbanProviderModelsResponse,
 	RuntimeOpenFileRequest,
 	RuntimeOpenFileResponse,
-	RuntimePiImChannelBindRequest,
 	RuntimeProjectAddRequest,
 	RuntimeProjectAddResponse,
 	RuntimeProjectDirectoryPickerResponse,
@@ -327,11 +319,8 @@ import {
 	runtimeGitUserIdentityResponseSchema,
 	runtimeHomeChatFullscreenTabsResponseSchema,
 	runtimeHomeChatFullscreenTabsSaveRequestSchema,
-	runtimeHomeChatThreadBindImChannelRequestSchema,
 	runtimeHomeChatThreadCloseRequestSchema,
 	runtimeHomeChatThreadCreateRequestSchema,
-	runtimeHomeChatThreadImChannelIdRequestSchema,
-	runtimeHomeChatThreadImChannelResponseSchema,
 	runtimeHomeChatThreadMutationResponseSchema,
 	runtimeHomeChatThreadRenameRequestSchema,
 	runtimeHomeChatThreadSetNextStepRequestSchema,
@@ -339,15 +328,6 @@ import {
 	runtimeHomeChatThreadsListResponseSchema,
 	runtimeHookIngestRequestSchema,
 	runtimeHookIngestResponseSchema,
-	runtimeImChatAddRequestSchema,
-	runtimeImChatListResponseSchema,
-	runtimeImChatMutationResponseSchema,
-	runtimeImChatRemoveRequestSchema,
-	runtimeImClearCredentialsRequestSchema,
-	runtimeImClearCredentialsResponseSchema,
-	runtimeImCredentialStatusResponseSchema,
-	runtimeImSetCredentialsRequestSchema,
-	runtimeImSetCredentialsResponseSchema,
 	runtimeKanbanMcpAuthStatusResponseSchema,
 	runtimeKanbanMcpOAuthRequestSchema,
 	runtimeKanbanMcpOAuthResponseSchema,
@@ -359,7 +339,6 @@ import {
 	runtimeKanbanProviderModelsResponseSchema,
 	runtimeOpenFileRequestSchema,
 	runtimeOpenFileResponseSchema,
-	runtimePiImChannelBindRequestSchema,
 	runtimeProjectAddRequestSchema,
 	runtimeProjectAddResponseSchema,
 	runtimeProjectDirectoryPickerResponseSchema,
@@ -458,8 +437,6 @@ import {
 } from "../core/api-contract";
 import { getGiteeAuthService } from "../gitee-auth";
 import { getGitHubAuthService } from "../github-auth";
-import { getResidentImGateway } from "../im/gateway/resident-gateway";
-import { getImCredentialService } from "../im/im-credential-service";
 import type { WorkspaceDbApi } from "./workspace-db-api";
 import type { WorkspaceStorageApi } from "./workspace-storage-api";
 
@@ -544,39 +521,10 @@ export interface RuntimeTrpcContext {
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatThreadSetNextStepRequest,
 		) => Promise<RuntimeHomeChatThreadMutationResponse>;
-		bindHomeThreadImChannel: (
-			scope: RuntimeTrpcWorkspaceScope,
-			input: RuntimeHomeChatThreadBindImChannelRequest,
-		) => Promise<RuntimeHomeChatThreadMutationResponse>;
-		unbindHomeThreadImChannel: (
-			scope: RuntimeTrpcWorkspaceScope,
-			input: RuntimeHomeChatThreadImChannelIdRequest,
-		) => Promise<RuntimeHomeChatThreadMutationResponse>;
-		getHomeThreadImChannel: (
-			scope: RuntimeTrpcWorkspaceScope,
-			input: RuntimeHomeChatThreadImChannelIdRequest,
-		) => Promise<RuntimeHomeChatThreadImChannelResponse>;
-		// Pi single-conversation IM binding (decision X1). Keyed by workspace scope alone — Pi is a
-		// per-workspace singleton, so bind carries only a channel and unbind/get take no input.
-		bindPiImChannel: (
-			scope: RuntimeTrpcWorkspaceScope,
-			input: RuntimePiImChannelBindRequest,
-		) => Promise<RuntimeHomeChatThreadImChannelResponse>;
-		unbindPiImChannel: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeHomeChatThreadImChannelResponse>;
-		getPiImChannel: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeHomeChatThreadImChannelResponse>;
 		closeHomeThread: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatThreadCloseRequest,
 		) => Promise<RuntimeHomeChatThreadMutationResponse>;
-		listImChats: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeImChatListResponse>;
-		addImChat: (
-			scope: RuntimeTrpcWorkspaceScope,
-			input: RuntimeImChatAddRequest,
-		) => Promise<RuntimeImChatMutationResponse>;
-		removeImChat: (
-			scope: RuntimeTrpcWorkspaceScope,
-			input: RuntimeImChatRemoveRequest,
-		) => Promise<RuntimeImChatMutationResponse>;
 		setHomeFullscreenTabs: (
 			scope: RuntimeTrpcWorkspaceScope,
 			input: RuntimeHomeChatFullscreenTabsSaveRequest,
@@ -1057,62 +1005,11 @@ export const runtimeAppRouter = t.router({
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.setHomeThreadNextStep(ctx.workspaceScope, input);
 			}),
-		bindHomeThreadImChannel: workspaceProcedure
-			.input(runtimeHomeChatThreadBindImChannelRequestSchema)
-			.output(runtimeHomeChatThreadMutationResponseSchema)
-			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.bindHomeThreadImChannel(ctx.workspaceScope, input);
-			}),
-		unbindHomeThreadImChannel: workspaceProcedure
-			.input(runtimeHomeChatThreadImChannelIdRequestSchema)
-			.output(runtimeHomeChatThreadMutationResponseSchema)
-			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.unbindHomeThreadImChannel(ctx.workspaceScope, input);
-			}),
-		getHomeThreadImChannel: workspaceProcedure
-			.input(runtimeHomeChatThreadImChannelIdRequestSchema)
-			.output(runtimeHomeChatThreadImChannelResponseSchema)
-			.query(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.getHomeThreadImChannel(ctx.workspaceScope, input);
-			}),
-		// Pi single-conversation IM binding (decision X1). No thread id — Pi is a per-workspace
-		// singleton, so the workspace scope alone identifies it.
-		bindPiImChannel: workspaceProcedure
-			.input(runtimePiImChannelBindRequestSchema)
-			.output(runtimeHomeChatThreadImChannelResponseSchema)
-			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.bindPiImChannel(ctx.workspaceScope, input);
-			}),
-		unbindPiImChannel: workspaceProcedure
-			.output(runtimeHomeChatThreadImChannelResponseSchema)
-			.mutation(async ({ ctx }) => {
-				return await ctx.runtimeApi.unbindPiImChannel(ctx.workspaceScope);
-			}),
-		getPiImChannel: workspaceProcedure.output(runtimeHomeChatThreadImChannelResponseSchema).query(async ({ ctx }) => {
-			return await ctx.runtimeApi.getPiImChannel(ctx.workspaceScope);
-		}),
 		closeHomeThread: workspaceProcedure
 			.input(runtimeHomeChatThreadCloseRequestSchema)
 			.output(runtimeHomeChatThreadMutationResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.runtimeApi.closeHomeThread(ctx.workspaceScope, input);
-			}),
-		// Bindable IM chat list (requirement ac99c) — the palette a home thread's `imChannel`
-		// can point at. Populated by manual add and by inbound auto-record (chats that @'d the bot).
-		listImChats: workspaceProcedure.output(runtimeImChatListResponseSchema).query(async ({ ctx }) => {
-			return await ctx.runtimeApi.listImChats(ctx.workspaceScope);
-		}),
-		addImChat: workspaceProcedure
-			.input(runtimeImChatAddRequestSchema)
-			.output(runtimeImChatMutationResponseSchema)
-			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.addImChat(ctx.workspaceScope, input);
-			}),
-		removeImChat: workspaceProcedure
-			.input(runtimeImChatRemoveRequestSchema)
-			.output(runtimeImChatMutationResponseSchema)
-			.mutation(async ({ ctx, input }) => {
-				return await ctx.runtimeApi.removeImChat(ctx.workspaceScope, input);
 			}),
 		setHomeFullscreenTabs: workspaceProcedure
 			.input(runtimeHomeChatFullscreenTabsSaveRequestSchema)
@@ -1801,36 +1698,6 @@ export const runtimeAppRouter = t.router({
 			await getGiteeAuthService().logout();
 			return { status: await getGiteeAuthService().getStatus() };
 		}),
-	}),
-	// IM outbound-channel credentials (requirement ac99c, 阶段2). Machine-global (no workspace
-	// scope) — delegates directly to the process-wide singleton. The credential VALUES (bot
-	// tokens / webhook URLs / signing secrets) are NEVER returned over the wire; only the
-	// secret-free per-platform status crosses it.
-	im: t.router({
-		status: t.procedure.output(runtimeImCredentialStatusResponseSchema).query(async () => {
-			return { platforms: await getImCredentialService().getStatus() };
-		}),
-		setCredentials: t.procedure
-			.input(runtimeImSetCredentialsRequestSchema)
-			.output(runtimeImSetCredentialsResponseSchema)
-			.mutation(async ({ input }) => {
-				const platforms = await getImCredentialService().setCredential(input.platform, input.credential);
-				// A credential can be configured (or changed) long after startup, so the resident
-				// gateway must re-evaluate its connections now — otherwise the new platform's long
-				// connection would only come up on the next restart. Fire-and-forget: refresh never
-				// rejects, and the save response shouldn't block on a network handshake.
-				void getResidentImGateway()?.refresh();
-				return { status: { platforms } };
-			}),
-		clearCredentials: t.procedure
-			.input(runtimeImClearCredentialsRequestSchema)
-			.output(runtimeImClearCredentialsResponseSchema)
-			.mutation(async ({ input }) => {
-				const platforms = await getImCredentialService().clearCredential(input.platform);
-				// Tear down the now-credential-less platform's live connection without a restart.
-				void getResidentImGateway()?.refresh();
-				return { status: { platforms } };
-			}),
 	}),
 });
 

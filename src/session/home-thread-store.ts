@@ -8,23 +8,17 @@ import type {
 	RuntimeHomeChatThreadTitleSource,
 } from "../core/api-contract";
 import { createHomeAgentSessionId } from "../core/home-agent-session";
-import type { ImChannelTarget } from "../im/types";
 import { loadWorkspaceHomeThreads, mutateWorkspaceHomeThreads } from "../state/workspace-state";
 import {
-	bindHomeThreadImChannelExclusive,
-	bindPiImChannelExclusive,
 	closeHomeThread,
 	createHomeThread,
 	getHomeFullscreenTabs,
-	getPiImChannel,
 	listHomeThreads,
 	renameHomeThread,
 	type SetHomeThreadAutoTitleResult,
 	setHomeFullscreenTabs,
 	setHomeThreadAutoTitle,
-	setHomeThreadImChannel,
 	setHomeThreadNextStep,
-	unbindPiImChannel,
 } from "./home-thread-registry";
 
 /**
@@ -213,73 +207,6 @@ export class HomeThreadStore {
 			throw new Error(`Home chat thread "${id}" not found after setNextStep.`);
 		}
 		return updated;
-	}
-
-	/**
-	 * Bind a thread to an IM channel (requirement ac99c) so outbound notifications can be
-	 * delivered to it. Enforces the **one-to-one** invariant: any other thread that held the
-	 * same channel is unbound in the same atomic mutation, so re-pointing an IM chat at a new
-	 * thread moves it off the old one. Returns the (now-bound) target thread. Throws if missing.
-	 */
-	async bindImChannel(id: string, channel: ImChannelTarget): Promise<RuntimeHomeChatThread> {
-		const now = this.now();
-		const next = await this.persistence.mutate((current) =>
-			bindHomeThreadImChannelExclusive(current, id, channel, now),
-		);
-		const updated = next.threads.find((thread) => thread.id === id);
-		if (!updated) {
-			// Unreachable: bindHomeThreadImChannelExclusive throws when the id is missing.
-			throw new Error(`Home chat thread "${id}" not found after bindImChannel.`);
-		}
-		return updated;
-	}
-
-	/** Remove a thread's IM channel binding. Returns the updated thread. Throws if missing. */
-	async unbindImChannel(id: string): Promise<RuntimeHomeChatThread> {
-		return this.setImChannel(id, null);
-	}
-
-	private async setImChannel(id: string, channel: ImChannelTarget | null): Promise<RuntimeHomeChatThread> {
-		const now = this.now();
-		const next = await this.persistence.mutate((current) => setHomeThreadImChannel(current, id, channel, now));
-		const updated = next.threads.find((thread) => thread.id === id);
-		if (!updated) {
-			// Unreachable: setHomeThreadImChannel throws when the id is missing.
-			throw new Error(`Home chat thread "${id}" not found after setImChannel.`);
-		}
-		return updated;
-	}
-
-	/**
-	 * Query a thread's current IM channel binding. Returns `null` when the thread is unbound OR
-	 * unknown (a read never throws — absence of a binding is the answer). The full binding is
-	 * also present on each thread returned by {@link list}; this is the targeted single-thread read.
-	 */
-	async getImChannel(id: string): Promise<ImChannelTarget | null> {
-		const data = await this.persistence.load();
-		return data.threads.find((thread) => thread.id === id)?.imChannel ?? null;
-	}
-
-	// --- Pi single conversation IM binding (decision X1, requirement ac99c) ---
-	// Pi is not a thread; its binding is a doc-level field. These mirror the thread bind/unbind/get
-	// above but take no thread id (Pi is a per-workspace singleton). Binding enforces the same
-	// one-to-one invariant across the doc — see {@link bindPiImChannelExclusive}.
-
-	/** The IM channel the workspace's single embedded Pi conversation is bound to, or `null`. */
-	async getPiImChannel(): Promise<ImChannelTarget | null> {
-		return getPiImChannel(await this.persistence.load());
-	}
-
-	/** Bind Pi to an IM channel, moving the channel off any thread that held it. Returns the channel. */
-	async bindPiImChannel(channel: ImChannelTarget): Promise<ImChannelTarget> {
-		const now = this.now();
-		const next = await this.persistence.mutate((current) => bindPiImChannelExclusive(current, channel, now));
-		return next.piImChannel ?? channel;
-	}
-
-	/** Remove Pi's IM channel binding. Idempotent. */
-	async unbindPiImChannel(): Promise<void> {
-		await this.persistence.mutate((current) => unbindPiImChannel(current));
 	}
 
 	async close(id: string): Promise<RuntimeHomeChatThread> {

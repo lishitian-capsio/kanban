@@ -4,11 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RuntimeConfigState } from "../../../src/config/runtime-config";
-import type {
-	RuntimeHomeChatThreadsData,
-	RuntimeImChatsData,
-	RuntimeTaskSessionSummary,
-} from "../../../src/core/api-contract";
+import type { RuntimeHomeChatThreadsData, RuntimeTaskSessionSummary } from "../../../src/core/api-contract";
 import { createHomeAgentSessionId } from "../../../src/core/home-agent-session";
 import { writeScopeAttachment } from "../../../src/terminal/session-attachment-store";
 
@@ -210,7 +206,6 @@ vi.mock("../../../src/agent-sdk/kanban/provider-settings-store.js", () => ({
 }));
 
 import { HomeThreadStore } from "../../../src/session/home-thread-store";
-import { ImChatStore } from "../../../src/session/im-chat-store";
 import type { RuntimeTrpcContext } from "../../../src/trpc/app-router";
 import { type CreateRuntimeApiDependencies, createRuntimeApi } from "../../../src/trpc/runtime-api";
 
@@ -229,35 +224,13 @@ function createInMemoryHomeThreadStore(onCloseSession?: (sessionId: string) => P
 	});
 }
 
-function createInMemoryImChatStore(): ImChatStore {
-	let data = { chats: [] as RuntimeImChatsData["chats"] };
-	return new ImChatStore({
-		persistence: {
-			load: async () => data,
-			mutate: async (fn) => {
-				data = fn(data);
-				return data;
-			},
-		},
-	});
-}
-
 function createTestRuntimeApi(
-	deps: Omit<
-		CreateRuntimeApiDependencies,
-		"getUpdateStatus" | "runUpdateNow" | "getScopedHomeThreadStore" | "getScopedImChatStore"
-	> &
-		Partial<
-			Pick<
-				CreateRuntimeApiDependencies,
-				"getUpdateStatus" | "runUpdateNow" | "getScopedHomeThreadStore" | "getScopedImChatStore"
-			>
-		>,
+	deps: Omit<CreateRuntimeApiDependencies, "getUpdateStatus" | "runUpdateNow" | "getScopedHomeThreadStore"> &
+		Partial<Pick<CreateRuntimeApiDependencies, "getUpdateStatus" | "runUpdateNow" | "getScopedHomeThreadStore">>,
 ): RuntimeTrpcContext["runtimeApi"] {
 	return createRuntimeApi({
 		...deps,
 		getScopedHomeThreadStore: deps.getScopedHomeThreadStore ?? (() => createInMemoryHomeThreadStore()),
-		getScopedImChatStore: deps.getScopedImChatStore ?? (() => createInMemoryImChatStore()),
 		getUpdateStatus:
 			deps.getUpdateStatus ??
 			vi.fn(() => ({
@@ -3004,50 +2977,6 @@ describe("createRuntimeApi home thread handlers", () => {
 		expect(response.ok).toBe(false);
 		expect(response.thread).toBeNull();
 		expect(response.error).toBeTruthy();
-	});
-
-	it("binds, queries, and unbinds a thread's IM channel", async () => {
-		const { api } = makeApiWithStore();
-		const created = await api.createHomeThread(workspaceScope, { name: "Bindable", agentId: "pi" });
-		const id = created.thread?.id ?? "";
-
-		const bound = await api.bindHomeThreadImChannel(workspaceScope, {
-			id,
-			channel: { platform: "lark", chatId: "oc_abc" },
-		});
-		expect(bound.ok).toBe(true);
-		expect(bound.thread?.imChannel).toEqual({ platform: "lark", chatId: "oc_abc" });
-
-		const queried = await api.getHomeThreadImChannel(workspaceScope, { id });
-		expect(queried).toEqual({ ok: true, imChannel: { platform: "lark", chatId: "oc_abc" } });
-
-		const unbound = await api.unbindHomeThreadImChannel(workspaceScope, { id });
-		expect(unbound.ok).toBe(true);
-		expect(unbound.thread?.imChannel).toBeNull();
-
-		const requeried = await api.getHomeThreadImChannel(workspaceScope, { id });
-		expect(requeried).toEqual({ ok: true, imChannel: null });
-	});
-
-	it("returns ok:false when binding an IM channel to a missing thread", async () => {
-		const { api } = makeApiWithStore();
-
-		const response = await api.bindHomeThreadImChannel(workspaceScope, {
-			id: "missing",
-			channel: { platform: "lark", chatId: "oc_abc" },
-		});
-
-		expect(response.ok).toBe(false);
-		expect(response.thread).toBeNull();
-		expect(response.error).toBeTruthy();
-	});
-
-	it("returns imChannel:null when querying an unbound or unknown thread", async () => {
-		const { api } = makeApiWithStore();
-
-		const response = await api.getHomeThreadImChannel(workspaceScope, { id: "unknown" });
-
-		expect(response).toEqual({ ok: true, imChannel: null });
 	});
 });
 

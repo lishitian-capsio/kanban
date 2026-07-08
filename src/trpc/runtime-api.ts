@@ -51,19 +51,14 @@ import {
 	parseCommandRunRequest,
 	parseFetchRemoteModelsRequest,
 	parseHomeChatFullscreenTabsSaveRequest,
-	parseHomeChatThreadBindImChannelRequest,
 	parseHomeChatThreadCloseRequest,
 	parseHomeChatThreadCreateRequest,
-	parseHomeChatThreadImChannelIdRequest,
 	parseHomeChatThreadRenameRequest,
 	parseHomeChatThreadSetNextStepRequest,
 	parseHomeChatThreadSetTitleRequest,
-	parseImChatAddRequest,
-	parseImChatRemoveRequest,
 	parseKanbanMcpOAuthRequest,
 	parseKanbanMcpSettingsSaveRequest,
 	parseKanbanProviderModelsRequest,
-	parsePiImChannelBindRequest,
 	parseRuntimeConfigSaveRequest,
 	parseShellSessionStartRequest,
 	parseTaskChatAbortRequest,
@@ -88,14 +83,12 @@ import {
 } from "../core/home-agent-session";
 import { getKanbanRuntimeNoProxyHosts } from "../core/runtime-endpoint";
 import { resolveTaskTitle } from "../core/task-title.js";
-import { resolveImChatDisplayName } from "../im/im-chat-name-resolver";
 import { createLogger } from "../logging";
 import { resolveHomeAgentAppendSystemPrompt } from "../prompts/append-system-prompt";
 import { limitAgentStart } from "../server/agent-start-limiter";
 import { openInBrowser } from "../server/browser";
 import { deriveProvisionalThreadTitle } from "../session/home-thread-registry";
 import type { HomeThreadStore } from "../session/home-thread-store";
-import type { ImChatStore } from "../session/im-chat-store";
 import { capChatMessagesForTransport } from "../session/session-message-display-cap";
 import { getSelectedCommittedProvider } from "../state/committed-provider-store";
 import { loadWorkspaceCommittedProviders } from "../state/workspace-state";
@@ -123,9 +116,6 @@ export interface CreateRuntimeApiDependencies {
 	getScopedPiTaskSessionService: (scope: RuntimeTrpcWorkspaceScope) => Promise<PiTaskSessionService>;
 	// Per-workspace home chat thread registry backing the home sidebar's parallel threads.
 	getScopedHomeThreadStore: (scope: RuntimeTrpcWorkspaceScope) => HomeThreadStore;
-	// Per-workspace bindable IM chat list (requirement ac99c) — the palette of 飞书/钉钉
-	// conversations a home thread's `imChannel` can point at.
-	getScopedImChatStore: (scope: RuntimeTrpcWorkspaceScope) => ImChatStore;
 	resolveInteractiveShellCommand: () => { binary: string; args: string[] };
 	runCommand: (command: string, cwd: string) => Promise<RuntimeCommandRunResponse>;
 	broadcastKanbanMcpAuthStatusesUpdated?: (
@@ -825,101 +815,6 @@ export function createRuntimeApi(deps: CreateRuntimeApiDependencies): RuntimeTrp
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				return { ok: false, thread: null, error: message };
-			}
-		},
-		bindHomeThreadImChannel: async (workspaceScope, input) => {
-			try {
-				const body = parseHomeChatThreadBindImChannelRequest(input);
-				const thread = await deps.getScopedHomeThreadStore(workspaceScope).bindImChannel(body.id, body.channel);
-				deps.bumpKanbanSessionContextVersion?.();
-				return { ok: true, thread };
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return { ok: false, thread: null, error: message };
-			}
-		},
-		unbindHomeThreadImChannel: async (workspaceScope, input) => {
-			try {
-				const body = parseHomeChatThreadImChannelIdRequest(input);
-				const thread = await deps.getScopedHomeThreadStore(workspaceScope).unbindImChannel(body.id);
-				deps.bumpKanbanSessionContextVersion?.();
-				return { ok: true, thread };
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return { ok: false, thread: null, error: message };
-			}
-		},
-		getHomeThreadImChannel: async (workspaceScope, input) => {
-			try {
-				const body = parseHomeChatThreadImChannelIdRequest(input);
-				const imChannel = await deps.getScopedHomeThreadStore(workspaceScope).getImChannel(body.id);
-				return { ok: true, imChannel };
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return { ok: false, imChannel: null, error: message };
-			}
-		},
-		bindPiImChannel: async (workspaceScope, input) => {
-			try {
-				const body = parsePiImChannelBindRequest(input);
-				const imChannel = await deps.getScopedHomeThreadStore(workspaceScope).bindPiImChannel(body.channel);
-				deps.bumpKanbanSessionContextVersion?.();
-				return { ok: true, imChannel };
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return { ok: false, imChannel: null, error: message };
-			}
-		},
-		unbindPiImChannel: async (workspaceScope) => {
-			try {
-				await deps.getScopedHomeThreadStore(workspaceScope).unbindPiImChannel();
-				deps.bumpKanbanSessionContextVersion?.();
-				return { ok: true, imChannel: null };
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return { ok: false, imChannel: null, error: message };
-			}
-		},
-		getPiImChannel: async (workspaceScope) => {
-			try {
-				const imChannel = await deps.getScopedHomeThreadStore(workspaceScope).getPiImChannel();
-				return { ok: true, imChannel };
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return { ok: false, imChannel: null, error: message };
-			}
-		},
-		listImChats: async (workspaceScope) => {
-			try {
-				const chats = await deps.getScopedImChatStore(workspaceScope).list();
-				return { ok: true, chats };
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return { ok: false, chats: [], error: message };
-			}
-		},
-		addImChat: async (workspaceScope, input) => {
-			try {
-				const body = parseImChatAddRequest(input);
-				// When the caller supplies no label (the picker's raw-id add), best-effort resolve a
-				// human-readable name so the palette shows the group/conversation name, not the id.
-				const displayName =
-					body.displayName?.trim() || (await resolveImChatDisplayName(body.platform, body.chatId)) || undefined;
-				const chat = await deps.getScopedImChatStore(workspaceScope).add({ ...body, displayName });
-				return { ok: true, chat };
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return { ok: false, chat: null, error: message };
-			}
-		},
-		removeImChat: async (workspaceScope, input) => {
-			try {
-				const body = parseImChatRemoveRequest(input);
-				const chat = await deps.getScopedImChatStore(workspaceScope).remove(body.platform, body.chatId);
-				return { ok: true, chat };
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return { ok: false, chat: null, error: message };
 			}
 		},
 		closeHomeThread: async (workspaceScope, input) => {

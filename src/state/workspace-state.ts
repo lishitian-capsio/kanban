@@ -12,13 +12,11 @@ import {
 	type RuntimeBoardData,
 	type RuntimeGitRepositoryInfo,
 	type RuntimeHomeChatThreadsData,
-	type RuntimeImChatsData,
 	type RuntimeTaskSessionSummary,
 	type RuntimeWorkspaceStateResponse,
 	type RuntimeWorkspaceStateSaveRequest,
 	runtimeAgentIdSchema,
 	runtimeHomeChatThreadsDataSchema,
-	runtimeImChatsDataSchema,
 	runtimeTaskSessionSummarySchema,
 	runtimeWorkspaceStateSaveRequestSchema,
 } from "../core/api-contract";
@@ -110,10 +108,6 @@ const REQUIREMENT_TASK_LINKS_SHARD_DIRNAME = "requirement-task-links";
 const FILES_DIRNAME = "files";
 const DOCS_DIRNAME = "docs";
 const HOME_THREADS_FILENAME = "threads.json";
-// Per-workspace palette of bindable IM chats (飞书/钉钉), requirement ac99c. Committed
-// board data (sibling of `threads.json`) so the bindable list travels with the board like
-// the per-thread `imChannel` bindings that point at these entries.
-const IM_CHATS_FILENAME = "im-chats.json";
 // Workspace-committed providers (secret-free). Sharded by provider id (one
 // `<providerId>.json` per provider) so cross-branch provider edits never collide;
 // the small selection map (each agent's currently selected committed provider)
@@ -571,10 +565,6 @@ function getWorkspaceHomeThreadsPath(repoPath: string, workspaceId: string): str
 	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), HOME_THREADS_FILENAME);
 }
 
-function getWorkspaceImChatsPath(repoPath: string, workspaceId: string): string {
-	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), IM_CHATS_FILENAME);
-}
-
 function getWorkspaceCommittedProvidersShardDir(repoPath: string, workspaceId: string): string {
 	return join(getBoardDataWorkspaceDirectoryPath(repoPath, workspaceId), COMMITTED_PROVIDERS_SHARD_DIRNAME);
 }
@@ -932,48 +922,6 @@ export async function mutateWorkspaceHomeThreads(
 		const current = await readWorkspaceHomeThreads(repoPath, workspaceId);
 		const next = mutate(current);
 		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceHomeThreadsPath(repoPath, workspaceId), next, {
-			lock: null,
-		});
-		return next;
-	});
-}
-
-async function readWorkspaceImChats(repoPath: string, workspaceId: string): Promise<RuntimeImChatsData> {
-	const chatsPath = getWorkspaceImChatsPath(repoPath, workspaceId);
-	// The IM chat list is a new (post-relocation) feature: no legacy location to fall back to.
-	const rawChats = await readJsonFile(chatsPath);
-	return parsePersistedStateFile(chatsPath, IM_CHATS_FILENAME, rawChats, runtimeImChatsDataSchema, {
-		chats: [],
-	});
-}
-
-/** Read the persisted bindable IM chat list for a workspace (requirement ac99c). */
-export async function loadWorkspaceImChats(workspaceId: string): Promise<RuntimeImChatsData> {
-	const repoPath = await resolveRepoPathForWorkspaceId(workspaceId);
-	if (!repoPath) {
-		throw new Error(`Unknown workspace "${workspaceId}"; cannot resolve its repository path.`);
-	}
-	return await readWorkspaceImChats(repoPath, workspaceId);
-}
-
-/**
- * Atomically read → transform → write the bindable IM chat list under the workspace
- * directory lock. The `mutate` callback is pure (see `im-chat-registry.ts`); returning
- * the same reference (a no-op, e.g. an inbound record of an already-known chat) leaves the
- * on-disk content unchanged. Returns the persisted data.
- */
-export async function mutateWorkspaceImChats(
-	workspaceId: string,
-	mutate: (current: RuntimeImChatsData) => RuntimeImChatsData,
-): Promise<RuntimeImChatsData> {
-	const repoPath = await resolveRepoPathForWorkspaceId(workspaceId);
-	if (!repoPath) {
-		throw new Error(`Unknown workspace "${workspaceId}"; cannot resolve its repository path.`);
-	}
-	return await lockedFileSystem.withLock(getWorkspaceDirectoryLockRequest(repoPath, workspaceId), async () => {
-		const current = await readWorkspaceImChats(repoPath, workspaceId);
-		const next = mutate(current);
-		await lockedFileSystem.writeJsonFileAtomic(getWorkspaceImChatsPath(repoPath, workspaceId), next, {
 			lock: null,
 		});
 		return next;

@@ -46,21 +46,6 @@ import {
 } from "./core/runtime-endpoint";
 import { getGiteeAuthService } from "./gitee-auth";
 import { getGitHubAuthService } from "./github-auth";
-import { registerDingtalkStreamConnector } from "./im/dingtalk/dingtalk-stream-connector";
-import { ImGateway } from "./im/gateway/im-gateway";
-import { setResidentImGateway } from "./im/gateway/resident-gateway";
-import { resolveImChatDisplayName } from "./im/im-chat-name-resolver";
-import { ImChatInboundRecorder } from "./im/im-chat-recorder";
-import { ImTaskEventNotifier } from "./im/im-task-notifier";
-import {
-	findThreadBoundToImChannel,
-	resolveHomeSessionImChannel,
-	resolveTaskRouteFromBoard,
-	resolveThreadImChannelFromThreads,
-} from "./im/im-task-route-resolver";
-import { ImChatReplyNotifier } from "./im/inbound/im-chat-reply-notifier";
-import { ImInboundRouter } from "./im/inbound/im-inbound-router";
-import { registerLarkImGatewayConnector, registerLarkImProvider } from "./im/lark";
 import { configureLogging, createLogger } from "./logging";
 import { resolveAndPersistInternalToken } from "./security/internal-token-store";
 import { disablePasscode, setInternalToken, setPasscode } from "./security/passcode-manager";
@@ -69,7 +54,6 @@ import { startEventLoopStallWatchdog } from "./server/event-loop-stall-watchdog"
 import { terminateProcessForTimeout } from "./server/process-termination";
 import { startRuntimeOpsMetricsSampler } from "./server/runtime-ops-metrics";
 import type { RuntimeStateHub } from "./server/runtime-state-hub";
-import { recordInboundImChat, setImChatDisplayName } from "./session/im-chat-registry";
 import { isGitRepository } from "./state/git-repository-check";
 import { captureNodeException, flushNodeTelemetry } from "./telemetry/sentry-node.js";
 import { PtySession } from "./terminal/pty-session";
@@ -453,18 +437,6 @@ async function startServer(): Promise<{
 	registerGitCredentialInjector("github", () => getGitHubAuthService().getGitInjection());
 	registerGitCredentialInjector("gitee", () => getGiteeAuthService().getGitInjection());
 
-	// Register the Lark outbound adapter so the IM task notifier has at least one platform to
-	// deliver to. Safe to call unconditionally: the provider resolves its machine-local credential
-	// lazily at send time and outbound is a no-op (logged, never thrown) when unconfigured, so this
-	// stays inert until a home thread is actually bound to a Lark channel.
-	registerLarkImProvider();
-
-	// Register the Lark inbound long-connection connector so the resident IM gateway can bring up a
-	// `im.message.receive_v1` subscription (no public callback URL) when a Lark credential is stored.
-	// Like the outbound provider, this is inert until a `lark` credential exists — the gateway
-	// (started below, before which connectors must be registered) skips connectors with no credential.
-	registerLarkImGatewayConnector();
-
 	// Load the Windows PTY backend (`bun-pty`, ConPTY) once, up front, so that
 	// PtySession.spawn stays synchronous for terminal/agent sessions. No-op on
 	// POSIX, where Bun's native Terminal API is the backend. A failure here is
@@ -522,7 +494,6 @@ async function startServer(): Promise<{
 		{ shutdownRuntimeServer },
 		{ collectProjectWorktreeTaskIdsForRemoval, createWorkspaceRegistry },
 		{ clearPendingUpdateNotification, getPendingUpdateNotification },
-		{ loadWorkspaceBoardById, loadWorkspaceHomeThreads, mutateWorkspaceImChats },
 	] = await Promise.all([
 		import("./projects/project-path.js"),
 		import("./server/directory-picker.js"),
@@ -532,7 +503,6 @@ async function startServer(): Promise<{
 		import("./server/shutdown-coordinator.js"),
 		import("./server/workspace-registry.js"),
 		import("./update/update.js"),
-		import("./state/workspace-state.js"),
 	]);
 	let runtimeStateHub: RuntimeStateHub | undefined;
 	const workspaceRegistry = await createWorkspaceRegistry({
@@ -545,88 +515,13 @@ async function startServer(): Promise<{
 			runtimeStateHub?.trackTerminalManager(workspaceId, manager);
 		},
 	});
-	// Route high-signal task lifecycle transitions (started / ready-for-review / needs-attention /
-	// error / complete) to the IM channel a task's originating home thread is bound to. Resolvers
-	// read the live board (task → originThreadId + title) and the threads doc (thread → imChannel);
-	// the notifier dedups (at-least-once idempotent) and dispatches best-effort — a failed send is
-	// logged, never thrown. It deliberately never reacts to per-token chat messages.
-	const resolveThreadImChannel = async (workspaceId: string, threadId: string) =>
-		resolveThreadImChannelFromThreads(await loadWorkspaceHomeThreads(workspaceId), threadId);
-	const imTaskNotifier = new ImTaskEventNotifier({
-		resolveTaskRoute: async (workspaceId, taskId) =>
-			resolveTaskRouteFromBoard(await loadWorkspaceBoardById(workspaceId), taskId),
-		resolveThreadImChannel,
-	});
-	// Push a home thread's agent reply back to the IM chat it is bound to (requirement ac99c, the
-	// outbound half of inbound routing). It observes the same transcript stream + turn-completion
-	// transitions the runtime already tracks, buffers the final assistant text per home session, and
-	// forwards it once per turn to the bound channel. Idempotent; best-effort (a send failure logs).
-	// Agent-aware resolution: Pi's binding is doc-level (decision X1) while a thread's is on its
-	// entry, so a Pi reply resolves `piImChannel` and a CLI reply resolves its thread's channel.
-	const imChatReplyNotifier = new ImChatReplyNotifier({
-		resolveThreadImChannel: async (workspaceId, agentId, threadId) =>
-			resolveHomeSessionImChannel(await loadWorkspaceHomeThreads(workspaceId), agentId, threadId),
-	});
 	runtimeStateHub = createRuntimeStateHub({
 		workspaceRegistry,
-		onTaskSessionTransition: ({ workspaceId, previous, next }) => {
-			imTaskNotifier.handleTransition(workspaceId, previous, next);
-			imChatReplyNotifier.noteTransition(workspaceId, previous, next);
-		},
-		onTaskChatMessage: (workspaceId, taskId, message) =>
-			imChatReplyNotifier.noteMessage(workspaceId, taskId, message),
 	});
 	const runtimeHub = runtimeStateHub;
 	for (const { workspaceId, terminalManager } of workspaceRegistry.listManagedWorkspaces()) {
 		runtimeHub.trackTerminalManager(workspaceId, terminalManager);
 	}
-
-	// Start the lightweight resident IM gateway. It brings up a long connection (Lark WebSocket /
-	// 钉钉 Stream) for every platform that has a stored credential AND a registered inbound
-	// connector, supervising each connection's lifecycle (start / backoff-reconnect / close) and
-	// fanning decoded inbound events out to subscribers. Register the concrete inbound connectors
-	// first so the gateway has something to bring up: DingTalk Stream mode (long connection) stays
-	// inert until a `dingtalk` app credential (appKey:appSecret in botToken) is stored, so this is
-	// safe to call unconditionally.
-	registerDingtalkStreamConnector();
-	const imGateway = new ImGateway();
-	// Expose the resident gateway so the tRPC `im` router can trigger a refresh when a credential is
-	// saved/cleared at runtime — bringing a platform's long connection up (or down) without a process
-	// restart (mirrors how `setRuntimeProxyStateFromConfig` is reached from the config save path).
-	setResidentImGateway(imGateway);
-	// Auto-populate each open workspace's bindable IM chat list from inbound events: when a chat
-	// @'s the bot, record its (platform, chatId) so the user can bind it to a home thread without
-	// hand-copying the platform-native id (requirement ac99c, source ②). Best-effort and idempotent
-	// — recording an already-known chat is a no-op and never clobbers a manual entry.
-	const imChatRecorder = new ImChatInboundRecorder({
-		listWorkspaceIds: () => workspaceRegistry.listManagedWorkspaces().map(({ workspaceId }) => workspaceId),
-		recordInbound: async (workspaceId, channel) => {
-			let inserted = false;
-			await mutateWorkspaceImChats(workspaceId, (current) => {
-				const result = recordInboundImChat(current, { ...channel, now: Date.now() });
-				if (!result) {
-					return current;
-				}
-				inserted = true;
-				return result.next;
-			});
-			// Only a freshly-inserted chat needs a name — a known chat already has one (or a user's
-			// label). Resolve best-effort and backfill; a null resolution leaves it as the raw id.
-			if (!inserted) {
-				return;
-			}
-			const displayName = await resolveImChatDisplayName(channel.platform, channel.chatId);
-			if (!displayName) {
-				return;
-			}
-			await mutateWorkspaceImChats(workspaceId, (current) =>
-				setImChatDisplayName(current, channel.platform, channel.chatId, displayName),
-			);
-		},
-	});
-	imGateway.onInboundEvent((event) => imChatRecorder.handleInboundEvent(event));
-	// The gateway is started AFTER the runtime server is created (below), so the inbound router's
-	// delivery seam (server.deliverHomeChatMessage) exists before any connection can emit an event.
 
 	// Sample process RSS / CPU% and the stall watchdog's state on a modest
 	// interval, broadcasting them as the low-frequency `runtime_metrics_updated`
@@ -706,29 +601,6 @@ async function startServer(): Promise<{
 		},
 	});
 
-	// Route an inbound IM message to the home thread bound to its chat, then deliver it into that
-	// thread's agent (requirement ac99c, task I2). `resolveBinding` scans the runtime's managed
-	// workspaces' threads docs for an `imChannel` matching the inbound (platform, chatId); the first
-	// bound thread wins (binding is one-to-one). Delivery reuses the server's browser-identical
-	// session start/continue path (pi structured input / CLI PTY). The router dedups (idempotent),
-	// is fire-and-forget, and never throws into the gateway fan-out.
-	const imInboundRouter = new ImInboundRouter({
-		resolveBinding: async (platform, chatId) => {
-			for (const { workspaceId } of workspaceRegistry.listManagedWorkspaces()) {
-				const bound = findThreadBoundToImChannel(await loadWorkspaceHomeThreads(workspaceId), platform, chatId);
-				if (bound) {
-					return { workspaceId, ...bound };
-				}
-			}
-			return null;
-		},
-		deliver: (delivery) => runtimeServer.deliverHomeChatMessage(delivery),
-	});
-	imGateway.onInboundEvent((event) => imInboundRouter.handleInboundEvent(event));
-	// All subscribers (chat recorder + inbound router) are attached and the delivery seam exists, so
-	// bring up the long connections now.
-	await imGateway.start();
-
 	const close = async () => {
 		await runtimeServer.close();
 	};
@@ -743,8 +615,6 @@ async function startServer(): Promise<{
 			skipSessionCleanup: options?.skipSessionCleanup ?? false,
 		});
 		opsMetricsSampler.stop();
-		await imGateway.stop();
-		setResidentImGateway(null);
 		await stopNetworkBridge();
 		await stallWatchdog?.stop();
 	};

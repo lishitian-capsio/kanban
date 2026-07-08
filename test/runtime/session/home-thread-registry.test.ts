@@ -3,21 +3,16 @@ import { describe, expect, it } from "vitest";
 import type { RuntimeHomeChatThreadsData } from "../../../src/core/api-contract";
 import { DEFAULT_HOME_THREAD_ID } from "../../../src/core/home-agent-session";
 import {
-	bindHomeThreadImChannelExclusive,
-	bindPiImChannelExclusive,
 	closeHomeThread,
 	createHomeThread,
 	deriveProvisionalThreadTitle,
 	getHomeFullscreenTabs,
-	getPiImChannel,
 	listHomeThreads,
 	renameHomeThread,
 	sanitizeFullscreenTabs,
 	setHomeFullscreenTabs,
 	setHomeThreadAutoTitle,
-	setHomeThreadImChannel,
 	setHomeThreadNextStep,
-	unbindPiImChannel,
 } from "../../../src/session/home-thread-registry";
 
 function seed(): RuntimeHomeChatThreadsData {
@@ -194,183 +189,6 @@ describe("home thread registry", () => {
 
 		it("preserves the persisted fullscreen tab set", () => {
 			const next = setHomeThreadNextStep(seedWithTabs(), "t2", "Start the top backlog task");
-			expect(next.fullscreenTabs).toEqual({ openThreadIds: ["t1", "t2"], activeThreadId: "t2" });
-		});
-	});
-
-	describe("setHomeThreadImChannel", () => {
-		it("binds a thread to an IM channel and bumps updatedAt", () => {
-			const next = setHomeThreadImChannel(seed(), "t2", { platform: "lark", chatId: "oc_abc" }, 400);
-			const thread = next.threads.find((t) => t.id === "t2");
-			expect(thread?.imChannel).toEqual({ platform: "lark", chatId: "oc_abc" });
-			expect(thread?.updatedAt).toBe(400);
-		});
-
-		it("unbinds a thread when passed null", () => {
-			const bound = setHomeThreadImChannel(seed(), "t1", { platform: "dingtalk", chatId: "cid_1" }, 400);
-			const cleared = setHomeThreadImChannel(bound, "t1", null, 500);
-			expect(cleared.threads.find((t) => t.id === "t1")?.imChannel).toBeNull();
-		});
-
-		it("returns the same data reference when the binding is unchanged (no-op)", () => {
-			const bound = setHomeThreadImChannel(seed(), "t2", { platform: "lark", chatId: "oc_abc" }, 400);
-			const again = setHomeThreadImChannel(bound, "t2", { platform: "lark", chatId: "oc_abc" }, 999);
-			expect(again).toBe(bound);
-		});
-
-		it("treats an absent binding and null as equivalent (unbind on an unbound thread is a no-op)", () => {
-			const data = seed();
-			const next = setHomeThreadImChannel(data, "t1", null, 500);
-			expect(next).toBe(data);
-		});
-
-		it("does not mutate the source data", () => {
-			const data = seed();
-			setHomeThreadImChannel(data, "t2", { platform: "lark", chatId: "oc_abc" }, 400);
-			expect(data.threads.find((t) => t.id === "t2")?.imChannel).toBeUndefined();
-		});
-
-		it("throws when the thread does not exist", () => {
-			expect(() => setHomeThreadImChannel(seed(), "missing", { platform: "lark", chatId: "x" }, 400)).toThrow();
-		});
-
-		it("preserves the persisted fullscreen tab set", () => {
-			const next = setHomeThreadImChannel(seedWithTabs(), "t2", { platform: "lark", chatId: "oc_abc" }, 400);
-			expect(next.fullscreenTabs).toEqual({ openThreadIds: ["t1", "t2"], activeThreadId: "t2" });
-		});
-	});
-
-	describe("bindHomeThreadImChannelExclusive", () => {
-		function seedBound(): RuntimeHomeChatThreadsData {
-			// t1 already holds oc_shared; binding it to t2 must move it (one-to-one, ac99c 159ab).
-			return {
-				threads: [
-					{
-						id: "t1",
-						agentId: "pi",
-						name: "First",
-						titleSource: "manual",
-						createdAt: 100,
-						updatedAt: 100,
-						imChannel: { platform: "lark", chatId: "oc_shared" },
-					},
-					{ id: "t2", agentId: "claude", name: "Second", titleSource: "auto", createdAt: 50, updatedAt: 50 },
-				],
-			};
-		}
-
-		it("binds the target thread to the channel and bumps its updatedAt", () => {
-			const next = bindHomeThreadImChannelExclusive(seed(), "t2", { platform: "lark", chatId: "oc_abc" }, 400);
-			const thread = next.threads.find((t) => t.id === "t2");
-			expect(thread?.imChannel).toEqual({ platform: "lark", chatId: "oc_abc" });
-			expect(thread?.updatedAt).toBe(400);
-		});
-
-		it("unbinds any OTHER thread that held the same channel (one-to-one)", () => {
-			const next = bindHomeThreadImChannelExclusive(
-				seedBound(),
-				"t2",
-				{ platform: "lark", chatId: "oc_shared" },
-				400,
-			);
-			// The previous owner (t1) is cleared; the new owner (t2) holds it.
-			expect(next.threads.find((t) => t.id === "t1")?.imChannel).toBeNull();
-			expect(next.threads.find((t) => t.id === "t1")?.updatedAt).toBe(400);
-			expect(next.threads.find((t) => t.id === "t2")?.imChannel).toEqual({ platform: "lark", chatId: "oc_shared" });
-		});
-
-		it("leaves threads bound to a DIFFERENT channel untouched", () => {
-			const next = bindHomeThreadImChannelExclusive(
-				seedBound(),
-				"t2",
-				{ platform: "lark", chatId: "oc_other" },
-				400,
-			);
-			expect(next.threads.find((t) => t.id === "t1")?.imChannel).toEqual({ platform: "lark", chatId: "oc_shared" });
-			expect(next.threads.find((t) => t.id === "t2")?.imChannel).toEqual({ platform: "lark", chatId: "oc_other" });
-		});
-
-		it("returns the same data reference when the target already holds the channel and no one else does", () => {
-			const bound = bindHomeThreadImChannelExclusive(seed(), "t2", { platform: "lark", chatId: "oc_abc" }, 400);
-			const again = bindHomeThreadImChannelExclusive(bound, "t2", { platform: "lark", chatId: "oc_abc" }, 999);
-			expect(again).toBe(bound);
-		});
-
-		it("does not mutate the source data", () => {
-			const data = seedBound();
-			bindHomeThreadImChannelExclusive(data, "t2", { platform: "lark", chatId: "oc_shared" }, 400);
-			expect(data.threads.find((t) => t.id === "t1")?.imChannel).toEqual({ platform: "lark", chatId: "oc_shared" });
-			expect(data.threads.find((t) => t.id === "t2")?.imChannel).toBeUndefined();
-		});
-
-		it("throws when the target thread does not exist", () => {
-			expect(() =>
-				bindHomeThreadImChannelExclusive(seed(), "missing", { platform: "lark", chatId: "x" }, 400),
-			).toThrow();
-		});
-
-		it("preserves the persisted fullscreen tab set", () => {
-			const next = bindHomeThreadImChannelExclusive(
-				seedWithTabs(),
-				"t2",
-				{ platform: "lark", chatId: "oc_abc" },
-				400,
-			);
-			expect(next.fullscreenTabs).toEqual({ openThreadIds: ["t1", "t2"], activeThreadId: "t2" });
-		});
-	});
-
-	describe("pi IM channel (doc-level, decision X1)", () => {
-		it("getPiImChannel returns null when unbound and the bound channel after a bind", () => {
-			expect(getPiImChannel(seed())).toBeNull();
-			const bound = bindPiImChannelExclusive(seed(), { platform: "lark", chatId: "oc_pi" }, 400);
-			expect(getPiImChannel(bound)).toEqual({ platform: "lark", chatId: "oc_pi" });
-		});
-
-		it("bindPiImChannelExclusive sets the doc-level pi binding without adding a thread", () => {
-			const next = bindPiImChannelExclusive(seed(), { platform: "lark", chatId: "oc_pi" }, 400);
-			expect(next.piImChannel).toEqual({ platform: "lark", chatId: "oc_pi" });
-			// Pi is NOT a thread — the threads array is untouched.
-			expect(next.threads.map((t) => t.id)).toEqual(["t1", "t2"]);
-		});
-
-		it("bindPiImChannelExclusive unbinds any THREAD that held the same channel (cross-store one-to-one)", () => {
-			const withThread = setHomeThreadImChannel(seed(), "t2", { platform: "lark", chatId: "oc_shared" }, 300);
-			const next = bindPiImChannelExclusive(withThread, { platform: "lark", chatId: "oc_shared" }, 400);
-			expect(next.piImChannel).toEqual({ platform: "lark", chatId: "oc_shared" });
-			expect(next.threads.find((t) => t.id === "t2")?.imChannel).toBeNull();
-			expect(next.threads.find((t) => t.id === "t2")?.updatedAt).toBe(400);
-		});
-
-		it("bindPiImChannelExclusive returns the same reference when pi already holds the channel and no thread does", () => {
-			const bound = bindPiImChannelExclusive(seed(), { platform: "lark", chatId: "oc_pi" }, 400);
-			const again = bindPiImChannelExclusive(bound, { platform: "lark", chatId: "oc_pi" }, 999);
-			expect(again).toBe(bound);
-		});
-
-		it("unbindPiImChannel clears the binding and is a no-op (same ref) when already unbound", () => {
-			const bound = bindPiImChannelExclusive(seed(), { platform: "lark", chatId: "oc_pi" }, 400);
-			const cleared = unbindPiImChannel(bound);
-			expect(cleared.piImChannel).toBeNull();
-			const data = seed();
-			expect(unbindPiImChannel(data)).toBe(data);
-		});
-
-		it("does not mutate the source data", () => {
-			const data = seed();
-			bindPiImChannelExclusive(data, { platform: "lark", chatId: "oc_pi" }, 400);
-			expect(data.piImChannel).toBeUndefined();
-		});
-
-		it("bindHomeThreadImChannelExclusive also clears a matching pi binding (cross-store one-to-one)", () => {
-			const withPi = bindPiImChannelExclusive(seed(), { platform: "lark", chatId: "oc_shared" }, 300);
-			const next = bindHomeThreadImChannelExclusive(withPi, "t2", { platform: "lark", chatId: "oc_shared" }, 400);
-			expect(next.piImChannel).toBeNull();
-			expect(next.threads.find((t) => t.id === "t2")?.imChannel).toEqual({ platform: "lark", chatId: "oc_shared" });
-		});
-
-		it("preserves the persisted fullscreen tab set", () => {
-			const next = bindPiImChannelExclusive(seedWithTabs(), { platform: "lark", chatId: "oc_pi" }, 400);
 			expect(next.fullscreenTabs).toEqual({ openThreadIds: ["t1", "t2"], activeThreadId: "t2" });
 		});
 	});

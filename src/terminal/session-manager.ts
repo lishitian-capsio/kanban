@@ -1202,8 +1202,8 @@ export class TerminalSessionManager implements TerminalSessionService, SessionMe
 		// carry a lingering process handle mid-teardown; writing into it would funnel the
 		// text into a defunct PTY and merely record an unanswered user message. Returning
 		// null keeps the truthy return an honest "delivered to a live agent" signal, so
-		// callers that use it to decide whether to wake a session — inbound IM delivery
-		// (deliverHomeChatMessage) — fall through to (re)starting/resuming instead.
+		// callers that use it to decide whether to wake a session fall through to
+		// (re)starting/resuming instead.
 		if (!isActiveState(entry.summary.state)) {
 			return null;
 		}
